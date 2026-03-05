@@ -16,18 +16,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
   Scale,
   Shield,
-  FileCheck,
-  Cloud,
-  CheckCircle,
-  ArrowRight,
-  Play,
   Lock,
   Building2,
+  Cloud,
+  ArrowRight,
+  Play,
 } from "lucide-react";
 import DemoModal from "@/components/landing/DemoModal";
 
@@ -36,12 +35,14 @@ const LandingPage = () => {
   const [password, setPassword] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [acceptedPolicy, setAcceptedPolicy] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptedPolicy) return;
     setLoading(true);
     try {
       if (isRegister) {
@@ -77,15 +78,15 @@ const LandingPage = () => {
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div className="flex items-center gap-2">
             <Scale className="h-7 w-7 text-notarial-gold" aria-hidden="true" />
-            <span className="text-xl font-bold text-white">Sertuss</span>
+            <span className="text-xl font-bold text-notarial-light">Sertuss</span>
           </div>
           <nav aria-label="Navegación principal">
             <Button
               variant="ghost"
-              className="min-h-[44px] text-muted-foreground hover:text-white"
+              className="min-h-[44px] text-muted-foreground hover:text-notarial-light"
               onClick={() => {
                 document
-                  .getElementById("auth-section")
+                  .getElementById("hero-form")
                   ?.scrollIntoView({ behavior: "smooth" });
               }}
               aria-label="Ir a iniciar sesión"
@@ -102,10 +103,10 @@ const LandingPage = () => {
           className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
           aria-label="Sección principal"
         >
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-2 lg:gap-16">
             {/* Left: Copy */}
             <div className="space-y-6">
-              <h1 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
+              <h1 className="font-serif text-3xl font-bold leading-[1.2] tracking-tight text-notarial-light sm:text-4xl lg:text-5xl">
                 Escrituración Inteligente en Colombia.{" "}
                 <span className="text-notarial-green">
                   Cero Notas Devolutivas.
@@ -119,11 +120,11 @@ const LandingPage = () => {
               <div className="flex flex-wrap gap-4">
                 <Button
                   size="lg"
-                  className="min-h-[44px] min-w-[44px] bg-notarial-green text-white hover:bg-notarial-green/90"
+                  className="min-h-[44px] min-w-[44px] bg-notarial-green text-secondary-foreground hover:bg-notarial-green/90"
                   onClick={() => {
                     setIsRegister(true);
                     document
-                      .getElementById("auth-section")
+                      .getElementById("hero-form")
                       ?.scrollIntoView({ behavior: "smooth" });
                   }}
                   aria-label="Registrarse para cargar la primera minuta"
@@ -134,7 +135,7 @@ const LandingPage = () => {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="min-h-[44px] min-w-[44px] border-border/40 text-muted-foreground hover:bg-accent hover:text-white"
+                  className="min-h-[44px] min-w-[44px] border-border/40 text-muted-foreground hover:bg-accent hover:text-notarial-light"
                   onClick={() => setDemoOpen(true)}
                   aria-label="Ver demostración en video"
                 >
@@ -144,12 +145,114 @@ const LandingPage = () => {
               </div>
             </div>
 
+            {/* Right: Auth Form (Glassmorphism) */}
+            <div id="hero-form" className="flex items-start justify-center lg:justify-end">
+              <Card className="glass w-full max-w-md shadow-2xl">
+                <CardHeader className="text-center">
+                  <div className="mx-auto mb-2 flex items-center gap-2">
+                    <Scale
+                      className="h-8 w-8 text-notarial-gold"
+                      aria-hidden="true"
+                    />
+                    <Shield
+                      className="h-6 w-6 text-notarial-green"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <CardTitle className="text-xl text-notarial-light">
+                    {isRegister ? "Crear Cuenta" : "Iniciar Sesión"}
+                  </CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    {isRegister
+                      ? "Registra tu cuenta para acceder al sistema"
+                      : "Ingresa tus credenciales"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-notarial-light">
+                        Correo electrónico
+                      </Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="correo@ejemplo.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        className="bg-notarial-light text-foreground"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password" className="text-notarial-light">
+                        Contraseña
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        className="bg-notarial-light text-foreground"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="min-h-[44px] w-full bg-notarial-green text-secondary-foreground hover:bg-notarial-green/90"
+                      disabled={loading || !acceptedPolicy}
+                    >
+                      {loading
+                        ? "Procesando..."
+                        : isRegister
+                          ? "Registrarse"
+                          : "Ingresar"}
+                    </Button>
+                    <div className="flex items-start gap-2 pt-2">
+                      <Checkbox
+                        id="policy"
+                        checked={acceptedPolicy}
+                        onCheckedChange={(v) => setAcceptedPolicy(v === true)}
+                        className="mt-0.5 border-muted-foreground data-[state=checked]:bg-notarial-green data-[state=checked]:border-notarial-green"
+                        aria-label="Aceptar política de tratamiento de datos"
+                      />
+                      <Label
+                        htmlFor="policy"
+                        className="text-xs leading-snug text-muted-foreground cursor-pointer"
+                      >
+                        Acepto la{" "}
+                        <a
+                          href="#"
+                          className="text-notarial-gold underline underline-offset-2 hover:text-notarial-gold/80"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Política de Tratamiento de Datos (Ley 1581)
+                        </a>
+                      </Label>
+                    </div>
+                  </form>
+                  <div className="mt-4 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsRegister(!isRegister)}
+                      className="min-h-[44px] text-sm text-muted-foreground underline-offset-4 hover:text-notarial-light hover:underline"
+                    >
+                      {isRegister
+                        ? "¿Ya tienes cuenta? Inicia sesión"
+                        : "¿No tienes cuenta? Regístrate"}
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </section>
 
         {/* Trust Signals */}
         <section
-          className="border-y border-border/20 bg-card/30 px-4 py-10 sm:px-6 lg:px-8"
+          className="border-y border-border/20 bg-card/10 px-4 py-10 sm:px-6 lg:px-8"
           aria-label="Señales de confianza"
         >
           <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 sm:grid-cols-3">
@@ -158,7 +261,7 @@ const LandingPage = () => {
                 className="h-6 w-6 shrink-0 text-notarial-gold"
                 aria-hidden="true"
               />
-              <span className="text-sm font-medium text-white">
+              <span className="text-sm font-medium text-notarial-light">
                 Seguridad de Grado Bancario
               </span>
             </div>
@@ -167,7 +270,7 @@ const LandingPage = () => {
                 className="h-6 w-6 shrink-0 text-notarial-green"
                 aria-hidden="true"
               />
-              <span className="text-sm font-medium text-white">
+              <span className="text-sm font-medium text-notarial-light">
                 Cumple con SNR
               </span>
             </div>
@@ -176,7 +279,7 @@ const LandingPage = () => {
                 className="h-6 w-6 shrink-0 text-notarial-blue"
                 aria-hidden="true"
               />
-              <span className="text-sm font-medium text-white">
+              <span className="text-sm font-medium text-notarial-light">
                 Infraestructura Google Cloud
               </span>
             </div>
@@ -191,7 +294,7 @@ const LandingPage = () => {
           itemType="https://schema.org/FAQPage"
         >
           <div className="mx-auto max-w-3xl">
-            <h2 className="mb-8 text-center text-2xl font-bold text-white">
+            <h2 className="mb-8 text-center font-serif text-2xl font-bold text-notarial-light">
               Preguntas Frecuentes
             </h2>
             <Accordion type="single" collapsible className="space-y-2">
@@ -202,9 +305,9 @@ const LandingPage = () => {
               >
                 <AccordionItem
                   value="q1"
-                  className="rounded-lg border-border/30 bg-card/50 px-4"
+                  className="rounded-lg border-border/30 bg-card/10 px-4"
                 >
-                  <AccordionTrigger className="text-left text-white hover:no-underline">
+                  <AccordionTrigger className="text-left text-notarial-light hover:no-underline font-serif">
                     <span itemProp="name">
                       ¿Cómo automatizar minutas del Banco de Bogotá?
                     </span>
@@ -238,9 +341,9 @@ const LandingPage = () => {
               >
                 <AccordionItem
                   value="q2"
-                  className="rounded-lg border-border/30 bg-card/50 px-4"
+                  className="rounded-lg border-border/30 bg-card/10 px-4"
                 >
-                  <AccordionTrigger className="text-left text-white hover:no-underline">
+                  <AccordionTrigger className="text-left text-notarial-light hover:no-underline font-serif">
                     <span itemProp="name">
                       ¿Cómo evitar errores de registro en escrituras?
                     </span>
@@ -270,87 +373,6 @@ const LandingPage = () => {
             </Accordion>
           </div>
         </section>
-
-        {/* Auth Section */}
-        <section
-          id="auth-section"
-          className="px-4 py-16 sm:px-6 lg:px-8"
-          aria-label="Autenticación"
-        >
-          <div className="mx-auto max-w-md space-y-6">
-            <Card className="border-notarial-blue/30 bg-card/95 shadow-2xl backdrop-blur">
-              <CardHeader className="text-center">
-                <div className="mx-auto mb-2 flex items-center gap-2">
-                  <Scale
-                    className="h-8 w-8 text-notarial-gold"
-                    aria-hidden="true"
-                  />
-                  <Shield
-                    className="h-6 w-6 text-notarial-green"
-                    aria-hidden="true"
-                  />
-                </div>
-                <CardTitle className="text-xl">
-                  {isRegister ? "Crear Cuenta" : "Iniciar Sesión"}
-                </CardTitle>
-                <CardDescription>
-                  {isRegister
-                    ? "Registra tu cuenta para acceder al sistema"
-                    : "Ingresa tus credenciales"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Correo electrónico</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="correo@ejemplo.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Contraseña</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    className="min-h-[44px] w-full bg-notarial-blue hover:bg-notarial-blue/90"
-                    disabled={loading}
-                  >
-                    {loading
-                      ? "Procesando..."
-                      : isRegister
-                        ? "Registrarse"
-                        : "Ingresar"}
-                  </Button>
-                </form>
-                <div className="mt-4 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setIsRegister(!isRegister)}
-                    className="min-h-[44px] text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  >
-                    {isRegister
-                      ? "¿Ya tienes cuenta? Inicia sesión"
-                      : "¿No tienes cuenta? Regístrate"}
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
       </main>
 
       {/* Footer Legal */}
@@ -361,19 +383,16 @@ const LandingPage = () => {
               © {new Date().getFullYear()} Sertuss. Todos los derechos
               reservados.
             </p>
-            <nav
-              className="flex gap-6"
-              aria-label="Enlaces legales"
-            >
+            <nav className="flex gap-6" aria-label="Enlaces legales">
               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-muted-foreground underline-offset-4 hover:text-notarial-light hover:underline"
               >
                 Política de Tratamiento de Datos (Habeas Data)
               </a>
               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-muted-foreground underline-offset-4 hover:text-notarial-light hover:underline"
               >
                 Términos de Servicio
               </a>

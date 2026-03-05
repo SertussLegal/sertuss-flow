@@ -43,7 +43,7 @@
     --sidebar-border: 216 28% 22%;
     --sidebar-ring: 213 45% 29%;
 
-    --notarial-dark: 216 28% 14%;
+    --notarial-dark: 222 47% 11%;
     --notarial-blue: 213 45% 29%;
     --notarial-green: 152 52% 24%;
     --notarial-gold: 43 74% 49%;
@@ -95,6 +95,16 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply backdrop-blur-xl border;
+    background: hsl(0 0% 100% / 0.08);
+    border-color: hsl(0 0% 100% / 0.15);
   }
 }
