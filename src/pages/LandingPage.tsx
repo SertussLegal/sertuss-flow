@@ -102,7 +102,7 @@ const LandingPage = () => {
           className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
           aria-label="Sección principal"
         >
-          <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-2 lg:gap-16">
+          <div className="mx-auto max-w-3xl">
             {/* Left: Copy */}
             <div className="space-y-6">
               <h1 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
@@ -144,60 +144,6 @@ const LandingPage = () => {
               </div>
             </div>
 
-            {/* Right: Visual */}
-            <div
-              className="flex items-center justify-center"
-              aria-hidden="true"
-            >
-              <div className="relative w-full max-w-md">
-                <div className="rounded-2xl border border-border/30 bg-card/50 p-8 backdrop-blur">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-notarial-blue/20">
-                        <FileCheck className="h-5 w-5 text-notarial-blue" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          Certificado de Tradición
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Datos extraídos automáticamente
-                        </p>
-                      </div>
-                      <CheckCircle className="ml-auto h-5 w-5 text-notarial-green" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-notarial-green/20">
-                        <Shield className="h-5 w-5 text-notarial-green" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          Validación SARLAFT
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          PEP verificado
-                        </p>
-                      </div>
-                      <CheckCircle className="ml-auto h-5 w-5 text-notarial-green" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-notarial-gold/20">
-                        <Scale className="h-5 w-5 text-notarial-gold" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          Minuta Generada
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Lista para firma — 0 errores
-                        </p>
-                      </div>
-                      <CheckCircle className="ml-auto h-5 w-5 text-notarial-green" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
