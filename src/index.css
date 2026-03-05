@@ -43,7 +43,7 @@
     --sidebar-border: 216 28% 22%;
     --sidebar-ring: 213 45% 29%;
 
-    --notarial-dark: 222 47% 11%;
+    --notarial-dark: 222 84% 5%;
     --notarial-blue: 213 45% 29%;
     --notarial-green: 160 84% 39%;
     --notarial-gold: 43 96% 56%;
@@ -103,8 +103,11 @@
 
 @layer utilities {
   .glass {
-    @apply backdrop-blur-xl border;
+    @apply backdrop-blur-2xl border;
     background: hsl(0 0% 100% / 0.05);
-    border-color: hsl(0 0% 100% / 0.20);
+    border-color: hsl(0 0% 100% / 0.10);
+  }
+  .bg-gradient-dark {
+    background: linear-gradient(135deg, #020617 0%, #041525 50%, #020617 100%);
   }
 }
