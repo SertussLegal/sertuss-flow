@@ -20,7 +20,7 @@
     --secondary-foreground: 0 0% 100%;
 
     --muted: 210 20% 94%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 215 20% 65%;
 
     --accent: 43 74% 49%;
     --accent-foreground: 216 28% 17%;
@@ -43,7 +43,7 @@
     --sidebar-border: 216 28% 22%;
     --sidebar-ring: 213 45% 29%;
 
-    --notarial-dark: 222 71% 4%;
+    --notarial-dark: 222 47% 11%;
     --notarial-blue: 213 45% 29%;
     --notarial-green: 160 84% 39%;
     --notarial-gold: 43 96% 56%;
@@ -103,8 +103,8 @@
 
 @layer utilities {
   .glass {
-    @apply backdrop-blur-md border;
+    @apply backdrop-blur-xl border;
     background: hsl(0 0% 100% / 0.05);
-    border-color: hsl(0 0% 100% / 0.10);
+    border-color: hsl(0 0% 100% / 0.20);
   }
 }

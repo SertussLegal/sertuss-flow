@@ -78,12 +78,12 @@ const LandingPage = () => {
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div className="flex items-center gap-2">
             <Scale className="h-7 w-7 text-notarial-gold" aria-hidden="true" />
-            <span className="text-xl font-bold text-notarial-light">Sertuss</span>
+            <span className="text-xl font-bold text-slate-100">Sertuss</span>
           </div>
           <nav aria-label="Navegación principal">
             <Button
-              variant="ghost"
-              className="min-h-[44px] text-muted-foreground hover:text-notarial-light"
+              variant="outline"
+              className="min-h-[44px] border-white/20 text-slate-200 hover:bg-white/10 hover:text-white"
               onClick={() => {
                 document
                   .getElementById("hero-form")
@@ -103,19 +103,17 @@ const LandingPage = () => {
           className="px-4 py-20 sm:px-6 sm:py-32 lg:px-8"
           aria-label="Sección principal"
         >
-          <div className="mx-auto grid max-w-[1200px] items-center gap-16 lg:grid-cols-2 lg:gap-20">
+          <div className="mx-auto grid max-w-[1200px] items-center gap-16 lg:grid-cols-2 lg:gap-24">
             {/* Left: Copy */}
-            <div className="space-y-8">
+            <div className="animate-fade-in-up space-y-8">
               <h1 className="text-4xl font-semibold leading-[1.2] tracking-tight text-notarial-light sm:text-5xl lg:text-[4.5rem]">
-                Escrituración Inteligente en Colombia.{" "}
-                <span className="text-notarial-green">
-                  Cero Notas Devolutivas.
-                </span>
+                Agilidad y Precisión en tu Operación Notarial.
               </h1>
-              <p className="max-w-lg text-lg leading-relaxed text-muted-foreground">
-                Llenar minutas en Word manualmente es un riesgo. Sertuss usa IA
-                para extraer datos de cédulas y certificados con precisión
-                registral, eliminando errores antes de que lleguen a la ORIP.
+              <p className="max-w-lg text-lg leading-relaxed text-slate-300">
+                Optimiza el diligenciamiento de formatos con inteligencia
+                documental. Sertuss es el aliado de tu equipo legal para
+                procesar minutas con la velocidad y exactitud que el sector
+                exige.
               </p>
               <div className="flex flex-wrap gap-4">
                 <Button
@@ -129,7 +127,7 @@ const LandingPage = () => {
                   }}
                   aria-label="Registrarse para cargar la primera minuta"
                 >
-                  Cargar mi primera Minuta
+                  Empezar ahora
                   <ArrowRight className="ml-1 h-4 w-4" aria-hidden="true" />
                 </Button>
                 <Button
@@ -171,7 +169,7 @@ const LandingPage = () => {
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email" className="text-notarial-light">
+                      <Label htmlFor="email" className="text-slate-200">
                         Correo electrónico
                       </Label>
                       <Input
@@ -181,11 +179,11 @@ const LandingPage = () => {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        className="bg-notarial-light text-foreground"
+                        className="h-12 bg-notarial-light text-foreground"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="password" className="text-notarial-light">
+                      <Label htmlFor="password" className="text-slate-200">
                         Contraseña
                       </Label>
                       <Input
@@ -196,7 +194,7 @@ const LandingPage = () => {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         minLength={6}
-                        className="bg-notarial-light text-foreground"
+                        className="h-12 bg-notarial-light text-foreground"
                       />
                     </div>
                     <Button
@@ -251,7 +249,7 @@ const LandingPage = () => {
         </section>
         {/* Trust Signals */}
         <section
-          className="border-y border-border/20 bg-card/10 px-4 py-20 sm:px-6 lg:px-8"
+          className="border-y border-white/10 bg-white/[0.02] px-4 py-20 sm:px-6 lg:px-8"
           aria-label="Señales de confianza"
         >
           <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-8 sm:grid-cols-3">
@@ -287,7 +285,7 @@ const LandingPage = () => {
 
         {/* FAQ Estructurada */}
         <section
-          className="px-4 py-20 sm:py-32 sm:px-6 lg:px-8"
+          className="bg-white/[0.02] px-4 py-20 sm:py-32 sm:px-6 lg:px-8"
           aria-label="Preguntas frecuentes"
           itemScope
           itemType="https://schema.org/FAQPage"
@@ -321,7 +319,7 @@ const LandingPage = () => {
                         itemProp="text"
                         className="leading-relaxed text-muted-foreground"
                       >
-                        Carga pagarés, instrucciones y certificados del Banco de Bogotá. Sertuss extrae datos automáticamente y genera la minuta en Word lista para firma.
+                        Sertuss integra algoritmos que extraen datos de pagarés, instrucciones y certificados del Banco de Bogotá en segundos. El abogado se enfoca en la validación jurídica mientras el sistema genera la minuta en Word lista para firma.
                       </p>
                     </div>
                   </AccordionContent>
@@ -352,7 +350,7 @@ const LandingPage = () => {
                         itemProp="text"
                         className="leading-relaxed text-muted-foreground"
                       >
-                        Valida matrícula, linderos, CHIP y datos de las partes contra el certificado de tradición. Detecta inconsistencias antes de la escritura, eliminando notas devolutivas.
+                        El motor de validación cruza matrícula, linderos, CHIP y datos de las partes contra el certificado de tradición en tiempo real. Detecta inconsistencias antes de la escritura, eliminando notas devolutivas de la ORIP.
                       </p>
                     </div>
                   </AccordionContent>
@@ -367,20 +365,20 @@ const LandingPage = () => {
       <footer className="border-t border-border/20 px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-slate-400">
               © {new Date().getFullYear()} Sertuss. Todos los derechos
               reservados.
             </p>
             <nav className="flex gap-6" aria-label="Enlaces legales">
               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-muted-foreground underline-offset-4 hover:text-notarial-light hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline"
               >
                 Política de Tratamiento de Datos (Habeas Data)
               </a>
               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-muted-foreground underline-offset-4 hover:text-notarial-light hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline"
               >
                 Términos de Servicio
               </a>
