@@ -24,7 +24,7 @@ import {
   Shield,
   Lock,
   Building2,
-  Cloud,
+  
   ArrowRight,
   Play,
 } from "lucide-react";
@@ -112,8 +112,7 @@ const LandingPage = () => {
               <p className="max-w-lg text-lg leading-relaxed text-slate-300">
                 Optimiza el diligenciamiento de formatos con inteligencia
                 documental. Sertuss es el aliado de tu equipo legal para
-                procesar minutas con la velocidad y exactitud que el sector
-                exige.
+                procesar minutas con la máxima velocidad.
               </p>
               <div className="flex flex-wrap gap-4">
                 <Button
@@ -145,7 +144,7 @@ const LandingPage = () => {
 
             {/* Right: Auth Form (Glassmorphism) */}
             <div id="hero-form" className="flex items-start justify-center lg:justify-end">
-              <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-2xl backdrop-blur-2xl">
+              <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.05] p-6 shadow-2xl backdrop-blur-2xl">
                 <div className="mb-4 text-center">
                   <div className="mx-auto mb-2 flex items-center gap-2">
                     <Scale
@@ -272,12 +271,12 @@ const LandingPage = () => {
               </span>
             </div>
             <div className="flex items-center gap-3 justify-center">
-              <Cloud
+              <Shield
                 className="h-6 w-6 shrink-0 text-notarial-blue"
                 aria-hidden="true"
               />
               <span className="text-sm font-medium text-white">
-                Infraestructura de Alta Disponibilidad
+                Cifrado de Grado Bancario
               </span>
             </div>
           </div>
@@ -302,7 +301,7 @@ const LandingPage = () => {
               >
                 <AccordionItem
                   value="q1"
-                  className="rounded-lg border-border/30 bg-card/10 px-4"
+                  className="rounded-lg border-white/10 bg-white/[0.03] px-4"
                 >
              <AccordionTrigger className="text-left text-white hover:no-underline">
                     <span itemProp="name">
@@ -317,8 +316,8 @@ const LandingPage = () => {
                     >
                        <p
                         itemProp="text"
-                        className="leading-relaxed text-muted-foreground"
-                      >
+                        className="leading-relaxed text-slate-300"
+                       >
                         Sertuss integra algoritmos que extraen datos de pagarés, instrucciones y certificados del Banco de Bogotá en segundos. El abogado se enfoca en la validación jurídica mientras el sistema genera la minuta en Word lista para firma.
                       </p>
                     </div>
@@ -348,8 +347,8 @@ const LandingPage = () => {
                     >
                       <p
                         itemProp="text"
-                        className="leading-relaxed text-muted-foreground"
-                      >
+                        className="leading-relaxed text-slate-300"
+                       >
                         El motor de validación cruza matrícula, linderos, CHIP y datos de las partes contra el certificado de tradición en tiempo real. Detecta inconsistencias antes de la escritura, eliminando notas devolutivas de la ORIP.
                       </p>
                     </div>
@@ -370,15 +369,15 @@ const LandingPage = () => {
               reservados.
             </p>
             <nav className="flex gap-6" aria-label="Enlaces legales">
-              <a
+               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-slate-300 underline-offset-4 hover:text-white hover:underline"
               >
                 Política de Tratamiento de Datos (Habeas Data)
               </a>
               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-slate-300 underline-offset-4 hover:text-white hover:underline"
               >
                 Términos de Servicio
               </a>
