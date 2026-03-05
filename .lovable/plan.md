@@ -1,62 +1,92 @@
 ## Sertuss — Plan Final (Colombia Nacional)
 
-### 1. Autenticación y Rutas Protegidas
+1. Autenticación y Rutas Protegidas
 
-- Login/registro con email y contraseña, diseño corporativo azul oscuro/verde
-- Rutas protegidas, tabla `user_roles` separada con RLS
+Login/registro con email y contraseña, diseño corporativo azul oscuro/verde
 
-### 2. Dashboard de Escrituras
+Rutas protegidas, tabla user_roles separada con RLS
 
-- Tabla de trámites: radicado, tipo, fecha, estado (badges: Pendiente/Validado/Word Generado)
-- Botón "+ Nuevo Trámite", filtros por estado y búsqueda
-- Paleta corporativa: azules (#1a2332, #2d4a7a), verdes (#1b5e3b), acentos dorados
+2. Dashboard de Escrituras
 
-### 3. Carga de Archivos
+Tabla de trámites: radicado, tipo, fecha, estado (badges: Pendiente/Validado/Word Generado)
 
-- Drag & drop para Certificado de Tradición y Cédulas (PDF/JPG)
-- Almacenamiento en Supabase Storage (bucket `documentos`)
+Botón "+ Nuevo Trámite", filtros por estado y búsqueda
 
-### 4. Validación Side-by-Side
+Paleta corporativa: azules (#1a2332, #2d4a7a), verdes (#1b5e3b), acentos dorados
 
-**Panel izquierdo**: placeholder visor PDF  
-**Panel derecho**: formulario con 4 pestañas:
+3. Carga de Archivos
 
-#### Vendedores / Compradores (dinámicos)
+Drag & drop para Certificado de Tradición y Cédulas (PDF/JPG)
 
-- **Switch "¿Es Persona Jurídica?"**
-  - **Off (persona natural)**: nombre completo, número de cédula, estado civil, dirección
-  - **On (persona jurídica)**: razón social, NIT, nombre del representante legal, cédula del representante legal, dirección
-- Agregar/quitar personas dinámicamente
+Almacenamiento en Supabase Storage (bucket documentos)
 
-#### Inmueble
+4. Validación Side-by-Side
 
-- Matrícula inmobiliaria
-- **Identificador Predial** con selector: CHIP o Número Predial Nacional (30 dígitos) — obligatorio
-- **Departamento** y **Municipio**
-- **Círculo Registral / ORIP** (código de Oficina de Registro)
-- **Selector Urbano / Rural**
-- Dirección, estrato, área
-- **Linderos**: textareas extensas con scroll
-- **Valorización** (campo genérico, no específico de IDU)
+Panel izquierdo: placeholder visor PDF
 
-#### Actos
+Panel derecho: formulario con 4 pestañas:
 
-- Tipo de acto, valor de compraventa
-- **Switch "Acto de Hipoteca"** → muestra/oculta: valor hipoteca, entidad bancaria, apoderado del banco (nombre y cédula)
-- **Switch "Afectación a Vivienda Familiar"**
+Vendedores / Compradores (dinámicos)
 
-### 5. Modal de Previsualización
+Switch "¿Es Persona Jurídica?"
 
-- Resumen completo formateado antes de generar Word
-- Botones: "Confirmar y Generar" / "Volver a Editar"
+Off (persona natural): nombre completo, número de cédula, estado civil, dirección
 
-### 6. Lógica de Estados
+On (persona jurídica): razón social, NIT, nombre del representante legal, cédula del representante legal, dirección
 
-- `tramites.status`: `pendiente` → `validado` (al guardar formulario) → `word_generado` (al confirmar generación)
+Agregar/quitar personas dinámicamente
 
-### 7. Base de Datos (Lovable Cloud)
+Inmueble
 
-- Tablas: `profiles`, `user_roles`, `tramites`, `vendedores`, `compradores`, `inmuebles`, `actos`
-- Campos de persona jurídica: `es_persona_juridica`, `nit`, `razon_social`, `representante_legal_nombre`, `representante_legal_cedula`
-- Campos inmueble: `tipo_identificador_predial` (chip/predial_nacional), `identificador_predial`, `departamento`, `municipio`, `codigo_orip`, `tipo_predio` (urbano/rural), `valorizacion`
-- RLS por usuario, Storage para documentos
+Matrícula inmobiliaria
+
+Identificador Predial con selector: CHIP o Número Predial Nacional (30 dígitos) — obligatorio
+
+Departamento y Municipio
+
+Círculo Registral / ORIP (código de Oficina de Registro)
+
+Selector Urbano / Rural
+
+Dirección, estrato, área
+
+Linderos: textareas extensas con scroll
+
+Valorización (campo genérico, no específico de IDU)
+
+Actos
+
+Tipo de acto, valor de compraventa
+
+Switch "Acto de Hipoteca" → muestra/oculta: valor hipoteca, entidad bancaria, apoderado del banco (nombre y cédula)
+
+Switch "Afectación a Vivienda Familiar"
+
+5. Modal de Previsualización
+
+Resumen completo formateado antes de generar Word
+
+Botones: "Confirmar y Generar" / "Volver a Editar"
+
+6. Lógica de Estados
+
+tramites.status: pendiente → validado (al guardar formulario) → word_generado (al confirmar generación)
+
+7. Base de Datos (Lovable Cloud)
+
+Tablas: profiles, user_roles, tramites, vendedores, compradores, inmuebles, actos
+
+Campos de persona jurídica: es_persona_juridica, nit, razon_social, representante_legal_nombre, representante_legal_cedula
+
+Campos inmueble: tipo_identificador_predial (chip/predial_nacional), identificador_predial, departamento, municipio, codigo_orip, tipo_predio (urbano/rural), valorizacion
+
+RLS por usuario, Storage para documentosAgregar campo PEP (Persona Expuesta Políticamente)
+
+Añadir un checkbox **"¿Persona Expuesta Políticamente (PEP)?"** en las secciones dinámicas de **Vendedores** y **Compradores**, como parte del cumplimiento SARLAFT.
+
+### Cambios:
+
+- **Formulario de Vendedores/Compradores**: Agregar un checkbox "¿Es PEP?" debajo de los datos de identificación de cada persona (tanto natural como jurídica/representante legal)
+- **Base de datos**: Agregar columna `es_pep BOOLEAN DEFAULT false` a las tablas `vendedores` y `compradores`
+- **Modal de previsualización**: Mostrar el estado PEP de cada parte cuando esté marcado
+- **Etiqueta descriptiva**: Incluir tooltip o texto auxiliar: *"Según circular SARLAFT — Persona que desempeña o ha desempeñado funciones públicas destacadas"*
