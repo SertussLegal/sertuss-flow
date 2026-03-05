@@ -82,8 +82,8 @@ const LandingPage = () => {
           </div>
           <nav aria-label="Navegación principal">
             <Button
-              variant="outline"
-              className="min-h-[44px] border-white/20 text-white hover:bg-white/10 hover:text-white"
+              variant="ghost-dark"
+              className="min-h-[44px]"
               onClick={() => {
                 document
                   .getElementById("hero-form")
@@ -131,8 +131,8 @@ const LandingPage = () => {
                 </Button>
                 <Button
                   size="lg"
-                  variant="outline"
-                  className="min-h-[44px] min-w-[44px] rounded-lg border-white/20 py-4 px-8 text-white hover:bg-white/10 hover:text-white"
+                  variant="ghost-dark"
+                  className="min-h-[44px] min-w-[44px] rounded-lg py-4 px-8"
                   onClick={() => setDemoOpen(true)}
                   aria-label="Ver demostración en video"
                 >
