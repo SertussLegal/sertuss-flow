@@ -11,6 +11,7 @@ import { Scale, Shield } from "lucide-react";
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [orgName, setOrgName] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -21,8 +22,31 @@ const Login = () => {
     setLoading(true);
     try {
       if (isRegister) {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+        if (!orgName.trim()) {
+          toast({ title: "Error", description: "El nombre de la organización es obligatorio.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+        if (signUpError) throw signUpError;
+
+        if (signUpData.user) {
+          // Create organization
+          const { data: org, error: orgError } = await supabase
+            .from("organizations")
+            .insert({ name: orgName.trim() })
+            .select()
+            .single();
+          if (orgError) throw orgError;
+
+          // Update profile with org + owner role
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .update({ organization_id: org.id, role: "owner" as any })
+            .eq("id", signUpData.user.id);
+          if (profileError) throw profileError;
+        }
+
         toast({ title: "Registro exitoso", description: "Revisa tu correo para confirmar tu cuenta." });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -52,11 +76,23 @@ const Login = () => {
           <CardHeader className="text-center">
             <CardTitle className="text-xl">{isRegister ? "Crear Cuenta" : "Iniciar Sesión"}</CardTitle>
             <CardDescription>
-              {isRegister ? "Registra tu cuenta para acceder al sistema" : "Ingresa tus credenciales"}
+              {isRegister ? "Registra tu cuenta y organización" : "Ingresa tus credenciales"}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isRegister && (
+                <div className="space-y-2">
+                  <Label htmlFor="orgName">Nombre de la Organización / Notaría</Label>
+                  <Input
+                    id="orgName"
+                    placeholder="Notaría 15 de Bogotá"
+                    value={orgName}
+                    onChange={(e) => setOrgName(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Correo electrónico</Label>
                 <Input
