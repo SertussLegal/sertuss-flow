@@ -1,92 +1,51 @@
-## Sertuss — Plan Final (Colombia Nacional)
 
-1. Autenticación y Rutas Protegidas
 
-Login/registro con email y contraseña, diseño corporativo azul oscuro/verde
+## Reconstrucción Landing Page — SEO/GEO + Conversión
 
-Rutas protegidas, tabla user_roles separada con RLS
+### Arquitectura de cambios
 
-2. Dashboard de Escrituras
+**1. `index.html` — Metadatos SEO y Schema JSON-LD**
+- Cambiar `lang="en"` → `lang="es-CO"`
+- Title: "Sertuss — Escrituración Inteligente en Colombia | Cero Notas Devolutivas"
+- Meta description optimizada para el sector notarial colombiano
+- Open Graph y Twitter Cards con datos de Sertuss
+- JSON-LD inline con schemas `SoftwareApplication` + `LegalService` + `FAQPage`
+- Pre-renderizado: añadir contenido semántico visible en el HTML estático dentro de `<noscript>` y texto accesible fuera del root para crawlers
 
-Tabla de trámites: radicado, tipo, fecha, estado (badges: Pendiente/Validado/Word Generado)
+**2. `src/pages/LandingPage.tsx` — Nueva página de landing (reemplaza Login en ruta `/`)**
 
-Botón "+ Nuevo Trámite", filtros por estado y búsqueda
+Estructura por secciones:
 
-Paleta corporativa: azules (#1a2332, #2d4a7a), verdes (#1b5e3b), acentos dorados
+- **Hero Split-Screen**: Grid 2 columnas en desktop, stack en móvil
+  - Izquierda: H1 "Escrituración Inteligente en Colombia. Cero Notas Devolutivas", párrafo de dolor/solución, CTA primario ("Cargar mi primera Minuta" verde `#1b5e3b`, min 44px height) y CTA secundario ("Ver Demo" outline, abre modal de video)
+  - Derecha: Ilustración/placeholder visual representando el flujo de automatización
 
-3. Carga de Archivos
+- **Trust Signals**: Franja horizontal con íconos + texto: "Seguridad de Grado Bancario", "Cumple con SNR", "Infraestructura Google Cloud"
 
-Drag & drop para Certificado de Tradición y Cédulas (PDF/JPG)
+- **FAQ Estructurada**: Componente Accordion con 2 preguntas iniciales marcadas con `itemScope`/`itemProp` de Schema.org FAQPage:
+  - "¿Cómo automatizar minutas del Banco de Bogotá?"
+  - "¿Cómo evitar errores de registro en escrituras?"
 
-Almacenamiento en Supabase Storage (bucket documentos)
+- **Sección Login/Registro**: Card de autenticación (se conserva la lógica actual de Supabase Auth)
 
-4. Validación Side-by-Side
+- **Footer Legal**: Links a "Política de Tratamiento de Datos (Habeas Data)", "Términos de Servicio", copyright
 
-Panel izquierdo: placeholder visor PDF
+**3. `src/components/landing/DemoModal.tsx`**
+- Dialog con placeholder de video (iframe o imagen) para el CTA "Ver Demo"
 
-Panel derecho: formulario con 4 pestañas:
+**4. `src/App.tsx`**
+- Ruta `/` apunta a `LandingPage`
+- Ruta `/login` apunta a `Login` (para acceso directo)
 
-Vendedores / Compradores (dinámicos)
+**5. Accesibilidad WCAG 2.1 AA**
+- Todos los botones CTA con `min-h-[44px] min-w-[44px]`
+- Contraste verificado en la paleta azul/verde sobre fondos oscuros
+- Atributos `aria-label` en elementos interactivos
+- Estructura semántica: `<header>`, `<main>`, `<section>`, `<footer>`
 
-Switch "¿Es Persona Jurídica?"
+**6. Rendimiento**
+- Componentes ligeros de shadcn/ui (Button, Card, Accordion, Dialog)
+- Sin imágenes pesadas en el hero (íconos SVG de Lucide)
+- Lazy load del modal de video
+- Nota: SSR real no es posible en Vite/React SPA; se compensa con contenido semántico en `index.html` y JSON-LD estático para crawlers de IA
 
-Off (persona natural): nombre completo, número de cédula, estado civil, dirección
-
-On (persona jurídica): razón social, NIT, nombre del representante legal, cédula del representante legal, dirección
-
-Agregar/quitar personas dinámicamente
-
-Inmueble
-
-Matrícula inmobiliaria
-
-Identificador Predial con selector: CHIP o Número Predial Nacional (30 dígitos) — obligatorio
-
-Departamento y Municipio
-
-Círculo Registral / ORIP (código de Oficina de Registro)
-
-Selector Urbano / Rural
-
-Dirección, estrato, área
-
-Linderos: textareas extensas con scroll
-
-Valorización (campo genérico, no específico de IDU)
-
-Actos
-
-Tipo de acto, valor de compraventa
-
-Switch "Acto de Hipoteca" → muestra/oculta: valor hipoteca, entidad bancaria, apoderado del banco (nombre y cédula)
-
-Switch "Afectación a Vivienda Familiar"
-
-5. Modal de Previsualización
-
-Resumen completo formateado antes de generar Word
-
-Botones: "Confirmar y Generar" / "Volver a Editar"
-
-6. Lógica de Estados
-
-tramites.status: pendiente → validado (al guardar formulario) → word_generado (al confirmar generación)
-
-7. Base de Datos (Lovable Cloud)
-
-Tablas: profiles, user_roles, tramites, vendedores, compradores, inmuebles, actos
-
-Campos de persona jurídica: es_persona_juridica, nit, razon_social, representante_legal_nombre, representante_legal_cedula
-
-Campos inmueble: tipo_identificador_predial (chip/predial_nacional), identificador_predial, departamento, municipio, codigo_orip, tipo_predio (urbano/rural), valorizacion
-
-RLS por usuario, Storage para documentosAgregar campo PEP (Persona Expuesta Políticamente)
-
-Añadir un checkbox **"¿Persona Expuesta Políticamente (PEP)?"** en las secciones dinámicas de **Vendedores** y **Compradores**, como parte del cumplimiento SARLAFT.
-
-### Cambios:
-
-- **Formulario de Vendedores/Compradores**: Agregar un checkbox "¿Es PEP?" debajo de los datos de identificación de cada persona (tanto natural como jurídica/representante legal)
-- **Base de datos**: Agregar columna `es_pep BOOLEAN DEFAULT false` a las tablas `vendedores` y `compradores`
-- **Modal de previsualización**: Mostrar el estado PEP de cada parte cuando esté marcado
-- **Etiqueta descriptiva**: Incluir tooltip o texto auxiliar: *"Según circular SARLAFT — Persona que desempeña o ha desempeñado funciones públicas destacadas"*
