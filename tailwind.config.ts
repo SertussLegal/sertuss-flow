@@ -57,6 +57,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        notarial: {
+          dark: "hsl(var(--notarial-dark))",
+          blue: "hsl(var(--notarial-blue))",
+          green: "hsl(var(--notarial-green))",
+          gold: "hsl(var(--notarial-gold))",
+          light: "hsl(var(--notarial-light))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -65,20 +72,12 @@ export default {
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
         },
       },
       animation: {
