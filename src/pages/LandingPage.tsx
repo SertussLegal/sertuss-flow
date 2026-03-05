@@ -111,8 +111,8 @@ const LandingPage = () => {
               </h1>
               <p className="max-w-lg text-lg leading-relaxed text-slate-300">
                 Optimiza el diligenciamiento de formatos con inteligencia
-                documental. Sertuss es el aliado de tu equipo legal para
-                procesar minutas con la máxima velocidad.
+                documental. Sertuss es el aliado tecnológico que apoya a tu
+                equipo legal para procesar minutas con la máxima velocidad.
               </p>
               <div className="flex flex-wrap gap-4">
                 <Button
@@ -364,20 +364,20 @@ const LandingPage = () => {
       <footer className="border-t border-border/20 px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-white">
               © {new Date().getFullYear()} Sertuss. Todos los derechos
               reservados.
             </p>
             <nav className="flex gap-6" aria-label="Enlaces legales">
                <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-slate-300 underline-offset-4 hover:text-white hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-white underline-offset-4 hover:text-notarial-gold hover:underline"
               >
                 Política de Tratamiento de Datos (Habeas Data)
               </a>
               <a
                 href="#"
-                className="min-h-[44px] flex items-center text-xs text-slate-300 underline-offset-4 hover:text-white hover:underline"
+                className="min-h-[44px] flex items-center text-xs text-white underline-offset-4 hover:text-notarial-gold hover:underline"
               >
                 Términos de Servicio
               </a>
