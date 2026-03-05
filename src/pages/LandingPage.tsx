@@ -100,13 +100,13 @@ const LandingPage = () => {
       <main>
         {/* Hero Split-Screen */}
         <section
-          className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
+          className="px-4 py-20 sm:px-6 sm:py-32 lg:px-8"
           aria-label="Sección principal"
         >
-          <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-2 lg:gap-16">
+          <div className="mx-auto grid max-w-[1200px] items-center gap-16 lg:grid-cols-2 lg:gap-20">
             {/* Left: Copy */}
-            <div className="space-y-6">
-              <h1 className="font-serif text-3xl font-bold leading-[1.2] tracking-tight text-notarial-light sm:text-4xl lg:text-5xl">
+            <div className="space-y-8">
+              <h1 className="text-4xl font-semibold leading-[1.2] tracking-tight text-notarial-light sm:text-5xl lg:text-[4.5rem]">
                 Escrituración Inteligente en Colombia.{" "}
                 <span className="text-notarial-green">
                   Cero Notas Devolutivas.
@@ -120,7 +120,7 @@ const LandingPage = () => {
               <div className="flex flex-wrap gap-4">
                 <Button
                   size="lg"
-                  className="min-h-[44px] min-w-[44px] bg-notarial-green text-secondary-foreground hover:bg-notarial-green/90"
+                  className="min-h-[44px] min-w-[44px] bg-notarial-green py-4 px-8 text-secondary-foreground hover:bg-notarial-green/90"
                   onClick={() => {
                     setIsRegister(true);
                     document
@@ -135,7 +135,7 @@ const LandingPage = () => {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="min-h-[44px] min-w-[44px] border-border/40 text-muted-foreground hover:bg-accent hover:text-notarial-light"
+                  className="min-h-[44px] min-w-[44px] border-border/40 py-4 px-8 text-muted-foreground hover:bg-accent hover:text-notarial-light"
                   onClick={() => setDemoOpen(true)}
                   aria-label="Ver demostración en video"
                 >
@@ -147,7 +147,7 @@ const LandingPage = () => {
 
             {/* Right: Auth Form (Glassmorphism) */}
             <div id="hero-form" className="flex items-start justify-center lg:justify-end">
-              <Card className="glass w-full max-w-md shadow-2xl">
+              <Card className="glass w-full max-w-md shadow-lg">
                 <CardHeader className="text-center">
                   <div className="mx-auto mb-2 flex items-center gap-2">
                     <Scale
@@ -201,7 +201,7 @@ const LandingPage = () => {
                     </div>
                     <Button
                       type="submit"
-                      className="min-h-[44px] w-full bg-notarial-green text-secondary-foreground hover:bg-notarial-green/90"
+                      className="min-h-[44px] w-full bg-notarial-green py-4 px-8 text-secondary-foreground hover:bg-notarial-green/90"
                       disabled={loading || !acceptedPolicy}
                     >
                       {loading
@@ -225,7 +225,7 @@ const LandingPage = () => {
                         Acepto la{" "}
                         <a
                           href="#"
-                          className="text-notarial-gold underline underline-offset-2 hover:text-notarial-gold/80"
+                          className="text-muted-foreground underline underline-offset-2 hover:text-notarial-light"
                           onClick={(e) => e.stopPropagation()}
                         >
                           Política de Tratamiento de Datos (Ley 1581)
@@ -249,13 +249,12 @@ const LandingPage = () => {
             </div>
           </div>
         </section>
-
         {/* Trust Signals */}
         <section
-          className="border-y border-border/20 bg-card/10 px-4 py-10 sm:px-6 lg:px-8"
+          className="border-y border-border/20 bg-card/10 px-4 py-20 sm:px-6 lg:px-8"
           aria-label="Señales de confianza"
         >
-          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 sm:grid-cols-3">
+          <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-8 sm:grid-cols-3">
             <div className="flex items-center gap-3 justify-center">
               <Lock
                 className="h-6 w-6 shrink-0 text-notarial-gold"
@@ -288,13 +287,13 @@ const LandingPage = () => {
 
         {/* FAQ Estructurada */}
         <section
-          className="px-4 py-16 sm:px-6 lg:px-8"
+          className="px-4 py-20 sm:py-32 sm:px-6 lg:px-8"
           aria-label="Preguntas frecuentes"
           itemScope
           itemType="https://schema.org/FAQPage"
         >
           <div className="mx-auto max-w-3xl">
-            <h2 className="mb-8 text-center font-serif text-2xl font-bold text-notarial-light">
+            <h2 className="mb-10 text-center text-2xl font-semibold text-notarial-light sm:text-3xl">
               Preguntas Frecuentes
             </h2>
             <Accordion type="single" collapsible className="space-y-2">
@@ -307,7 +306,7 @@ const LandingPage = () => {
                   value="q1"
                   className="rounded-lg border-border/30 bg-card/10 px-4"
                 >
-                  <AccordionTrigger className="text-left text-notarial-light hover:no-underline font-serif">
+                   <AccordionTrigger className="text-left text-notarial-light hover:no-underline">
                     <span itemProp="name">
                       ¿Cómo automatizar minutas del Banco de Bogotá?
                     </span>
@@ -318,16 +317,11 @@ const LandingPage = () => {
                       itemProp="acceptedAnswer"
                       itemType="https://schema.org/Answer"
                     >
-                      <p
+                       <p
                         itemProp="text"
                         className="leading-relaxed text-muted-foreground"
                       >
-                        Sertuss permite cargar los documentos del Banco de
-                        Bogotá (pagarés, instrucciones notariales, certificados)
-                        y extrae automáticamente los datos del comprador,
-                        vendedor, inmueble e hipoteca. La minuta se genera en
-                        formato Word lista para firma, eliminando errores
-                        manuales y notas devolutivas de la ORIP.
+                        Carga pagarés, instrucciones y certificados del Banco de Bogotá. Sertuss extrae datos automáticamente y genera la minuta en Word lista para firma.
                       </p>
                     </div>
                   </AccordionContent>
@@ -343,7 +337,7 @@ const LandingPage = () => {
                   value="q2"
                   className="rounded-lg border-border/30 bg-card/10 px-4"
                 >
-                  <AccordionTrigger className="text-left text-notarial-light hover:no-underline font-serif">
+                  <AccordionTrigger className="text-left text-notarial-light hover:no-underline">
                     <span itemProp="name">
                       ¿Cómo evitar errores de registro en escrituras?
                     </span>
@@ -358,13 +352,7 @@ const LandingPage = () => {
                         itemProp="text"
                         className="leading-relaxed text-muted-foreground"
                       >
-                        Sertuss valida automáticamente los datos contra el
-                        certificado de tradición: matrícula inmobiliaria,
-                        linderos, identificadores prediales (CHIP o Número
-                        Predial Nacional) y datos de las partes. El sistema
-                        detecta inconsistencias antes de generar la escritura,
-                        reduciendo a cero las notas devolutivas de la Oficina de
-                        Registro.
+                        Valida matrícula, linderos, CHIP y datos de las partes contra el certificado de tradición. Detecta inconsistencias antes de la escritura, eliminando notas devolutivas.
                       </p>
                     </div>
                   </AccordionContent>

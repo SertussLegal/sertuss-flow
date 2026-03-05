@@ -43,11 +43,11 @@
     --sidebar-border: 216 28% 22%;
     --sidebar-ring: 213 45% 29%;
 
-    --notarial-dark: 222 47% 11%;
+    --notarial-dark: 222 71% 4%;
     --notarial-blue: 213 45% 29%;
-    --notarial-green: 152 52% 24%;
-    --notarial-gold: 43 74% 49%;
-    --notarial-light: 210 20% 96%;
+    --notarial-green: 160 84% 39%;
+    --notarial-gold: 43 96% 56%;
+    --notarial-light: 210 40% 98%;
   }
 
   .dark {
@@ -103,8 +103,8 @@
 
 @layer utilities {
   .glass {
-    @apply backdrop-blur-xl border;
-    background: hsl(0 0% 100% / 0.08);
-    border-color: hsl(0 0% 100% / 0.15);
+    @apply backdrop-blur-md border;
+    background: hsl(0 0% 100% / 0.05);
+    border-color: hsl(0 0% 100% / 0.10);
   }
 }
