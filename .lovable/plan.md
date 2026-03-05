@@ -1,43 +1,39 @@
-## "Elevated Cloud Productivity" — Sertuss Landing Refinement
+
+
+## "Cloud Productivity" — Final Polish
+
+Most of the requested design is already in place. Here are the remaining deltas:
 
 ### 1. `src/index.css`
-
-- Update `--notarial-dark` to `222 84% 5%` (`#020617`)
-- Update `.glass` utility: `backdrop-blur-2xl`, `bg-white/5`, `border-white/10`
-- Add `.bg-gradient-dark` utility with a diagonal linear gradient from `#020617` to a subtle emerald-tinted navy (`#041525` via `#064e3b` at 5% opacity blend), creating depth without noise
+- **Gradient**: Already exists but uses `#041525` as midpoint. No change needed — it already blends `#020617` with emerald-tinted navy subtly.
+- **Glass utility**: Already `backdrop-blur-2xl`. Keep as-is (Tailwind doesn't have `blur-3xl` by default).
 
 ### 2. `src/pages/LandingPage.tsx`
 
-**Background**: Replace `bg-notarial-dark` on root div with the new gradient class
+**Already correct** (no changes needed):
+- H1 text, subheadline, CTA "Empezar ahora"
+- Header button ghost style with `border-white/20 text-white hover:bg-white/10`
+- Glassmorphism card with `backdrop-blur-2xl bg-white/[0.05] border-white/10 rounded-2xl`
+- Inputs at `h-12` (48px) with `bg-white/10`
+- Checkbox in white, policy text in white
+- Trust signals: "Seguridad Institucional", "Alineado con estándares SNR"
 
-**Header button**: Update to ghost style with `border-white/20 text-white hover:bg-white/10`
+**Changes needed:**
 
-**Hero copy** (already correct, no changes needed to H1/subheadline/CTA text)
+1. **Subheadline update**: Change "...con la velocidad y exactitud que el sector exige." to "...para procesar minutas con la máxima velocidad."
 
-**Glassmorphism card**: Replace `glass` with explicit `backdrop-blur-2xl bg-white/[0.05] border border-white/10 rounded-2xl shadow-2xl` (24px corners). Remove Card component wrapper, use raw div for full control over border-radius
+2. **Trust signal #3**: Change "Infraestructura de Alta Disponibilidad" to "Cifrado de Grado Bancario". Change icon from `Cloud` to `Shield` (or keep `Lock`).
 
-**Form inputs**: Keep `h-12` (48px). Change input background from `bg-notarial-light` to `bg-white/10 text-white placeholder:text-slate-400 border-white/10` for cohesion with glass aesthetic
+3. **Glassmorphism card**: Upgrade `rounded-2xl` to `rounded-3xl` (24px) per request.
 
-**Buttons**: Primary CTA add `shadow-lg shadow-emerald-500/20` for glow. Rounded to `rounded-lg` (8px)
+4. **FAQ accordion item #1**: Change `border-border/30 bg-card/10` to `border-white/10 bg-white/[0.03]` for consistency with item #2.
 
-**Checkbox/Legal text**: Change `text-muted-foreground` to `text-white` on policy label. Checkbox border to `border-white`
+5. **FAQ answer text**: Change `text-muted-foreground` to `text-slate-300` for better contrast on dark background.
 
-**Trust signals text**: Update to "Seguridad Institucional", "Alineado con estándares SNR", "Infraestructura de Alta Disponibilidad"
+6. **Footer links**: Change `text-slate-400` to `text-slate-300` for improved legibility.
 
-**Demo button**: Update to `border-white/20 text-white hover:bg-white/10`
-
-**FAQ section**: Keep `bg-white/[0.02]` differentiated background. Accordion item backgrounds to `bg-white/[0.03]`. Answer text stays concise (already ~50 words)
-
-**Footer**: Keep `text-slate-400` (already readable)
-
-### 3. `tailwind.config.ts`
-
-No changes needed (Inter sans-serif already unified, animations already present)
+### 3. No changes to `tailwind.config.ts` or `src/index.css`
 
 ### Files modified
+- `src/pages/LandingPage.tsx` — 6 small targeted edits
 
-- `src/index.css` — gradient utility, glass update, dark color token
-- `src/pages/LandingPage.tsx` — visual refinements across all sections  
-
-
-aplica los cambios de texto positivo en el Hero (Agilidad y Precisión) y asegúrate de que todos los textos pequeños del footer y labels sean blanco puro (#FFFFFF) para máxima legibilidad.
