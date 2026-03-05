@@ -1,3 +1,42 @@
+export interface Organization {
+  id: string;
+  name: string;
+  nit: string | null;
+  address: string | null;
+  credit_balance: number;
+  created_at: string;
+}
+
+export interface Profile {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  organization_id: string | null;
+  role: "owner" | "admin" | "operator";
+  created_at: string;
+}
+
+export interface ActivityLog {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface Invitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: "owner" | "admin" | "operator";
+  invited_by: string;
+  accepted_at: string | null;
+  created_at: string;
+}
+
 export interface Persona {
   id: string;
   nombre_completo: string;
