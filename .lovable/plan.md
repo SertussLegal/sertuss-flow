@@ -1,38 +1,40 @@
 
 
-## Rediseño "Elevated Corporate Tech" — Landing Sertuss
+## Evolución "Productivity Cloud" — Sertuss Landing
 
 ### Cambios por archivo
 
-**1. `index.html`**
-- Reemplazar Playfair Display + Inter por **Geist Sans** (via CDN o fallback a Inter que ya está cargado — Geist no tiene Google Fonts oficial, se mantiene Inter como equivalente disponible)
-- JSON-LD y meta tags se mantienen intactos
+**1. `src/index.css`**
+- Actualizar `--notarial-dark` de `222 71% 4%` a `222 47% 11%` (azul pizarra profundo, ~`#0f172a`)
+- Actualizar `--muted-foreground` a un gris más claro (`215 20% 65%`) para mejor legibilidad
+- Actualizar `.glass`: `backdrop-blur-xl`, `bg-white/5`, `border-white/20` (glassmorphism avanzado)
+- Añadir keyframes `fade-in-up` y clase `animate-fade-in-up` para animación de entrada del hero
 
-**2. `src/index.css`**
-- Actualizar `--notarial-dark` a `#020617` (HSL: 222 71% 4%)
-- Actualizar `--notarial-green` a `#10b981` (HSL: 160 84% 39%)
-- Glassmorphism `.glass`: cambiar a `backdrop-blur-md`, `bg-white/5`, `border-white/10`
-- Body base: font-size 16px, line-height 1.5 (ya implementado)
+**2. `tailwind.config.ts`**
+- Añadir keyframe `fade-in-up` y animation en `extend`
+- Confirmar fontFamily sans unified (ya está Inter)
 
-**3. `tailwind.config.ts`**
-- Cambiar `fontFamily.serif` y `fontFamily.sans` ambos a `['Inter', 'system-ui', 'sans-serif']` (unified sans-serif approach)
+**3. `src/pages/LandingPage.tsx` — Rediseño completo**
 
-**4. `src/pages/LandingPage.tsx` — Rediseño visual completo**
+Copy:
+- H1: "Agilidad y Precisión en tu Operación Notarial." (sin span verde, todo `text-notarial-light`)
+- Subheadline: El texto propositivo proporcionado
+- CTA primario: "Empezar ahora" (reemplaza "Cargar mi primera Minuta")
+- CTA secundario: "Ver Demo" se mantiene
 
-Cambios principales:
-- **H1**: Eliminar `font-serif`, usar `text-[4.5rem] font-semibold leading-[1.2]` (72px, weight 600) en desktop, responsive down a `text-4xl` en móvil
-- **Fondo**: `bg-[#020617]` via la variable CSS actualizada
-- **Botones primarios**: `bg-emerald-500 text-white hover:bg-emerald-400` con padding `py-4 px-8` (16px/32px)
-- **Hero section**: Aumentar padding a `py-32` (128px vertical spacing)
-- **Trust signals section**: Aumentar `py-20` con `mt-32` gap
-- **FAQ section**: Aumentar `py-32`, eliminar `font-serif` de triggers, truncar respuestas a ~50 palabras
-- **Glassmorphism card**: `backdrop-blur-md bg-white/5 border border-white/10 shadow-lg`
-- **Dorado** (`#fbbf24`): restringir solo a logo Scale icon e íconos de seguridad (Lock); quitar de links de política
-- **FAQ accordion triggers**: Cambiar a sans-serif, mantener microdata Schema.org
-- **Checkbox y legal compliance**: Ya implementado, se mantiene
+Layout y UX:
+- Hero gap aumentado: `lg:gap-24` (de `lg:gap-20`)
+- Inputs: añadir `h-12` (48px height) a todos los campos del formulario
+- Header "Iniciar Sesión" botón: añadir `border border-white/20 text-slate-200` para visibilidad
+- Textos pequeños (header, labels, footer): usar `text-slate-200` / `text-slate-300` (#f1f5f9 / #cbd5e1)
+- Animación: envolver hero left en `animate-fade-in-up` con delay staggered
 
-**5. Accesibilidad**
-- Contraste `#f8fafc` sobre `#020617` = ~18:1 (cumple AA)
-- `#10b981` texto blanco sobre botón = 3.9:1 (borderline; se usará texto `#020617` oscuro sobre verde para cumplir 4.5:1, o se mantiene blanco con font-weight 600 que es aceptable para large text)
-- Touch targets 44px mantenidos via `min-h-[44px]`
+FAQ:
+- Sección con fondo diferenciado: `bg-white/[0.02]` para separación visual
+- Respuestas reescritas con enfoque en beneficio (max 50 palabras):
+  - Q1: "Sertuss integra algoritmos que extraen datos de pagarés, instrucciones y certificados del Banco de Bogotá en segundos. El abogado se enfoca en la validación jurídica mientras el sistema genera la minuta en Word lista para firma."
+  - Q2: "El motor de validación cruza matrícula, linderos, CHIP y datos de las partes contra el certificado de tradición en tiempo real. Detecta inconsistencias antes de la escritura, eliminando notas devolutivas de la ORIP."
+
+Footer:
+- Textos a `text-slate-400` para mejor contraste
 
