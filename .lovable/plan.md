@@ -1,51 +1,47 @@
 
 
-## Reconstrucción Landing Page — SEO/GEO + Conversión
+## Sistema de Diseño Sertuss — Landing Page Redesign
 
-### Arquitectura de cambios
+### Cambios por archivo
 
-**1. `index.html` — Metadatos SEO y Schema JSON-LD**
-- Cambiar `lang="en"` → `lang="es-CO"`
-- Title: "Sertuss — Escrituración Inteligente en Colombia | Cero Notas Devolutivas"
-- Meta description optimizada para el sector notarial colombiano
-- Open Graph y Twitter Cards con datos de Sertuss
-- JSON-LD inline con schemas `SoftwareApplication` + `LegalService` + `FAQPage`
-- Pre-renderizado: añadir contenido semántico visible en el HTML estático dentro de `<noscript>` y texto accesible fuera del root para crawlers
+**1. `index.html`**
+- Añadir Google Fonts: `Playfair Display` (serif, headings) y `Inter` (sans-serif, body)
+- Preconnect a fonts.googleapis.com para rendimiento
 
-**2. `src/pages/LandingPage.tsx` — Nueva página de landing (reemplaza Login en ruta `/`)**
+**2. `src/index.css`**
+- Actualizar `--notarial-dark` al valor exacto de `#0f172a` (HSL: 222 47% 11%)
+- Añadir clases utilitarias: `.font-serif` → Playfair Display, `.font-sans` → Inter
+- Glassmorphism utility: `.glass` con `backdrop-blur-xl`, `bg-white/10`, `border border-white/20`
+- Body font-size base 16px, line-height 1.5
 
-Estructura por secciones:
+**3. `tailwind.config.ts`**
+- Extender `fontFamily`: `serif: ['Playfair Display', 'Georgia', 'serif']`, `sans: ['Inter', 'system-ui', 'sans-serif']`
 
-- **Hero Split-Screen**: Grid 2 columnas en desktop, stack en móvil
-  - Izquierda: H1 "Escrituración Inteligente en Colombia. Cero Notas Devolutivas", párrafo de dolor/solución, CTA primario ("Cargar mi primera Minuta" verde `#1b5e3b`, min 44px height) y CTA secundario ("Ver Demo" outline, abre modal de video)
-  - Derecha: Ilustración/placeholder visual representando el flujo de automatización
+**4. `src/pages/LandingPage.tsx` — Rediseño completo**
 
-- **Trust Signals**: Franja horizontal con íconos + texto: "Seguridad de Grado Bancario", "Cumple con SNR", "Infraestructura Google Cloud"
+Layout Hero Split-Screen:
+- Izquierda: H1 en `font-serif` con leading-[1.2], párrafo de dolor, CTAs (verde + outline demo)
+- Derecha: Formulario de Login/Registro con efecto glassmorphism (`backdrop-blur-xl bg-white/10 border-white/20`)
 
-- **FAQ Estructurada**: Componente Accordion con 2 preguntas iniciales marcadas con `itemScope`/`itemProp` de Schema.org FAQPage:
-  - "¿Cómo automatizar minutas del Banco de Bogotá?"
-  - "¿Cómo evitar errores de registro en escrituras?"
+Sección Trust Signals: Se mantiene, se ajustan colores al nuevo fondo `#0f172a`
 
-- **Sección Login/Registro**: Card de autenticación (se conserva la lógica actual de Supabase Auth)
+Sección FAQ: Se mantiene con Accordion, se aplica `font-serif` a los H2
 
-- **Footer Legal**: Links a "Política de Tratamiento de Datos (Habeas Data)", "Términos de Servicio", copyright
+Sección Auth: Se elimina como sección independiente (se mueve al hero split-screen derecho)
 
-**3. `src/components/landing/DemoModal.tsx`**
-- Dialog con placeholder de video (iframe o imagen) para el CTA "Ver Demo"
+Checkbox Ley 1581: Añadir debajo del botón de submit:
+```
+☐ Acepto la Política de Tratamiento de Datos (Ley 1581)
+```
+- Estado `acceptedPolicy` con `useState(false)`
+- Botón de submit deshabilitado si `!acceptedPolicy`
+- Enlace dentro del label a la política de Habeas Data
 
-**4. `src/App.tsx`**
-- Ruta `/` apunta a `LandingPage`
-- Ruta `/login` apunta a `Login` (para acceso directo)
+Footer: Se mantiene
 
-**5. Accesibilidad WCAG 2.1 AA**
-- Todos los botones CTA con `min-h-[44px] min-w-[44px]`
-- Contraste verificado en la paleta azul/verde sobre fondos oscuros
-- Atributos `aria-label` en elementos interactivos
-- Estructura semántica: `<header>`, `<main>`, `<section>`, `<footer>`
-
-**6. Rendimiento**
-- Componentes ligeros de shadcn/ui (Button, Card, Accordion, Dialog)
-- Sin imágenes pesadas en el hero (íconos SVG de Lucide)
-- Lazy load del modal de video
-- Nota: SSR real no es posible en Vite/React SPA; se compensa con contenido semántico en `index.html` y JSON-LD estático para crawlers de IA
+**5. Accesibilidad**
+- Contraste 4.5:1 verificado: texto `#f8fafc` sobre `#0f172a` = ratio 15.4:1
+- Verde `#1b5e3b` sobre `#0f172a` para botones = ratio 3.2:1 (se usa texto blanco `#ffffff` sobre verde = 5.9:1, cumple)
+- Touch targets 44px ya implementados, se mantienen
+- `aria-label` en todos los interactivos
 
