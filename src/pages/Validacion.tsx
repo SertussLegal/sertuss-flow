@@ -259,6 +259,7 @@ const Validacion = () => {
         inmueble={inmueble}
         actos={actos}
         onConfirm={handleConfirmGenerate}
+        generating={generating}
       />
     </div>
   );

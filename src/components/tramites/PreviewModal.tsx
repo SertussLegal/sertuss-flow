@@ -119,8 +119,10 @@ const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, a
       </ScrollArea>
 
       <DialogFooter className="gap-2">
-        <Button variant="outline" onClick={() => onOpenChange(false)}>Volver a Editar</Button>
-        <Button onClick={onConfirm} className="bg-notarial-green hover:bg-notarial-green/90">Confirmar y Generar</Button>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={generating}>Volver a Editar</Button>
+        <Button onClick={onConfirm} disabled={generating} className="bg-notarial-green hover:bg-notarial-green/90">
+          {generating ? "Generando..." : "Confirmar y Generar"}
+        </Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
