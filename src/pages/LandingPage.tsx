@@ -100,7 +100,7 @@ const LandingPage = () => {
       <main>
         {/* Hero Split-Screen */}
         <section
-          className="px-4 py-20 sm:px-6 sm:py-[64px] mx-0 lg:px-[32px]"
+          className="hero-gradient px-4 py-20 sm:px-6 sm:py-[64px] mx-0 lg:px-[32px]"
           aria-label="Sección principal">
           
           <div className="mx-auto grid max-w-[1200px] items-center gap-16 lg:grid-cols-2 lg:gap-24">
