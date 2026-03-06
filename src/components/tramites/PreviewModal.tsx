@@ -15,6 +15,7 @@ interface PreviewModalProps {
   inmueble: Inmueble;
   actos: Actos;
   onConfirm: () => void;
+  generating?: boolean;
 }
 
 const PersonaPreview = ({ persona, label }: { persona: Persona; label: string }) => (
@@ -40,7 +41,7 @@ const PersonaPreview = ({ persona, label }: { persona: Persona; label: string })
   </div>
 );
 
-const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, actos, onConfirm }: PreviewModalProps) => (
+const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, actos, onConfirm, generating }: PreviewModalProps) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-2xl max-h-[90vh]">
       <DialogHeader>
@@ -118,8 +119,10 @@ const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, a
       </ScrollArea>
 
       <DialogFooter className="gap-2">
-        <Button variant="outline" onClick={() => onOpenChange(false)}>Volver a Editar</Button>
-        <Button onClick={onConfirm} className="bg-notarial-green hover:bg-notarial-green/90">Confirmar y Generar</Button>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={generating}>Volver a Editar</Button>
+        <Button onClick={onConfirm} disabled={generating} className="bg-notarial-green hover:bg-notarial-green/90">
+          {generating ? "Generando..." : "Confirmar y Generar"}
+        </Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

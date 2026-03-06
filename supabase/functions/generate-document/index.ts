@@ -1,0 +1,148 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const { vendedores, compradores, inmueble, actos } = await req.json();
+
+    const systemPrompt = `Eres un asistente jurídico experto en derecho notarial colombiano (Ley 1579 de 2012, Decreto 960 de 1970).
+Tu tarea es generar el contenido legal estructurado para una escritura pública de compraventa (y posible hipoteca) a partir de los datos proporcionados.
+
+Reglas:
+- Usa lenguaje formal notarial colombiano.
+- Los valores monetarios deben expresarse en letras y números (ej: "CIEN MILLONES DE PESOS M/CTE ($100.000.000)").
+- Las cédulas deben formatearse con puntos de miles.
+- Si hay hipoteca, incluye las cláusulas hipotecarias completas.
+- Si hay afectación a vivienda familiar, incluye la cláusula correspondiente.
+- Si hay apoderado, incluye la cláusula de poder.
+- Si hay persona jurídica, usa la razón social y NIT en lugar de nombre y cédula.`;
+
+    const userPrompt = `Datos del trámite:
+
+VENDEDORES:
+${JSON.stringify(vendedores, null, 2)}
+
+COMPRADORES:
+${JSON.stringify(compradores, null, 2)}
+
+INMUEBLE:
+${JSON.stringify(inmueble, null, 2)}
+
+ACTOS:
+${JSON.stringify(actos, null, 2)}
+
+Genera el contenido legal estructurado para llenar la plantilla de escritura pública.`;
+
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "fill_template",
+          description: "Devuelve los campos para llenar la plantilla de escritura pública de compraventa/hipoteca.",
+          parameters: {
+            type: "object",
+            properties: {
+              numero_escritura: { type: "string", description: "Número de la escritura (dejar vacío si no se conoce)" },
+              fecha_escritura: { type: "string", description: "Fecha en letras, ej: 'cinco (5) de marzo de dos mil veintiséis (2026)'" },
+              comparecientes_vendedor: { type: "string", description: "Texto legal completo de comparecencia de vendedor(es) con identificación" },
+              comparecientes_comprador: { type: "string", description: "Texto legal completo de comparecencia de comprador(es) con identificación" },
+              clausula_objeto: { type: "string", description: "Cláusula PRIMERA: objeto de la compraventa, descripción del inmueble" },
+              clausula_precio: { type: "string", description: "Cláusula SEGUNDA: precio y forma de pago en letras y números" },
+              clausula_tradicion: { type: "string", description: "Cláusula TERCERA: tradición y libertad del inmueble" },
+              clausula_entrega: { type: "string", description: "Cláusula CUARTA: entrega material del inmueble" },
+              clausula_gastos: { type: "string", description: "Cláusula QUINTA: gastos notariales y de registro" },
+              clausula_hipoteca: { type: "string", description: "Cláusula de constitución de hipoteca (vacío si no aplica)" },
+              clausula_afectacion_vivienda: { type: "string", description: "Cláusula de afectación a vivienda familiar (vacío si no aplica)" },
+              clausula_apoderado: { type: "string", description: "Cláusula de poder (vacío si no aplica)" },
+              matricula_inmobiliaria: { type: "string", description: "Número de matrícula inmobiliaria" },
+              identificador_predial: { type: "string", description: "Número de identificador predial" },
+              direccion_inmueble: { type: "string", description: "Dirección completa del inmueble" },
+              municipio: { type: "string", description: "Municipio del inmueble" },
+              departamento: { type: "string", description: "Departamento del inmueble" },
+              linderos: { type: "string", description: "Linderos del inmueble" },
+              area: { type: "string", description: "Área del inmueble" },
+              valor_compraventa_letras: { type: "string", description: "Valor de compraventa en letras y números" },
+              valor_hipoteca_letras: { type: "string", description: "Valor de hipoteca en letras y números (vacío si no aplica)" },
+              entidad_bancaria: { type: "string", description: "Nombre de la entidad bancaria (vacío si no aplica)" },
+            },
+            required: [
+              "fecha_escritura", "comparecientes_vendedor", "comparecientes_comprador",
+              "clausula_objeto", "clausula_precio", "clausula_tradicion",
+              "clausula_entrega", "clausula_gastos", "matricula_inmobiliaria",
+              "identificador_predial", "direccion_inmueble", "municipio",
+              "departamento", "valor_compraventa_letras"
+            ],
+            additionalProperties: false,
+          },
+        },
+      },
+    ];
+
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        tools,
+        tool_choice: { type: "function", function: { name: "fill_template" } },
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("AI gateway error:", response.status, errText);
+
+      if (response.status === 429) {
+        return new Response(JSON.stringify({ error: "Límite de solicitudes excedido. Intenta de nuevo en unos minutos." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (response.status === 402) {
+        return new Response(JSON.stringify({ error: "Créditos de IA agotados. Contacta al administrador." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "Error al generar documento con IA" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await response.json();
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+
+    if (!toolCall?.function?.arguments) {
+      console.error("No tool call in response:", JSON.stringify(result));
+      return new Response(JSON.stringify({ error: "La IA no devolvió datos estructurados" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const templateData = JSON.parse(toolCall.function.arguments);
+
+    return new Response(JSON.stringify({ templateData }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("generate-document error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error desconocido" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

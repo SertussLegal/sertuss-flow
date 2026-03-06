@@ -114,25 +114,79 @@ const Validacion = () => {
     }
   };
 
+  const [generating, setGenerating] = useState(false);
+
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
       return;
     }
 
-    // Consume credit
-    const { data: success, error } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-    if (error || !success) {
-      toast({ title: "Sin créditos", description: "Bolsa de créditos agotada. Contacta a tu administrador.", variant: "destructive" });
+    setGenerating(true);
+    try {
+      // Step 1: Consume credit
+      const { data: success, error: creditError } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
+      if (creditError || !success) {
+        toast({ title: "Sin créditos", description: "Bolsa de créditos agotada. Contacta a tu administrador.", variant: "destructive" });
+        setPreviewOpen(false);
+        return;
+      }
+
+      // Step 2: Call AI edge function
+      const { data: aiData, error: aiError } = await supabase.functions.invoke("generate-document", {
+        body: { vendedores, compradores, inmueble, actos },
+      });
+      if (aiError || !aiData?.templateData) {
+        toast({ title: "Error de IA", description: aiData?.error || aiError?.message || "No se pudo generar el contenido.", variant: "destructive" });
+        return;
+      }
+
+      // Step 3: Fetch template and fill with docxtemplater
+      const templateResp = await fetch("/template_venta_hipoteca.docx");
+      if (!templateResp.ok) throw new Error("No se pudo cargar la plantilla .docx");
+      const templateBuf = await templateResp.arrayBuffer();
+
+      const PizZip = (await import("pizzip")).default;
+      const Docxtemplater = (await import("docxtemplater")).default;
+
+      const zip = new PizZip(templateBuf);
+      const doc = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        delimiters: { start: "{{", end: "}}" },
+      });
+
+      doc.render(aiData.templateData);
+
+      const out = doc.getZip().generate({
+        type: "blob",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+
+      // Step 4: Download
+      const tipoLabel = actos.tipo_acto || "Compraventa";
+      const fileName = `Escritura_${tipoLabel}_${tramiteId.slice(0, 8)}.docx`;
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Step 5: Update status to trigger activity log
+      await supabase.from("tramites").update({ status: "word_generado" as any, updated_at: new Date().toISOString() }).eq("id", tramiteId);
+      await refreshCredits();
+
       setPreviewOpen(false);
-      return;
+      toast({ title: "Documento generado", description: "Escritura descargada exitosamente." });
+    } catch (err: any) {
+      console.error("Generate error:", err);
+      toast({ title: "Error", description: err.message || "Error al generar el documento.", variant: "destructive" });
+    } finally {
+      setGenerating(false);
     }
-
-    await supabase.from("tramites").update({ status: "word_generado" as any, updated_at: new Date().toISOString() }).eq("id", tramiteId);
-    await refreshCredits();
-
-    setPreviewOpen(false);
-    toast({ title: "Documento generado", description: "Estado actualizado a Word Generado." });
   };
 
   return (
@@ -205,6 +259,7 @@ const Validacion = () => {
         inmueble={inmueble}
         actos={actos}
         onConfirm={handleConfirmGenerate}
+        generating={generating}
       />
     </div>
   );
