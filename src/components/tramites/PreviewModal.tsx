@@ -15,6 +15,7 @@ interface PreviewModalProps {
   inmueble: Inmueble;
   actos: Actos;
   onConfirm: () => void;
+  generating?: boolean;
 }
 
 const PersonaPreview = ({ persona, label }: { persona: Persona; label: string }) => (
