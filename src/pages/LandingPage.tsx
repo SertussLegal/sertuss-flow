@@ -74,7 +74,7 @@ const LandingPage = () => {
   return (
     <div className="min-h-screen bg-gradient-dark">
       {/* Header */}
-      <header className="border-b border-border/20 px-4 py-4 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-50 border-b border-border/20 bg-gradient-dark px-4 py-4 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div className="flex items-center gap-2">
             <Scale className="h-7 w-7 text-notarial-gold" aria-hidden="true" />
