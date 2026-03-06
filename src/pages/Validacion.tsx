@@ -121,69 +121,75 @@ const Validacion = () => {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
       return;
     }
-
+  
     setGenerating(true);
     try {
-      // Step 1: Consume credit
-      const { data: success, error: creditError } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-      if (creditError || !success) {
-        toast({ title: "Sin créditos", description: "Bolsa de créditos agotada. Contacta a tu administrador.", variant: "destructive" });
-        setPreviewOpen(false);
+      // Paso 1: Consumir crédito (Plan item 1)
+      const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
+      if (!success) {
+        toast({ title: "Sin créditos", description: "Bolsa agotada.", variant: "destructive" });
         return;
       }
-
-      // Step 2: Call AI edge function
-      const { data: aiData, error: aiError } = await supabase.functions.invoke("generate-document", {
+  
+      // Paso 2: Invocar Edge Function (Capa de enriquecimiento legal)
+      const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
         body: { vendedores, compradores, inmueble, actos },
       });
-      if (aiError || !aiData?.templateData) {
-        toast({ title: "Error de IA", description: aiData?.error || aiError?.message || "No se pudo generar el contenido.", variant: "destructive" });
-        return;
-      }
-
-      // Step 3: Fetch template and fill with docxtemplater
-      const templateResp = await fetch("/template_venta_hipoteca.docx");
-      if (!templateResp.ok) throw new Error("No se pudo cargar la plantilla .docx");
-      const templateBuf = await templateResp.arrayBuffer();
-
+      if (aiError) throw new Error("Error en la IA legal: " + aiError.message);
+  
+      // Paso 3: Cargar plantilla y procesar con docxtemplater
+      const response = await fetch("/template_venta_hipoteca.docx");
+      const content = await response.arrayBuffer();
+      
       const PizZip = (await import("pizzip")).default;
       const Docxtemplater = (await import("docxtemplater")).default;
-
-      const zip = new PizZip(templateBuf);
+  
+      const zip = new PizZip(content);
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
-        delimiters: { start: "{{", end: "}}" },
+        // Cambiado a llaves simples según tu referencia de tags (Imagen 11)
+        delimiters: { start: "{", end: "}" },
       });
-
-      doc.render(aiData.templateData);
-
+  
+      // Usamos el failsafe rule: si un campo está vacío, pone una línea ____
+      const safeData = Object.fromEntries(
+        Object.entries(enrichedData).map(([k, v]) => [k, v || "__________"])
+      );
+  
+      doc.render(safeData);
+  
+      // Paso 4: Generar Blob y descargar
       const out = doc.getZip().generate({
         type: "blob",
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
-
-      // Step 4: Download
-      const tipoLabel = actos.tipo_acto || "Compraventa";
-      const fileName = `Escritura_${tipoLabel}_${tramiteId.slice(0, 8)}.docx`;
-      const url = URL.createObjectURL(out);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Step 5: Update status to trigger activity log
-      await supabase.from("tramites").update({ status: "word_generado" as any, updated_at: new Date().toISOString() }).eq("id", tramiteId);
+  
+      const fileName = `Escritura_${actos.tipo_acto || 'Tramite'}_${tramiteId.slice(0, 8)}.docx`;
+      const url = window.URL.createObjectURL(out);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+  
+      // Paso 5: Actualización y Log de Auditoría (Plan item 4a y 4b)
+      await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
+      
+      // Insert de auditoría explícito para cumplimiento legal (Imagen 13)
+      await supabase.from("activity_logs").insert({
+        organization_id: profile.organization_id,
+        user_id: profile.id,
+        action: 'word_generated',
+        entity_type: 'tramite',
+        entity_id: tramiteId,
+        metadata: { tipo: actos.tipo_acto, num_vendedores: vendedores.length }
+      });
+  
       await refreshCredits();
-
-      setPreviewOpen(false);
-      toast({ title: "Documento generado", description: "Escritura descargada exitosamente." });
+      toast({ title: "¡Éxito!", description: "Documento generado correctamente." });
+  
     } catch (err: any) {
-      console.error("Generate error:", err);
-      toast({ title: "Error", description: err.message || "Error al generar el documento.", variant: "destructive" });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setGenerating(false);
     }
