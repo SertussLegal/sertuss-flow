@@ -110,4 +110,7 @@
   .bg-gradient-dark {
     background: linear-gradient(135deg, #020617 0%, #041525 50%, #020617 100%);
   }
+  .hero-gradient {
+    background: linear-gradient(90deg, #020617 0%, rgba(2, 6, 23, 0.85) 55.77%, #2D5B8C 100%);
+  }
 }
