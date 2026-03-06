@@ -120,3 +120,17 @@ Database trigger on `tramites` UPDATE: when status changes to `word_generado`, a
 | `src/pages/LandingPage.tsx` | **No changes** — visual styles preserved |
 | `src/index.css` | **No changes** |
 
+
+## Generate Word Document with Gemini AI (IMPLEMENTED)
+
+### Architecture
+Frontend → consume_credit RPC → generate-document edge function (Gemini AI) → docxtemplater fill → browser download → update status to word_generado
+
+### Implemented
+- Edge function `supabase/functions/generate-document/index.ts` with Lovable AI Gateway (Gemini 3 Flash)
+- Tool calling for structured JSON extraction of legal template fields
+- `docxtemplater` + `pizzip` for client-side .docx generation
+- Auto-download with tramite name
+- Credit validation before generation
+- Status update triggers activity log
+- Loading state in PreviewModal during generation
