@@ -41,7 +41,7 @@ const PersonaPreview = ({ persona, label }: { persona: Persona; label: string })
   </div>
 );
 
-const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, actos, onConfirm }: PreviewModalProps) => (
+const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, actos, onConfirm, generating }: PreviewModalProps) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-2xl max-h-[90vh]">
       <DialogHeader>
