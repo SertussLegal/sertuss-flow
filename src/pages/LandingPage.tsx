@@ -100,7 +100,7 @@ const LandingPage = () => {
       <main>
         {/* Hero Split-Screen */}
         <section
-          className="px-4 py-20 sm:px-6 lg:px-8 sm:py-[64px]"
+          className="px-4 py-20 sm:px-6 sm:py-[64px] mx-0 lg:px-[32px]"
           aria-label="Sección principal">
           
           <div className="mx-auto grid max-w-[1200px] items-center gap-16 lg:grid-cols-2 lg:gap-24">
@@ -248,7 +248,7 @@ const LandingPage = () => {
         </section>
         {/* Trust Signals */}
         <section
-          className="border-y border-white/10 bg-white/[0.02] px-4 sm:px-6 lg:px-8 py-[64px]"
+          className="border-y border-white/10 bg-white/[0.02] sm:px-6 lg:px-8 py-[64px] px-[28px] mx-0"
           aria-label="Señales de confianza">
           
           <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-8 sm:grid-cols-3">
