@@ -153,8 +153,9 @@ const Validacion = () => {
       });
   
       // Usamos el failsafe rule: si un campo está vacío, pone una línea ____
+      const templateFields = enrichedData.templateData || enrichedData;
       const safeData = Object.fromEntries(
-        Object.entries(enrichedData).map(([k, v]) => [k, v || "__________"])
+        Object.entries(templateFields).map(([k, v]) => [k, typeof v === 'string' ? (v || "__________") : v])
       );
   
       doc.render(safeData);
