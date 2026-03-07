@@ -110,9 +110,9 @@ const LandingPage = () => {
                 Agilidad y Precisión en tu Operación Notarial.
               </h1>
               <p className="max-w-lg text-lg leading-relaxed text-slate-300">
-                Optimiza el diligenciamiento de formatos con inteligencia
-                documental. Sertuss es el aliado tecnológico que apoya a tu
-                equipo legal para procesar minutas con la máxima velocidad.
+                Diligencia formatos con inteligencia documental. Sertuss es el aliado tecnológico en Colombia que potencia a tu equipo legal para procesar minutas a máxima velocidad.
+              
+
               </p>
               <div className="flex flex-wrap gap-4">
                 <Button
