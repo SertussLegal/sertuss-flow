@@ -106,7 +106,7 @@ const LandingPage = () => {
           <div className="mx-auto grid max-w-[1200px] items-center gap-16 lg:grid-cols-2 lg:gap-24">
             {/* Left: Copy */}
             <div className="animate-fade-in-up space-y-8">
-              <h1 className="text-4xl font-semibold leading-[1.2] tracking-tight text-notarial-light sm:text-5xl lg:text-[4.5rem]">
+              <h1 className="text-4xl font-semibold leading-[1.2] tracking-tight text-notarial-light sm:text-5xl lg:text-6xl">
                 Agilidad y Precisión en tu Operación Notarial.
               </h1>
               <p className="max-w-lg text-lg leading-relaxed text-slate-300">
