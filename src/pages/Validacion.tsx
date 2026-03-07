@@ -153,8 +153,9 @@ const Validacion = () => {
       });
   
       // Usamos el failsafe rule: si un campo está vacío, pone una línea ____
+      const templateFields = enrichedData.templateData || enrichedData;
       const safeData = Object.fromEntries(
-        Object.entries(enrichedData).map(([k, v]) => [k, v || "__________"])
+        Object.entries(templateFields).map(([k, v]) => [k, typeof v === 'string' ? (v || "__________") : v])
       );
   
       doc.render(safeData);
@@ -175,16 +176,8 @@ const Validacion = () => {
       // Paso 5: Actualización y Log de Auditoría (Plan item 4a y 4b)
       await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
       
-      // Insert de auditoría explícito para cumplimiento legal (Imagen 13)
-      await supabase.from("activity_logs").insert({
-        organization_id: profile.organization_id,
-        user_id: profile.id,
-        action: 'word_generated',
-        entity_type: 'tramite',
-        entity_id: tramiteId,
-        metadata: { tipo: actos.tipo_acto, num_vendedores: vendedores.length }
-      });
-  
+      // Audit log is handled automatically by the log_word_generated trigger
+
       await refreshCredits();
       toast({ title: "¡Éxito!", description: "Documento generado correctamente." });
   
