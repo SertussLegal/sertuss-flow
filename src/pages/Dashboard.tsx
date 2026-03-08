@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, LogOut, Scale, Users, AlertTriangle } from "lucide-react";
+import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
