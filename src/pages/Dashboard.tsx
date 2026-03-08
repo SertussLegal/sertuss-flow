@@ -24,14 +24,17 @@ const statusLabels: Record<string, string> = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { profile, organization, credits } = useAuth();
+  const { profile, organization, credits, refreshProfile } = useAuth();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [tramites, setTramites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (profile?.organization_id) fetchTramites();
+    if (profile?.organization_id) {
+      refreshProfile();
+      fetchTramites();
+    }
   }, [profile?.organization_id]);
 
   const fetchTramites = async () => {
