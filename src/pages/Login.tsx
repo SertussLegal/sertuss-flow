@@ -24,7 +24,13 @@ const Login = () => {
     try {
       if (isRegister) {
         if (!orgName.trim()) {
-          toast({ title: "Error", description: "El nombre de la organización es obligatorio.", variant: "destructive" });
+          toast({ title: "Error", description: "La Razón Social es obligatoria.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const nitRegex = /^\d{9}-\d{1}$/;
+        if (!nitRegex.test(nit.trim())) {
+          toast({ title: "Error", description: "El NIT debe tener el formato XXXXXXXXX-X (9 dígitos, guión, 1 dígito).", variant: "destructive" });
           setLoading(false);
           return;
         }
