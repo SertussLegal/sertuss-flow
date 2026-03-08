@@ -12,6 +12,7 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [orgName, setOrgName] = useState("");
+  const [nit, setNit] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -23,7 +24,13 @@ const Login = () => {
     try {
       if (isRegister) {
         if (!orgName.trim()) {
-          toast({ title: "Error", description: "El nombre de la organización es obligatorio.", variant: "destructive" });
+          toast({ title: "Error", description: "La Razón Social es obligatoria.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const nitRegex = /^\d{9}-\d{1}$/;
+        if (!nitRegex.test(nit.trim())) {
+          toast({ title: "Error", description: "El NIT debe tener el formato XXXXXXXXX-X (9 dígitos, guión, 1 dígito).", variant: "destructive" });
           setLoading(false);
           return;
         }
@@ -34,7 +41,7 @@ const Login = () => {
           // Create organization
           const { data: org, error: orgError } = await supabase
             .from("organizations")
-            .insert({ name: orgName.trim() })
+            .insert({ name: orgName.trim(), nit: nit.trim() })
             .select()
             .single();
           if (orgError) throw orgError;
@@ -82,16 +89,29 @@ const Login = () => {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {isRegister && (
-                <div className="space-y-2">
-                  <Label htmlFor="orgName">Nombre de la Organización / Notaría</Label>
-                  <Input
-                    id="orgName"
-                    placeholder="Notaría 15 de Bogotá"
-                    value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
-                    required
-                  />
-                </div>
+                <fieldset className="space-y-4 rounded-md border border-border p-4">
+                  <legend className="px-2 text-sm font-semibold text-foreground">Datos Legales</legend>
+                  <div className="space-y-2">
+                    <Label htmlFor="orgName">Razón Social</Label>
+                    <Input
+                      id="orgName"
+                      placeholder="Nombre legal de la Notaría, Firma o Empresa"
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="nit">NIT</Label>
+                    <Input
+                      id="nit"
+                      placeholder="000000000-0"
+                      value={nit}
+                      onChange={(e) => setNit(e.target.value)}
+                      required
+                    />
+                  </div>
+                </fieldset>
               )}
               <div className="space-y-2">
                 <Label htmlFor="email">Correo electrónico</Label>

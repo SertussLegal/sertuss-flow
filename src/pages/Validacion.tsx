@@ -18,7 +18,7 @@ const Validacion = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
-  const { profile, credits, refreshCredits } = useAuth();
+  const { profile, organization, credits, refreshCredits } = useAuth();
 
   const [tramiteId, setTramiteId] = useState<string | null>(id ?? null);
   const [vendedores, setVendedores] = useState<Persona[]>([createEmptyPersona()]);
@@ -119,6 +119,11 @@ const Validacion = () => {
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
+      return;
+    }
+
+    if (!organization?.nit || !organization?.name) {
+      toast({ title: "Datos legales incompletos", description: "La Razón Social y el NIT de tu entidad deben estar registrados antes de generar documentos.", variant: "destructive" });
       return;
     }
   

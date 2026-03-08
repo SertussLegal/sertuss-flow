@@ -153,7 +153,7 @@ const Admin = () => {
         {/* Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar por nombre o NIT..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Buscar por razón social o NIT..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
         {/* Table */}
@@ -162,7 +162,7 @@ const Admin = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nombre</TableHead>
+                  <TableHead>Razón Social</TableHead>
                   <TableHead>NIT</TableHead>
                   <TableHead>Créditos</TableHead>
                   <TableHead>Estado</TableHead>
@@ -198,8 +198,8 @@ const Admin = () => {
       <Dialog open={!!editOrg} onOpenChange={(open) => !open && setEditOrg(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar Créditos — {editOrg?.name}</DialogTitle>
-            <DialogDescription>Ajusta el saldo de créditos para esta organización. Este cambio quedará registrado en el log de auditoría.</DialogDescription>
+            <DialogTitle>Editar Créditos — Razón Social de la Entidad: {editOrg?.name}</DialogTitle>
+            <DialogDescription>Ajusta el saldo de créditos para esta entidad. Este cambio quedará registrado en el log de auditoría.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
