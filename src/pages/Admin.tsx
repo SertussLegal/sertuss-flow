@@ -54,11 +54,11 @@ const Admin = () => {
 
   const fetchOrgs = async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc("get_all_organizations");
+    const { data, error } = await supabase.rpc("get_all_organizations" as any);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setOrgs((data as Org[]) ?? []);
+      setOrgs((data as unknown as Org[]) ?? []);
     }
     setLoading(false);
   };
