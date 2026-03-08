@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Scale, ArrowLeft, Search, Building2, Coins, Pencil } from "lucide-react";
+import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings } from "lucide-react";
 
 interface Org {
   id: string;
@@ -176,7 +176,10 @@ const Admin = () => {
                     <TableCell>{o.nit ?? "—"}</TableCell>
                     <TableCell>{o.credit_balance}</TableCell>
                     <TableCell>{getStatusBadge(o.credit_balance)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-2">
+                      <Button variant="outline" size="sm" onClick={() => navigate(`/admin/entidad/${o.id}`)}>
+                        <Settings className="mr-1 h-3 w-3" /> Configurar
+                      </Button>
                       <Button variant="outline" size="sm" onClick={() => openEditModal(o)}>
                         <Pencil className="mr-1 h-3 w-3" /> Editar Créditos
                       </Button>

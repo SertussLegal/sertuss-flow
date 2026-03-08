@@ -9,6 +9,7 @@ import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Admin from "./pages/Admin";
+import AdminOrgEdit from "./pages/AdminOrgEdit";
 import Validacion from "./pages/Validacion";
 import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/tramite/nuevo" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
             <Route path="/tramite/:id" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+            <Route path="/admin/entidad/:id" element={<ProtectedRoute><AdminOrgEdit /></ProtectedRoute>} />
             <Route path="/equipo" element={<ProtectedRoute><Team /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
