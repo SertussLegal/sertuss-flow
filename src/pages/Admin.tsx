@@ -117,7 +117,7 @@ const Admin = () => {
             <span className="text-lg font-bold">Sertuss</span>
             <span className="text-sm text-white/60">/ Panel de Administración</span>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="text-white hover:bg-white/10">
+          <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
             <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
           </Button>
         </div>

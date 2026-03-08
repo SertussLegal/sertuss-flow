@@ -70,16 +70,16 @@ const Dashboard = () => {
               {credits} créditos
             </Badge>
             {profile?.role === "owner" && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="text-white hover:bg-white/10">
+              <Button variant="ghost-dark" size="sm" onClick={() => navigate("/admin")}>
                 <Shield className="mr-1 h-4 w-4" /> Admin
               </Button>
             )}
             {(profile?.role === "owner" || profile?.role === "admin") && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/equipo")} className="text-white hover:bg-white/10">
+              <Button variant="ghost-dark" size="sm" onClick={() => navigate("/equipo")}>
                 <Users className="mr-1 h-4 w-4" /> Equipo
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-white hover:bg-white/10">
+            <Button variant="ghost-dark" size="sm" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" /> Salir
             </Button>
           </div>

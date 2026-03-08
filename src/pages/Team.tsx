@@ -90,7 +90,7 @@ const Team = () => {
             <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
               {credits} créditos
             </Badge>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="text-white hover:bg-white/10">
+            <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
               <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
             </Button>
           </div>
