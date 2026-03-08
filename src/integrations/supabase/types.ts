@@ -387,7 +387,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_update_credits: {
+        Args: { new_balance: number; reason: string; target_org_id: string }
+        Returns: undefined
+      }
       consume_credit: { Args: { org_id: string }; Returns: boolean }
+      get_all_organizations: {
+        Args: never
+        Returns: {
+          address: string
+          created_at: string
+          credit_balance: number
+          id: string
+          name: string
+          nit: string
+        }[]
+      }
       get_user_org: { Args: { uid: string }; Returns: string }
       get_user_role: {
         Args: { uid: string }

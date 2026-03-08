@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, LogOut, Scale, Users, AlertTriangle } from "lucide-react";
+import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
@@ -69,6 +69,11 @@ const Dashboard = () => {
             <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
               {credits} créditos
             </Badge>
+            {profile?.role === "owner" && (
+              <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="text-white hover:bg-white/10">
+                <Shield className="mr-1 h-4 w-4" /> Admin
+              </Button>
+            )}
             {(profile?.role === "owner" || profile?.role === "admin") && (
               <Button variant="ghost" size="sm" onClick={() => navigate("/equipo")} className="text-white hover:bg-white/10">
                 <Users className="mr-1 h-4 w-4" /> Equipo
