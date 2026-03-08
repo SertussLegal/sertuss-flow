@@ -41,7 +41,7 @@ const Login = () => {
           // Create organization
           const { data: org, error: orgError } = await supabase
             .from("organizations")
-            .insert({ name: orgName.trim() })
+            .insert({ name: orgName.trim(), nit: nit.trim() })
             .select()
             .single();
           if (orgError) throw orgError;
