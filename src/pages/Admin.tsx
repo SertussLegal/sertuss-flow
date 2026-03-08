@@ -84,7 +84,7 @@ const Admin = () => {
   const handleSave = async () => {
     if (!editOrg || !reason.trim()) return;
     setSaving(true);
-    const { error } = await supabase.rpc("admin_update_credits", {
+    const { error } = await supabase.rpc("admin_update_credits" as any, {
       target_org_id: editOrg.id,
       new_balance: parseInt(newBalance, 10),
       reason: reason.trim(),
