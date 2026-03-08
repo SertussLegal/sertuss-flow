@@ -8,6 +8,7 @@ import { AuthProvider, ProtectedRoute } from "@/contexts/AuthContext";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Admin from "./pages/Admin";
 import Validacion from "./pages/Validacion";
 import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
