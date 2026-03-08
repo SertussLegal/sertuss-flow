@@ -89,16 +89,29 @@ const Login = () => {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {isRegister && (
-                <div className="space-y-2">
-                  <Label htmlFor="orgName">Nombre de la Organización / Notaría</Label>
-                  <Input
-                    id="orgName"
-                    placeholder="Notaría 15 de Bogotá"
-                    value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
-                    required
-                  />
-                </div>
+                <fieldset className="space-y-4 rounded-md border border-border p-4">
+                  <legend className="px-2 text-sm font-semibold text-foreground">Datos Legales</legend>
+                  <div className="space-y-2">
+                    <Label htmlFor="orgName">Razón Social</Label>
+                    <Input
+                      id="orgName"
+                      placeholder="Nombre legal de la Notaría, Firma o Empresa"
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="nit">NIT</Label>
+                    <Input
+                      id="nit"
+                      placeholder="000000000-0"
+                      value={nit}
+                      onChange={(e) => setNit(e.target.value)}
+                      required
+                    />
+                  </div>
+                </fieldset>
               )}
               <div className="space-y-2">
                 <Label htmlFor="email">Correo electrónico</Label>

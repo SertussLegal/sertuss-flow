@@ -198,8 +198,8 @@ const Admin = () => {
       <Dialog open={!!editOrg} onOpenChange={(open) => !open && setEditOrg(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar Créditos — {editOrg?.name}</DialogTitle>
-            <DialogDescription>Ajusta el saldo de créditos para esta organización. Este cambio quedará registrado en el log de auditoría.</DialogDescription>
+            <DialogTitle>Editar Créditos — Razón Social de la Entidad: {editOrg?.name}</DialogTitle>
+            <DialogDescription>Ajusta el saldo de créditos para esta entidad. Este cambio quedará registrado en el log de auditoría.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">

@@ -121,6 +121,11 @@ const Validacion = () => {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
       return;
     }
+
+    if (!organization?.nit || !organization?.name) {
+      toast({ title: "Datos legales incompletos", description: "La Razón Social y el NIT de tu entidad deben estar registrados antes de generar documentos.", variant: "destructive" });
+      return;
+    }
   
     setGenerating(true);
     try {
