@@ -391,6 +391,15 @@ export type Database = {
         Args: { new_balance: number; reason: string; target_org_id: string }
         Returns: undefined
       }
+      admin_update_organization: {
+        Args: {
+          new_address: string
+          new_name: string
+          new_nit: string
+          target_org_id: string
+        }
+        Returns: undefined
+      }
       consume_credit: { Args: { org_id: string }; Returns: boolean }
       get_all_organizations: {
         Args: never
