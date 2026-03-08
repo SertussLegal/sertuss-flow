@@ -31,7 +31,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (profile?.organization_id) fetchTramites();
+    if (profile?.organization_id) {
+      refreshProfile();
+      fetchTramites();
+    }
   }, [profile?.organization_id]);
 
   const fetchTramites = async () => {
