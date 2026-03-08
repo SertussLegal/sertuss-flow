@@ -162,7 +162,7 @@ const Admin = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nombre</TableHead>
+                  <TableHead>Razón Social</TableHead>
                   <TableHead>NIT</TableHead>
                   <TableHead>Créditos</TableHead>
                   <TableHead>Estado</TableHead>
