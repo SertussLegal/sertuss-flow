@@ -86,6 +86,8 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
       }
       await refreshCredits();
     } catch (err: any) {
+      await supabase.rpc("restore_credit", { org_id: profile.organization_id });
+      await refreshCredits();
       toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
       setScanning(null);

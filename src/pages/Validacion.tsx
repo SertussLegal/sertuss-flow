@@ -315,10 +315,10 @@ const inmuebleToRow = (i: Inmueble) => ({
   codigo_orip: i.codigo_orip,
   tipo_predio: i.tipo_predio,
   direccion: i.direccion,
-  estrato: i.estrato,
+  estrato: "",
   area: i.area,
   linderos: i.linderos,
-  valorizacion: i.valorizacion,
+  valorizacion: "",
   avaluo_catastral: i.avaluo_catastral,
   escritura_ph: i.escritura_ph,
   reformas_ph: i.reformas_ph,
@@ -333,7 +333,7 @@ const actosToRow = (a: Actos) => ({
   entidad_bancaria: a.entidad_bancaria,
   apoderado_nombre: a.apoderado_nombre,
   apoderado_cedula: a.apoderado_cedula,
-  afectacion_vivienda_familiar: a.afectacion_vivienda_familiar,
+  afectacion_vivienda_familiar: false,
 });
 
 export default Validacion;

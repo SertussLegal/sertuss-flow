@@ -65,10 +65,8 @@ export interface Inmueble {
   codigo_orip: string;
   tipo_predio: "urbano" | "rural";
   direccion: string;
-  estrato: string;
   area: string;
   linderos: string;
-  valorizacion: string;
   avaluo_catastral: string;
   escritura_ph: string;
   reformas_ph: string;
@@ -83,7 +81,6 @@ export interface Actos {
   entidad_bancaria: string;
   apoderado_nombre: string;
   apoderado_cedula: string;
-  afectacion_vivienda_familiar: boolean;
 }
 
 export interface Tramite {
@@ -126,10 +123,8 @@ export const createEmptyInmueble = (): Inmueble => ({
   codigo_orip: "",
   tipo_predio: "urbano",
   direccion: "",
-  estrato: "",
   area: "",
   linderos: "",
-  valorizacion: "",
   avaluo_catastral: "",
   escritura_ph: "",
   reformas_ph: "",
@@ -144,5 +139,4 @@ export const createEmptyActos = (): Actos => ({
   entidad_bancaria: "",
   apoderado_nombre: "",
   apoderado_cedula: "",
-  afectacion_vivienda_familiar: false,
 });
