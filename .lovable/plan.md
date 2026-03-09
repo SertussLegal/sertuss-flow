@@ -1,136 +1,75 @@
 
 
-## Sertuss — Multi-tenant Architecture with Organizations, Credits, and Audit Trail
+## Fix: Registro no crea organización + Onboarding para usuarios existentes
 
-This is a large backend-first implementation. The plan is divided into database schema, backend logic, and frontend integration.
+### Problema confirmado
+El perfil de `malejaarciniegas@gmail.com` existe con `organization_id: null`, `full_name: null`, `role: operator`. La organización nunca se creó porque el código en `Login.tsx` intenta hacer `insert` en `organizations` y `update` en `profiles` justo después del `signUp`, pero como el email requiere confirmación, no hay sesión activa y RLS bloquea todo silenciosamente.
 
----
+### Solución (3 partes)
 
-### Phase 1: Database Schema (Single Migration)
+**1. DB: Función `create_organization_for_user`** (SECURITY DEFINER)
+- Recibe `user_id`, `org_name`, `org_nit`
+- Crea la organización con 5 créditos por defecto
+- Actualiza el profile con `organization_id` y `role = 'owner'`
+- No depende de `auth.uid()` — funciona post-confirmación
 
-**Tables to create:**
+**2. Fix `Login.tsx` — Registro**
+- Después del `signUp`, guardar `org_name` y `nit` en `user_metadata` (esto SÍ funciona sin sesión)
+- Eliminar los `insert`/`update` directos que fallan por RLS
+- En `AuthContext`, al detectar un usuario con `organization_id = null` Y `user_metadata` con datos de org, llamar al RPC `create_organization_for_user` automáticamente
+- Formato NIT: máscara de input `XXXXXXXXX-X` con validación
 
-1. **`organizations`** — Multi-tenant root
-   - `id` uuid PK, `name` text NOT NULL, `nit` varchar(20), `address` text, `credit_balance` integer DEFAULT 5, `created_at` timestamptz
+**3. Modal onboarding para usuarios existentes sin org (`SetupOrgModal.tsx`)**
+- Se muestra en `Dashboard.tsx` cuando `profile.organization_id === null`
+- Campos: Razón Social (default "Organizacion001" si se deja vacío), NIT (formato colombiano obligatorio)
+- Llama al RPC `create_organization_for_user`
+- Una vez completado, refresca el perfil y cierra el modal
 
-2. **`profiles`** — Extends auth.users
-   - `id` uuid PK (references auth.users), `email` text, `full_name` text, `organization_id` uuid FK → organizations, `role` org_role enum ('owner','admin','operator'), `created_at` timestamptz
-   - Trigger on `auth.users` insert to auto-create profile row
+### Archivos
 
-3. **`tramites`** — Core business entity
-   - `id` uuid PK, `radicado` text, `tipo` text, `fecha` date, `status` tramite_status enum ('pendiente','validado','word_generado'), `organization_id` uuid FK, `created_by` uuid FK → profiles, `created_at`, `updated_at`
+| Archivo | Cambio |
+|---------|--------|
+| Migration SQL | Crear función `create_organization_for_user(user_id, org_name, org_nit)` |
+| `src/pages/Login.tsx` | Guardar datos org en `user_metadata` en vez de DB directa; mejorar máscara NIT |
+| `src/contexts/AuthContext.tsx` | Auto-crear org desde `user_metadata` si `organization_id` es null al iniciar sesión |
+| `src/components/SetupOrgModal.tsx` | Nuevo modal para usuarios existentes sin organización |
+| `src/pages/Dashboard.tsx` | Mostrar `SetupOrgModal` si no tiene org |
 
-4. **`personas`** — Vendedores/Compradores linked to tramite
-   - `id` uuid PK, `tramite_id` uuid FK, `rol` persona_rol enum ('vendedor','comprador'), all existing Persona fields including `nit` varchar(20), `es_persona_juridica`, `es_pep`, etc.
+### Detalle de la función SQL
 
-5. **`inmuebles`** — One per tramite
-   - `id` uuid PK, `tramite_id` uuid FK, all Inmueble fields. `identificador_predial` varchar(30) to support 30-digit Nacional.
+```sql
+CREATE OR REPLACE FUNCTION public.create_organization_for_user(
+  p_user_id uuid, p_org_name text, p_org_nit varchar
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
+DECLARE
+  new_org_id uuid;
+BEGIN
+  INSERT INTO organizations (name, nit)
+  VALUES (COALESCE(NULLIF(p_org_name, ''), 'Organizacion001'), NULLIF(p_org_nit, ''))
+  RETURNING id INTO new_org_id;
 
-6. **`actos`** — One per tramite
-   - `id` uuid PK, `tramite_id` uuid FK, all Actos fields.
+  UPDATE profiles
+  SET organization_id = new_org_id, role = 'owner'
+  WHERE id = p_user_id;
 
-7. **`activity_logs`** — Habeas Data / Ley 1581 audit trail
-   - `id` uuid PK, `organization_id` uuid FK, `user_id` uuid FK, `action` text ('created','updated','generated','viewed'), `entity_type` text ('tramite','persona','inmueble'), `entity_id` uuid, `metadata` jsonb, `created_at` timestamptz
-
-8. **`invitations`** — Team invite infrastructure
-   - `id` uuid PK, `organization_id` uuid FK, `email` text, `role` org_role, `invited_by` uuid FK, `accepted_at` timestamptz NULL, `created_at` timestamptz
-
-**Enums:**
-- `org_role`: 'owner', 'admin', 'operator'
-- `tramite_status`: 'pendiente', 'validado', 'word_generado'
-- `persona_rol`: 'vendedor', 'comprador'
-
----
-
-### Phase 2: RLS Policies
-
-All business tables scoped by `organization_id` via a helper function:
-
-```text
-get_user_org(uid) → returns organization_id from profiles
-get_user_role(uid) → returns role from profiles
+  RETURN new_org_id;
+END;
+$$;
 ```
 
-- **organizations**: Users can SELECT their own org. Owners can UPDATE.
-- **profiles**: Users in same org can SELECT each other. Admins/Owners can UPDATE roles.
-- **tramites**: SELECT/INSERT/UPDATE scoped to org. Operators can only see `created_by = auth.uid()`.
-- **personas, inmuebles, actos**: Access via tramite ownership (join through tramites table).
-- **activity_logs**: INSERT for authenticated users in their org. SELECT for admin/owner only.
-- **invitations**: Admin/Owner can INSERT/SELECT for their org.
+### Flujo corregido
 
----
+```text
+REGISTRO NUEVO:
+  signUp(email, pass, { data: { org_name, nit } })
+  → email confirmado → login
+  → AuthContext detecta org_id=null + metadata.org_name
+  → RPC create_organization_for_user → org creada → dashboard normal
 
-### Phase 3: Credit Consumption Function
+USUARIO EXISTENTE SIN ORG (ej: malejaarciniegas):
+  login → Dashboard → detecta org_id=null, no metadata
+  → Muestra SetupOrgModal
+  → Usuario llena datos → RPC → org creada → continúa
+```
 
-Database function `consume_credit(org_id uuid)`:
-- Checks `credit_balance > 0`, decrements by 1, returns success/failure.
-- Called from frontend before setting status to `word_generado`.
-- SECURITY DEFINER to bypass RLS.
-
-Database trigger on `tramites` UPDATE: when status changes to `word_generado`, automatically log to `activity_logs`.
-
----
-
-### Phase 4: Frontend Changes
-
-1. **Auth flow update** (`Login.tsx`):
-   - On registration, create organization + profile with role 'owner'.
-   - On login, fetch profile to get org_id and role, store in React context.
-
-2. **Auth context** (`src/contexts/AuthContext.tsx`):
-   - Provides `user`, `profile`, `organization`, `credits` to the app.
-   - Protected route wrapper redirects unauthenticated users.
-
-3. **Dashboard.tsx**:
-   - Replace mock data with real Supabase queries scoped by org.
-   - Show credit balance in header.
-   - Disable "Nuevo Trámite" if credits = 0 with warning message.
-
-4. **Validacion.tsx**:
-   - Save tramite + personas + inmueble + actos to database.
-   - On "Generate Word", call `consume_credit`, update status, log activity.
-   - If credits = 0, disable generate button with "Bolsa de créditos agotada" message.
-
-5. **Team Management page** (`src/pages/Team.tsx`):
-   - List org members with roles.
-   - Invite form (email + role).
-   - Admin can change roles.
-   - Credit consumption per user (query activity_logs grouped by user).
-
-6. **New route**: `/equipo` → Team.tsx
-
-7. **Types update** (`src/lib/types.ts`):
-   - Add Organization, Profile, ActivityLog, Invitation interfaces.
-   - Keep existing interfaces for form compatibility.
-
----
-
-### Files to create/modify
-
-| File | Action |
-|------|--------|
-| Migration SQL | Create all tables, enums, RLS, functions, triggers |
-| `src/contexts/AuthContext.tsx` | New — auth + org context provider |
-| `src/pages/Team.tsx` | New — team management UI |
-| `src/lib/types.ts` | Add Organization, Profile, Invitation, ActivityLog types |
-| `src/App.tsx` | Add AuthProvider wrapper, protected routes, `/equipo` route |
-| `src/pages/Login.tsx` | Create org on register, redirect on login |
-| `src/pages/Dashboard.tsx` | Real queries, credit display, disable if 0 |
-| `src/pages/Validacion.tsx` | Persist to DB, credit consumption on generate |
-| `src/pages/LandingPage.tsx` | **No changes** — visual styles preserved |
-| `src/index.css` | **No changes** |
-
-
-## Generate Word Document with Gemini AI (IMPLEMENTED)
-
-### Architecture
-Frontend → consume_credit RPC → generate-document edge function (Gemini AI) → docxtemplater fill → browser download → update status to word_generado
-
-### Implemented
-- Edge function `supabase/functions/generate-document/index.ts` with Lovable AI Gateway (Gemini 3 Flash)
-- Tool calling for structured JSON extraction of legal template fields
-- `docxtemplater` + `pizzip` for client-side .docx generation
-- Auto-download with tramite name
-- Credit validation before generation
-- Status update triggers activity log
-- Loading state in PreviewModal during generation
