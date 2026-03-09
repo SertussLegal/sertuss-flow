@@ -188,7 +188,7 @@ const Validacion = () => {
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
           <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="border-white/20 text-white hover:bg-white/10">
+            <Button variant="ghost-dark" size="sm" onClick={handleSave} disabled={saving} className="border border-white/30">
               <Save className="mr-1 h-4 w-4" /> {saving ? "Guardando..." : "Guardar"}
             </Button>
             <Button
