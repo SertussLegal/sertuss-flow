@@ -53,6 +53,7 @@ export interface Persona {
   actua_mediante_apoderado: boolean;
   apoderado_persona_nombre: string;
   apoderado_persona_cedula: string;
+  apoderado_persona_municipio: string;
 }
 
 export interface Inmueble {
@@ -71,6 +72,7 @@ export interface Inmueble {
   avaluo_catastral: string;
   escritura_ph: string;
   reformas_ph: string;
+  es_propiedad_horizontal: boolean;
 }
 
 export interface Actos {
@@ -112,6 +114,7 @@ export const createEmptyPersona = (): Persona => ({
   actua_mediante_apoderado: false,
   apoderado_persona_nombre: "",
   apoderado_persona_cedula: "",
+  apoderado_persona_municipio: "",
 });
 
 export const createEmptyInmueble = (): Inmueble => ({
@@ -130,6 +133,7 @@ export const createEmptyInmueble = (): Inmueble => ({
   avaluo_catastral: "",
   escritura_ph: "",
   reformas_ph: "",
+  es_propiedad_horizontal: false,
 });
 
 export const createEmptyActos = (): Actos => ({

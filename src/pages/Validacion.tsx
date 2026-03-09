@@ -303,6 +303,7 @@ const personaToRow = (p: Persona) => ({
   actua_mediante_apoderado: p.actua_mediante_apoderado,
   apoderado_persona_nombre: p.apoderado_persona_nombre,
   apoderado_persona_cedula: p.apoderado_persona_cedula,
+  apoderado_persona_municipio: p.apoderado_persona_municipio,
 });
 
 const inmuebleToRow = (i: Inmueble) => ({
@@ -321,6 +322,7 @@ const inmuebleToRow = (i: Inmueble) => ({
   avaluo_catastral: i.avaluo_catastral,
   escritura_ph: i.escritura_ph,
   reformas_ph: i.reformas_ph,
+  es_propiedad_horizontal: i.es_propiedad_horizontal,
 });
 
 const actosToRow = (a: Actos) => ({

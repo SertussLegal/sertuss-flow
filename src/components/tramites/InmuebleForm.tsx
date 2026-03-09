@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Loader2 } from "lucide-react";
 import type { Inmueble } from "@/lib/types";
@@ -21,7 +22,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
   const [scanning, setScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const update = (field: keyof Inmueble, value: string) => {
+  const update = (field: keyof Inmueble, value: string | boolean) => {
     onChange({ ...inmueble, [field]: value });
   };
 
@@ -122,14 +123,14 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
               <span className="ml-2 text-xs text-muted-foreground">(Formato: AAA0000AAAA)</span>
             )}
             {inmueble.tipo_identificador_predial === "cedula_catastral" && (
-              <span className="ml-2 text-xs text-muted-foreground">(Número predial)</span>
+              <span className="ml-2 text-xs text-muted-foreground">(Cédula catastral)</span>
             )}
           </Label>
           <Input
             value={inmueble.identificador_predial}
             onChange={(e) => update("identificador_predial", e.target.value)}
             required
-            placeholder={inmueble.tipo_identificador_predial === "chip" ? "AAA0000AAAA" : "Número predial"}
+            placeholder={inmueble.tipo_identificador_predial === "chip" ? "AAA0000AAAA" : "Cédula catastral"}
           />
         </div>
 
@@ -145,7 +146,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
 
         <div className="space-y-2">
           <Label>Oficina de Registro (ORIP)</Label>
-          <Input value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Nombre o código de la ORIP" />
+          <Input value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Ej: Oficina de Registro de Instrumentos Públicos de Bogotá Zona Norte" />
         </div>
 
         <div className="space-y-2">
@@ -167,21 +168,11 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         </div>
 
         <div className="space-y-2">
-          <Label>Estrato</Label>
-          <Input value={inmueble.estrato} onChange={(e) => update("estrato", e.target.value)} type="number" min="1" max="6" />
-        </div>
-
-        <div className="space-y-2">
           <Label>Área (m²)</Label>
           <Input value={inmueble.area} onChange={(e) => update("area", e.target.value)} />
         </div>
 
-        <div className="space-y-2">
-          <Label>Valorización</Label>
-          <Input value={inmueble.valorizacion} onChange={(e) => update("valorizacion", e.target.value)} placeholder="Valor en COP" />
-        </div>
-
-        <div className="space-y-2">
+        <div className="space-y-2 sm:col-span-2">
           <Label>Avalúo Catastral (COP)</Label>
           <Input value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
         </div>
@@ -199,25 +190,34 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
 
       {/* Sección Propiedad Horizontal */}
       <div className="space-y-4 rounded-lg border p-4">
-        <h4 className="text-sm font-semibold text-muted-foreground">Propiedad Horizontal (PH)</h4>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Escritura de Constitución PH</Label>
-            <Input
-              value={inmueble.escritura_ph}
-              onChange={(e) => update("escritura_ph", e.target.value)}
-              placeholder="No. escritura de constitución"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Reformas PH</Label>
-            <Input
-              value={inmueble.reformas_ph}
-              onChange={(e) => update("reformas_ph", e.target.value)}
-              placeholder="Reformas a la PH (si aplica)"
-            />
-          </div>
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={inmueble.es_propiedad_horizontal}
+            onCheckedChange={(v) => update("es_propiedad_horizontal", v)}
+          />
+          <Label className="text-base font-medium">¿Cuenta con Reglamento de Propiedad Horizontal?</Label>
         </div>
+
+        {inmueble.es_propiedad_horizontal && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Escritura de Constitución PH</Label>
+              <Input
+                value={inmueble.escritura_ph}
+                onChange={(e) => update("escritura_ph", e.target.value)}
+                placeholder="No. escritura de constitución"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Reformas PH</Label>
+              <Input
+                value={inmueble.reformas_ph}
+                onChange={(e) => update("reformas_ph", e.target.value)}
+                placeholder="Reformas a la PH (si aplica)"
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

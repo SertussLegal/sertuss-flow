@@ -116,6 +116,7 @@ export type Database = {
           codigo_orip: string | null
           departamento: string | null
           direccion: string | null
+          es_propiedad_horizontal: boolean | null
           escritura_ph: string | null
           estrato: string | null
           id: string
@@ -135,6 +136,7 @@ export type Database = {
           codigo_orip?: string | null
           departamento?: string | null
           direccion?: string | null
+          es_propiedad_horizontal?: boolean | null
           escritura_ph?: string | null
           estrato?: string | null
           id?: string
@@ -154,6 +156,7 @@ export type Database = {
           codigo_orip?: string | null
           departamento?: string | null
           direccion?: string | null
+          es_propiedad_horizontal?: boolean | null
           escritura_ph?: string | null
           estrato?: string | null
           id?: string
@@ -253,6 +256,7 @@ export type Database = {
         Row: {
           actua_mediante_apoderado: boolean | null
           apoderado_persona_cedula: string | null
+          apoderado_persona_municipio: string | null
           apoderado_persona_nombre: string | null
           direccion: string | null
           es_pep: boolean
@@ -272,6 +276,7 @@ export type Database = {
         Insert: {
           actua_mediante_apoderado?: boolean | null
           apoderado_persona_cedula?: string | null
+          apoderado_persona_municipio?: string | null
           apoderado_persona_nombre?: string | null
           direccion?: string | null
           es_pep?: boolean
@@ -291,6 +296,7 @@ export type Database = {
         Update: {
           actua_mediante_apoderado?: boolean | null
           apoderado_persona_cedula?: string | null
+          apoderado_persona_municipio?: string | null
           apoderado_persona_nombre?: string | null
           direccion?: string | null
           es_pep?: boolean

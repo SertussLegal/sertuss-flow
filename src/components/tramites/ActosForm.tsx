@@ -1,6 +1,5 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Actos } from "@/lib/types";
 
@@ -14,6 +13,11 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
     onChange({ ...actos, [field]: value });
   };
 
+  const handleTipoActoChange = (value: string) => {
+    const esHipoteca = value === "Compraventa con Hipoteca";
+    onChange({ ...actos, tipo_acto: value, es_hipoteca: esHipoteca });
+  };
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Actos</h3>
@@ -21,14 +25,13 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label>Tipo de Acto</Label>
-          <Select value={actos.tipo_acto} onValueChange={(v) => update("tipo_acto", v)}>
+          <Select value={actos.tipo_acto} onValueChange={handleTipoActoChange}>
             <SelectTrigger>
               <SelectValue placeholder="Seleccione tipo de acto" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Compraventa">Compraventa</SelectItem>
-              <SelectItem value="Hipoteca">Hipoteca</SelectItem>
-              <SelectItem value="Afectación a Vivienda Familiar">Afectación a Vivienda Familiar</SelectItem>
+              <SelectItem value="Compraventa con Hipoteca">Compraventa con Hipoteca</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -38,14 +41,10 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
         </div>
       </div>
 
-      {/* Hipoteca */}
-      <div className="space-y-4 rounded-lg border p-4">
-        <div className="flex items-center gap-3">
-          <Switch checked={actos.es_hipoteca} onCheckedChange={(v) => update("es_hipoteca", v)} />
-          <Label className="text-base font-medium">Acto de Hipoteca</Label>
-        </div>
-
-        {actos.es_hipoteca && (
+      {/* Hipoteca — se muestra automáticamente al seleccionar "Compraventa con Hipoteca" */}
+      {actos.es_hipoteca && (
+        <div className="space-y-4 rounded-lg border p-4">
+          <h4 className="text-sm font-semibold text-muted-foreground">Datos de Hipoteca</h4>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Valor de Crédito (COP)</Label>
@@ -64,16 +63,8 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
               <Input value={actos.apoderado_cedula} onChange={(e) => update("apoderado_cedula", e.target.value)} />
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Afectación Vivienda Familiar */}
-      <div className="rounded-lg border p-4">
-        <div className="flex items-center gap-3">
-          <Switch checked={actos.afectacion_vivienda_familiar} onCheckedChange={(v) => update("afectacion_vivienda_familiar", v)} />
-          <Label className="text-base font-medium">Afectación a Vivienda Familiar</Label>
         </div>
-      </div>
+      )}
     </div>
   );
 };
