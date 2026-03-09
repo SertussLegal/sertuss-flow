@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Info, ScanLine, Loader2 } from "lucide-react";
+import { Plus, Trash2, Info, Upload, Loader2 } from "lucide-react";
 import type { Persona } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -43,7 +43,7 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
     // Consume credit first
     const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
     if (!success) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para escanear.", variant: "destructive" });
+      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
       return;
     }
 
@@ -65,11 +65,11 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
           municipio_domicilio: extracted.municipio_expedicion || updated[index].municipio_domicilio,
         };
         onChange(updated);
-        toast({ title: "Cédula escaneada", description: "Datos extraídos correctamente." });
+        toast({ title: "Cédula procesada", description: "Datos extraídos correctamente." });
       }
       await refreshCredits();
     } catch (err: any) {
-      toast({ title: "Error al escanear", description: err.message, variant: "destructive" });
+      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
       setScanningIndex(null);
     }
@@ -112,9 +112,9 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
                 onClick={() => fileInputRefs.current[index]?.click()}
               >
                 {scanningIndex === index ? (
-                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando con Gemini IA...</>
+                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
                 ) : (
-                  <><ScanLine className="mr-1 h-4 w-4" /> Escanear Cédula</>
+                  <><Upload className="mr-1 h-4 w-4" /> Cargar Cédula</>
                 )}
               </Button>
               {personas.length > 1 && (

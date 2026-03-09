@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScanLine, Loader2 } from "lucide-react";
+import { Upload, Loader2 } from "lucide-react";
 import type { Inmueble } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,7 +30,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
 
     const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
     if (!success) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para escanear.", variant: "destructive" });
+      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
       return;
     }
 
@@ -54,11 +54,11 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
           linderos: d.linderos || inmueble.linderos,
           area: d.area || inmueble.area,
         });
-        toast({ title: "Certificado escaneado", description: "Datos del inmueble extraídos correctamente." });
+        toast({ title: "Certificado procesado", description: "Datos del inmueble extraídos correctamente." });
       }
       await refreshCredits();
     } catch (err: any) {
-      toast({ title: "Error al escanear", description: err.message, variant: "destructive" });
+      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
       setScanning(false);
     }
@@ -88,9 +88,9 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
             onClick={() => fileInputRef.current?.click()}
           >
             {scanning ? (
-              <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando con Gemini IA...</>
+              <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
             ) : (
-              <><ScanLine className="mr-1 h-4 w-4" /> Escanear Certificado</>
+              <><Upload className="mr-1 h-4 w-4" /> Cargar Certificado</>
             )}
           </Button>
         </div>
