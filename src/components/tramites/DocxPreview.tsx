@@ -14,10 +14,35 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [baseHtml, setBaseHtml] = useState<string>("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Build template data from form state
-  const buildTemplateData = () => {
+  // Load template once and convert to HTML with mammoth
+  useEffect(() => {
+    const loadTemplate = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/template_venta_hipoteca.docx");
+        if (!response.ok) {
+          setError("No se pudo cargar la plantilla");
+          return;
+        }
+        const buffer = await response.arrayBuffer();
+        const mammoth = await import("mammoth");
+        const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+        setBaseHtml(result.value);
+      } catch (err: any) {
+        console.error("Template load error:", err);
+        setError("Error al cargar plantilla: " + err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadTemplate();
+  }, []);
+
+  // Build replacement map from form state
+  const buildReplacements = (): Record<string, string> => {
     const formatPersona = (p: Persona) => {
       if (p.es_persona_juridica) {
         return `${p.razon_social || "___________"}, NIT ${p.nit || "___________"}, representada legalmente por ${p.representante_legal_nombre || "___________"}, identificado(a) con cédula de ciudadanía No. ${p.representante_legal_cedula || "___________"}`;
@@ -26,75 +51,61 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     };
 
     return {
-      comparecientes_vendedor: vendedores.map(formatPersona).join("; y ") || "___________",
-      comparecientes_comprador: compradores.map(formatPersona).join("; y ") || "___________",
-      matricula_inmobiliaria: inmueble.matricula_inmobiliaria || "___________",
-      identificador_predial: inmueble.identificador_predial || "___________",
-      direccion_inmueble: inmueble.direccion || "___________",
-      municipio: inmueble.municipio || "___________",
-      departamento: inmueble.departamento || "___________",
-      area: inmueble.area || "___________",
-      linderos: inmueble.linderos || "___________",
-      valor_compraventa_letras: actos.valor_compraventa || "___________",
-      tipo_acto: actos.tipo_acto || "___________",
-      entidad_bancaria: actos.entidad_bancaria || "",
-      valor_hipoteca_letras: actos.valor_hipoteca || "",
-      avaluo_catastral: inmueble.avaluo_catastral || "",
-      codigo_orip: inmueble.codigo_orip || "___________",
+      "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
+      "comparecientes_comprador": compradores.map(formatPersona).join("; y ") || "___________",
+      "matricula_inmobiliaria": inmueble.matricula_inmobiliaria || "___________",
+      "identificador_predial": inmueble.identificador_predial || "___________",
+      "direccion_inmueble": inmueble.direccion || "___________",
+      "inmueble.direccion": inmueble.direccion || "___________",
+      "inmueble.matricula": inmueble.matricula_inmobiliaria || "___________",
+      "inmueble.cedula_catastral": inmueble.identificador_predial || "___________",
+      "inmueble.linderos_especiales": inmueble.linderos || "___________",
+      "inmueble.linderos_generales": inmueble.linderos || "___________",
+      "municipio": inmueble.municipio || "___________",
+      "departamento": inmueble.departamento || "___________",
+      "area": inmueble.area || "___________",
+      "linderos": inmueble.linderos || "___________",
+      "valor_compraventa_letras": actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
+      "tipo_acto": actos.tipo_acto || "___________",
+      "entidad_bancaria": actos.entidad_bancaria || "___________",
+      "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
+      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "avaluo_catastral": inmueble.avaluo_catastral || "___________",
+      "codigo_orip": inmueble.codigo_orip || "___________",
+      "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
     };
   };
 
-  const renderPreview = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch("/template_venta_hipoteca.docx");
-      if (!response.ok) {
-        setError("No se pudo cargar la plantilla");
-        return;
-      }
-      const content = await response.arrayBuffer();
-
-      const PizZip = (await import("pizzip")).default;
-      const Docxtemplater = (await import("docxtemplater")).default;
-
-      const zip = new PizZip(content);
-      const doc = new Docxtemplater(zip, {
-        paragraphLoop: true,
-        linebreaks: true,
-        delimiters: { start: "{", end: "}" },
-        nullGetter: () => "___________",
-      });
-
-      const templateData = buildTemplateData();
-      const safeData = Object.fromEntries(
-        Object.entries(templateData).map(([k, v]) => [k, typeof v === "string" ? (v || "___________") : v])
-      );
-
-      doc.render(safeData);
-
-      // Generate a new docx buffer and convert to HTML with mammoth
-      const outputBlob = doc.getZip().generate({ type: "uint8array" });
-      const mammoth = await import("mammoth");
-      const buffer = outputBlob.buffer.slice(0) as ArrayBuffer;
-      const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-      setHtml(result.value);
-    } catch (err: any) {
-      console.error("Preview error:", err);
-      setError("Error al generar vista previa: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Apply replacements to base HTML
   useEffect(() => {
+    if (!baseHtml) return;
+
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(renderPreview, 500);
+    debounceRef.current = setTimeout(() => {
+      let result = baseHtml;
+      const replacements = buildReplacements();
+
+      // Replace {tag} patterns with values
+      for (const [key, value] of Object.entries(replacements)) {
+        // Escape special regex chars in key
+        const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<strong>${value}</strong>`);
+      }
+
+      // Strip remaining loop syntax: {#tag}, {/tag}, {^tag}, {/}
+      result = result.replace(/\{[#/^][^}]*\}/g, "");
+      // Replace remaining {tag} with placeholder
+      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, "<em>___________</em>");
+
+      setHtml(result);
+    }, 300);
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [vendedores, compradores, inmueble, actos]);
+  }, [baseHtml, vendedores, compradores, inmueble, actos]);
 
   if (error) {
     return (
