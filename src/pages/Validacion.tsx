@@ -333,7 +333,7 @@ const actosToRow = (a: Actos) => ({
   entidad_bancaria: a.entidad_bancaria,
   apoderado_nombre: a.apoderado_nombre,
   apoderado_cedula: a.apoderado_cedula,
-  afectacion_vivienda_familiar: a.afectacion_vivienda_familiar,
+  afectacion_vivienda_familiar: false,
 });
 
 export default Validacion;

@@ -448,6 +448,7 @@ export type Database = {
         Args: { uid: string }
         Returns: Database["public"]["Enums"]["org_role"]
       }
+      restore_credit: { Args: { org_id: string }; Returns: undefined }
     }
     Enums: {
       org_role: "owner" | "admin" | "operator"

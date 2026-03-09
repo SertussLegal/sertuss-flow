@@ -139,5 +139,4 @@ export const createEmptyActos = (): Actos => ({
   entidad_bancaria: "",
   apoderado_nombre: "",
   apoderado_cedula: "",
-  afectacion_vivienda_familiar: false,
 });
