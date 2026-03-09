@@ -205,6 +205,10 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
                   <Label>Cédula del Apoderado</Label>
                   <Input value={persona.apoderado_persona_cedula} onChange={(e) => updatePersona(index, "apoderado_persona_cedula", e.target.value)} />
                 </div>
+                <div className="space-y-2">
+                  <Label>Municipio de Domicilio del Apoderado</Label>
+                  <Input value={persona.apoderado_persona_municipio} onChange={(e) => updatePersona(index, "apoderado_persona_municipio", e.target.value)} placeholder="Ej: Bogotá D.C." />
+                </div>
               </div>
             )}
           </div>

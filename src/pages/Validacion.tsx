@@ -322,6 +322,7 @@ const inmuebleToRow = (i: Inmueble) => ({
   avaluo_catastral: i.avaluo_catastral,
   escritura_ph: i.escritura_ph,
   reformas_ph: i.reformas_ph,
+  es_propiedad_horizontal: i.es_propiedad_horizontal,
 });
 
 const actosToRow = (a: Actos) => ({

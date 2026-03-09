@@ -133,6 +133,7 @@ export const createEmptyInmueble = (): Inmueble => ({
   avaluo_catastral: "",
   escritura_ph: "",
   reformas_ph: "",
+  es_propiedad_horizontal: false,
 });
 
 export const createEmptyActos = (): Actos => ({

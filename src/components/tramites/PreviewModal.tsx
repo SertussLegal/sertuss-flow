@@ -39,6 +39,9 @@ const PersonaPreview = ({ persona, label }: { persona: Persona; label: string })
     {persona.actua_mediante_apoderado && (
       <div className="mt-1 rounded bg-muted p-2">
         <p className="text-xs font-medium">Apoderado: {persona.apoderado_persona_nombre} — C.C. {persona.apoderado_persona_cedula}</p>
+        {persona.apoderado_persona_municipio && (
+          <p className="text-xs">Domicilio del Apoderado: {persona.apoderado_persona_municipio}</p>
+        )}
       </div>
     )}
     {persona.es_pep && (
@@ -86,11 +89,14 @@ const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, a
               <p>Identificador ({inmueble.tipo_identificador_predial === "chip" ? "CHIP" : "Cédula Catastral"}): {inmueble.identificador_predial}</p>
               <p>Ubicación: {inmueble.municipio}, {inmueble.departamento}</p>
               <p>ORIP: {inmueble.codigo_orip} | Predio: {inmueble.tipo_predio}</p>
-              <p>Dirección: {inmueble.direccion} | Estrato: {inmueble.estrato} | Área: {inmueble.area} m²</p>
+              <p>Dirección: {inmueble.direccion} | Área: {inmueble.area} m²</p>
               {inmueble.avaluo_catastral && <p>Avalúo Catastral: {inmueble.avaluo_catastral}</p>}
-              {inmueble.valorizacion && <p>Valorización: {inmueble.valorizacion}</p>}
-              {inmueble.escritura_ph && <p>Escritura PH: {inmueble.escritura_ph}</p>}
-              {inmueble.reformas_ph && <p>Reformas PH: {inmueble.reformas_ph}</p>}
+              {inmueble.es_propiedad_horizontal && (
+                <>
+                  {inmueble.escritura_ph && <p>Escritura PH: {inmueble.escritura_ph}</p>}
+                  {inmueble.reformas_ph && <p>Reformas PH: {inmueble.reformas_ph}</p>}
+                </>
+              )}
               {inmueble.linderos && (
                 <div>
                   <p className="font-medium mt-2">Linderos:</p>
@@ -114,9 +120,6 @@ const PreviewModal = ({ open, onOpenChange, vendedores, compradores, inmueble, a
                   <p>Entidad: {actos.entidad_bancaria}</p>
                   <p>Apoderado: {actos.apoderado_nombre} — C.C. {actos.apoderado_cedula}</p>
                 </>
-              )}
-              {actos.afectacion_vivienda_familiar && (
-                <Badge variant="outline" className="mt-1 border-secondary text-secondary">Afectación Vivienda Familiar</Badge>
               )}
             </div>
           </div>
