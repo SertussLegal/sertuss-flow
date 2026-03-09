@@ -140,3 +140,10 @@ export const createEmptyActos = (): Actos => ({
   apoderado_nombre: "",
   apoderado_cedula: "",
 });
+
+export interface CustomVariable {
+  id: string;
+  originalText: string;
+  variableName: string;
+  value: string;
+}
