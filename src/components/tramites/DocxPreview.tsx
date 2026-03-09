@@ -114,7 +114,11 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
 
       for (const [key, value] of Object.entries(replacements)) {
         const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<strong>${value}</strong>`);
+        if (value && value !== "___________") {
+          result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<strong style="color:#065f46">${value}</strong>`);
+        } else {
+          result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<mark style="background:#fef3c7;text-decoration:underline">___________</mark>`);
+        }
       }
 
       result = result.replace(/\{[#/^][^}]*\}/g, "");
