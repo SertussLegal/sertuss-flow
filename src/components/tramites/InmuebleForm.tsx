@@ -16,17 +16,21 @@ interface InmuebleFormProps {
   onChange: (inmueble: Inmueble) => void;
 }
 
+type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
+
 const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
-  const [scanning, setScanning] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [scanning, setScanning] = useState<ScanType | null>(null);
+  const certInputRef = useRef<HTMLInputElement | null>(null);
+  const predialInputRef = useRef<HTMLInputElement | null>(null);
+  const escrituraInputRef = useRef<HTMLInputElement | null>(null);
 
   const update = (field: keyof Inmueble, value: string | boolean) => {
     onChange({ ...inmueble, [field]: value });
   };
 
-  const handleScanCertificado = async (file: File) => {
+  const handleScanDocument = async (file: File, type: ScanType) => {
     if (!profile?.organization_id) return;
 
     const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
@@ -35,65 +39,101 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
       return;
     }
 
-    setScanning(true);
+    setScanning(type);
     try {
       const base64 = await fileToBase64(file);
       const { data, error } = await supabase.functions.invoke("scan-document", {
-        body: { image: base64, type: "certificado_tradicion" },
+        body: { image: base64, type },
       });
 
       if (error) throw new Error(error.message);
       if (data?.data) {
         const d = data.data;
-        onChange({
-          ...inmueble,
-          matricula_inmobiliaria: d.matricula_inmobiliaria || inmueble.matricula_inmobiliaria,
-          codigo_orip: d.codigo_orip || inmueble.codigo_orip,
-          direccion: d.direccion || inmueble.direccion,
-          municipio: d.municipio || inmueble.municipio,
-          departamento: d.departamento || inmueble.departamento,
-          linderos: d.linderos || inmueble.linderos,
-          area: d.area || inmueble.area,
-        });
-        toast({ title: "Certificado procesado", description: "Datos del inmueble extraídos correctamente." });
+
+        if (type === "certificado_tradicion") {
+          onChange({
+            ...inmueble,
+            matricula_inmobiliaria: d.matricula_inmobiliaria || inmueble.matricula_inmobiliaria,
+            codigo_orip: d.codigo_orip || inmueble.codigo_orip,
+            direccion: d.direccion || inmueble.direccion,
+            municipio: d.municipio || inmueble.municipio,
+            departamento: d.departamento || inmueble.departamento,
+            linderos: d.linderos || inmueble.linderos,
+            area: d.area || inmueble.area,
+            tipo_predio: d.tipo_predio === "rural" ? "rural" : inmueble.tipo_predio,
+            es_propiedad_horizontal: d.es_propiedad_horizontal ?? inmueble.es_propiedad_horizontal,
+            escritura_ph: d.escritura_constitucion_ph || inmueble.escritura_ph,
+            reformas_ph: d.reformas_ph || inmueble.reformas_ph,
+          });
+          toast({ title: "Certificado procesado", description: "Datos del inmueble extraídos correctamente." });
+        } else if (type === "predial") {
+          onChange({
+            ...inmueble,
+            identificador_predial: d.identificador_predial || inmueble.identificador_predial,
+            avaluo_catastral: d.avaluo_catastral || inmueble.avaluo_catastral,
+            area: d.area || inmueble.area,
+            direccion: d.direccion || inmueble.direccion,
+          });
+          toast({ title: "Predial procesado", description: "Cédula catastral y avalúo extraídos correctamente." });
+        } else if (type === "escritura_antecedente") {
+          const linderos = [d.linderos_especiales, d.linderos_generales].filter(Boolean).join("\n\n--- Linderos Generales ---\n\n");
+          onChange({
+            ...inmueble,
+            linderos: linderos || inmueble.linderos,
+          });
+          toast({ title: "Escritura procesada", description: "Linderos extraídos correctamente." });
+        }
       }
       await refreshCredits();
     } catch (err: any) {
       toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
-      setScanning(false);
+      setScanning(null);
     }
   };
 
+  const renderUploadButton = (
+    label: string,
+    type: ScanType,
+    ref: React.RefObject<HTMLInputElement | null>,
+    processingLabel: string
+  ) => (
+    <>
+      <input
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        ref={ref}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleScanDocument(file, type);
+          e.target.value = "";
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={scanning !== null || credits === 0}
+        onClick={() => ref.current?.click()}
+      >
+        {scanning === type ? (
+          <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> {processingLabel}</>
+        ) : (
+          <><Upload className="mr-1 h-4 w-4" /> {label}</>
+        )}
+      </Button>
+    </>
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-semibold">Inmueble</h3>
-        <div>
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleScanCertificado(file);
-              e.target.value = "";
-            }}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={scanning || credits === 0}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {scanning ? (
-              <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
-            ) : (
-              <><Upload className="mr-1 h-4 w-4" /> Cargar Certificado</>
-            )}
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {renderUploadButton("Cargar Certificado", "certificado_tradicion", certInputRef, "Procesando...")}
+          {renderUploadButton("Cargar Predial", "predial", predialInputRef, "Procesando...")}
+          {renderUploadButton("Cargar Escritura", "escritura_antecedente", escrituraInputRef, "Procesando...")}
         </div>
       </div>
 
