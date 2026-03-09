@@ -14,6 +14,19 @@ interface SelectionToolbarProps {
   onClose: () => void;
 }
 
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
 const SelectionToolbar = ({ selectedText, position, existingVariables = [], onCreateVariable, onClose }: SelectionToolbarProps) => {
   const [showNameInput, setShowNameInput] = useState(false);
   const [varName, setVarName] = useState("");
@@ -45,9 +58,16 @@ const SelectionToolbar = ({ selectedText, position, existingVariables = [], onCr
 
   const suggestions = useMemo(() => {
     if (!normalizedInput) return [];
-    return existingVariables.filter(v =>
-      v.toLowerCase().includes(normalizedInput)
-    ).slice(0, 5);
+    const scored = existingVariables.map(v => ({
+      name: v,
+      distance: levenshtein(v.toLowerCase(), normalizedInput),
+      includes: v.toLowerCase().includes(normalizedInput),
+    }));
+    return scored
+      .filter(s => s.includes || s.distance <= Math.max(3, Math.floor(s.name.length * 0.4)))
+      .sort((a, b) => (a.includes === b.includes ? a.distance - b.distance : a.includes ? -1 : 1))
+      .slice(0, 5)
+      .map(s => s.name);
   }, [normalizedInput, existingVariables]);
 
   const isExactMatch = suggestions.some(s => s.toLowerCase() === normalizedInput);
