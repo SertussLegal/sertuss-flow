@@ -43,7 +43,7 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
     // Consume credit first
     const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
     if (!success) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para escanear.", variant: "destructive" });
+      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
       return;
     }
 
