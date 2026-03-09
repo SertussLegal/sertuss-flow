@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,9 +12,38 @@ import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos } from "@/lib/types";
+import type { Persona, Inmueble, Actos, CustomVariable } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+
+// Maps template field names back to the form state they control
+const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
+  matricula_inmobiliaria: "matricula_inmobiliaria",
+  "inmueble.matricula": "matricula_inmobiliaria",
+  identificador_predial: "identificador_predial",
+  "inmueble.cedula_catastral": "identificador_predial",
+  direccion_inmueble: "direccion",
+  "inmueble.direccion": "direccion",
+  municipio: "municipio",
+  departamento: "departamento",
+  area: "area",
+  linderos: "linderos",
+  "inmueble.linderos_especiales": "linderos",
+  "inmueble.linderos_generales": "linderos",
+  avaluo_catastral: "avaluo_catastral",
+  codigo_orip: "codigo_orip",
+  "inmueble.orip_ciudad": "codigo_orip",
+};
+
+const FIELD_TO_ACTOS: Record<string, keyof Actos> = {
+  tipo_acto: "tipo_acto",
+  valor_compraventa_letras: "valor_compraventa",
+  "actos.cuantia_compraventa_letras": "valor_compraventa",
+  "actos.cuantia_compraventa_numero": "valor_compraventa",
+  entidad_bancaria: "entidad_bancaria",
+  "actos.entidad_bancaria": "entidad_bancaria",
+  valor_hipoteca_letras: "valor_hipoteca",
+};
 
 const Validacion = () => {
   const navigate = useNavigate();
@@ -27,6 +56,7 @@ const Validacion = () => {
   const [compradores, setCompradores] = useState<Persona[]>([createEmptyPersona()]);
   const [inmueble, setInmueble] = useState<Inmueble>(createEmptyInmueble());
   const [actos, setActos] = useState<Actos>(createEmptyActos());
+  const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -37,6 +67,12 @@ const Validacion = () => {
   const loadTramite = async (tid: string) => {
     const { data: t } = await supabase.from("tramites").select("*").eq("id", tid).single();
     if (!t) return;
+
+    // Restore custom variables from metadata
+    const meta = (t as any).metadata;
+    if (meta?.custom_variables) {
+      setCustomVariables(meta.custom_variables);
+    }
 
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
@@ -51,6 +87,46 @@ const Validacion = () => {
     if (inm) setInmueble(inm as any);
     if (act) setActos(act as any);
   };
+
+  // Bidirectional sync: preview → form data
+  const handleFieldEdit = useCallback((field: string, value: string) => {
+    // Handle custom variables
+    if (field.startsWith("__custom__")) {
+      const cvId = field.replace("__custom__", "");
+      setCustomVariables((prev) =>
+        prev.map((cv) => (cv.id === cvId ? { ...cv, value } : cv))
+      );
+      return;
+    }
+
+    // Map to inmueble
+    if (FIELD_TO_INMUEBLE[field]) {
+      setInmueble((prev) => ({ ...prev, [FIELD_TO_INMUEBLE[field]]: value }));
+      return;
+    }
+
+    // Map to actos
+    if (FIELD_TO_ACTOS[field]) {
+      setActos((prev) => ({ ...prev, [FIELD_TO_ACTOS[field]]: value }));
+      return;
+    }
+
+    // Composite fields (personas) — these are read-only from preview since they combine multiple fields
+  }, []);
+
+  const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
+    const newVar: CustomVariable = {
+      id: crypto.randomUUID(),
+      originalText,
+      variableName,
+      value: "",
+    };
+    setCustomVariables((prev) => [...prev, newVar]);
+    toast({
+      title: "Variable creada",
+      description: `"${originalText.slice(0, 30)}${originalText.length > 30 ? "…" : ""}" → {${variableName}}`,
+    });
+  }, [toast]);
 
   const handleSave = async () => {
     if (!inmueble.identificador_predial) {
@@ -68,7 +144,8 @@ const Validacion = () => {
 
       const metadata = {
         last_saved: new Date().toISOString(),
-      };
+        custom_variables: customVariables.map(cv => ({ ...cv })),
+      } as Record<string, unknown>;
 
       if (!tid) {
         const { data, error } = await supabase
@@ -78,7 +155,7 @@ const Validacion = () => {
             organization_id: profile.organization_id,
             created_by: profile.id,
             status: "validado" as any,
-            metadata,
+            metadata: metadata as any,
           })
           .select()
           .single();
@@ -86,7 +163,7 @@ const Validacion = () => {
         tid = data.id;
         setTramiteId(tid);
       } else {
-        await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata }).eq("id", tid);
+        await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata: metadata as any }).eq("id", tid);
         await supabase.from("personas").delete().eq("tramite_id", tid);
         await supabase.from("inmuebles").delete().eq("tramite_id", tid);
         await supabase.from("actos").delete().eq("tramite_id", tid);
@@ -137,7 +214,7 @@ const Validacion = () => {
       }
 
       const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
-        body: { vendedores, compradores, inmueble, actos },
+        body: { vendedores, compradores, inmueble, actos, customVariables },
       });
       if (aiError) throw new Error("Error en la IA legal: " + aiError.message);
 
@@ -162,7 +239,22 @@ const Validacion = () => {
 
       doc.render(safeData);
 
-      const out = doc.getZip().generate({
+      // Apply custom variables as text replacements on the generated XML
+      let outZip = doc.getZip();
+      if (customVariables.length > 0) {
+        const docXml = outZip.file("word/document.xml");
+        if (docXml) {
+          let xmlContent = docXml.asText();
+          for (const cv of customVariables) {
+            if (cv.value && cv.originalText) {
+              xmlContent = xmlContent.split(cv.originalText).join(cv.value);
+            }
+          }
+          outZip.file("word/document.xml", xmlContent);
+        }
+      }
+
+      const out = outZip.generate({
         type: "blob",
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
@@ -183,6 +275,29 @@ const Validacion = () => {
       setGenerating(false);
     }
   };
+
+  const renderTabs = () => (
+    <Tabs defaultValue="vendedores" className="w-full">
+      <TabsList className="mb-6 w-full">
+        <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
+        <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
+        <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
+        <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
+      </TabsList>
+      <TabsContent value="vendedores">
+        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
+      </TabsContent>
+      <TabsContent value="compradores">
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
+      </TabsContent>
+      <TabsContent value="inmueble">
+        <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
+      </TabsContent>
+      <TabsContent value="actos">
+        <ActosForm actos={actos} onChange={setActos} />
+      </TabsContent>
+    </Tabs>
+  );
 
   return (
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
@@ -220,62 +335,25 @@ const Validacion = () => {
             compradores={compradores}
             inmueble={inmueble}
             actos={actos}
+            customVariables={customVariables}
+            onFieldEdit={handleFieldEdit}
+            onCreateCustomVariable={handleCreateCustomVariable}
           />
         </ResizablePanel>
-
         <ResizableHandle withHandle />
-
         <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
           <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
             <div className="container max-w-2xl py-6">
-              <Tabs defaultValue="vendedores" className="w-full">
-                <TabsList className="mb-6 w-full">
-                  <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
-                  <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
-                  <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
-                  <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
-                </TabsList>
-                <TabsContent value="vendedores">
-                  <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
-                </TabsContent>
-                <TabsContent value="compradores">
-                  <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
-                </TabsContent>
-                <TabsContent value="inmueble">
-                  <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
-                </TabsContent>
-                <TabsContent value="actos">
-                  <ActosForm actos={actos} onChange={setActos} />
-                </TabsContent>
-              </Tabs>
+              {renderTabs()}
             </div>
           </ScrollArea>
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {/* Mobile: stacked column with natural scroll */}
+      {/* Mobile: stacked column */}
       <div className="flex-1 flex flex-col lg:hidden">
         <div className="container max-w-2xl py-6">
-          <Tabs defaultValue="vendedores" className="w-full">
-            <TabsList className="mb-6 w-full">
-              <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
-              <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
-              <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
-              <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
-            </TabsList>
-            <TabsContent value="vendedores">
-              <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
-            </TabsContent>
-            <TabsContent value="compradores">
-              <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
-            </TabsContent>
-            <TabsContent value="inmueble">
-              <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
-            </TabsContent>
-            <TabsContent value="actos">
-              <ActosForm actos={actos} onChange={setActos} />
-            </TabsContent>
-          </Tabs>
+          {renderTabs()}
         </div>
       </div>
 
