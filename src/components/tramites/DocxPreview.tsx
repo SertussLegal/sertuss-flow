@@ -400,6 +400,10 @@ const DocxPreview = ({
         <SelectionToolbar
           selectedText={selectionToolbar.text}
           position={selectionToolbar.position}
+          existingVariables={[
+            ...Object.keys(buildReplacements()),
+            ...customVariables.map((cv) => cv.variableName),
+          ]}
           onCreateVariable={handleCreateVariable}
           onClose={() => setSelectionToolbar(null)}
         />
