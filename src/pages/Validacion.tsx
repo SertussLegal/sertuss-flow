@@ -144,6 +144,9 @@ const Validacion = () => {
 
       const metadata = {
         last_saved: new Date().toISOString(),
+        custom_variables: customVariables.map(cv => ({ ...cv })) as unknown as Record<string, unknown>[],
+      } as Record<string, unknown>;
+        last_saved: new Date().toISOString(),
         custom_variables: customVariables,
       };
 
