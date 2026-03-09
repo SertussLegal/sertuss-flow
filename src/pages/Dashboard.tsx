@@ -63,6 +63,13 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {needsOrgSetup && user && (
+        <SetupOrgModal
+          open={true}
+          userId={user.id}
+          onComplete={() => refreshProfile()}
+        />
+      )}
       <header className="border-b bg-notarial-dark text-white">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
