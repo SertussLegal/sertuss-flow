@@ -65,7 +65,7 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
           municipio_domicilio: extracted.municipio_expedicion || updated[index].municipio_domicilio,
         };
         onChange(updated);
-        toast({ title: "Cédula escaneada", description: "Datos extraídos correctamente." });
+        toast({ title: "Cédula procesada", description: "Datos extraídos correctamente." });
       }
       await refreshCredits();
     } catch (err: any) {
