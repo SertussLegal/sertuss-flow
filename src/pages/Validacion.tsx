@@ -180,7 +180,7 @@ const Validacion = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background overflow-hidden">
       <header className="border-b bg-notarial-dark text-white">
         <div className="container flex h-14 items-center gap-4">
           <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
