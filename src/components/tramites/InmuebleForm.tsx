@@ -54,7 +54,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
           linderos: d.linderos || inmueble.linderos,
           area: d.area || inmueble.area,
         });
-        toast({ title: "Certificado escaneado", description: "Datos del inmueble extraídos correctamente." });
+        toast({ title: "Certificado procesado", description: "Datos del inmueble extraídos correctamente." });
       }
       await refreshCredits();
     } catch (err: any) {
