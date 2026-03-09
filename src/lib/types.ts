@@ -114,6 +114,7 @@ export const createEmptyPersona = (): Persona => ({
   actua_mediante_apoderado: false,
   apoderado_persona_nombre: "",
   apoderado_persona_cedula: "",
+  apoderado_persona_municipio: "",
 });
 
 export const createEmptyInmueble = (): Inmueble => ({
