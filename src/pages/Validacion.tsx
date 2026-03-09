@@ -180,8 +180,8 @@ const Validacion = () => {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background overflow-hidden">
-      <header className="border-b bg-notarial-dark text-white">
+    <div className="flex h-screen flex-col bg-background lg:overflow-hidden overflow-auto">
+      <header className="border-b bg-notarial-dark text-white shrink-0">
         <div className="container flex h-14 items-center gap-4">
           <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
             <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
@@ -207,8 +207,9 @@ const Validacion = () => {
         </div>
       </header>
 
-      <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        <ResizablePanel defaultSize={50} minSize={30} className="hidden lg:block">
+      {/* Desktop: split view */}
+      <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0 hidden lg:flex">
+        <ResizablePanel defaultSize={50} minSize={30} className="overflow-hidden">
           <DocxPreview
             vendedores={vendedores}
             compradores={compradores}
@@ -217,9 +218,9 @@ const Validacion = () => {
           />
         </ResizablePanel>
 
-        <ResizableHandle withHandle className="hidden lg:flex" />
+        <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize={50} minSize={35}>
+        <ResizablePanel defaultSize={50} minSize={35} className="overflow-hidden">
           <ScrollArea className="h-full">
             <div className="container max-w-2xl py-6">
               <Tabs defaultValue="vendedores" className="w-full">
@@ -229,7 +230,6 @@ const Validacion = () => {
                   <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
                   <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
                 </TabsList>
-
                 <TabsContent value="vendedores">
                   <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
                 </TabsContent>
@@ -247,6 +247,32 @@ const Validacion = () => {
           </ScrollArea>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {/* Mobile: stacked column with natural scroll */}
+      <div className="flex-1 flex flex-col lg:hidden">
+        <div className="container max-w-2xl py-6">
+          <Tabs defaultValue="vendedores" className="w-full">
+            <TabsList className="mb-6 w-full">
+              <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
+              <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
+              <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
+              <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
+            </TabsList>
+            <TabsContent value="vendedores">
+              <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
+            </TabsContent>
+            <TabsContent value="compradores">
+              <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
+            </TabsContent>
+            <TabsContent value="inmueble">
+              <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
+            </TabsContent>
+            <TabsContent value="actos">
+              <ActosForm actos={actos} onChange={setActos} />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
 
       <PreviewModal
         open={previewOpen}
