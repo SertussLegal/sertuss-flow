@@ -185,7 +185,7 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       </div>
 
       {/* Single page view */}
-      <div className="flex-1 overflow-auto p-4 flex justify-center items-start">
+      <div className="flex-1 min-h-0 overflow-auto p-4 flex justify-center items-start" style={{ overscrollBehavior: 'contain' }}>
         <div
           className="shrink-0"
           style={{

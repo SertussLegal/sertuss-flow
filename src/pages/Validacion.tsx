@@ -220,8 +220,8 @@ const Validacion = () => {
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize={50} minSize={35} className="overflow-hidden">
-          <ScrollArea className="h-full">
+        <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
+          <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
             <div className="container max-w-2xl py-6">
               <Tabs defaultValue="vendedores" className="w-full">
                 <TabsList className="mb-6 w-full">
