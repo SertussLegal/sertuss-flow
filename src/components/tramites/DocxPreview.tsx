@@ -179,11 +179,14 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       />
 
       {/* Single page view */}
-      <div className="flex-1 flex items-center justify-center overflow-hidden p-4">
+      <div className="flex-1 overflow-auto p-4 flex justify-center items-start">
         <div
+          className="shrink-0"
           style={{
             height: `${PAGE_HEIGHT * scale}px`,
             width: `${PAGE_WIDTH * scale}px`,
+            marginTop: "8px",
+            marginBottom: "8px",
           }}
         >
           <div
