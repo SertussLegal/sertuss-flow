@@ -163,7 +163,7 @@ const Validacion = () => {
         tid = data.id;
         setTramiteId(tid);
       } else {
-        await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata }).eq("id", tid);
+        await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata: metadata as any }).eq("id", tid);
         await supabase.from("personas").delete().eq("tramite_id", tid);
         await supabase.from("inmuebles").delete().eq("tramite_id", tid);
         await supabase.from("actos").delete().eq("tramite_id", tid);
