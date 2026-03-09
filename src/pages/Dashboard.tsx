@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield } from "lucide-react";
+import SetupOrgModal from "@/components/SetupOrgModal";
 
 const statusColors: Record<string, string> = {
   pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
@@ -24,7 +25,7 @@ const statusLabels: Record<string, string> = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { profile, organization, credits, refreshProfile } = useAuth();
+  const { user, profile, organization, credits, refreshProfile, needsOrgSetup } = useAuth();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [tramites, setTramites] = useState<any[]>([]);
@@ -62,6 +63,13 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {needsOrgSetup && user && (
+        <SetupOrgModal
+          open={true}
+          userId={user.id}
+          onComplete={() => refreshProfile()}
+        />
+      )}
       <header className="border-b bg-notarial-dark text-white">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
