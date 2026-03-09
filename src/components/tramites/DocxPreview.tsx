@@ -22,8 +22,22 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
   const [error, setError] = useState<string | null>(null);
   const [baseHtml, setBaseHtml] = useState<string>("");
   const [pageCount, setPageCount] = useState(1);
+  const [scale, setScale] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Observe container width for responsive scaling
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      setScale(Math.min(1, (w - 32) / PAGE_WIDTH));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Load template once
   useEffect(() => {
