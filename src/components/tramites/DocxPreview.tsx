@@ -22,8 +22,22 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
   const [error, setError] = useState<string | null>(null);
   const [baseHtml, setBaseHtml] = useState<string>("");
   const [pageCount, setPageCount] = useState(1);
+  const [scale, setScale] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Observe container width for responsive scaling
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      setScale(Math.min(1, (w - 32) / PAGE_WIDTH));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Load template once
   useEffect(() => {
@@ -147,58 +161,66 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
 
   return (
     <ScrollArea className="h-full bg-muted">
-      {/* Hidden measuring container */}
-      <div
-        ref={measureRef}
-        className="prose prose-sm max-w-none absolute opacity-0 pointer-events-none"
-        style={{
-          width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
-          fontFamily: "'Times New Roman', serif",
-          fontSize: "13px",
-          lineHeight: "1.8",
-          color: "#1a1a1a",
-        }}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <div ref={containerRef}>
+        {/* Hidden measuring container */}
+        <div
+          ref={measureRef}
+          className="prose prose-sm max-w-none absolute opacity-0 pointer-events-none"
+          style={{
+            width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
+            fontFamily: "'Times New Roman', serif",
+            fontSize: "13px",
+            lineHeight: "1.8",
+            color: "#1a1a1a",
+          }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
 
-      {/* Visible paginated pages */}
-      <div className="flex flex-col items-center gap-6 py-8 px-4">
-        {pages.map((pageIndex) => (
-          <div
-            key={pageIndex}
-            className="bg-white rounded shadow-md flex-shrink-0"
-            style={{
-              width: `${PAGE_WIDTH}px`,
-              height: `${PAGE_HEIGHT}px`,
-              padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
-              overflow: "hidden",
-            }}
-          >
+        {/* Visible paginated pages */}
+        <div className="flex flex-col items-center gap-6 py-8 px-4">
+          {pages.map((pageIndex) => (
             <div
-              style={{
-                height: `${CONTENT_HEIGHT}px`,
-                overflow: "hidden",
-              }}
+              key={pageIndex}
+              style={{ height: `${PAGE_HEIGHT * scale}px`, width: `${PAGE_WIDTH * scale}px` }}
             >
               <div
-                className="prose prose-sm max-w-none"
+                className="bg-white rounded shadow-md flex-shrink-0"
                 style={{
-                  fontFamily: "'Times New Roman', serif",
-                  fontSize: "13px",
-                  lineHeight: "1.8",
-                  color: "#1a1a1a",
-                  transform: `translateY(-${pageIndex * CONTENT_HEIGHT}px)`,
+                  width: `${PAGE_WIDTH}px`,
+                  height: `${PAGE_HEIGHT}px`,
+                  padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
+                  overflow: "hidden",
+                  transform: `scale(${scale})`,
+                  transformOrigin: "top left",
                 }}
-                dangerouslySetInnerHTML={{ __html: html }}
-              />
+              >
+                <div
+                  style={{
+                    height: `${CONTENT_HEIGHT}px`,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    className="prose prose-sm max-w-none"
+                    style={{
+                      fontFamily: "'Times New Roman', serif",
+                      fontSize: "13px",
+                      lineHeight: "1.8",
+                      color: "#1a1a1a",
+                      transform: `translateY(-${pageIndex * CONTENT_HEIGHT}px)`,
+                    }}
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
 
-        {/* Page counter */}
-        <p className="text-xs text-muted-foreground pb-4">
-          {pageCount} {pageCount === 1 ? "página" : "páginas"}
-        </p>
+          {/* Page counter */}
+          <p className="text-xs text-muted-foreground pb-4">
+            {pageCount} {pageCount === 1 ? "página" : "páginas"}
+          </p>
+        </div>
       </div>
     </ScrollArea>
   );
