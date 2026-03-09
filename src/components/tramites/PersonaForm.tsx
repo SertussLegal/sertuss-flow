@@ -112,9 +112,9 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
                 onClick={() => fileInputRefs.current[index]?.click()}
               >
                 {scanningIndex === index ? (
-                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando con Gemini IA...</>
+                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
                 ) : (
-                  <><ScanLine className="mr-1 h-4 w-4" /> Escanear Cédula</>
+                  <><Upload className="mr-1 h-4 w-4" /> Cargar Cédula</>
                 )}
               </Button>
               {personas.length > 1 && (

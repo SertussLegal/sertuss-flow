@@ -88,9 +88,9 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
             onClick={() => fileInputRef.current?.click()}
           >
             {scanning ? (
-              <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando con Gemini IA...</>
+              <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
             ) : (
-              <><ScanLine className="mr-1 h-4 w-4" /> Escanear Certificado</>
+              <><Upload className="mr-1 h-4 w-4" /> Cargar Certificado</>
             )}
           </Button>
         </div>
