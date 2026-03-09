@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield } from "lucide-react";
+import SetupOrgModal from "@/components/SetupOrgModal";
 
 const statusColors: Record<string, string> = {
   pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",

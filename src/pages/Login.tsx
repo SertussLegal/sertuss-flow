@@ -8,6 +8,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Scale, Shield } from "lucide-react";
 
+const formatNit = (value: string): string => {
+  const digits = value.replace(/[^\d]/g, "").slice(0, 10);
+  if (digits.length > 9) {
+    return digits.slice(0, 9) + "-" + digits.slice(9);
+  }
+  return digits;
+};
+
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,6 +25,10 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const handleNitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNit(formatNit(e.target.value));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,25 +46,19 @@ const Login = () => {
           setLoading(false);
           return;
         }
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+
+        // Store org data in user_metadata — this works without active session
+        const { error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              org_name: orgName.trim(),
+              nit: nit.trim(),
+            },
+          },
+        });
         if (signUpError) throw signUpError;
-
-        if (signUpData.user) {
-          // Create organization
-          const { data: org, error: orgError } = await supabase
-            .from("organizations")
-            .insert({ name: orgName.trim(), nit: nit.trim() })
-            .select()
-            .single();
-          if (orgError) throw orgError;
-
-          // Update profile with org + owner role
-          const { error: profileError } = await supabase
-            .from("profiles")
-            .update({ organization_id: org.id, role: "owner" as any })
-            .eq("id", signUpData.user.id);
-          if (profileError) throw profileError;
-        }
 
         toast({ title: "Registro exitoso", description: "Revisa tu correo para confirmar tu cuenta." });
       } else {
@@ -107,9 +113,11 @@ const Login = () => {
                       id="nit"
                       placeholder="000000000-0"
                       value={nit}
-                      onChange={(e) => setNit(e.target.value)}
+                      onChange={handleNitChange}
+                      maxLength={11}
                       required
                     />
+                    <p className="text-xs text-muted-foreground">Formato: XXXXXXXXX-X</p>
                   </div>
                 </fieldset>
               )}

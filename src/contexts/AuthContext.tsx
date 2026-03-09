@@ -26,6 +26,7 @@ interface AuthContextType {
   organization: Organization | null;
   credits: number;
   loading: boolean;
+  needsOrgSetup: boolean;
   refreshProfile: () => Promise<void>;
   refreshCredits: () => Promise<void>;
 }
@@ -44,16 +45,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsOrgSetup, setNeedsOrgSetup] = useState(false);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (currentUser: User) => {
     const { data } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", userId)
+      .eq("id", currentUser.id)
       .single();
     if (data) {
       setProfile(data as Profile);
-      if (data.organization_id) {
+
+      if (!data.organization_id) {
+        // Check if user has org data in metadata (from registration)
+        const meta = currentUser.user_metadata;
+        if (meta?.org_name || meta?.nit) {
+          // Auto-create org from metadata
+          const { data: orgId, error } = await supabase.rpc("create_organization_for_user", {
+            p_user_id: currentUser.id,
+            p_org_name: meta.org_name || "",
+            p_org_nit: meta.nit || "",
+          });
+          if (!error && orgId) {
+            // Re-fetch profile after org creation
+            const { data: updatedProfile } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", currentUser.id)
+              .single();
+            if (updatedProfile) {
+              setProfile(updatedProfile as Profile);
+              const { data: org } = await supabase
+                .from("organizations")
+                .select("*")
+                .eq("id", updatedProfile.organization_id)
+                .single();
+              if (org) setOrganization(org as Organization);
+              setNeedsOrgSetup(false);
+              return;
+            }
+          }
+        }
+        // No metadata or RPC failed — show setup modal
+        setNeedsOrgSetup(true);
+      } else {
+        setNeedsOrgSetup(false);
         const { data: org } = await supabase
           .from("organizations")
           .select("*")
@@ -65,7 +101,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
+    if (user) await fetchProfile(user);
   };
 
   const refreshCredits = async () => {
@@ -87,10 +123,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => fetchProfile(session.user.id), 0);
+          setTimeout(() => fetchProfile(session.user), 0);
         } else {
           setProfile(null);
           setOrganization(null);
+          setNeedsOrgSetup(false);
         }
         setLoading(false);
       }
@@ -100,7 +137,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile(session.user);
       }
       setLoading(false);
     });
@@ -117,6 +154,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         organization,
         credits: organization?.credit_balance ?? 0,
         loading,
+        needsOrgSetup,
         refreshProfile,
         refreshCredits,
       }}
