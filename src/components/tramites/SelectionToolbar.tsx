@@ -58,9 +58,16 @@ const SelectionToolbar = ({ selectedText, position, existingVariables = [], onCr
 
   const suggestions = useMemo(() => {
     if (!normalizedInput) return [];
-    return existingVariables.filter(v =>
-      v.toLowerCase().includes(normalizedInput)
-    ).slice(0, 5);
+    const scored = existingVariables.map(v => ({
+      name: v,
+      distance: levenshtein(v.toLowerCase(), normalizedInput),
+      includes: v.toLowerCase().includes(normalizedInput),
+    }));
+    return scored
+      .filter(s => s.includes || s.distance <= Math.max(3, Math.floor(s.name.length * 0.4)))
+      .sort((a, b) => (a.includes === b.includes ? a.distance - b.distance : a.includes ? -1 : 1))
+      .slice(0, 5)
+      .map(s => s.name);
   }, [normalizedInput, existingVariables]);
 
   const isExactMatch = suggestions.some(s => s.toLowerCase() === normalizedInput);
