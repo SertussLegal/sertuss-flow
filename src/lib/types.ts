@@ -67,7 +67,6 @@ export interface Inmueble {
   direccion: string;
   area: string;
   linderos: string;
-  valorizacion: string;
   avaluo_catastral: string;
   escritura_ph: string;
   reformas_ph: string;
