@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
+import OcrSuggestion from "./OcrSuggestion";
 
 interface PersonaFormProps {
   title: string;
@@ -24,9 +25,13 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
   const { toast } = useToast();
   const [scanningIndex, setScanningIndex] = useState<number | null>(null);
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
+  const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map()); // key: "index:field"
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
+  const suggestionKey = (index: number, field: string) => `${index}:${field}`;
+
   const updatePersona = (index: number, field: keyof Persona, value: any) => {
+    // Clear OCR badge on manual edit
     setOcrFields(prev => {
       const personaSet = prev.get(index);
       if (!personaSet?.has(field)) return prev;
@@ -34,6 +39,14 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       const newSet = new Set(personaSet);
       newSet.delete(field);
       next.set(index, newSet);
+      return next;
+    });
+    // Clear suggestion on manual edit
+    const sk = suggestionKey(index, field);
+    setSuggestions(prev => {
+      if (!prev.has(sk)) return prev;
+      const next = new Map(prev);
+      next.delete(sk);
       return next;
     });
     const updated = [...personas];
@@ -56,6 +69,29 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
     });
   };
 
+  const confirmSuggestion = (index: number, field: string) => {
+    const sk = suggestionKey(index, field);
+    const value = suggestions.get(sk);
+    if (!value) return;
+    setSuggestions(prev => { const n = new Map(prev); n.delete(sk); return n; });
+    // Mark as OCR
+    setOcrFields(prev => {
+      const next = new Map(prev);
+      const existing = next.get(index) || new Set<string>();
+      existing.add(field);
+      next.set(index, existing);
+      return next;
+    });
+    const updated = [...personas];
+    updated[index] = { ...updated[index], [field]: value };
+    onChange(updated);
+  };
+
+  const ignoreSuggestion = (index: number, field: string) => {
+    const sk = suggestionKey(index, field);
+    setSuggestions(prev => { const n = new Map(prev); n.delete(sk); return n; });
+  };
+
   const handleScanCedula = async (index: number, file: File) => {
     if (!profile?.organization_id) return;
 
@@ -75,11 +111,27 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       if (error) throw new Error(error.message);
       if (data?.data) {
         const extracted = data.data;
-        const filled: string[] = [];
         const updated = [...personas];
-        if (extracted.nombre_completo) { updated[index] = { ...updated[index], nombre_completo: extracted.nombre_completo }; filled.push("nombre_completo"); }
-        if (extracted.numero_cedula) { updated[index] = { ...updated[index], numero_cedula: extracted.numero_cedula }; filled.push("numero_cedula"); }
-        if (extracted.municipio_expedicion) { updated[index] = { ...updated[index], municipio_domicilio: extracted.municipio_expedicion }; filled.push("municipio_domicilio"); }
+        const filled: string[] = [];
+        const newSuggestions = new Map(suggestions);
+
+        const tryApply = (ocrField: string, personaField: keyof Persona, ocrValue: string | undefined) => {
+          if (!ocrValue) return;
+          const current = updated[index][personaField];
+          const hasValue = typeof current === "string" && current.length > 0;
+          if (hasValue) {
+            newSuggestions.set(suggestionKey(index, personaField), ocrValue);
+          } else {
+            updated[index] = { ...updated[index], [personaField]: ocrValue };
+            filled.push(personaField);
+          }
+        };
+
+        tryApply("nombre_completo", "nombre_completo", extracted.nombre_completo);
+        tryApply("numero_cedula", "numero_cedula", extracted.numero_cedula);
+        tryApply("municipio_domicilio", "municipio_domicilio", extracted.municipio_expedicion);
+
+        setSuggestions(newSuggestions);
         onChange(updated);
 
         if (filled.length > 0) {
@@ -105,6 +157,17 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
 
   const ocr = (index: number, field: string) =>
     ocrFields.get(index)?.has(field) ? <OcrBadge /> : null;
+
+  const wrapWithSuggestion = (index: number, field: string, input: React.ReactNode) => {
+    const sk = suggestionKey(index, field);
+    const suggested = suggestions.get(sk);
+    if (!suggested) return input;
+    return (
+      <OcrSuggestion value={suggested} onConfirm={() => confirmSuggestion(index, field)} onIgnore={() => ignoreSuggestion(index, field)}>
+        <div>{input}</div>
+      </OcrSuggestion>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -194,11 +257,15 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Nombre Completo {ocr(index, "nombre_completo")}</Label>
-                <Input value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
+                {wrapWithSuggestion(index, "nombre_completo",
+                  <Input value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Número de Cédula {ocr(index, "numero_cedula")}</Label>
-                <Input value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
+                {wrapWithSuggestion(index, "numero_cedula",
+                  <Input value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Estado Civil</Label>
@@ -206,7 +273,9 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
               </div>
               <div className="space-y-2">
                 <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")}</Label>
-                <Input value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
+                {wrapWithSuggestion(index, "municipio_domicilio",
+                  <Input value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
+                )}
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Dirección</Label>

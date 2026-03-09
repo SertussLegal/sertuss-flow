@@ -1,74 +1,136 @@
 
 
-## Plan: Reestructuración "Validación Humana + IA"
+## Sertuss — Multi-tenant Architecture with Organizations, Credits, and Audit Trail
 
-### Análisis: ¿Qué ya existe vs qué falta?
+This is a large backend-first implementation. The plan is divided into database schema, backend logic, and frontend integration.
 
-**Ya implementado:**
-- Split View con ResizablePanelGroup
-- DocxPreview reactivo con mammoth y navegación por páginas
-- Formularios completos: Personas (Apoderado, Municipio), Inmueble (CHIP/Cédula, ORIP, PH), Actos (Hipoteca)
-- OCR con scan-document Edge Function (6 tipos de documento)
-- Badges OCR que desaparecen al editar manualmente
-- Consumo/rollback de créditos
-- Validación de NIT/Razón Social para generación
-- Campos editables, nacen vacíos
+---
 
-**Falta implementar (3 features nuevos):**
+### Phase 1: Database Schema (Single Migration)
 
-### 1. Prevención de Sobreescritura OCR con Popover de Sugerencia
+**Tables to create:**
 
-Cuando un campo ya tiene contenido (editado manualmente o por OCR previo), el OCR no debe sobreescribirlo directamente. En su lugar, muestra un Popover junto al campo con el valor detectado y botones "Confirmar" / "Ignorar".
+1. **`organizations`** — Multi-tenant root
+   - `id` uuid PK, `name` text NOT NULL, `nit` varchar(20), `address` text, `credit_balance` integer DEFAULT 5, `created_at` timestamptz
 
-**Nuevo componente: `src/components/tramites/OcrSuggestion.tsx`**
-- Popover que se abre automáticamente mostrando el valor detectado por OCR
-- Botón "Confirmar": aplica el valor y marca como OCR
-- Botón "Ignorar": cierra el popover sin cambios
-- Se auto-cierra si el usuario edita manualmente el campo
+2. **`profiles`** — Extends auth.users
+   - `id` uuid PK (references auth.users), `email` text, `full_name` text, `organization_id` uuid FK → organizations, `role` org_role enum ('owner','admin','operator'), `created_at` timestamptz
+   - Trigger on `auth.users` insert to auto-create profile row
 
-**Cambios en `InmuebleForm.tsx`, `PersonaForm.tsx`, `ActosForm.tsx`:**
-- Estado `suggestions: Map<string, string>` para almacenar sugerencias pendientes
-- Lógica: si `campo.length > 0` al recibir OCR → agregar a `suggestions` en vez de aplicar directamente
-- Wrapper en cada campo: si tiene sugerencia pendiente, renderizar `<OcrSuggestion>` junto al input
-- Al confirmar: aplicar valor + marcar OCR + remover sugerencia
-- Al ignorar: solo remover sugerencia
+3. **`tramites`** — Core business entity
+   - `id` uuid PK, `radicado` text, `tipo` text, `fecha` date, `status` tramite_status enum ('pendiente','validado','word_generado'), `organization_id` uuid FK, `created_by` uuid FK → profiles, `created_at`, `updated_at`
 
-### 2. Resaltado Visual en DocxPreview
+4. **`personas`** — Vendedores/Compradores linked to tramite
+   - `id` uuid PK, `tramite_id` uuid FK, `rol` persona_rol enum ('vendedor','comprador'), all existing Persona fields including `nit` varchar(20), `es_persona_juridica`, `es_pep`, etc.
 
-Variables que aún son placeholder (`___________`) se muestran con un subrayado amarillo sutil para indicar que requieren validación humana. Variables ya resueltas se muestran en negrita sin resaltado.
+5. **`inmuebles`** — One per tramite
+   - `id` uuid PK, `tramite_id` uuid FK, all Inmueble fields. `identificador_predial` varchar(30) to support 30-digit Nacional.
 
-**Cambios en `DocxPreview.tsx`:**
-- Cambiar debounce de 300ms → 500ms
-- Valores resueltos (no vacíos): `<strong class="resolved">${value}</strong>`
-- Valores vacíos/placeholder: `<mark class="pending">___________</mark>`
-- Agregar estilos inline: `.pending { background: #fef3c7; text-decoration: underline; }` y `.resolved { color: #065f46; }`
+6. **`actos`** — One per tramite
+   - `id` uuid PK, `tramite_id` uuid FK, all Actos fields.
 
-### 3. Persistencia en metadata JSONB
+7. **`activity_logs`** — Habeas Data / Ley 1581 audit trail
+   - `id` uuid PK, `organization_id` uuid FK, `user_id` uuid FK, `action` text ('created','updated','generated','viewed'), `entity_type` text ('tramite','persona','inmueble'), `entity_id` uuid, `metadata` jsonb, `created_at` timestamptz
 
-Guardar el tracking de campos OCR y ediciones manuales en la columna `metadata` de `tramites` al hacer "Guardar".
+8. **`invitations`** — Team invite infrastructure
+   - `id` uuid PK, `organization_id` uuid FK, `email` text, `role` org_role, `invited_by` uuid FK, `accepted_at` timestamptz NULL, `created_at` timestamptz
 
-**Cambios en `Validacion.tsx`:**
-- La tabla `tramites` ya tiene columna `metadata` (tipo JSONB, no nullable, default `'{}'`)
+**Enums:**
+- `org_role`: 'owner', 'admin', 'operator'
+- `tramite_status`: 'pendiente', 'validado', 'word_generado'
+- `persona_rol`: 'vendedor', 'comprador'
 
-Espera — revisando la tabla... `tramites` no tiene columna `metadata`. Necesitamos una migración.
+---
 
-**Migración SQL:** Agregar columna `metadata jsonb default '{}'::jsonb` a `tramites`.
+### Phase 2: RLS Policies
 
-**En `handleSave`:** Incluir `metadata: { ocr_fields: [...], manual_edits: [...], last_saved: timestamp }` al insertar/actualizar el trámite.
+All business tables scoped by `organization_id` via a helper function:
 
-### Resumen de archivos
+```text
+get_user_org(uid) → returns organization_id from profiles
+get_user_role(uid) → returns role from profiles
+```
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/components/tramites/OcrSuggestion.tsx` | **Nuevo** — Popover de sugerencia OCR |
-| `src/components/tramites/InmuebleForm.tsx` | Lógica de sugerencias + props |
-| `src/components/tramites/PersonaForm.tsx` | Lógica de sugerencias + props |
-| `src/components/tramites/ActosForm.tsx` | Lógica de sugerencias + props |
-| `src/components/tramites/DocxPreview.tsx` | Resaltado visual + debounce 500ms |
-| `src/pages/Validacion.tsx` | Persistencia metadata |
-| Migración SQL | Agregar `metadata` a `tramites` |
+- **organizations**: Users can SELECT their own org. Owners can UPDATE.
+- **profiles**: Users in same org can SELECT each other. Admins/Owners can UPDATE roles.
+- **tramites**: SELECT/INSERT/UPDATE scoped to org. Operators can only see `created_by = auth.uid()`.
+- **personas, inmuebles, actos**: Access via tramite ownership (join through tramites table).
+- **activity_logs**: INSERT for authenticated users in their org. SELECT for admin/owner only.
+- **invitations**: Admin/Owner can INSERT/SELECT for their org.
 
-### Nota sobre "Edición In-Situ"
+---
 
-La funcionalidad de seleccionar texto en el visor Word para convertir palabras en variables es una feature compleja que requiere un editor de contenido con selección de rangos, mapping bidireccional entre HTML y template tags, y sincronización con el objeto de datos. Recomiendo implementarlo como fase separada después de validar las 3 features de arriba.
+### Phase 3: Credit Consumption Function
 
+Database function `consume_credit(org_id uuid)`:
+- Checks `credit_balance > 0`, decrements by 1, returns success/failure.
+- Called from frontend before setting status to `word_generado`.
+- SECURITY DEFINER to bypass RLS.
+
+Database trigger on `tramites` UPDATE: when status changes to `word_generado`, automatically log to `activity_logs`.
+
+---
+
+### Phase 4: Frontend Changes
+
+1. **Auth flow update** (`Login.tsx`):
+   - On registration, create organization + profile with role 'owner'.
+   - On login, fetch profile to get org_id and role, store in React context.
+
+2. **Auth context** (`src/contexts/AuthContext.tsx`):
+   - Provides `user`, `profile`, `organization`, `credits` to the app.
+   - Protected route wrapper redirects unauthenticated users.
+
+3. **Dashboard.tsx**:
+   - Replace mock data with real Supabase queries scoped by org.
+   - Show credit balance in header.
+   - Disable "Nuevo Trámite" if credits = 0 with warning message.
+
+4. **Validacion.tsx**:
+   - Save tramite + personas + inmueble + actos to database.
+   - On "Generate Word", call `consume_credit`, update status, log activity.
+   - If credits = 0, disable generate button with "Bolsa de créditos agotada" message.
+
+5. **Team Management page** (`src/pages/Team.tsx`):
+   - List org members with roles.
+   - Invite form (email + role).
+   - Admin can change roles.
+   - Credit consumption per user (query activity_logs grouped by user).
+
+6. **New route**: `/equipo` → Team.tsx
+
+7. **Types update** (`src/lib/types.ts`):
+   - Add Organization, Profile, ActivityLog, Invitation interfaces.
+   - Keep existing interfaces for form compatibility.
+
+---
+
+### Files to create/modify
+
+| File | Action |
+|------|--------|
+| Migration SQL | Create all tables, enums, RLS, functions, triggers |
+| `src/contexts/AuthContext.tsx` | New — auth + org context provider |
+| `src/pages/Team.tsx` | New — team management UI |
+| `src/lib/types.ts` | Add Organization, Profile, Invitation, ActivityLog types |
+| `src/App.tsx` | Add AuthProvider wrapper, protected routes, `/equipo` route |
+| `src/pages/Login.tsx` | Create org on register, redirect on login |
+| `src/pages/Dashboard.tsx` | Real queries, credit display, disable if 0 |
+| `src/pages/Validacion.tsx` | Persist to DB, credit consumption on generate |
+| `src/pages/LandingPage.tsx` | **No changes** — visual styles preserved |
+| `src/index.css` | **No changes** |
+
+
+## Generate Word Document with Gemini AI (IMPLEMENTED)
+
+### Architecture
+Frontend → consume_credit RPC → generate-document edge function (Gemini AI) → docxtemplater fill → browser download → update status to word_generado
+
+### Implemented
+- Edge function `supabase/functions/generate-document/index.ts` with Lovable AI Gateway (Gemini 3 Flash)
+- Tool calling for structured JSON extraction of legal template fields
+- `docxtemplater` + `pizzip` for client-side .docx generation
+- Auto-download with tramite name
+- Credit validation before generation
+- Status update triggers activity log
+- Loading state in PreviewModal during generation

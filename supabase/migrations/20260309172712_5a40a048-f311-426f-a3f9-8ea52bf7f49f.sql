@@ -1,0 +1,1 @@
+ALTER TABLE public.tramites ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT '{}'::jsonb;
