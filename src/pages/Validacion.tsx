@@ -66,6 +66,10 @@ const Validacion = () => {
     try {
       let tid = tramiteId;
 
+      const metadata = {
+        last_saved: new Date().toISOString(),
+      };
+
       if (!tid) {
         const { data, error } = await supabase
           .from("tramites")
@@ -74,6 +78,7 @@ const Validacion = () => {
             organization_id: profile.organization_id,
             created_by: profile.id,
             status: "validado" as any,
+            metadata,
           })
           .select()
           .single();
@@ -81,7 +86,7 @@ const Validacion = () => {
         tid = data.id;
         setTramiteId(tid);
       } else {
-        await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString() }).eq("id", tid);
+        await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata }).eq("id", tid);
         await supabase.from("personas").delete().eq("tramite_id", tid);
         await supabase.from("inmuebles").delete().eq("tramite_id", tid);
         await supabase.from("actos").delete().eq("tramite_id", tid);

@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
+import OcrSuggestion from "./OcrSuggestion";
 
 interface ActosFormProps {
   actos: Actos;
@@ -22,6 +23,7 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
   const { toast } = useToast();
   const [scanning, setScanning] = useState<HipotecaScanType | null>(null);
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set());
+  const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
   const poderInputRef = useRef<HTMLInputElement | null>(null);
   const cartaInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -32,12 +34,58 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
       next.delete(field);
       return next;
     });
+    setSuggestions(prev => {
+      if (!prev.has(field)) return prev;
+      const next = new Map(prev);
+      next.delete(field);
+      return next;
+    });
     onChange({ ...actos, [field]: value });
   };
 
   const handleTipoActoChange = (value: string) => {
     const esHipoteca = value === "Compraventa con Hipoteca";
     onChange({ ...actos, tipo_acto: value, es_hipoteca: esHipoteca });
+  };
+
+  const applyOcrResults = (results: Record<string, string | undefined>) => {
+    const updated: Partial<Actos> = {};
+    const filled: string[] = [];
+    const newSuggestions = new Map(suggestions);
+
+    for (const [field, value] of Object.entries(results)) {
+      if (!value) continue;
+      const current = actos[field as keyof Actos];
+      const hasValue = typeof current === "string" && current.length > 0;
+      if (hasValue) {
+        newSuggestions.set(field, value);
+      } else {
+        (updated as any)[field] = value;
+        filled.push(field);
+      }
+    }
+
+    setSuggestions(newSuggestions);
+    if (Object.keys(updated).length > 0) onChange({ ...actos, ...updated });
+    if (filled.length > 0) {
+      setOcrFields(prev => {
+        const next = new Set(prev);
+        filled.forEach(f => next.add(f));
+        return next;
+      });
+    }
+  };
+
+  const confirmSuggestion = (field: string) => {
+    const value = suggestions.get(field);
+    if (!value) return;
+    setSuggestions(prev => { const n = new Map(prev); n.delete(field); return n; });
+    setOcrFields(prev => { const n = new Set(prev); n.add(field); return n; });
+    onChange({ ...actos, [field]: value });
+  };
+
+  const ignoreSuggestion = (field: string) => {
+    setSuggestions(prev => { const n = new Map(prev); n.delete(field); return n; });
   };
 
   const handleScanHipoteca = async (file: File, type: HipotecaScanType) => {
@@ -59,29 +107,20 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
       if (error) throw new Error(error.message);
       if (data?.data) {
         const d = data.data;
-        const filled: string[] = [];
 
         if (type === "poder_banco") {
-          const updated: Partial<Actos> = {};
-          if (d.entidad_bancaria) { updated.entidad_bancaria = d.entidad_bancaria; filled.push("entidad_bancaria"); }
-          if (d.apoderado_nombre) { updated.apoderado_nombre = d.apoderado_nombre; filled.push("apoderado_nombre"); }
-          if (d.apoderado_cedula) { updated.apoderado_cedula = d.apoderado_cedula; filled.push("apoderado_cedula"); }
-          onChange({ ...actos, ...updated });
+          applyOcrResults({
+            entidad_bancaria: d.entidad_bancaria,
+            apoderado_nombre: d.apoderado_nombre,
+            apoderado_cedula: d.apoderado_cedula,
+          });
           toast({ title: "Poder procesado", description: "Datos del apoderado bancario extraídos." });
         } else if (type === "carta_credito") {
-          const updated: Partial<Actos> = {};
-          if (d.valor_credito) { updated.valor_hipoteca = d.valor_credito; filled.push("valor_hipoteca"); }
-          if (d.entidad_bancaria) { updated.entidad_bancaria = d.entidad_bancaria; filled.push("entidad_bancaria"); }
-          onChange({ ...actos, ...updated });
-          toast({ title: "Carta procesada", description: "Valor del crédito extraído." });
-        }
-
-        if (filled.length > 0) {
-          setOcrFields(prev => {
-            const next = new Set(prev);
-            filled.forEach(f => next.add(f));
-            return next;
+          applyOcrResults({
+            valor_hipoteca: d.valor_credito,
+            entidad_bancaria: d.entidad_bancaria,
           });
+          toast({ title: "Carta procesada", description: "Valor del crédito extraído." });
         }
       }
       await refreshCredits();
@@ -130,6 +169,16 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
 
   const ocr = (field: string) => ocrFields.has(field) ? <OcrBadge /> : null;
 
+  const wrapWithSuggestion = (field: string, input: React.ReactNode) => {
+    const suggested = suggestions.get(field);
+    if (!suggested) return input;
+    return (
+      <OcrSuggestion value={suggested} onConfirm={() => confirmSuggestion(field)} onIgnore={() => ignoreSuggestion(field)}>
+        <div>{input}</div>
+      </OcrSuggestion>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Actos</h3>
@@ -138,9 +187,7 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
         <div className="space-y-2">
           <Label>Tipo de Acto</Label>
           <Select value={actos.tipo_acto} onValueChange={handleTipoActoChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="Seleccione tipo de acto" />
-            </SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Seleccione tipo de acto" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="Compraventa">Compraventa</SelectItem>
               <SelectItem value="Compraventa con Hipoteca">Compraventa con Hipoteca</SelectItem>
@@ -165,19 +212,27 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Valor de Crédito (COP) {ocr("valor_hipoteca")}</Label>
-              <Input value={actos.valor_hipoteca} onChange={(e) => update("valor_hipoteca", e.target.value)} />
+              {wrapWithSuggestion("valor_hipoteca",
+                <Input value={actos.valor_hipoteca} onChange={(e) => update("valor_hipoteca", e.target.value)} />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Entidad Bancaria {ocr("entidad_bancaria")}</Label>
-              <Input value={actos.entidad_bancaria} onChange={(e) => update("entidad_bancaria", e.target.value)} />
+              {wrapWithSuggestion("entidad_bancaria",
+                <Input value={actos.entidad_bancaria} onChange={(e) => update("entidad_bancaria", e.target.value)} />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Apoderado del Banco — Nombre {ocr("apoderado_nombre")}</Label>
-              <Input value={actos.apoderado_nombre} onChange={(e) => update("apoderado_nombre", e.target.value)} />
+              {wrapWithSuggestion("apoderado_nombre",
+                <Input value={actos.apoderado_nombre} onChange={(e) => update("apoderado_nombre", e.target.value)} />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Apoderado del Banco — Cédula {ocr("apoderado_cedula")}</Label>
-              <Input value={actos.apoderado_cedula} onChange={(e) => update("apoderado_cedula", e.target.value)} />
+              {wrapWithSuggestion("apoderado_cedula",
+                <Input value={actos.apoderado_cedula} onChange={(e) => update("apoderado_cedula", e.target.value)} />
+              )}
             </div>
           </div>
         </div>
