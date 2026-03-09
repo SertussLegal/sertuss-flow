@@ -220,7 +220,7 @@ const Validacion = () => {
         <ResizableHandle withHandle className="hidden lg:flex" />
 
         <ResizablePanel defaultSize={50} minSize={35}>
-          <ScrollArea cfull0vh-3.5rem)]">
+          <ScrollArea className="h-full">
             <div className="container max-w-2xl py-6">
               <Tabs defaultValue="vendedores" className="w-full">
                 <TabsList className="mb-6 w-full">
