@@ -76,7 +76,8 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       // Generate a new docx buffer and convert to HTML with mammoth
       const outputBlob = doc.getZip().generate({ type: "uint8array" });
       const mammoth = await import("mammoth");
-      const result = await mammoth.convertToHtml({ arrayBuffer: outputBlob.buffer });
+      const buffer = outputBlob.buffer.slice(0) as ArrayBuffer;
+      const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
       setHtml(result.value);
     } catch (err: any) {
       console.error("Preview error:", err);
