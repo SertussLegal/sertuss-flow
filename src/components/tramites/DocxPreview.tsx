@@ -1,13 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { FileText, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
-import type { Persona, Inmueble, Actos } from "@/lib/types";
+import type { Persona, Inmueble, Actos, CustomVariable } from "@/lib/types";
+import VariableEditPopover from "./VariableEditPopover";
+import SelectionToolbar from "./SelectionToolbar";
 
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
   inmueble: Inmueble;
   actos: Actos;
+  customVariables?: CustomVariable[];
+  onFieldEdit?: (field: string, value: string) => void;
+  onCreateCustomVariable?: (originalText: string, variableName: string) => void;
 }
 
 const PAGE_WIDTH = 612;
@@ -17,7 +22,15 @@ const PAGE_PADDING_Y = 72;
 const CONTENT_HEIGHT = PAGE_HEIGHT - PAGE_PADDING_Y * 2;
 const NAV_BAR_HEIGHT = 56;
 
-const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewProps) => {
+const DocxPreview = ({
+  vendedores,
+  compradores,
+  inmueble,
+  actos,
+  customVariables = [],
+  onFieldEdit,
+  onCreateCustomVariable,
+}: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +41,22 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  // Observe container size for responsive scaling (both width and height)
+  // Edit popover state
+  const [editPopover, setEditPopover] = useState<{
+    field: string;
+    value: string;
+    position: { top: number; left: number };
+  } | null>(null);
+
+  // Selection toolbar state
+  const [selectionToolbar, setSelectionToolbar] = useState<{
+    text: string;
+    position: { top: number; left: number };
+  } | null>(null);
+
+  // Observe container size for responsive scaling
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -115,14 +142,31 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       for (const [key, value] of Object.entries(replacements)) {
         const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         if (value && value !== "___________") {
-          result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<strong style="color:#065f46">${value}</strong>`);
+          result = result.replace(
+            new RegExp(`\\{${escaped}\\}`, "g"),
+            `<span data-field="${key}" class="var-resolved" style="color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46">${value}</span>`
+          );
         } else {
-          result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<mark style="background:#fef3c7;text-decoration:underline">___________</mark>`);
+          result = result.replace(
+            new RegExp(`\\{${escaped}\\}`, "g"),
+            `<span data-field="${key}" class="var-pending" style="background:#fef3c7;text-decoration:underline;cursor:pointer">___________</span>`
+          );
         }
       }
 
       result = result.replace(/\{[#/^][^}]*\}/g, "");
-      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<mark style="background:#fef3c7;text-decoration:underline">___________</mark>');
+      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:#fef3c7;text-decoration:underline">___________</span>');
+
+      // Apply custom variables
+      for (const cv of customVariables) {
+        if (cv.originalText) {
+          const escapedText = cv.originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const replacement = cv.value
+            ? `<span data-custom-var="${cv.id}" class="var-resolved" style="color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46">${cv.value}</span>`
+            : `<span data-custom-var="${cv.id}" class="var-pending" style="background:#fef3c7;text-decoration:underline;cursor:pointer">${cv.originalText}</span>`;
+          result = result.replace(new RegExp(escapedText, "g"), replacement);
+        }
+      }
 
       setHtml(result);
     }, 500);
@@ -130,12 +174,11 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, buildReplacements]);
+  }, [baseHtml, buildReplacements, customVariables]);
 
   // Measure content and compute pages
   useEffect(() => {
     if (!html || !measureRef.current) return;
-
     const frame = requestAnimationFrame(() => {
       if (measureRef.current) {
         const totalHeight = measureRef.current.scrollHeight;
@@ -144,9 +187,92 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
         setCurrentPage((prev) => Math.min(prev, newPageCount - 1));
       }
     });
-
     return () => cancelAnimationFrame(frame);
   }, [html]);
+
+  // Handle click on variable spans
+  const handleContentClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+
+    // Check for template variable click
+    const field = target.getAttribute("data-field");
+    if (field && onFieldEdit) {
+      const text = target.textContent || "";
+      const rect = target.getBoundingClientRect();
+      setSelectionToolbar(null);
+      setEditPopover({
+        field,
+        value: text,
+        position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+      });
+      return;
+    }
+
+    // Check for custom variable click
+    const customVarId = target.getAttribute("data-custom-var");
+    if (customVarId && onFieldEdit) {
+      const cv = customVariables.find((v) => v.id === customVarId);
+      if (cv) {
+        const rect = target.getBoundingClientRect();
+        setSelectionToolbar(null);
+        setEditPopover({
+          field: `__custom__${cv.id}`,
+          value: cv.value || cv.originalText,
+          position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+        });
+      }
+    }
+  }, [onFieldEdit, customVariables]);
+
+  // Handle text selection for creating new variables
+  const handleMouseUp = useCallback(() => {
+    if (!onCreateCustomVariable) return;
+
+    // Small delay to let the selection finalize
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+        return;
+      }
+
+      // Verify selection is within the content area
+      const anchorNode = selection.anchorNode;
+      if (!contentRef.current || !anchorNode || !contentRef.current.contains(anchorNode)) {
+        return;
+      }
+
+      // Don't show toolbar if we clicked on an existing variable
+      const anchorEl = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as HTMLElement);
+      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-custom-var")) {
+        return;
+      }
+
+      const text = selection.toString().trim();
+      if (text.length < 2 || text.length > 200) return;
+
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+
+      setEditPopover(null);
+      setSelectionToolbar({
+        text,
+        position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+      });
+    }, 10);
+  }, [onCreateCustomVariable]);
+
+  const handleFieldApply = useCallback((value: string) => {
+    if (!editPopover || !onFieldEdit) return;
+    onFieldEdit(editPopover.field, value);
+    setEditPopover(null);
+  }, [editPopover, onFieldEdit]);
+
+  const handleCreateVariable = useCallback((variableName: string) => {
+    if (!selectionToolbar || !onCreateCustomVariable) return;
+    onCreateCustomVariable(selectionToolbar.text, variableName);
+    setSelectionToolbar(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selectionToolbar, onCreateCustomVariable]);
 
   if (error) {
     return (
@@ -168,7 +294,7 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
 
   return (
     <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
-      {/* Hidden measuring container – clipped so it never affects scroll */}
+      {/* Hidden measuring container */}
       <div
         aria-hidden="true"
         className="absolute overflow-hidden"
@@ -212,6 +338,7 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
           >
             <div style={{ height: `${CONTENT_HEIGHT}px`, overflow: "hidden" }}>
               <div
+                ref={contentRef}
                 className="prose prose-sm max-w-none"
                 style={{
                   fontFamily: "'Times New Roman', serif",
@@ -221,6 +348,8 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
                   transform: `translateY(-${currentPage * CONTENT_HEIGHT}px)`,
                 }}
                 dangerouslySetInnerHTML={{ __html: html }}
+                onClick={handleContentClick}
+                onMouseUp={handleMouseUp}
               />
             </div>
           </div>
@@ -254,6 +383,27 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Edit popover */}
+      {editPopover && (
+        <VariableEditPopover
+          fieldName={editPopover.field}
+          currentValue={editPopover.value}
+          position={editPopover.position}
+          onApply={handleFieldApply}
+          onClose={() => setEditPopover(null)}
+        />
+      )}
+
+      {/* Selection toolbar */}
+      {selectionToolbar && (
+        <SelectionToolbar
+          selectedText={selectionToolbar.text}
+          position={selectionToolbar.position}
+          onCreateVariable={handleCreateVariable}
+          onClose={() => setSelectionToolbar(null)}
+        />
+      )}
     </div>
   );
 };
