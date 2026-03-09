@@ -8,6 +8,7 @@ import type { Actos } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import OcrBadge from "./OcrBadge";
 
 interface ActosFormProps {
   actos: Actos;
@@ -20,10 +21,17 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<HipotecaScanType | null>(null);
+  const [ocrFields, setOcrFields] = useState<Set<string>>(new Set());
   const poderInputRef = useRef<HTMLInputElement | null>(null);
   const cartaInputRef = useRef<HTMLInputElement | null>(null);
 
   const update = (field: keyof Actos, value: any) => {
+    setOcrFields(prev => {
+      if (!prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
     onChange({ ...actos, [field]: value });
   };
 
@@ -51,21 +59,29 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
       if (error) throw new Error(error.message);
       if (data?.data) {
         const d = data.data;
+        const filled: string[] = [];
+
         if (type === "poder_banco") {
-          onChange({
-            ...actos,
-            entidad_bancaria: d.entidad_bancaria || actos.entidad_bancaria,
-            apoderado_nombre: d.apoderado_nombre || actos.apoderado_nombre,
-            apoderado_cedula: d.apoderado_cedula || actos.apoderado_cedula,
-          });
+          const updated: Partial<Actos> = {};
+          if (d.entidad_bancaria) { updated.entidad_bancaria = d.entidad_bancaria; filled.push("entidad_bancaria"); }
+          if (d.apoderado_nombre) { updated.apoderado_nombre = d.apoderado_nombre; filled.push("apoderado_nombre"); }
+          if (d.apoderado_cedula) { updated.apoderado_cedula = d.apoderado_cedula; filled.push("apoderado_cedula"); }
+          onChange({ ...actos, ...updated });
           toast({ title: "Poder procesado", description: "Datos del apoderado bancario extraídos." });
         } else if (type === "carta_credito") {
-          onChange({
-            ...actos,
-            valor_hipoteca: d.valor_credito || actos.valor_hipoteca,
-            entidad_bancaria: d.entidad_bancaria || actos.entidad_bancaria,
-          });
+          const updated: Partial<Actos> = {};
+          if (d.valor_credito) { updated.valor_hipoteca = d.valor_credito; filled.push("valor_hipoteca"); }
+          if (d.entidad_bancaria) { updated.entidad_bancaria = d.entidad_bancaria; filled.push("entidad_bancaria"); }
+          onChange({ ...actos, ...updated });
           toast({ title: "Carta procesada", description: "Valor del crédito extraído." });
+        }
+
+        if (filled.length > 0) {
+          setOcrFields(prev => {
+            const next = new Set(prev);
+            filled.forEach(f => next.add(f));
+            return next;
+          });
         }
       }
       await refreshCredits();
@@ -110,6 +126,8 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
     </>
   );
 
+  const ocr = (field: string) => ocrFields.has(field) ? <OcrBadge /> : null;
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Actos</h3>
@@ -133,7 +151,6 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
         </div>
       </div>
 
-      {/* Hipoteca — se muestra automáticamente al seleccionar "Compraventa con Hipoteca" */}
       {actos.es_hipoteca && (
         <div className="space-y-4 rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -145,19 +162,19 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Valor de Crédito (COP)</Label>
+              <Label>Valor de Crédito (COP) {ocr("valor_hipoteca")}</Label>
               <Input value={actos.valor_hipoteca} onChange={(e) => update("valor_hipoteca", e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Entidad Bancaria</Label>
+              <Label>Entidad Bancaria {ocr("entidad_bancaria")}</Label>
               <Input value={actos.entidad_bancaria} onChange={(e) => update("entidad_bancaria", e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Apoderado del Banco — Nombre</Label>
+              <Label>Apoderado del Banco — Nombre {ocr("apoderado_nombre")}</Label>
               <Input value={actos.apoderado_nombre} onChange={(e) => update("apoderado_nombre", e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Apoderado del Banco — Cédula</Label>
+              <Label>Apoderado del Banco — Cédula {ocr("apoderado_cedula")}</Label>
               <Input value={actos.apoderado_cedula} onChange={(e) => update("apoderado_cedula", e.target.value)} />
             </div>
           </div>
