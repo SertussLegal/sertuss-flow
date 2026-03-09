@@ -11,6 +11,7 @@ import { createEmptyPersona } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import OcrBadge from "./OcrBadge";
 
 interface PersonaFormProps {
   title: string;
@@ -22,9 +23,19 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
   const [scanningIndex, setScanningIndex] = useState<number | null>(null);
+  const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const updatePersona = (index: number, field: keyof Persona, value: any) => {
+    setOcrFields(prev => {
+      const personaSet = prev.get(index);
+      if (!personaSet?.has(field)) return prev;
+      const next = new Map(prev);
+      const newSet = new Set(personaSet);
+      newSet.delete(field);
+      next.set(index, newSet);
+      return next;
+    });
     const updated = [...personas];
     updated[index] = { ...updated[index], [field]: value };
     onChange(updated);
@@ -35,12 +46,19 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
   const removePersona = (index: number) => {
     if (personas.length <= 1) return;
     onChange(personas.filter((_, i) => i !== index));
+    setOcrFields(prev => {
+      const next = new Map<number, Set<string>>();
+      prev.forEach((v, k) => {
+        if (k < index) next.set(k, v);
+        else if (k > index) next.set(k - 1, v);
+      });
+      return next;
+    });
   };
 
   const handleScanCedula = async (index: number, file: File) => {
     if (!profile?.organization_id) return;
 
-    // Consume credit first
     const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
     if (!success) {
       toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
@@ -57,14 +75,22 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       if (error) throw new Error(error.message);
       if (data?.data) {
         const extracted = data.data;
+        const filled: string[] = [];
         const updated = [...personas];
-        updated[index] = {
-          ...updated[index],
-          nombre_completo: extracted.nombre_completo || updated[index].nombre_completo,
-          numero_cedula: extracted.numero_cedula || updated[index].numero_cedula,
-          municipio_domicilio: extracted.municipio_expedicion || updated[index].municipio_domicilio,
-        };
+        if (extracted.nombre_completo) { updated[index] = { ...updated[index], nombre_completo: extracted.nombre_completo }; filled.push("nombre_completo"); }
+        if (extracted.numero_cedula) { updated[index] = { ...updated[index], numero_cedula: extracted.numero_cedula }; filled.push("numero_cedula"); }
+        if (extracted.municipio_expedicion) { updated[index] = { ...updated[index], municipio_domicilio: extracted.municipio_expedicion }; filled.push("municipio_domicilio"); }
         onChange(updated);
+
+        if (filled.length > 0) {
+          setOcrFields(prev => {
+            const next = new Map(prev);
+            const existing = next.get(index) || new Set<string>();
+            filled.forEach(f => existing.add(f));
+            next.set(index, existing);
+            return next;
+          });
+        }
         toast({ title: "Cédula procesada", description: "Datos extraídos correctamente." });
       }
       await refreshCredits();
@@ -74,6 +100,9 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       setScanningIndex(null);
     }
   };
+
+  const ocr = (index: number, field: string) =>
+    ocrFields.get(index)?.has(field) ? <OcrBadge /> : null;
 
   return (
     <div className="space-y-6">
@@ -92,7 +121,6 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
               {title.slice(0, -2).replace(/e$/, "")}or {index + 1}
             </span>
             <div className="flex items-center gap-2">
-              {/* Scan button */}
               <input
                 type="file"
                 accept="image/*"
@@ -125,7 +153,6 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
             </div>
           </div>
 
-          {/* Switch Persona Jurídica */}
           <div className="flex items-center gap-3">
             <Switch
               checked={persona.es_persona_juridica}
@@ -164,11 +191,11 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Nombre Completo</Label>
+                <Label>Nombre Completo {ocr(index, "nombre_completo")}</Label>
                 <Input value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Número de Cédula</Label>
+                <Label>Número de Cédula {ocr(index, "numero_cedula")}</Label>
                 <Input value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
               </div>
               <div className="space-y-2">
@@ -176,7 +203,7 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
                 <Input value={persona.estado_civil} onChange={(e) => updatePersona(index, "estado_civil", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Municipio de Domicilio</Label>
+                <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")}</Label>
                 <Input value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
               </div>
               <div className="space-y-2 sm:col-span-2">
@@ -186,7 +213,6 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
             </div>
           )}
 
-          {/* Switch Apoderado */}
           <div className="space-y-4 rounded-lg border p-4">
             <div className="flex items-center gap-3">
               <Switch
@@ -213,7 +239,6 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
             )}
           </div>
 
-          {/* PEP Checkbox */}
           <div className="flex items-center gap-2 rounded-md border border-dashed border-accent bg-accent/5 p-3">
             <Checkbox
               checked={persona.es_pep}
