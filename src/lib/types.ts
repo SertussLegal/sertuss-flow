@@ -53,6 +53,7 @@ export interface Persona {
   actua_mediante_apoderado: boolean;
   apoderado_persona_nombre: string;
   apoderado_persona_cedula: string;
+  apoderado_persona_municipio: string;
 }
 
 export interface Inmueble {
