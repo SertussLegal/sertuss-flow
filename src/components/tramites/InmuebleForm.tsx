@@ -1,8 +1,14 @@
+import { useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScanLine, Loader2 } from "lucide-react";
 import type { Inmueble } from "@/lib/types";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 interface InmuebleFormProps {
   inmueble: Inmueble;
@@ -10,13 +16,85 @@ interface InmuebleFormProps {
 }
 
 const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
+  const { profile, credits, refreshCredits } = useAuth();
+  const { toast } = useToast();
+  const [scanning, setScanning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const update = (field: keyof Inmueble, value: string) => {
     onChange({ ...inmueble, [field]: value });
   };
 
+  const handleScanCertificado = async (file: File) => {
+    if (!profile?.organization_id) return;
+
+    const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
+    if (!success) {
+      toast({ title: "Sin créditos", description: "No hay créditos disponibles para escanear.", variant: "destructive" });
+      return;
+    }
+
+    setScanning(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const { data, error } = await supabase.functions.invoke("scan-document", {
+        body: { image: base64, type: "certificado_tradicion" },
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.data) {
+        const d = data.data;
+        onChange({
+          ...inmueble,
+          matricula_inmobiliaria: d.matricula_inmobiliaria || inmueble.matricula_inmobiliaria,
+          codigo_orip: d.codigo_orip || inmueble.codigo_orip,
+          direccion: d.direccion || inmueble.direccion,
+          municipio: d.municipio || inmueble.municipio,
+          departamento: d.departamento || inmueble.departamento,
+          linderos: d.linderos || inmueble.linderos,
+          area: d.area || inmueble.area,
+        });
+        toast({ title: "Certificado escaneado", description: "Datos del inmueble extraídos correctamente." });
+      }
+      await refreshCredits();
+    } catch (err: any) {
+      toast({ title: "Error al escanear", description: err.message, variant: "destructive" });
+    } finally {
+      setScanning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold">Inmueble</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Inmueble</h3>
+        <div>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleScanCertificado(file);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={scanning || credits === 0}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {scanning ? (
+              <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando con Gemini IA...</>
+            ) : (
+              <><ScanLine className="mr-1 h-4 w-4" /> Escanear Certificado</>
+            )}
+          </Button>
+        </div>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -32,7 +110,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="chip">CHIP</SelectItem>
-              <SelectItem value="predial_nacional">Número Predial Nacional (30 dígitos)</SelectItem>
+              <SelectItem value="cedula_catastral">Cédula Catastral</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -40,16 +118,18 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         <div className="space-y-2 sm:col-span-2">
           <Label>
             Identificador Predial *
-            {inmueble.tipo_identificador_predial === "predial_nacional" && (
-              <span className="ml-2 text-xs text-muted-foreground">(30 dígitos)</span>
+            {inmueble.tipo_identificador_predial === "chip" && (
+              <span className="ml-2 text-xs text-muted-foreground">(Formato: AAA0000AAAA)</span>
+            )}
+            {inmueble.tipo_identificador_predial === "cedula_catastral" && (
+              <span className="ml-2 text-xs text-muted-foreground">(Número predial)</span>
             )}
           </Label>
           <Input
             value={inmueble.identificador_predial}
             onChange={(e) => update("identificador_predial", e.target.value)}
             required
-            maxLength={inmueble.tipo_identificador_predial === "predial_nacional" ? 30 : undefined}
-            placeholder={inmueble.tipo_identificador_predial === "chip" ? "AAA0000AAAA" : "000000000000000000000000000000"}
+            placeholder={inmueble.tipo_identificador_predial === "chip" ? "AAA0000AAAA" : "Número predial"}
           />
         </div>
 
@@ -64,8 +144,8 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         </div>
 
         <div className="space-y-2">
-          <Label>Círculo Registral / ORIP</Label>
-          <Input value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Código de Oficina de Registro" />
+          <Label>Oficina de Registro (ORIP)</Label>
+          <Input value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Nombre o código de la ORIP" />
         </div>
 
         <div className="space-y-2">
@@ -100,6 +180,11 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
           <Label>Valorización</Label>
           <Input value={inmueble.valorizacion} onChange={(e) => update("valorizacion", e.target.value)} placeholder="Valor en COP" />
         </div>
+
+        <div className="space-y-2">
+          <Label>Avalúo Catastral (COP)</Label>
+          <Input value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -111,8 +196,39 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
           className="min-h-[200px] resize-y"
         />
       </div>
+
+      {/* Sección Propiedad Horizontal */}
+      <div className="space-y-4 rounded-lg border p-4">
+        <h4 className="text-sm font-semibold text-muted-foreground">Propiedad Horizontal (PH)</h4>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Escritura de Constitución PH</Label>
+            <Input
+              value={inmueble.escritura_ph}
+              onChange={(e) => update("escritura_ph", e.target.value)}
+              placeholder="No. escritura de constitución"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Reformas PH</Label>
+            <Input
+              value={inmueble.reformas_ph}
+              onChange={(e) => update("reformas_ph", e.target.value)}
+              placeholder="Reformas a la PH (si aplica)"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 export default InmuebleForm;

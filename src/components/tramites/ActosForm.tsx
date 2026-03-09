@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Actos } from "@/lib/types";
 
 interface ActosFormProps {
@@ -20,7 +21,16 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label>Tipo de Acto</Label>
-          <Input value={actos.tipo_acto} onChange={(e) => update("tipo_acto", e.target.value)} placeholder="Ej: Compraventa" />
+          <Select value={actos.tipo_acto} onValueChange={(v) => update("tipo_acto", v)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccione tipo de acto" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Compraventa">Compraventa</SelectItem>
+              <SelectItem value="Hipoteca">Hipoteca</SelectItem>
+              <SelectItem value="Afectación a Vivienda Familiar">Afectación a Vivienda Familiar</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label>Valor de Compraventa (COP)</Label>
@@ -38,7 +48,7 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
         {actos.es_hipoteca && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Valor Hipoteca (COP)</Label>
+              <Label>Valor de Crédito (COP)</Label>
               <Input value={actos.valor_hipoteca} onChange={(e) => update("valor_hipoteca", e.target.value)} />
             </div>
             <div className="space-y-2">

@@ -3,11 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, FileText, Save, Eye, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Save, Eye, AlertTriangle } from "lucide-react";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
+import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
 import type { Persona, Inmueble, Actos } from "@/lib/types";
@@ -28,7 +30,6 @@ const Validacion = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Load existing tramite
   useEffect(() => {
     if (id) loadTramite(id);
   }, [id]);
@@ -66,7 +67,6 @@ const Validacion = () => {
       let tid = tramiteId;
 
       if (!tid) {
-        // Create new tramite
         const { data, error } = await supabase
           .from("tramites")
           .insert({
@@ -82,13 +82,11 @@ const Validacion = () => {
         setTramiteId(tid);
       } else {
         await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString() }).eq("id", tid);
-        // Clear old related data
         await supabase.from("personas").delete().eq("tramite_id", tid);
         await supabase.from("inmuebles").delete().eq("tramite_id", tid);
         await supabase.from("actos").delete().eq("tramite_id", tid);
       }
 
-      // Insert personas
       const personasToInsert = [
         ...vendedores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "vendedor" as any })),
         ...compradores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "comprador" as any })),
@@ -98,11 +96,9 @@ const Validacion = () => {
         if (error) throw error;
       }
 
-      // Insert inmueble
       const { error: inmError } = await supabase.from("inmuebles").insert({ ...inmuebleToRow(inmueble), tramite_id: tid! });
       if (inmError) throw inmError;
 
-      // Insert actos
       const { error: actError } = await supabase.from("actos").insert({ ...actosToRow(actos), tramite_id: tid! });
       if (actError) throw actError;
 
@@ -126,66 +122,55 @@ const Validacion = () => {
       toast({ title: "Datos legales incompletos", description: "La Razón Social y el NIT de tu entidad deben estar registrados antes de generar documentos.", variant: "destructive" });
       return;
     }
-  
+
     setGenerating(true);
     try {
-      // Paso 1: Consumir crédito (Plan item 1)
       const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
       if (!success) {
         toast({ title: "Sin créditos", description: "Bolsa agotada.", variant: "destructive" });
         return;
       }
-  
-      // Paso 2: Invocar Edge Function (Capa de enriquecimiento legal)
+
       const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
         body: { vendedores, compradores, inmueble, actos },
       });
       if (aiError) throw new Error("Error en la IA legal: " + aiError.message);
-  
-      // Paso 3: Cargar plantilla y procesar con docxtemplater
+
       const response = await fetch("/template_venta_hipoteca.docx");
       const content = await response.arrayBuffer();
-      
+
       const PizZip = (await import("pizzip")).default;
       const Docxtemplater = (await import("docxtemplater")).default;
-  
+
       const zip = new PizZip(content);
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
-        // Cambiado a llaves simples según tu referencia de tags (Imagen 11)
         delimiters: { start: "{", end: "}" },
       });
-  
-      // Usamos el failsafe rule: si un campo está vacío, pone una línea ____
+
       const templateFields = enrichedData.templateData || enrichedData;
       const safeData = Object.fromEntries(
-        Object.entries(templateFields).map(([k, v]) => [k, typeof v === 'string' ? (v || "__________") : v])
+        Object.entries(templateFields).map(([k, v]) => [k, typeof v === "string" ? (v || "__________") : v])
       );
-  
+
       doc.render(safeData);
-  
-      // Paso 4: Generar Blob y descargar
+
       const out = doc.getZip().generate({
         type: "blob",
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
-  
-      const fileName = `Escritura_${actos.tipo_acto || 'Tramite'}_${tramiteId.slice(0, 8)}.docx`;
+
+      const fileName = `Escritura_${actos.tipo_acto || "Tramite"}_${tramiteId.slice(0, 8)}.docx`;
       const url = window.URL.createObjectURL(out);
       const link = document.createElement("a");
       link.href = url;
       link.download = fileName;
       link.click();
-  
-      // Paso 5: Actualización y Log de Auditoría (Plan item 4a y 4b)
-      await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
-      
-      // Audit log is handled automatically by the log_word_generated trigger
 
+      await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
       await refreshCredits();
       toast({ title: "¡Éxito!", description: "Documento generado correctamente." });
-  
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -221,39 +206,46 @@ const Validacion = () => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="hidden w-1/2 border-r bg-muted/30 lg:flex lg:flex-col lg:items-center lg:justify-center">
-          <FileText className="h-16 w-16 text-muted-foreground/40" />
-          <p className="mt-4 text-sm text-muted-foreground">Visor de Documento PDF</p>
-          <p className="text-xs text-muted-foreground">(Próximamente)</p>
-        </div>
+      <ResizablePanelGroup direction="horizontal" className="flex-1">
+        <ResizablePanel defaultSize={50} minSize={30} className="hidden lg:block">
+          <DocxPreview
+            vendedores={vendedores}
+            compradores={compradores}
+            inmueble={inmueble}
+            actos={actos}
+          />
+        </ResizablePanel>
 
-        <ScrollArea className="flex-1">
-          <div className="container max-w-2xl py-6">
-            <Tabs defaultValue="vendedores" className="w-full">
-              <TabsList className="mb-6 w-full">
-                <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
-                <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
-                <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
-                <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
-              </TabsList>
+        <ResizableHandle withHandle className="hidden lg:flex" />
 
-              <TabsContent value="vendedores">
-                <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
-              </TabsContent>
-              <TabsContent value="compradores">
-                <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
-              </TabsContent>
-              <TabsContent value="inmueble">
-                <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
-              </TabsContent>
-              <TabsContent value="actos">
-                <ActosForm actos={actos} onChange={setActos} />
-              </TabsContent>
-            </Tabs>
-          </div>
-        </ScrollArea>
-      </div>
+        <ResizablePanel defaultSize={50} minSize={35}>
+          <ScrollArea className="h-[calc(100vh-3.5rem)]">
+            <div className="container max-w-2xl py-6">
+              <Tabs defaultValue="vendedores" className="w-full">
+                <TabsList className="mb-6 w-full">
+                  <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
+                  <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
+                  <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
+                  <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="vendedores">
+                  <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
+                </TabsContent>
+                <TabsContent value="compradores">
+                  <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
+                </TabsContent>
+                <TabsContent value="inmueble">
+                  <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
+                </TabsContent>
+                <TabsContent value="actos">
+                  <ActosForm actos={actos} onChange={setActos} />
+                </TabsContent>
+              </Tabs>
+            </div>
+          </ScrollArea>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       <PreviewModal
         open={previewOpen}
@@ -269,18 +261,21 @@ const Validacion = () => {
   );
 };
 
-// Helper functions to strip client-only fields
 const personaToRow = (p: Persona) => ({
   nombre_completo: p.nombre_completo,
   numero_cedula: p.numero_cedula,
   estado_civil: p.estado_civil,
   direccion: p.direccion,
+  municipio_domicilio: p.municipio_domicilio,
   es_persona_juridica: p.es_persona_juridica,
   razon_social: p.razon_social,
   nit: p.nit,
   representante_legal_nombre: p.representante_legal_nombre,
   representante_legal_cedula: p.representante_legal_cedula,
   es_pep: p.es_pep,
+  actua_mediante_apoderado: p.actua_mediante_apoderado,
+  apoderado_persona_nombre: p.apoderado_persona_nombre,
+  apoderado_persona_cedula: p.apoderado_persona_cedula,
 });
 
 const inmuebleToRow = (i: Inmueble) => ({
@@ -296,6 +291,9 @@ const inmuebleToRow = (i: Inmueble) => ({
   area: i.area,
   linderos: i.linderos,
   valorizacion: i.valorizacion,
+  avaluo_catastral: i.avaluo_catastral,
+  escritura_ph: i.escritura_ph,
+  reformas_ph: i.reformas_ph,
 });
 
 const actosToRow = (a: Actos) => ({
