@@ -123,7 +123,6 @@ export const createEmptyInmueble = (): Inmueble => ({
   codigo_orip: "",
   tipo_predio: "urbano",
   direccion: "",
-  estrato: "",
   area: "",
   linderos: "",
   valorizacion: "",
