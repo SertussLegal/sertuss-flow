@@ -1,102 +1,136 @@
 
 
-## Reestructuración de Validación de Escritura — Plan de Implementación
+## Sertuss — Multi-tenant Architecture with Organizations, Credits, and Audit Trail
 
-### Punto sobre OCR y modelo multimodal
-
-Lovable AI Gateway ya tiene `LOVABLE_API_KEY` configurada. Para OCR de documentos escaneados (cédulas, certificados de tradición con linderos), usaremos **`google/gemini-2.5-flash`** — soporta entrada multimodal (imágenes) con buena precisión y menor latencia que Pro. No se necesita API key adicional.
+This is a large backend-first implementation. The plan is divided into database schema, backend logic, and frontend integration.
 
 ---
 
-### Fase 1: DB Migration — Nuevas columnas
+### Phase 1: Database Schema (Single Migration)
 
-```sql
-ALTER TABLE personas ADD COLUMN municipio_domicilio text DEFAULT '';
-ALTER TABLE personas ADD COLUMN actua_mediante_apoderado boolean DEFAULT false;
-ALTER TABLE personas ADD COLUMN apoderado_persona_nombre text DEFAULT '';
-ALTER TABLE personas ADD COLUMN apoderado_persona_cedula text DEFAULT '';
-ALTER TABLE inmuebles ADD COLUMN avaluo_catastral text DEFAULT '';
-ALTER TABLE inmuebles ADD COLUMN escritura_ph text DEFAULT '';
-ALTER TABLE inmuebles ADD COLUMN reformas_ph text DEFAULT '';
+**Tables to create:**
+
+1. **`organizations`** — Multi-tenant root
+   - `id` uuid PK, `name` text NOT NULL, `nit` varchar(20), `address` text, `credit_balance` integer DEFAULT 5, `created_at` timestamptz
+
+2. **`profiles`** — Extends auth.users
+   - `id` uuid PK (references auth.users), `email` text, `full_name` text, `organization_id` uuid FK → organizations, `role` org_role enum ('owner','admin','operator'), `created_at` timestamptz
+   - Trigger on `auth.users` insert to auto-create profile row
+
+3. **`tramites`** — Core business entity
+   - `id` uuid PK, `radicado` text, `tipo` text, `fecha` date, `status` tramite_status enum ('pendiente','validado','word_generado'), `organization_id` uuid FK, `created_by` uuid FK → profiles, `created_at`, `updated_at`
+
+4. **`personas`** — Vendedores/Compradores linked to tramite
+   - `id` uuid PK, `tramite_id` uuid FK, `rol` persona_rol enum ('vendedor','comprador'), all existing Persona fields including `nit` varchar(20), `es_persona_juridica`, `es_pep`, etc.
+
+5. **`inmuebles`** — One per tramite
+   - `id` uuid PK, `tramite_id` uuid FK, all Inmueble fields. `identificador_predial` varchar(30) to support 30-digit Nacional.
+
+6. **`actos`** — One per tramite
+   - `id` uuid PK, `tramite_id` uuid FK, all Actos fields.
+
+7. **`activity_logs`** — Habeas Data / Ley 1581 audit trail
+   - `id` uuid PK, `organization_id` uuid FK, `user_id` uuid FK, `action` text ('created','updated','generated','viewed'), `entity_type` text ('tramite','persona','inmueble'), `entity_id` uuid, `metadata` jsonb, `created_at` timestamptz
+
+8. **`invitations`** — Team invite infrastructure
+   - `id` uuid PK, `organization_id` uuid FK, `email` text, `role` org_role, `invited_by` uuid FK, `accepted_at` timestamptz NULL, `created_at` timestamptz
+
+**Enums:**
+- `org_role`: 'owner', 'admin', 'operator'
+- `tramite_status`: 'pendiente', 'validado', 'word_generado'
+- `persona_rol`: 'vendedor', 'comprador'
+
+---
+
+### Phase 2: RLS Policies
+
+All business tables scoped by `organization_id` via a helper function:
+
+```text
+get_user_org(uid) → returns organization_id from profiles
+get_user_role(uid) → returns role from profiles
 ```
 
-### Fase 2: Tipos (`src/lib/types.ts`)
+- **organizations**: Users can SELECT their own org. Owners can UPDATE.
+- **profiles**: Users in same org can SELECT each other. Admins/Owners can UPDATE roles.
+- **tramites**: SELECT/INSERT/UPDATE scoped to org. Operators can only see `created_by = auth.uid()`.
+- **personas, inmuebles, actos**: Access via tramite ownership (join through tramites table).
+- **activity_logs**: INSERT for authenticated users in their org. SELECT for admin/owner only.
+- **invitations**: Admin/Owner can INSERT/SELECT for their org.
 
-Agregar a `Persona`: `municipio_domicilio`, `actua_mediante_apoderado`, `apoderado_persona_nombre`, `apoderado_persona_cedula`
+---
 
-Agregar a `Inmueble`: `avaluo_catastral`, `escritura_ph`, `reformas_ph`
+### Phase 3: Credit Consumption Function
 
-Actualizar `createEmptyPersona` y `createEmptyInmueble`.
+Database function `consume_credit(org_id uuid)`:
+- Checks `credit_balance > 0`, decrements by 1, returns success/failure.
+- Called from frontend before setting status to `word_generado`.
+- SECURITY DEFINER to bypass RLS.
 
-### Fase 3: Edge Function OCR — `supabase/functions/scan-document/index.ts`
+Database trigger on `tramites` UPDATE: when status changes to `word_generado`, automatically log to `activity_logs`.
 
-- Recibe `{ image: string (base64), type: "cedula" | "certificado_tradicion" | "predial" }`
-- Usa Lovable AI Gateway con **`google/gemini-2.5-flash`** (multimodal)
-- Envía la imagen como content part `image_url` con data URI
-- Tool calling para extracción estructurada según tipo:
-  - `cedula` → `nombre_completo`, `numero_cedula`, `municipio_expedicion`
-  - `certificado_tradicion` → `matricula`, `orip`, `linderos`, `propietarios`, `direccion`, `municipio`, `departamento`
-  - `predial` → `identificador_predial`, `avaluo_catastral`, `area`
-- Manejo de errores 429/402
-- `verify_jwt = false` en config.toml
+---
 
-### Fase 4: Formularios actualizados
+### Phase 4: Frontend Changes
 
-**`PersonaForm.tsx`:**
-- Campo "Municipio de Domicilio"
-- Switch "¿Actúa mediante Apoderado?" con campos condicionales (nombre/cédula apoderado persona)
-- Botón "Escanear Cédula" → abre file input, convierte a base64, llama `consume_credit` → invoca `scan-document` con type `cedula`, llena campos automáticamente
-- Spinner "Procesando con Gemini IA..."
+1. **Auth flow update** (`Login.tsx`):
+   - On registration, create organization + profile with role 'owner'.
+   - On login, fetch profile to get org_id and role, store in React context.
 
-**`InmuebleForm.tsx`:**
-- Label "Oficina de Registro (ORIP)" en vez de "Círculo Registral"
-- Selector CHIP vs "Cédula Catastral" (renombrar `predial_nacional`)
-- Campo "Avalúo Catastral (COP)"
-- Sección PH: "Escritura de Constitución PH" y "Reformas PH"
-- Botón "Escanear Certificado de Tradición" → misma lógica OCR
+2. **Auth context** (`src/contexts/AuthContext.tsx`):
+   - Provides `user`, `profile`, `organization`, `credits` to the app.
+   - Protected route wrapper redirects unauthenticated users.
 
-**`ActosForm.tsx`:**
-- Cambiar input texto por `Select` con opciones: Compraventa, Hipoteca, Afectación a Vivienda Familiar
-- Renombrar "Valor Hipoteca" → "Valor de Crédito"
-- Campo "Apoderado del Banco" ya existe, mantener
+3. **Dashboard.tsx**:
+   - Replace mock data with real Supabase queries scoped by org.
+   - Show credit balance in header.
+   - Disable "Nuevo Trámite" if credits = 0 with warning message.
 
-### Fase 5: Split View con Preview en vivo
+4. **Validacion.tsx**:
+   - Save tramite + personas + inmueble + actos to database.
+   - On "Generate Word", call `consume_credit`, update status, log activity.
+   - If credits = 0, disable generate button with "Bolsa de créditos agotada" message.
 
-**Nuevo: `src/components/tramites/DocxPreview.tsx`**
-- Recibe `vendedores`, `compradores`, `inmueble`, `actos` como props
-- Usa `docxtemplater` + `pizzip` para procesar la plantilla con datos actuales
-- Convierte a HTML con `mammoth` (nueva dependencia)
-- Debounce 500ms para re-render
-- ScrollArea con estilo de documento (fondo blanco, bordes, tipografía serif)
+5. **Team Management page** (`src/pages/Team.tsx`):
+   - List org members with roles.
+   - Invite form (email + role).
+   - Admin can change roles.
+   - Credit consumption per user (query activity_logs grouped by user).
 
-**`Validacion.tsx`:**
-- Reemplazar placeholder izquierdo por `<DocxPreview />`
-- Usar `ResizablePanelGroup` (ya instalado: `react-resizable-panels`)
-- Actualizar `personaToRow` e `inmuebleToRow` con nuevos campos
+6. **New route**: `/equipo` → Team.tsx
 
-**`PreviewModal.tsx`:**
-- Mostrar nuevos campos (municipio domicilio, avalúo, PH)
+7. **Types update** (`src/lib/types.ts`):
+   - Add Organization, Profile, ActivityLog, Invitation interfaces.
+   - Keep existing interfaces for form compatibility.
 
-### Fase 6: Reglas de negocio
+---
 
-- Cada "Escanear" llama `consume_credit` ANTES de invocar la edge function
-- Si créditos = 0, toast "Sin créditos" y no escanea
-- Bloqueo de descarga Word si falta NIT/Razón Social (ya implementado)
+### Files to create/modify
 
-### Archivos
+| File | Action |
+|------|--------|
+| Migration SQL | Create all tables, enums, RLS, functions, triggers |
+| `src/contexts/AuthContext.tsx` | New — auth + org context provider |
+| `src/pages/Team.tsx` | New — team management UI |
+| `src/lib/types.ts` | Add Organization, Profile, Invitation, ActivityLog types |
+| `src/App.tsx` | Add AuthProvider wrapper, protected routes, `/equipo` route |
+| `src/pages/Login.tsx` | Create org on register, redirect on login |
+| `src/pages/Dashboard.tsx` | Real queries, credit display, disable if 0 |
+| `src/pages/Validacion.tsx` | Persist to DB, credit consumption on generate |
+| `src/pages/LandingPage.tsx` | **No changes** — visual styles preserved |
+| `src/index.css` | **No changes** |
 
-| Archivo | Acción |
-|---------|--------|
-| Migration SQL | 7 columnas nuevas |
-| `src/lib/types.ts` | Nuevos campos + factories |
-| `supabase/functions/scan-document/index.ts` | **Nuevo** — OCR con Gemini 2.5 Flash multimodal |
-| `src/components/tramites/PersonaForm.tsx` | Municipio, apoderado, botón escanear |
-| `src/components/tramites/InmuebleForm.tsx` | ORIP, avalúo, PH, escanear |
-| `src/components/tramites/ActosForm.tsx` | Select tipo acto, renombrar crédito |
-| `src/components/tramites/DocxPreview.tsx` | **Nuevo** — visor Word reactivo |
-| `src/pages/Validacion.tsx` | Split view, nuevos campos en helpers |
-| `src/components/tramites/PreviewModal.tsx` | Mostrar nuevos campos |
 
-### Dependencia nueva
-- `mammoth` — conversión docx → HTML para preview en vivo
+## Generate Word Document with Gemini AI (IMPLEMENTED)
 
+### Architecture
+Frontend → consume_credit RPC → generate-document edge function (Gemini AI) → docxtemplater fill → browser download → update status to word_generado
+
+### Implemented
+- Edge function `supabase/functions/generate-document/index.ts` with Lovable AI Gateway (Gemini 3 Flash)
+- Tool calling for structured JSON extraction of legal template fields
+- `docxtemplater` + `pizzip` for client-side .docx generation
+- Auto-download with tramite name
+- Credit validation before generation
+- Status update triggers activity log
+- Loading state in PreviewModal during generation

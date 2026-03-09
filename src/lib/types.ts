@@ -43,17 +43,21 @@ export interface Persona {
   numero_cedula: string;
   estado_civil: string;
   direccion: string;
+  municipio_domicilio: string;
   es_persona_juridica: boolean;
   razon_social: string;
   nit: string;
   representante_legal_nombre: string;
   representante_legal_cedula: string;
   es_pep: boolean;
+  actua_mediante_apoderado: boolean;
+  apoderado_persona_nombre: string;
+  apoderado_persona_cedula: string;
 }
 
 export interface Inmueble {
   matricula_inmobiliaria: string;
-  tipo_identificador_predial: "chip" | "predial_nacional";
+  tipo_identificador_predial: "chip" | "cedula_catastral";
   identificador_predial: string;
   departamento: string;
   municipio: string;
@@ -64,6 +68,9 @@ export interface Inmueble {
   area: string;
   linderos: string;
   valorizacion: string;
+  avaluo_catastral: string;
+  escritura_ph: string;
+  reformas_ph: string;
 }
 
 export interface Actos {
@@ -95,12 +102,16 @@ export const createEmptyPersona = (): Persona => ({
   numero_cedula: "",
   estado_civil: "",
   direccion: "",
+  municipio_domicilio: "",
   es_persona_juridica: false,
   razon_social: "",
   nit: "",
   representante_legal_nombre: "",
   representante_legal_cedula: "",
   es_pep: false,
+  actua_mediante_apoderado: false,
+  apoderado_persona_nombre: "",
+  apoderado_persona_cedula: "",
 });
 
 export const createEmptyInmueble = (): Inmueble => ({
@@ -116,6 +127,9 @@ export const createEmptyInmueble = (): Inmueble => ({
   area: "",
   linderos: "",
   valorizacion: "",
+  avaluo_catastral: "",
+  escritura_ph: "",
+  reformas_ph: "",
 });
 
 export const createEmptyActos = (): Actos => ({
