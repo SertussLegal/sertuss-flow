@@ -72,6 +72,7 @@ export interface Inmueble {
   avaluo_catastral: string;
   escritura_ph: string;
   reformas_ph: string;
+  es_propiedad_horizontal: boolean;
 }
 
 export interface Actos {
