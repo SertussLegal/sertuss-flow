@@ -58,7 +58,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
       }
       await refreshCredits();
     } catch (err: any) {
-      toast({ title: "Error al escanear", description: err.message, variant: "destructive" });
+      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
       setScanning(false);
     }
