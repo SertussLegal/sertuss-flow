@@ -155,7 +155,7 @@ const Validacion = () => {
             organization_id: profile.organization_id,
             created_by: profile.id,
             status: "validado" as any,
-            metadata,
+            metadata: metadata as any,
           })
           .select()
           .single();
