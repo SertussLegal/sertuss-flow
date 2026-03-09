@@ -180,7 +180,7 @@ const Validacion = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background overflow-hiddenrflow-hidden">
       <header className="border-b bg-notarial-dark text-white">
         <div className="container flex h-14 items-center gap-4">
           <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
@@ -220,7 +220,7 @@ const Validacion = () => {
         <ResizableHandle withHandle className="hidden lg:flex" />
 
         <ResizablePanel defaultSize={50} minSize={35}>
-          <ScrollArea className="h-[calc(100vh-3.5rem)]">
+          <ScrollArea className="h-full">
             <div className="container max-w-2xl py-6">
               <Tabs defaultValue="vendedores" className="w-full">
                 <TabsList className="mb-6 w-full">
