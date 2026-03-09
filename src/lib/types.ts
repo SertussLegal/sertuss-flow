@@ -125,7 +125,6 @@ export const createEmptyInmueble = (): Inmueble => ({
   direccion: "",
   area: "",
   linderos: "",
-  valorizacion: "",
   avaluo_catastral: "",
   escritura_ph: "",
   reformas_ph: "",
