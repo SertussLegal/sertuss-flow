@@ -65,7 +65,6 @@ export interface Inmueble {
   codigo_orip: string;
   tipo_predio: "urbano" | "rural";
   direccion: string;
-  estrato: string;
   area: string;
   linderos: string;
   valorizacion: string;
