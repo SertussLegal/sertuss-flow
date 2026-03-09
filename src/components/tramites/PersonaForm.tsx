@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Info, ScanLine, Loader2 } from "lucide-react";
+import { Plus, Trash2, Info, Upload, Loader2 } from "lucide-react";
 import type { Persona } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
