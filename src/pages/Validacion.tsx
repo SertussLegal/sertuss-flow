@@ -180,7 +180,7 @@ const Validacion = () => {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background lg:overflow-hidden overflow-auto">
+    <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
       <header className="border-b bg-notarial-dark text-white shrink-0">
         <div className="container flex h-14 items-center gap-4">
           <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
@@ -209,7 +209,7 @@ const Validacion = () => {
 
       {/* Desktop: split view */}
       <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0 hidden lg:flex">
-        <ResizablePanel defaultSize={50} minSize={30} className="overflow-hidden">
+        <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
           <DocxPreview
             vendedores={vendedores}
             compradores={compradores}
@@ -220,8 +220,8 @@ const Validacion = () => {
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize={50} minSize={35} className="overflow-hidden">
-          <ScrollArea className="h-full">
+        <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
+          <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
             <div className="container max-w-2xl py-6">
               <Tabs defaultValue="vendedores" className="w-full">
                 <TabsList className="mb-6 w-full">

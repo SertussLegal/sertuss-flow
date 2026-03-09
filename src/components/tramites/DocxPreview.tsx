@@ -163,23 +163,29 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
   }
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-muted">
-      {/* Hidden measuring container */}
+    <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
+      {/* Hidden measuring container – clipped so it never affects scroll */}
       <div
-        ref={measureRef}
-        className="prose prose-sm max-w-none absolute opacity-0 pointer-events-none"
-        style={{
-          width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
-          fontFamily: "'Times New Roman', serif",
-          fontSize: "13px",
-          lineHeight: "1.8",
-          color: "#1a1a1a",
-        }}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+        aria-hidden="true"
+        className="absolute overflow-hidden"
+        style={{ width: 0, height: 0, top: 0, left: 0 }}
+      >
+        <div
+          ref={measureRef}
+          className="prose prose-sm max-w-none pointer-events-none"
+          style={{
+            width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
+            fontFamily: "'Times New Roman', serif",
+            fontSize: "13px",
+            lineHeight: "1.8",
+            color: "#1a1a1a",
+          }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
 
       {/* Single page view */}
-      <div className="flex-1 overflow-auto p-4 flex justify-center items-start">
+      <div className="flex-1 min-h-0 overflow-auto p-4 flex justify-center items-start" style={{ overscrollBehavior: 'contain' }}>
         <div
           className="shrink-0"
           style={{
