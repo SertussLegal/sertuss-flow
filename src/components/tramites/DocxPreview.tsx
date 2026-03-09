@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileText, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { FileText, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Persona, Inmueble, Actos } from "@/lib/types";
 
 interface DocxPreviewProps {
@@ -10,11 +10,12 @@ interface DocxPreviewProps {
   actos: Actos;
 }
 
-const PAGE_WIDTH = 612; // 8.5in * 72dpi
-const PAGE_HEIGHT = 792; // 11in * 72dpi
-const PAGE_PADDING_X = 72; // 1in margins
+const PAGE_WIDTH = 612;
+const PAGE_HEIGHT = 792;
+const PAGE_PADDING_X = 72;
 const PAGE_PADDING_Y = 72;
-const CONTENT_HEIGHT = PAGE_HEIGHT - PAGE_PADDING_Y * 2; // 648px
+const CONTENT_HEIGHT = PAGE_HEIGHT - PAGE_PADDING_Y * 2;
+const NAV_BAR_HEIGHT = 56;
 
 const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
@@ -22,18 +23,20 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
   const [error, setError] = useState<string | null>(null);
   const [baseHtml, setBaseHtml] = useState<string>("");
   const [pageCount, setPageCount] = useState(1);
+  const [currentPage, setCurrentPage] = useState(0);
   const [scale, setScale] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Observe container width for responsive scaling
+  // Observe container size for responsive scaling (both width and height)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
-      setScale(Math.min(1, (w - 32) / PAGE_WIDTH));
+      const h = entry.contentRect.height - NAV_BAR_HEIGHT;
+      setScale(Math.min(1, (w - 32) / PAGE_WIDTH, (h - 32) / PAGE_HEIGHT));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -132,7 +135,9 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     const frame = requestAnimationFrame(() => {
       if (measureRef.current) {
         const totalHeight = measureRef.current.scrollHeight;
-        setPageCount(Math.max(1, Math.ceil(totalHeight / CONTENT_HEIGHT)));
+        const newPageCount = Math.max(1, Math.ceil(totalHeight / CONTENT_HEIGHT));
+        setPageCount(newPageCount);
+        setCurrentPage((prev) => Math.min(prev, newPageCount - 1));
       }
     });
 
@@ -157,72 +162,86 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     );
   }
 
-  const pages = Array.from({ length: pageCount }, (_, i) => i);
-
   return (
-    <ScrollArea className="h-full bg-muted">
-      <div ref={containerRef}>
-        {/* Hidden measuring container */}
+    <div ref={containerRef} className="flex flex-col h-full bg-muted">
+      {/* Hidden measuring container */}
+      <div
+        ref={measureRef}
+        className="prose prose-sm max-w-none absolute opacity-0 pointer-events-none"
+        style={{
+          width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
+          fontFamily: "'Times New Roman', serif",
+          fontSize: "13px",
+          lineHeight: "1.8",
+          color: "#1a1a1a",
+        }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+
+      {/* Single page view */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden p-4">
         <div
-          ref={measureRef}
-          className="prose prose-sm max-w-none absolute opacity-0 pointer-events-none"
           style={{
-            width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
-            fontFamily: "'Times New Roman', serif",
-            fontSize: "13px",
-            lineHeight: "1.8",
-            color: "#1a1a1a",
+            height: `${PAGE_HEIGHT * scale}px`,
+            width: `${PAGE_WIDTH * scale}px`,
           }}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-
-        {/* Visible paginated pages */}
-        <div className="flex flex-col items-center gap-6 py-8 px-4">
-          {pages.map((pageIndex) => (
-            <div
-              key={pageIndex}
-              style={{ height: `${PAGE_HEIGHT * scale}px`, width: `${PAGE_WIDTH * scale}px` }}
-            >
+        >
+          <div
+            className="bg-white rounded shadow-md"
+            style={{
+              width: `${PAGE_WIDTH}px`,
+              height: `${PAGE_HEIGHT}px`,
+              padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
+              overflow: "hidden",
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
+          >
+            <div style={{ height: `${CONTENT_HEIGHT}px`, overflow: "hidden" }}>
               <div
-                className="bg-white rounded shadow-md flex-shrink-0"
+                className="prose prose-sm max-w-none"
                 style={{
-                  width: `${PAGE_WIDTH}px`,
-                  height: `${PAGE_HEIGHT}px`,
-                  padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
-                  overflow: "hidden",
-                  transform: `scale(${scale})`,
-                  transformOrigin: "top left",
+                  fontFamily: "'Times New Roman', serif",
+                  fontSize: "13px",
+                  lineHeight: "1.8",
+                  color: "#1a1a1a",
+                  transform: `translateY(-${currentPage * CONTENT_HEIGHT}px)`,
                 }}
-              >
-                <div
-                  style={{
-                    height: `${CONTENT_HEIGHT}px`,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    className="prose prose-sm max-w-none"
-                    style={{
-                      fontFamily: "'Times New Roman', serif",
-                      fontSize: "13px",
-                      lineHeight: "1.8",
-                      color: "#1a1a1a",
-                      transform: `translateY(-${pageIndex * CONTENT_HEIGHT}px)`,
-                    }}
-                    dangerouslySetInnerHTML={{ __html: html }}
-                  />
-                </div>
-              </div>
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
             </div>
-          ))}
-
-          {/* Page counter */}
-          <p className="text-xs text-muted-foreground pb-4">
-            {pageCount} {pageCount === 1 ? "página" : "páginas"}
-          </p>
+          </div>
         </div>
       </div>
-    </ScrollArea>
+
+      {/* Navigation bar */}
+      <div
+        className="flex items-center justify-center gap-3 border-t border-border bg-background px-4"
+        style={{ height: `${NAV_BAR_HEIGHT}px` }}
+      >
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+          disabled={currentPage === 0}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-sm font-medium text-muted-foreground min-w-[120px] text-center">
+          Página {currentPage + 1} de {pageCount}
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setCurrentPage((p) => Math.min(pageCount - 1, p + 1))}
+          disabled={currentPage === pageCount - 1}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 };
 
