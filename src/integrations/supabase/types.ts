@@ -112,15 +112,18 @@ export type Database = {
       inmuebles: {
         Row: {
           area: string | null
+          avaluo_catastral: string | null
           codigo_orip: string | null
           departamento: string | null
           direccion: string | null
+          escritura_ph: string | null
           estrato: string | null
           id: string
           identificador_predial: string | null
           linderos: string | null
           matricula_inmobiliaria: string | null
           municipio: string | null
+          reformas_ph: string | null
           tipo_identificador_predial: string | null
           tipo_predio: string | null
           tramite_id: string
@@ -128,15 +131,18 @@ export type Database = {
         }
         Insert: {
           area?: string | null
+          avaluo_catastral?: string | null
           codigo_orip?: string | null
           departamento?: string | null
           direccion?: string | null
+          escritura_ph?: string | null
           estrato?: string | null
           id?: string
           identificador_predial?: string | null
           linderos?: string | null
           matricula_inmobiliaria?: string | null
           municipio?: string | null
+          reformas_ph?: string | null
           tipo_identificador_predial?: string | null
           tipo_predio?: string | null
           tramite_id: string
@@ -144,15 +150,18 @@ export type Database = {
         }
         Update: {
           area?: string | null
+          avaluo_catastral?: string | null
           codigo_orip?: string | null
           departamento?: string | null
           direccion?: string | null
+          escritura_ph?: string | null
           estrato?: string | null
           id?: string
           identificador_predial?: string | null
           linderos?: string | null
           matricula_inmobiliaria?: string | null
           municipio?: string | null
+          reformas_ph?: string | null
           tipo_identificador_predial?: string | null
           tipo_predio?: string | null
           tramite_id?: string
@@ -242,11 +251,15 @@ export type Database = {
       }
       personas: {
         Row: {
+          actua_mediante_apoderado: boolean | null
+          apoderado_persona_cedula: string | null
+          apoderado_persona_nombre: string | null
           direccion: string | null
           es_pep: boolean
           es_persona_juridica: boolean
           estado_civil: string | null
           id: string
+          municipio_domicilio: string | null
           nit: string | null
           nombre_completo: string
           numero_cedula: string | null
@@ -257,11 +270,15 @@ export type Database = {
           tramite_id: string
         }
         Insert: {
+          actua_mediante_apoderado?: boolean | null
+          apoderado_persona_cedula?: string | null
+          apoderado_persona_nombre?: string | null
           direccion?: string | null
           es_pep?: boolean
           es_persona_juridica?: boolean
           estado_civil?: string | null
           id?: string
+          municipio_domicilio?: string | null
           nit?: string | null
           nombre_completo?: string
           numero_cedula?: string | null
@@ -272,11 +289,15 @@ export type Database = {
           tramite_id: string
         }
         Update: {
+          actua_mediante_apoderado?: boolean | null
+          apoderado_persona_cedula?: string | null
+          apoderado_persona_nombre?: string | null
           direccion?: string | null
           es_pep?: boolean
           es_persona_juridica?: boolean
           estado_civil?: string | null
           id?: string
+          municipio_domicilio?: string | null
           nit?: string | null
           nombre_completo?: string
           numero_cedula?: string | null
