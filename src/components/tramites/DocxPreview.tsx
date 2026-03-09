@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileText, Loader2 } from "lucide-react";
 import type { Persona, Inmueble, Actos } from "@/lib/types";
@@ -10,14 +10,22 @@ interface DocxPreviewProps {
   actos: Actos;
 }
 
+const PAGE_WIDTH = 612; // 8.5in * 72dpi
+const PAGE_HEIGHT = 792; // 11in * 72dpi
+const PAGE_PADDING_X = 72; // 1in margins
+const PAGE_PADDING_Y = 72;
+const CONTENT_HEIGHT = PAGE_HEIGHT - PAGE_PADDING_Y * 2; // 648px
+
 const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [baseHtml, setBaseHtml] = useState<string>("");
+  const [pageCount, setPageCount] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
 
-  // Load template once and convert to HTML with mammoth
+  // Load template once
   useEffect(() => {
     const loadTemplate = async () => {
       try {
@@ -41,8 +49,8 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     loadTemplate();
   }, []);
 
-  // Build replacement map from form state
-  const buildReplacements = (): Record<string, string> => {
+  // Build replacement map
+  const buildReplacements = useCallback((): Record<string, string> => {
     const formatPersona = (p: Persona) => {
       if (p.es_persona_juridica) {
         return `${p.razon_social || "___________"}, NIT ${p.nit || "___________"}, representada legalmente por ${p.representante_legal_nombre || "___________"}, identificado(a) con cédula de ciudadanía No. ${p.representante_legal_cedula || "___________"}`;
@@ -76,9 +84,9 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       "codigo_orip": inmueble.codigo_orip || "___________",
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
     };
-  };
+  }, [vendedores, compradores, inmueble, actos]);
 
-  // Apply replacements to base HTML
+  // Apply replacements
   useEffect(() => {
     if (!baseHtml) return;
 
@@ -87,16 +95,12 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       let result = baseHtml;
       const replacements = buildReplacements();
 
-      // Replace {tag} patterns with values
       for (const [key, value] of Object.entries(replacements)) {
-        // Escape special regex chars in key
         const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         result = result.replace(new RegExp(`\\{${escaped}\\}`, "g"), `<strong>${value}</strong>`);
       }
 
-      // Strip remaining loop syntax: {#tag}, {/tag}, {^tag}, {/}
       result = result.replace(/\{[#/^][^}]*\}/g, "");
-      // Replace remaining {tag} with placeholder
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, "<em>___________</em>");
 
       setHtml(result);
@@ -105,7 +109,21 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, vendedores, compradores, inmueble, actos]);
+  }, [baseHtml, buildReplacements]);
+
+  // Measure content and compute pages
+  useEffect(() => {
+    if (!html || !measureRef.current) return;
+
+    const frame = requestAnimationFrame(() => {
+      if (measureRef.current) {
+        const totalHeight = measureRef.current.scrollHeight;
+        setPageCount(Math.max(1, Math.ceil(totalHeight / CONTENT_HEIGHT)));
+      }
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [html]);
 
   if (error) {
     return (
@@ -125,14 +143,62 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
     );
   }
 
+  const pages = Array.from({ length: pageCount }, (_, i) => i);
+
   return (
-    <ScrollArea className="h-full">
-      <div className="mx-auto max-w-[700px] p-8">
-        <div
-          className="rounded-lg border bg-white p-10 shadow-sm prose prose-sm max-w-none"
-          style={{ fontFamily: "'Times New Roman', serif", fontSize: "13px", lineHeight: "1.8", color: "#1a1a1a" }}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+    <ScrollArea className="h-full bg-muted">
+      {/* Hidden measuring container */}
+      <div
+        ref={measureRef}
+        className="prose prose-sm max-w-none absolute opacity-0 pointer-events-none"
+        style={{
+          width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
+          fontFamily: "'Times New Roman', serif",
+          fontSize: "13px",
+          lineHeight: "1.8",
+          color: "#1a1a1a",
+        }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+
+      {/* Visible paginated pages */}
+      <div className="flex flex-col items-center gap-6 py-8 px-4">
+        {pages.map((pageIndex) => (
+          <div
+            key={pageIndex}
+            className="bg-white rounded shadow-md flex-shrink-0"
+            style={{
+              width: `${PAGE_WIDTH}px`,
+              height: `${PAGE_HEIGHT}px`,
+              padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: `${CONTENT_HEIGHT}px`,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                className="prose prose-sm max-w-none"
+                style={{
+                  fontFamily: "'Times New Roman', serif",
+                  fontSize: "13px",
+                  lineHeight: "1.8",
+                  color: "#1a1a1a",
+                  transform: `translateY(-${pageIndex * CONTENT_HEIGHT}px)`,
+                }}
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            </div>
+          </div>
+        ))}
+
+        {/* Page counter */}
+        <p className="text-xs text-muted-foreground pb-4">
+          {pageCount} {pageCount === 1 ? "página" : "páginas"}
+        </p>
       </div>
     </ScrollArea>
   );
