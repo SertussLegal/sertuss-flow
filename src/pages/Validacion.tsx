@@ -209,7 +209,7 @@ const Validacion = () => {
 
       {/* Desktop: split view */}
       <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0 hidden lg:flex">
-        <ResizablePanel defaultSize={50} minSize={30} className="overflow-hidden">
+        <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
           <DocxPreview
             vendedores={vendedores}
             compradores={compradores}
