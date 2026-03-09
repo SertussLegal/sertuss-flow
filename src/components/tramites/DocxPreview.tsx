@@ -121,7 +121,7 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<mark style="background:#fef3c7;text-decoration:underline">___________</mark>');
 
       setHtml(result);
-    }, 300);
+    }, 500);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
