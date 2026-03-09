@@ -81,7 +81,6 @@ export interface Actos {
   entidad_bancaria: string;
   apoderado_nombre: string;
   apoderado_cedula: string;
-  afectacion_vivienda_familiar: boolean;
 }
 
 export interface Tramite {
