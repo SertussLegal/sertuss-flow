@@ -401,6 +401,10 @@ export type Database = {
         Returns: undefined
       }
       consume_credit: { Args: { org_id: string }; Returns: boolean }
+      create_organization_for_user: {
+        Args: { p_org_name: string; p_org_nit: string; p_user_id: string }
+        Returns: string
+      }
       get_all_organizations: {
         Args: never
         Returns: {
