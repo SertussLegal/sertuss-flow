@@ -147,6 +147,7 @@ const Validacion = () => {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
+        nullGetter: () => "___________",
       });
 
       const templateFields = enrichedData.templateData || enrichedData;

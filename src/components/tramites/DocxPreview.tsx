@@ -64,6 +64,7 @@ const DocxPreview = ({ vendedores, compradores, inmueble, actos }: DocxPreviewPr
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
+        nullGetter: () => "___________",
       });
 
       const templateData = buildTemplateData();
