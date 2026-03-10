@@ -21,7 +21,7 @@ interface InmuebleFormProps {
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
 const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
-  const { profile, credits, refreshCredits } = useAuth();
+  const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set());
