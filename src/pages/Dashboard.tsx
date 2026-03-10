@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock } from "lucide-react";
+import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock, Trash2 } from "lucide-react";
 import SetupOrgModal from "@/components/SetupOrgModal";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -32,6 +34,8 @@ const Dashboard = () => {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [tramites, setTramites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [draftToDelete, setDraftToDelete] = useState<any | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (profile?.organization_id) {
@@ -64,6 +68,22 @@ const Dashboard = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/");
+  };
+
+  const handleDeleteDraft = async () => {
+    if (!draftToDelete) return;
+    try {
+      await supabase.from("personas").delete().eq("tramite_id", draftToDelete.id);
+      await supabase.from("inmuebles").delete().eq("tramite_id", draftToDelete.id);
+      await supabase.from("actos").delete().eq("tramite_id", draftToDelete.id);
+      await supabase.from("tramites").delete().eq("id", draftToDelete.id);
+      setTramites((prev) => prev.filter((t) => t.id !== draftToDelete.id));
+      toast({ title: "Borrador eliminado" });
+    } catch {
+      toast({ title: "Error al eliminar", variant: "destructive" });
+    } finally {
+      setDraftToDelete(null);
+    }
   };
 
   const getDraftDescription = (t: any) => {
@@ -166,9 +186,19 @@ const Dashboard = () => {
                         <Clock className="h-3 w-3" />
                         {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true, locale: es })}
                       </span>
-                      <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                        Continuar <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-1 text-muted-foreground hover:text-destructive"
+                          onClick={(e) => { e.stopPropagation(); setDraftToDelete(t); }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="link" size="sm" className="h-auto p-0 text-primary">
+                          Continuar <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -231,6 +261,23 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </main>
+
+      <AlertDialog open={!!draftToDelete} onOpenChange={(open) => !open && setDraftToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar borrador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará permanentemente el borrador "{draftToDelete?.tipo || "Nuevo trámite"}". Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteDraft} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
