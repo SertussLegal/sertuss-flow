@@ -27,6 +27,8 @@ const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
   municipio: "municipio",
   departamento: "departamento",
   area: "area",
+  area_construida: "area_construida",
+  area_privada: "area_privada",
   linderos: "linderos",
   "inmueble.linderos_especiales": "linderos",
   "inmueble.linderos_generales": "linderos",
