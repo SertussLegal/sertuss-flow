@@ -66,6 +66,8 @@ export interface Inmueble {
   tipo_predio: "urbano" | "rural";
   direccion: string;
   area: string;
+  area_construida: string;
+  area_privada: string;
   linderos: string;
   avaluo_catastral: string;
   escritura_ph: string;
