@@ -73,7 +73,6 @@ const Dashboard = () => {
   const handleNewTramite = async () => {
     if (!profile?.organization_id || !user) return;
     try {
-      // Create the tramite first
       const { data: newTramite, error: createErr } = await supabase
         .from("tramites")
         .insert({
@@ -85,21 +84,6 @@ const Dashboard = () => {
         .select()
         .single();
       if (createErr || !newTramite) throw createErr || new Error("No se pudo crear el trámite");
-
-      // Unlock (consume 2 credits atomically)
-      const { data: unlocked } = await supabase.rpc("unlock_expediente", {
-        p_org_id: profile.organization_id,
-        p_tramite_id: newTramite.id,
-        p_user_id: user.id,
-      });
-      if (!unlocked) {
-        // Rollback: delete the tramite
-        await supabase.from("tramites").delete().eq("id", newTramite.id);
-        toast({ title: "Sin créditos suficientes", description: "Necesitas al menos 2 créditos para abrir un expediente.", variant: "destructive" });
-        return;
-      }
-
-      await refreshProfile();
       navigate(`/tramite/${newTramite.id}`);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
