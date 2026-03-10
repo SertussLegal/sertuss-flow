@@ -139,18 +139,18 @@ const Dashboard = () => {
                 <AlertTriangle className="h-4 w-4" />
                 <span>Completa los Datos Legales (Razón Social y NIT)</span>
               </div>
-            ) : credits === 0 ? (
+            ) : credits < 2 ? (
               <div className="flex items-center gap-1 text-sm text-destructive">
                 <AlertTriangle className="h-4 w-4" />
-                <span>Bolsa de créditos agotada</span>
+                <span>Necesitas al menos 2 créditos</span>
               </div>
             ) : null}
             <Button
-              onClick={() => navigate("/tramite/nuevo")}
+              onClick={handleNewTramite}
               className="bg-notarial-green hover:bg-notarial-green/90"
-              disabled={credits === 0 || !organization?.nit || !organization?.name}
+              disabled={credits < 2 || !organization?.nit || !organization?.name}
             >
-              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite
+              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite (2 créditos)
             </Button>
           </div>
         </div>
