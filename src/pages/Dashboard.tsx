@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock } from "lucide-react";
+import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock, Trash2 } from "lucide-react";
 import SetupOrgModal from "@/components/SetupOrgModal";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
