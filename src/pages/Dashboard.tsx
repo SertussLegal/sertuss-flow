@@ -34,6 +34,8 @@ const Dashboard = () => {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [tramites, setTramites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [draftToDelete, setDraftToDelete] = useState<any | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (profile?.organization_id) {
