@@ -114,6 +114,8 @@ const Validacion = () => {
     const { data: t } = await supabase.from("tramites").select("*").eq("id", tid).single();
     if (!t) return;
 
+    setIsUnlocked(!!(t as any).is_unlocked);
+
     const meta = (t as any).metadata;
     if (meta?.custom_variables) {
       setCustomVariables(meta.custom_variables);
