@@ -115,6 +115,13 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         const d = data.data;
 
         if (type === "certificado_tradicion") {
+          // Map NUPRE → identificador_predial if starts with AAA
+          const nupreMapping: Record<string, string | boolean> = {};
+          if (d.nupre && typeof d.nupre === "string" && d.nupre.startsWith("AAA")) {
+            nupreMapping.identificador_predial = d.nupre;
+            nupreMapping.tipo_identificador_predial = "chip";
+          }
+
           applyOcrResults({
             matricula_inmobiliaria: d.matricula_inmobiliaria,
             codigo_orip: d.codigo_orip,
@@ -122,7 +129,9 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
             municipio: d.municipio,
             departamento: d.departamento,
             linderos: d.linderos,
-            area: d.area,
+            ...(d.area_construida ? { area_construida: d.area_construida } : {}),
+            ...(d.area_privada ? { area_privada: d.area_privada } : {}),
+            ...nupreMapping,
             ...(d.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
             ...(d.es_propiedad_horizontal != null ? { es_propiedad_horizontal: d.es_propiedad_horizontal } : {}),
             ...(d.escritura_constitucion_ph ? { escritura_ph: d.escritura_constitucion_ph } : {}),
