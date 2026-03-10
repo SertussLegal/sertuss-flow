@@ -5,7 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
@@ -53,7 +54,8 @@ const Validacion = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
-  const { profile, organization, refreshCredits } = useAuth();
+  const { user, profile, organization, credits, refreshCredits } = useAuth();
+  const [isUnlocked, setIsUnlocked] = useState(false);
 
   const [tramiteId, setTramiteId] = useState<string | null>(id ?? null);
   const [vendedores, setVendedores] = useState<Persona[]>([createEmptyPersona()]);
@@ -112,6 +114,8 @@ const Validacion = () => {
   const loadTramite = async (tid: string) => {
     const { data: t } = await supabase.from("tramites").select("*").eq("id", tid).single();
     if (!t) return;
+
+    setIsUnlocked(!!(t as any).is_unlocked);
 
     const meta = (t as any).metadata;
     if (meta?.custom_variables) {
@@ -296,6 +300,34 @@ const Validacion = () => {
 
   const [generating, setGenerating] = useState(false);
 
+  const ensureUnlocked = async (): Promise<boolean> => {
+    if (isUnlocked) return true;
+    if (!tramiteId || !profile?.organization_id || !user) return false;
+
+    const { data: success } = await supabase.rpc("unlock_expediente", {
+      p_org_id: profile.organization_id,
+      p_tramite_id: tramiteId,
+      p_user_id: user.id,
+    });
+
+    if (!success) {
+      toast({
+        title: "Créditos insuficientes",
+        description: "Necesitas al menos 2 créditos para activar este expediente.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    setIsUnlocked(true);
+    await refreshCredits();
+    toast({
+      title: "Trámite activado",
+      description: "2 créditos consumidos. OCR y generación ilimitada habilitada.",
+    });
+    return true;
+  };
+
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
@@ -306,6 +338,9 @@ const Validacion = () => {
       toast({ title: "Datos legales incompletos", description: "La Razón Social y el NIT de tu entidad deben estar registrados antes de generar documentos.", variant: "destructive" });
       return;
     }
+
+    const unlocked = await ensureUnlocked();
+    if (!unlocked) return;
 
     setGenerating(true);
     try {
@@ -431,6 +466,9 @@ const Validacion = () => {
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
           <div className="ml-auto flex items-center gap-3">
+            <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
+              <Coins className="mr-1 h-3 w-3" /> {credits} créditos
+            </Badge>
             {syncIndicator()}
             <Button variant="ghost-dark" size="sm" onClick={handleSave} disabled={saving} className="border border-white/30">
               <Save className="mr-1 h-4 w-4" /> {saving ? "Guardando..." : "Guardar"}

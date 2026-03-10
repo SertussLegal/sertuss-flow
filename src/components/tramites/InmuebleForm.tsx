@@ -21,7 +21,7 @@ interface InmuebleFormProps {
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
 const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
-  const { profile, credits, refreshCredits } = useAuth();
+  const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set());
@@ -97,12 +97,6 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
   const handleScanDocument = async (file: File, type: ScanType) => {
     if (!profile?.organization_id) return;
 
-    const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-    if (!success) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
-      return;
-    }
-
     setScanning(type);
     try {
       const base64 = await fileToBase64(file);
@@ -154,10 +148,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
           toast({ title: "Escritura procesada", description: "Linderos extraídos correctamente." });
         }
       }
-      await refreshCredits();
     } catch (err: any) {
-      await supabase.rpc("restore_credit", { org_id: profile.organization_id });
-      await refreshCredits();
       toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
       setScanning(null);
@@ -186,7 +177,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         type="button"
         variant="outline"
         size="sm"
-        disabled={scanning !== null || credits === 0}
+        disabled={scanning !== null}
         onClick={() => ref.current?.click()}
       >
         {scanning === type ? (
