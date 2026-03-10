@@ -299,6 +299,34 @@ const Validacion = () => {
 
   const [generating, setGenerating] = useState(false);
 
+  const ensureUnlocked = async (): Promise<boolean> => {
+    if (isUnlocked) return true;
+    if (!tramiteId || !profile?.organization_id || !user) return false;
+
+    const { data: success } = await supabase.rpc("unlock_expediente", {
+      p_org_id: profile.organization_id,
+      p_tramite_id: tramiteId,
+      p_user_id: user.id,
+    });
+
+    if (!success) {
+      toast({
+        title: "Créditos insuficientes",
+        description: "Necesitas al menos 2 créditos para activar este expediente.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    setIsUnlocked(true);
+    await refreshCredits();
+    toast({
+      title: "Trámite activado",
+      description: "2 créditos consumidos. OCR y generación ilimitada habilitada.",
+    });
+    return true;
+  };
+
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
@@ -309,6 +337,9 @@ const Validacion = () => {
       toast({ title: "Datos legales incompletos", description: "La Razón Social y el NIT de tu entidad deben estar registrados antes de generar documentos.", variant: "destructive" });
       return;
     }
+
+    const unlocked = await ensureUnlocked();
+    if (!unlocked) return;
 
     setGenerating(true);
     try {
