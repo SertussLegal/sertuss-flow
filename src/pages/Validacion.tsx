@@ -438,14 +438,9 @@ const Validacion = () => {
             <Button
               size="sm"
               onClick={() => setPreviewOpen(true)}
-              disabled={credits === 0}
               className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
             >
-              {credits === 0 ? (
-                <><AlertTriangle className="mr-1 h-4 w-4" /> Sin créditos</>
-              ) : (
-                <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
-              )}
+              <Eye className="mr-1 h-4 w-4" /> Previsualizar
             </Button>
           </div>
         </div>
