@@ -309,11 +309,6 @@ const Validacion = () => {
 
     setGenerating(true);
     try {
-      const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-      if (!success) {
-        toast({ title: "Sin créditos", description: "Bolsa agotada.", variant: "destructive" });
-        return;
-      }
 
       const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
         body: { vendedores, compradores, inmueble, actos, customVariables },
