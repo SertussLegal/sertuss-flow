@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Save, Eye, AlertTriangle, Cloud, CloudOff, Loader2 } from "lucide-react";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
@@ -45,6 +45,8 @@ const FIELD_TO_ACTOS: Record<string, keyof Actos> = {
   valor_hipoteca_letras: "valor_hipoteca",
 };
 
+type SyncStatus = "saved" | "saving" | "unsaved" | "idle";
+
 const Validacion = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -59,16 +61,56 @@ const Validacion = () => {
   const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [isDirty, setIsDirty] = useState(false);
+  const isLoadingRef = useRef(false);
+  const tramiteIdRef = useRef<string | null>(tramiteId);
+
+  // Keep ref in sync
+  useEffect(() => { tramiteIdRef.current = tramiteId; }, [tramiteId]);
 
   useEffect(() => {
-    if (id) loadTramite(id);
+    if (id) {
+      isLoadingRef.current = true;
+      loadTramite(id).finally(() => { isLoadingRef.current = false; });
+    }
   }, [id]);
+
+  // Mark dirty when data changes (skip during initial load)
+  useEffect(() => {
+    if (!isLoadingRef.current) {
+      setIsDirty(true);
+      setSyncStatus("unsaved");
+    }
+  }, [vendedores, compradores, inmueble, actos, customVariables]);
+
+  // Auto-save debounce: 30 seconds
+  useEffect(() => {
+    if (!isDirty || !profile?.organization_id) return;
+    const timer = setTimeout(() => {
+      handleAutoSave();
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [isDirty, vendedores, compradores, inmueble, actos, customVariables, profile?.organization_id]);
+
+  // beforeunload: attempt save
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        // Attempt a final sync save using sendBeacon isn't practical with Supabase SDK,
+        // so we just warn the user
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const loadTramite = async (tid: string) => {
     const { data: t } = await supabase.from("tramites").select("*").eq("id", tid).single();
     if (!t) return;
 
-    // Restore custom variables from metadata
     const meta = (t as any).metadata;
     if (meta?.custom_variables) {
       setCustomVariables(meta.custom_variables);
@@ -86,11 +128,70 @@ const Validacion = () => {
     }
     if (inm) setInmueble(inm as any);
     if (act) setActos(act as any);
+
+    setSyncStatus("saved");
+    setIsDirty(false);
+  };
+
+  const handleAutoSave = async () => {
+    if (!profile?.organization_id) return;
+    setSyncStatus("saving");
+    try {
+      let tid = tramiteIdRef.current;
+      const metadata = {
+        last_saved: new Date().toISOString(),
+        custom_variables: customVariables.map(cv => ({ ...cv })),
+      } as Record<string, unknown>;
+
+      if (!tid) {
+        // Create new draft
+        const { data, error } = await supabase
+          .from("tramites")
+          .insert({
+            tipo: actos.tipo_acto || "Compraventa",
+            organization_id: profile.organization_id,
+            created_by: profile.id,
+            status: "pendiente" as any,
+            metadata: metadata as any,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        tid = data.id;
+        setTramiteId(tid);
+        navigate(`/tramite/${tid}`, { replace: true });
+      } else {
+        await supabase.from("tramites").update({
+          updated_at: new Date().toISOString(),
+          metadata: metadata as any,
+          tipo: actos.tipo_acto || "Compraventa",
+        }).eq("id", tid);
+      }
+
+      // Upsert related data: delete and re-insert
+      await supabase.from("personas").delete().eq("tramite_id", tid!);
+      await supabase.from("inmuebles").delete().eq("tramite_id", tid!);
+      await supabase.from("actos").delete().eq("tramite_id", tid!);
+
+      const personasToInsert = [
+        ...vendedores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "vendedor" as any })),
+        ...compradores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "comprador" as any })),
+      ];
+      if (personasToInsert.length) {
+        await supabase.from("personas").insert(personasToInsert);
+      }
+      await supabase.from("inmuebles").insert({ ...inmuebleToRow(inmueble), tramite_id: tid! });
+      await supabase.from("actos").insert({ ...actosToRow(actos), tramite_id: tid! });
+
+      setIsDirty(false);
+      setSyncStatus("saved");
+    } catch {
+      setSyncStatus("unsaved");
+    }
   };
 
   // Bidirectional sync: preview → form data
   const handleFieldEdit = useCallback((field: string, value: string) => {
-    // Handle custom variables
     if (field.startsWith("__custom__")) {
       const cvId = field.replace("__custom__", "");
       setCustomVariables((prev) =>
@@ -98,20 +199,14 @@ const Validacion = () => {
       );
       return;
     }
-
-    // Map to inmueble
     if (FIELD_TO_INMUEBLE[field]) {
       setInmueble((prev) => ({ ...prev, [FIELD_TO_INMUEBLE[field]]: value }));
       return;
     }
-
-    // Map to actos
     if (FIELD_TO_ACTOS[field]) {
       setActos((prev) => ({ ...prev, [FIELD_TO_ACTOS[field]]: value }));
       return;
     }
-
-    // Composite fields (personas) — these are read-only from preview since they combine multiple fields
   }, []);
 
   const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
@@ -139,6 +234,7 @@ const Validacion = () => {
     }
 
     setSaving(true);
+    setSyncStatus("saving");
     try {
       let tid = tramiteId;
 
@@ -162,6 +258,7 @@ const Validacion = () => {
         if (error) throw error;
         tid = data.id;
         setTramiteId(tid);
+        navigate(`/tramite/${tid}`, { replace: true });
       } else {
         await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata: metadata as any }).eq("id", tid);
         await supabase.from("personas").delete().eq("tramite_id", tid);
@@ -184,8 +281,11 @@ const Validacion = () => {
       const { error: actError } = await supabase.from("actos").insert({ ...actosToRow(actos), tramite_id: tid! });
       if (actError) throw actError;
 
+      setIsDirty(false);
+      setSyncStatus("saved");
       toast({ title: "Trámite guardado", description: "Estado actualizado a Validado." });
     } catch (err: any) {
+      setSyncStatus("unsaved");
       toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
@@ -239,7 +339,6 @@ const Validacion = () => {
 
       doc.render(safeData);
 
-      // Apply custom variables as text replacements on the generated XML
       let outZip = doc.getZip();
       if (customVariables.length > 0) {
         const docXml = outZip.file("word/document.xml");
@@ -268,11 +367,38 @@ const Validacion = () => {
 
       await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
       await refreshCredits();
+      setIsDirty(false);
+      setSyncStatus("saved");
       toast({ title: "¡Éxito!", description: "Documento generado correctamente." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const syncIndicator = () => {
+    switch (syncStatus) {
+      case "saved":
+        return (
+          <span className="flex items-center gap-1 text-xs text-secondary">
+            <Cloud className="h-3.5 w-3.5" /> Guardado
+          </span>
+        );
+      case "saving":
+        return (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando...
+          </span>
+        );
+      case "unsaved":
+        return (
+          <span className="flex items-center gap-1 text-xs text-accent">
+            <CloudOff className="h-3.5 w-3.5" /> Sin guardar
+          </span>
+        );
+      default:
+        return null;
     }
   };
 
@@ -307,7 +433,8 @@ const Validacion = () => {
             <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-3">
+            {syncIndicator()}
             <Button variant="ghost-dark" size="sm" onClick={handleSave} disabled={saving} className="border border-white/30">
               <Save className="mr-1 h-4 w-4" /> {saving ? "Guardando..." : "Guardar"}
             </Button>
