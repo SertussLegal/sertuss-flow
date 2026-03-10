@@ -177,7 +177,7 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         type="button"
         variant="outline"
         size="sm"
-        disabled={scanning !== null || credits === 0}
+        disabled={scanning !== null}
         onClick={() => ref.current?.click()}
       >
         {scanning === type ? (

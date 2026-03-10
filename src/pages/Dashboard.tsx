@@ -154,23 +154,18 @@ const Dashboard = () => {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">Escrituras</h1>
           <div className="flex items-center gap-3">
-            {!organization?.nit || !organization?.name ? (
+            {(!organization?.nit || !organization?.name) && (
               <div className="flex items-center gap-1 text-sm text-destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <span>Completa los Datos Legales (Razón Social y NIT)</span>
               </div>
-            ) : credits < 2 ? (
-              <div className="flex items-center gap-1 text-sm text-destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <span>Necesitas al menos 2 créditos</span>
-              </div>
-            ) : null}
+            )}
             <Button
               onClick={handleNewTramite}
               className="bg-notarial-green hover:bg-notarial-green/90"
-              disabled={credits < 2 || !organization?.nit || !organization?.name}
+              disabled={!organization?.nit || !organization?.name}
             >
-              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite (2 créditos)
+              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite
             </Button>
           </div>
         </div>

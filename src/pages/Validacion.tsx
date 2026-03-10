@@ -466,6 +466,9 @@ const Validacion = () => {
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
           <div className="ml-auto flex items-center gap-3">
+            <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
+              <Coins className="mr-1 h-3 w-3" /> {credits} créditos
+            </Badge>
             {syncIndicator()}
             <Button variant="ghost-dark" size="sm" onClick={handleSave} disabled={saving} className="border border-white/30">
               <Save className="mr-1 h-4 w-4" /> {saving ? "Guardando..." : "Guardar"}
