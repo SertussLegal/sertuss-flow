@@ -170,9 +170,19 @@ const Dashboard = () => {
                         <Clock className="h-3 w-3" />
                         {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true, locale: es })}
                       </span>
-                      <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                        Continuar <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-1 text-muted-foreground hover:text-destructive"
+                          onClick={(e) => { e.stopPropagation(); setDraftToDelete(t); }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="link" size="sm" className="h-auto p-0 text-primary">
+                          Continuar <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
