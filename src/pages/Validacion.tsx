@@ -53,7 +53,8 @@ const Validacion = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
-  const { profile, organization, refreshCredits } = useAuth();
+  const { user, profile, organization, credits, refreshCredits } = useAuth();
+  const [isUnlocked, setIsUnlocked] = useState(false);
 
   const [tramiteId, setTramiteId] = useState<string | null>(id ?? null);
   const [vendedores, setVendedores] = useState<Persona[]>([createEmptyPersona()]);
