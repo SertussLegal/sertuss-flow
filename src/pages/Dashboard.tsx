@@ -70,6 +70,22 @@ const Dashboard = () => {
     navigate("/");
   };
 
+  const handleDeleteDraft = async () => {
+    if (!draftToDelete) return;
+    try {
+      await supabase.from("personas").delete().eq("tramite_id", draftToDelete.id);
+      await supabase.from("inmuebles").delete().eq("tramite_id", draftToDelete.id);
+      await supabase.from("actos").delete().eq("tramite_id", draftToDelete.id);
+      await supabase.from("tramites").delete().eq("id", draftToDelete.id);
+      setTramites((prev) => prev.filter((t) => t.id !== draftToDelete.id));
+      toast({ title: "Borrador eliminado" });
+    } catch {
+      toast({ title: "Error al eliminar", variant: "destructive" });
+    } finally {
+      setDraftToDelete(null);
+    }
+  };
+
   const getDraftDescription = (t: any) => {
     const meta = t.metadata;
     const matricula = meta?.custom_variables?.length
