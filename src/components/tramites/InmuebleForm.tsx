@@ -300,9 +300,16 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         </div>
 
         <div className="space-y-2">
-          <Label>Área (m²) {ocr("area")}</Label>
-          {wrapWithSuggestion("area",
-            <Input value={inmueble.area} onChange={(e) => update("area", e.target.value)} />
+          <Label>Área Construida (m²) {ocr("area_construida")}</Label>
+          {wrapWithSuggestion("area_construida",
+            <Input value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>Área Privada (m²) {ocr("area_privada")}</Label>
+          {wrapWithSuggestion("area_privada",
+            <Input value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
           )}
         </div>
 

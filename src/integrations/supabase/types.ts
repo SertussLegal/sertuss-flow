@@ -112,6 +112,8 @@ export type Database = {
       inmuebles: {
         Row: {
           area: string | null
+          area_construida: string | null
+          area_privada: string | null
           avaluo_catastral: string | null
           codigo_orip: string | null
           departamento: string | null
@@ -132,6 +134,8 @@ export type Database = {
         }
         Insert: {
           area?: string | null
+          area_construida?: string | null
+          area_privada?: string | null
           avaluo_catastral?: string | null
           codigo_orip?: string | null
           departamento?: string | null
@@ -152,6 +156,8 @@ export type Database = {
         }
         Update: {
           area?: string | null
+          area_construida?: string | null
+          area_privada?: string | null
           avaluo_catastral?: string | null
           codigo_orip?: string | null
           departamento?: string | null

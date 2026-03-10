@@ -529,6 +529,8 @@ const inmuebleToRow = (i: Inmueble) => ({
   direccion: i.direccion,
   estrato: "",
   area: i.area,
+  area_construida: i.area_construida,
+  area_privada: i.area_privada,
   linderos: i.linderos,
   valorizacion: "",
   avaluo_catastral: i.avaluo_catastral,

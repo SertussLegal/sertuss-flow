@@ -126,6 +126,8 @@ export const createEmptyInmueble = (): Inmueble => ({
   tipo_predio: "urbano",
   direccion: "",
   area: "",
+  area_construida: "",
+  area_privada: "",
   linderos: "",
   avaluo_catastral: "",
   escritura_ph: "",
