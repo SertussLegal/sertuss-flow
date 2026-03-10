@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, AlertTriangle, Cloud, CloudOff, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2 } from "lucide-react";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
@@ -53,7 +53,7 @@ const Validacion = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
-  const { profile, organization, credits, refreshCredits } = useAuth();
+  const { profile, organization, refreshCredits } = useAuth();
 
   const [tramiteId, setTramiteId] = useState<string | null>(id ?? null);
   const [vendedores, setVendedores] = useState<Persona[]>([createEmptyPersona()]);
@@ -309,11 +309,6 @@ const Validacion = () => {
 
     setGenerating(true);
     try {
-      const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-      if (!success) {
-        toast({ title: "Sin créditos", description: "Bolsa agotada.", variant: "destructive" });
-        return;
-      }
 
       const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
         body: { vendedores, compradores, inmueble, actos, customVariables },
@@ -443,14 +438,9 @@ const Validacion = () => {
             <Button
               size="sm"
               onClick={() => setPreviewOpen(true)}
-              disabled={credits === 0}
               className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
             >
-              {credits === 0 ? (
-                <><AlertTriangle className="mr-1 h-4 w-4" /> Sin créditos</>
-              ) : (
-                <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
-              )}
+              <Eye className="mr-1 h-4 w-4" /> Previsualizar
             </Button>
           </div>
         </div>

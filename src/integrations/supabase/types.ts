@@ -370,6 +370,7 @@ export type Database = {
           created_by: string
           fecha: string | null
           id: string
+          is_unlocked: boolean
           metadata: Json | null
           organization_id: string
           radicado: string | null
@@ -382,6 +383,7 @@ export type Database = {
           created_by: string
           fecha?: string | null
           id?: string
+          is_unlocked?: boolean
           metadata?: Json | null
           organization_id: string
           radicado?: string | null
@@ -394,6 +396,7 @@ export type Database = {
           created_by?: string
           fecha?: string | null
           id?: string
+          is_unlocked?: boolean
           metadata?: Json | null
           organization_id?: string
           radicado?: string | null
@@ -458,6 +461,10 @@ export type Database = {
         Returns: Database["public"]["Enums"]["org_role"]
       }
       restore_credit: { Args: { org_id: string }; Returns: undefined }
+      unlock_expediente: {
+        Args: { p_org_id: string; p_tramite_id: string; p_user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       org_role: "owner" | "admin" | "operator"

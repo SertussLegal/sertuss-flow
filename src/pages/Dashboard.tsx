@@ -70,6 +70,42 @@ const Dashboard = () => {
     navigate("/");
   };
 
+  const handleNewTramite = async () => {
+    if (!profile?.organization_id || !user) return;
+    try {
+      // Create the tramite first
+      const { data: newTramite, error: createErr } = await supabase
+        .from("tramites")
+        .insert({
+          tipo: "Compraventa",
+          organization_id: profile.organization_id,
+          created_by: user.id,
+          status: "pendiente" as any,
+        })
+        .select()
+        .single();
+      if (createErr || !newTramite) throw createErr || new Error("No se pudo crear el trámite");
+
+      // Unlock (consume 2 credits atomically)
+      const { data: unlocked } = await supabase.rpc("unlock_expediente", {
+        p_org_id: profile.organization_id,
+        p_tramite_id: newTramite.id,
+        p_user_id: user.id,
+      });
+      if (!unlocked) {
+        // Rollback: delete the tramite
+        await supabase.from("tramites").delete().eq("id", newTramite.id);
+        toast({ title: "Sin créditos suficientes", description: "Necesitas al menos 2 créditos para abrir un expediente.", variant: "destructive" });
+        return;
+      }
+
+      await refreshProfile();
+      navigate(`/tramite/${newTramite.id}`);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
   const handleDeleteDraft = async () => {
     if (!draftToDelete) return;
     try {
@@ -139,18 +175,18 @@ const Dashboard = () => {
                 <AlertTriangle className="h-4 w-4" />
                 <span>Completa los Datos Legales (Razón Social y NIT)</span>
               </div>
-            ) : credits === 0 ? (
+            ) : credits < 2 ? (
               <div className="flex items-center gap-1 text-sm text-destructive">
                 <AlertTriangle className="h-4 w-4" />
-                <span>Bolsa de créditos agotada</span>
+                <span>Necesitas al menos 2 créditos</span>
               </div>
             ) : null}
             <Button
-              onClick={() => navigate("/tramite/nuevo")}
+              onClick={handleNewTramite}
               className="bg-notarial-green hover:bg-notarial-green/90"
-              disabled={credits === 0 || !organization?.nit || !organization?.name}
+              disabled={credits < 2 || !organization?.nit || !organization?.name}
             >
-              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite
+              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite (2 créditos)
             </Button>
           </div>
         </div>
