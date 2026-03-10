@@ -29,7 +29,7 @@ const statusLabels: Record<string, string> = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { user, profile, organization, credits, refreshProfile, needsOrgSetup } = useAuth();
+  const { user, profile, organization, refreshProfile, needsOrgSetup } = useAuth();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [tramites, setTramites] = useState<any[]>([]);
