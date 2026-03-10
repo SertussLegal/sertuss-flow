@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield } from "lucide-react";
+import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock } from "lucide-react";
 import SetupOrgModal from "@/components/SetupOrgModal";
+import { formatDistanceToNow } from "date-fns";
+import { es } from "date-fns/locale";
 
 const statusColors: Record<string, string> = {
   pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
@@ -43,12 +45,15 @@ const Dashboard = () => {
     const { data } = await supabase
       .from("tramites")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("updated_at", { ascending: false });
     setTramites(data ?? []);
     setLoading(false);
   };
 
-  const filtered = tramites.filter((t) => {
+  const drafts = tramites.filter((t) => t.status === "pendiente");
+  const completedTramites = tramites.filter((t) => t.status !== "pendiente");
+
+  const filtered = completedTramites.filter((t) => {
     const matchSearch =
       (t.radicado ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (t.tipo ?? "").toLowerCase().includes(search.toLowerCase());
@@ -59,6 +64,14 @@ const Dashboard = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/");
+  };
+
+  const getDraftDescription = (t: any) => {
+    const meta = t.metadata;
+    const matricula = meta?.custom_variables?.length
+      ? `${meta.custom_variables.length} variable(s)`
+      : null;
+    return matricula || "Sin datos aún";
   };
 
   return (
@@ -122,6 +135,48 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Drafts section */}
+        {drafts.length > 0 && (
+          <div className="mb-6">
+            <div className="mb-3 flex items-center gap-2">
+              <FileEdit className="h-5 w-5 text-accent" />
+              <h2 className="text-lg font-semibold">Borradores en progreso</h2>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              {drafts.slice(0, 4).map((t) => (
+                <Card
+                  key={t.id}
+                  className="min-w-[240px] max-w-[280px] shrink-0 cursor-pointer border-accent/30 transition-shadow hover:shadow-md"
+                  onClick={() => navigate(`/tramite/${t.id}`)}
+                >
+                  <CardContent className="flex flex-col gap-2 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold text-foreground">
+                        {t.tipo || "Nuevo trámite"}
+                      </span>
+                      <Badge variant="outline" className="shrink-0 border-accent/40 text-accent text-xs">
+                        Borrador
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-1">
+                      {getDraftDescription(t)}
+                    </p>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true, locale: es })}
+                      </span>
+                      <Button variant="link" size="sm" className="h-auto p-0 text-primary">
+                        Continuar <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
         <Card className="mb-6">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row">
             <div className="relative flex-1">
@@ -132,7 +187,6 @@ const Dashboard = () => {
               <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Estado" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="pendiente">Pendiente</SelectItem>
                 <SelectItem value="validado">Validado</SelectItem>
                 <SelectItem value="word_generado">Word Generado</SelectItem>
               </SelectContent>
