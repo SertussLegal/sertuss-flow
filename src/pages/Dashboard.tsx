@@ -130,9 +130,6 @@ const Dashboard = () => {
             <span className="text-lg font-bold">Sertuss</span>
           </div>
           <div className="flex items-center gap-4">
-            <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
-              {credits} créditos
-            </Badge>
             {profile?.role === "owner" && (
               <Button variant="ghost-dark" size="sm" onClick={() => navigate("/admin")}>
                 <Shield className="mr-1 h-4 w-4" /> Admin
