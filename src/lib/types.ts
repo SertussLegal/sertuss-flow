@@ -66,6 +66,8 @@ export interface Inmueble {
   tipo_predio: "urbano" | "rural";
   direccion: string;
   area: string;
+  area_construida: string;
+  area_privada: string;
   linderos: string;
   avaluo_catastral: string;
   escritura_ph: string;
@@ -124,6 +126,8 @@ export const createEmptyInmueble = (): Inmueble => ({
   tipo_predio: "urbano",
   direccion: "",
   area: "",
+  area_construida: "",
+  area_privada: "",
   linderos: "",
   avaluo_catastral: "",
   escritura_ph: "",

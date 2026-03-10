@@ -115,6 +115,13 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         const d = data.data;
 
         if (type === "certificado_tradicion") {
+          // Map NUPRE → identificador_predial if starts with AAA
+          const nupreMapping: Record<string, string | boolean> = {};
+          if (d.nupre && typeof d.nupre === "string" && d.nupre.startsWith("AAA")) {
+            nupreMapping.identificador_predial = d.nupre;
+            nupreMapping.tipo_identificador_predial = "chip";
+          }
+
           applyOcrResults({
             matricula_inmobiliaria: d.matricula_inmobiliaria,
             codigo_orip: d.codigo_orip,
@@ -122,7 +129,9 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
             municipio: d.municipio,
             departamento: d.departamento,
             linderos: d.linderos,
-            area: d.area,
+            ...(d.area_construida ? { area_construida: d.area_construida } : {}),
+            ...(d.area_privada ? { area_privada: d.area_privada } : {}),
+            ...nupreMapping,
             ...(d.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
             ...(d.es_propiedad_horizontal != null ? { es_propiedad_horizontal: d.es_propiedad_horizontal } : {}),
             ...(d.escritura_constitucion_ph ? { escritura_ph: d.escritura_constitucion_ph } : {}),
@@ -291,9 +300,16 @@ const InmuebleForm = ({ inmueble, onChange }: InmuebleFormProps) => {
         </div>
 
         <div className="space-y-2">
-          <Label>Área (m²) {ocr("area")}</Label>
-          {wrapWithSuggestion("area",
-            <Input value={inmueble.area} onChange={(e) => update("area", e.target.value)} />
+          <Label>Área Construida (m²) {ocr("area_construida")}</Label>
+          {wrapWithSuggestion("area_construida",
+            <Input value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>Área Privada (m²) {ocr("area_privada")}</Label>
+          {wrapWithSuggestion("area_privada",
+            <Input value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
           )}
         </div>
 
