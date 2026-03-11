@@ -36,6 +36,25 @@ const LandingPage = () => {
 
   const isRegister = activeTab === "register";
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast({ title: "Ingresa tu correo", description: "Escribe tu correo electrónico para recuperar tu contraseña.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada para restablecer tu contraseña." });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isRegister && !acceptedPolicy) return;
@@ -188,11 +207,19 @@ const LandingPage = () => {
                           className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
                         
                       </div>
+                      <div className="flex items-start">
+                        <button
+                          type="button"
+                          onClick={handleForgotPassword}
+                          className="text-xs text-white underline underline-offset-2 hover:text-notarial-gold transition-colors"
+                        >
+                          ¿Olvidaste tu contraseña?
+                        </button>
+                      </div>
                       <Button
                         type="submit"
                         className="min-h-[44px] w-full rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
                         disabled={loading}>
-                        
                         {loading ? "Procesando..." : "Ingresar"}
                       </Button>
                     </form>
