@@ -88,21 +88,20 @@ const Validacion = () => {
     }
   }, [vendedores, compradores, inmueble, actos, customVariables]);
 
-  // Auto-save debounce: 30 seconds
+  // Auto-save debounce: 15 seconds
   useEffect(() => {
     if (!isDirty || !profile?.organization_id) return;
     const timer = setTimeout(() => {
       handleAutoSave();
-    }, 30000);
+    }, 15000);
     return () => clearTimeout(timer);
   }, [isDirty, vendedores, compradores, inmueble, actos, customVariables, profile?.organization_id]);
 
-  // beforeunload: attempt save
+  // beforeunload: force save before leaving
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (isDirty) {
-        // Attempt a final sync save using sendBeacon isn't practical with Supabase SDK,
-        // so we just warn the user
+        handleAutoSave();
         e.preventDefault();
         e.returnValue = "";
       }
@@ -110,6 +109,14 @@ const Validacion = () => {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
+
+  // Force save before internal navigation
+  const handleBack = useCallback(async () => {
+    if (isDirty) {
+      await handleAutoSave();
+    }
+    navigate("/dashboard");
+  }, [isDirty, navigate]);
 
   const loadTramite = async (tid: string) => {
     const { data: t } = await supabase.from("tramites").select("*").eq("id", tid).single();
@@ -461,7 +468,7 @@ const Validacion = () => {
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
       <header className="border-b bg-notarial-dark text-white shrink-0">
         <div className="container flex h-14 items-center gap-4">
-          <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
+          <Button variant="ghost-dark" size="sm" onClick={handleBack}>
             <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
