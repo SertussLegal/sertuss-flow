@@ -207,7 +207,7 @@ const LandingPage = () => {
                           className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
                         
                       </div>
-                      <div className="flex items-start">
+                      <div className="flex items-start min-h-[40px]">
                         <button
                           type="button"
                           onClick={handleForgotPassword}
