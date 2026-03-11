@@ -279,6 +279,7 @@ const Validacion = () => {
       const metadata = {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
+        progress: calculateProgress(),
       } as Record<string, unknown>;
 
       if (!tid) {
