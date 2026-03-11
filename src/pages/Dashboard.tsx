@@ -108,16 +108,7 @@ const Dashboard = () => {
   };
 
   const getDraftProgress = (t: any) => {
-    let filled = 0;
-    const total = 4; // personas, inmuebles, actos, custom_variables
-    const personasCount = t.personas?.[0]?.count ?? 0;
-    const inmueblesCount = t.inmuebles?.[0]?.count ?? 0;
-    if (personasCount > 0) filled++;
-    if (inmueblesCount > 0) filled++;
-    const meta = t.metadata;
-    if (meta?.custom_variables?.length > 0) filled++;
-    if (t.tipo && t.tipo !== "Compraventa") filled++;
-    return Math.round((filled / total) * 100);
+    return t.metadata?.progress ?? 0;
   };
 
   const getDraftSummary = (t: any) => {
