@@ -49,7 +49,7 @@ const Dashboard = () => {
     setLoading(true);
     const { data } = await supabase
       .from("tramites")
-      .select("*")
+      .select("*, personas(count), inmuebles(count)")
       .order("updated_at", { ascending: false });
     setTramites(data ?? []);
     setLoading(false);
