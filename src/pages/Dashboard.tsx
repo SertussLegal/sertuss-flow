@@ -107,12 +107,34 @@ const Dashboard = () => {
     }
   };
 
-  const getDraftDescription = (t: any) => {
+  const getDraftProgress = (t: any) => {
+    let filled = 0;
+    const total = 4; // personas, inmuebles, actos, custom_variables
+    const personasCount = t.personas?.[0]?.count ?? 0;
+    const inmueblesCount = t.inmuebles?.[0]?.count ?? 0;
+    if (personasCount > 0) filled++;
+    if (inmueblesCount > 0) filled++;
     const meta = t.metadata;
-    const matricula = meta?.custom_variables?.length
-      ? `${meta.custom_variables.length} variable(s)`
-      : null;
-    return matricula || "Sin datos aún";
+    if (meta?.custom_variables?.length > 0) filled++;
+    if (t.tipo && t.tipo !== "Compraventa") filled++;
+    return Math.round((filled / total) * 100);
+  };
+
+  const getDraftSummary = (t: any) => {
+    const parts: string[] = [];
+    const personasCount = t.personas?.[0]?.count ?? 0;
+    const inmueblesCount = t.inmuebles?.[0]?.count ?? 0;
+    if (personasCount > 0) parts.push(`${personasCount} persona(s)`);
+    if (inmueblesCount > 0) parts.push(`${inmueblesCount} inmueble(s)`);
+    return parts.length > 0 ? parts.join(" · ") : "Sin datos aún";
+  };
+
+  const getDaysRemaining = (t: any) => {
+    const updated = new Date(t.updated_at);
+    const expiry = new Date(updated.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const days = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(0, days);
   };
 
   return (
