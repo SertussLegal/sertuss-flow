@@ -225,7 +225,7 @@ const LandingPage = () => {
                     </form>
                   </TabsContent>
 
-                  <TabsContent value="register" className="mt-6 min-h-[340px]">
+                  <TabsContent value="register" className="mt-6">
                     <form onSubmit={handleSubmit} className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="register-email" className="text-white">
