@@ -1,15 +1,8 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription } from
-"@/components/ui/card";
 import {
   Accordion,
   AccordionContent,
@@ -17,6 +10,7 @@ import {
   AccordionTrigger } from
 "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -24,7 +18,6 @@ import {
   Shield,
   Lock,
   Building2,
-
   ArrowRight,
   Play } from
 "lucide-react";
@@ -33,10 +26,11 @@ import DemoModal from "@/components/landing/DemoModal";
 const LandingPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") === "register" ? "register" : "login");
   const navigate = useNavigate();
   const { toast } = useToast();
 
