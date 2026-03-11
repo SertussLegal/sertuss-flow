@@ -1,15 +1,8 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription } from
-"@/components/ui/card";
 import {
   Accordion,
   AccordionContent,
@@ -17,6 +10,7 @@ import {
   AccordionTrigger } from
 "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -24,7 +18,6 @@ import {
   Shield,
   Lock,
   Building2,
-
   ArrowRight,
   Play } from
 "lucide-react";
@@ -33,16 +26,19 @@ import DemoModal from "@/components/landing/DemoModal";
 const LandingPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [acceptedPolicy, setAcceptedPolicy] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") === "register" ? "register" : "login");
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const isRegister = activeTab === "register";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!acceptedPolicy) return;
+    if (isRegister && !acceptedPolicy) return;
     setLoading(true);
     try {
       if (isRegister) {
@@ -119,7 +115,7 @@ const LandingPage = () => {
                   size="lg"
                   className="min-h-[44px] min-w-[44px] rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
                   onClick={() => {
-                    setIsRegister(true);
+                    setActiveTab("register");
                     document.
                     getElementById("hero-form")?.
                     scrollIntoView({ behavior: "smooth" });
@@ -145,103 +141,126 @@ const LandingPage = () => {
             {/* Right: Auth Form (Glassmorphism) */}
             <div id="hero-form" className="flex items-start justify-center lg:justify-end">
               <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.05] p-6 shadow-2xl backdrop-blur-2xl">
-                <div className="mb-4 text-center">
-                  
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 bg-white/[0.08] border border-white/10 rounded-xl h-11 p-1">
+                    <TabsTrigger
+                      value="login"
+                      className="rounded-lg text-sm font-medium text-slate-400 data-[state=active]:bg-white/[0.12] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
+                    >
+                      Ingresar
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="register"
+                      className="rounded-lg text-sm font-medium text-slate-400 data-[state=active]:bg-white/[0.12] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
+                    >
+                      Registrarse
+                    </TabsTrigger>
+                  </TabsList>
 
+                  <TabsContent value="login" className="mt-6">
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="login-email" className="text-white">
+                          Correo electrónico
+                        </Label>
+                        <Input
+                          id="login-email"
+                          type="email"
+                          placeholder="correo@ejemplo.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="login-password" className="text-white">
+                          Contraseña
+                        </Label>
+                        <Input
+                          id="login-password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          minLength={6}
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        className="min-h-[44px] w-full rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
+                        disabled={loading}
+                      >
+                        {loading ? "Procesando..." : "Ingresar"}
+                      </Button>
+                    </form>
+                  </TabsContent>
 
-
-
-
-
-
-
-                  
-                  <h2 className="text-xl font-semibold text-white">
-                    {isRegister ? "Crear Cuenta" : "Iniciar Sesión"}
-                  </h2>
-                  <p className="text-sm text-slate-300">
-                    {isRegister ?
-                    "Registra tu cuenta para acceder al sistema" :
-                    "Ingresa tus credenciales"}
-                  </p>
-                </div>
-                <div>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="email" className="text-white">
-                        Correo electrónico
-                      </Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="correo@ejemplo.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
-                      
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password" className="text-white">
-                        Contraseña
-                      </Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        minLength={6}
-                        className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
-                      
-                    </div>
-                    <Button
-                      type="submit"
-                      className="min-h-[44px] w-full rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
-                      disabled={loading || !acceptedPolicy}>
-                      
-                      {loading ?
-                      "Procesando..." :
-                      isRegister ?
-                      "Registrarse" :
-                      "Ingresar"}
-                    </Button>
-                    <div className="flex items-start gap-2 pt-2">
-                      <Checkbox
-                        id="policy"
-                        checked={acceptedPolicy}
-                        onCheckedChange={(v) => setAcceptedPolicy(v === true)}
-                        className="mt-0.5 border-white data-[state=checked]:bg-notarial-green data-[state=checked]:border-notarial-green"
-                        aria-label="Aceptar política de tratamiento de datos" />
-                      
-                      <Label
-                        htmlFor="policy"
-                        className="text-xs leading-snug text-white cursor-pointer">
-                        
-                        Acepto la{" "}
-                        <a
-                          href="#"
-                          className="text-white underline underline-offset-2 hover:text-notarial-gold"
-                          onClick={(e) => e.stopPropagation()}>
-                          
-                          Política de Tratamiento de Datos (Ley 1581)
-                        </a>
-                      </Label>
-                    </div>
-                  </form>
-                  <div className="mt-4 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setIsRegister(!isRegister)}
-                      className="min-h-[44px] text-sm text-slate-300 underline-offset-4 hover:text-white hover:underline">
-                      
-                      {isRegister ?
-                      "¿Ya tienes cuenta? Inicia sesión" :
-                      "¿No tienes cuenta? Regístrate"}
-                    </button>
-                  </div>
-                </div>
+                  <TabsContent value="register" className="mt-6">
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="register-email" className="text-white">
+                          Correo electrónico
+                        </Label>
+                        <Input
+                          id="register-email"
+                          type="email"
+                          placeholder="correo@ejemplo.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="register-password" className="text-white">
+                          Contraseña
+                        </Label>
+                        <Input
+                          id="register-password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          minLength={6}
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
+                        />
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <Checkbox
+                          id="policy"
+                          checked={acceptedPolicy}
+                          onCheckedChange={(v) => setAcceptedPolicy(v === true)}
+                          className="mt-0.5 border-white data-[state=checked]:bg-notarial-green data-[state=checked]:border-notarial-green"
+                          aria-label="Aceptar política de tratamiento de datos"
+                        />
+                        <Label
+                          htmlFor="policy"
+                          className="text-xs leading-snug text-white cursor-pointer"
+                        >
+                          Acepto la{" "}
+                          <a
+                            href="#"
+                            className="text-white underline underline-offset-2 hover:text-notarial-gold"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Política de Tratamiento de Datos (Ley 1581)
+                          </a>
+                        </Label>
+                      </div>
+                      <Button
+                        type="submit"
+                        className="min-h-[44px] w-full rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
+                        disabled={loading || !acceptedPolicy}
+                      >
+                        {loading ? "Procesando..." : "Registrarse"}
+                      </Button>
+                    </form>
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           </div>
