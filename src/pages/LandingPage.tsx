@@ -34,9 +34,11 @@ const LandingPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const isRegister = activeTab === "register";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!acceptedPolicy) return;
+    if (isRegister && !acceptedPolicy) return;
     setLoading(true);
     try {
       if (isRegister) {
