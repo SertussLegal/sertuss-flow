@@ -36,6 +36,25 @@ const LandingPage = () => {
 
   const isRegister = activeTab === "register";
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast({ title: "Ingresa tu correo", description: "Escribe tu correo electrónico para recuperar tu contraseña.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada para restablecer tu contraseña." });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isRegister && !acceptedPolicy) return;
