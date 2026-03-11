@@ -176,7 +176,7 @@ const LandingPage = () => {
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="login" className="mt-6 min-h-[340px]">
+                  <TabsContent value="login" className="mt-6">
                     <form onSubmit={handleSubmit} className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="login-email" className="text-white">
