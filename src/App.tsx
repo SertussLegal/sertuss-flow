@@ -13,6 +13,7 @@ import AdminOrgEdit from "./pages/AdminOrgEdit";
 import Validacion from "./pages/Validacion";
 import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
