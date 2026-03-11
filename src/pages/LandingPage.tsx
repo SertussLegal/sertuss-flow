@@ -115,7 +115,7 @@ const LandingPage = () => {
                   size="lg"
                   className="min-h-[44px] min-w-[44px] rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
                   onClick={() => {
-                    setIsRegister(true);
+                    setActiveTab("register");
                     document.
                     getElementById("hero-form")?.
                     scrollIntoView({ behavior: "smooth" });
