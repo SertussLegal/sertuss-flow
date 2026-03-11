@@ -145,20 +145,20 @@ const LandingPage = () => {
                   <TabsList className="grid w-full grid-cols-2 bg-white/[0.08] border border-white/10 rounded-xl h-11 p-1">
                     <TabsTrigger
                       value="login"
-                      className="rounded-lg text-sm font-medium text-slate-400 data-[state=active]:bg-white/[0.12] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
-                    >
+                      className="rounded-lg text-sm font-medium text-slate-400 data-[state=active]:bg-white/[0.12] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all">
+                      
                       Ingresar
                     </TabsTrigger>
                     <TabsTrigger
                       value="register"
-                      className="rounded-lg text-sm font-medium text-slate-400 data-[state=active]:bg-white/[0.12] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
-                    >
+                      className="rounded-lg text-sm font-medium text-slate-400 data-[state=active]:bg-white/[0.12] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all">
+                      
                       Registrarse
                     </TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="login" className="mt-6">
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4 py-0 my-[16px]">
                       <div className="space-y-2">
                         <Label htmlFor="login-email" className="text-white">
                           Correo electrónico
@@ -170,8 +170,8 @@ const LandingPage = () => {
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           required
-                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
-                        />
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
+                        
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="login-password" className="text-white">
@@ -185,14 +185,14 @@ const LandingPage = () => {
                           onChange={(e) => setPassword(e.target.value)}
                           required
                           minLength={6}
-                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
-                        />
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
+                        
                       </div>
                       <Button
                         type="submit"
                         className="min-h-[44px] w-full rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
-                        disabled={loading}
-                      >
+                        disabled={loading}>
+                        
                         {loading ? "Procesando..." : "Ingresar"}
                       </Button>
                     </form>
@@ -211,8 +211,8 @@ const LandingPage = () => {
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           required
-                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
-                        />
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
+                        
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="register-password" className="text-white">
@@ -226,8 +226,8 @@ const LandingPage = () => {
                           onChange={(e) => setPassword(e.target.value)}
                           required
                           minLength={6}
-                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400"
-                        />
+                          className="h-12 border-white/10 bg-white/10 text-white placeholder:text-slate-400" />
+                        
                       </div>
                       <div className="flex items-start gap-2">
                         <Checkbox
@@ -235,18 +235,18 @@ const LandingPage = () => {
                           checked={acceptedPolicy}
                           onCheckedChange={(v) => setAcceptedPolicy(v === true)}
                           className="mt-0.5 border-white data-[state=checked]:bg-notarial-green data-[state=checked]:border-notarial-green"
-                          aria-label="Aceptar política de tratamiento de datos"
-                        />
+                          aria-label="Aceptar política de tratamiento de datos" />
+                        
                         <Label
                           htmlFor="policy"
-                          className="text-xs leading-snug text-white cursor-pointer"
-                        >
+                          className="text-xs leading-snug text-white cursor-pointer">
+                          
                           Acepto la{" "}
                           <a
                             href="#"
                             className="text-white underline underline-offset-2 hover:text-notarial-gold"
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                            onClick={(e) => e.stopPropagation()}>
+                            
                             Política de Tratamiento de Datos (Ley 1581)
                           </a>
                         </Label>
@@ -254,8 +254,8 @@ const LandingPage = () => {
                       <Button
                         type="submit"
                         className="min-h-[44px] w-full rounded-lg bg-notarial-green py-4 px-8 text-secondary-foreground shadow-lg shadow-emerald-500/20 hover:bg-notarial-green/90"
-                        disabled={loading || !acceptedPolicy}
-                      >
+                        disabled={loading || !acceptedPolicy}>
+                        
                         {loading ? "Procesando..." : "Registrarse"}
                       </Button>
                     </form>
