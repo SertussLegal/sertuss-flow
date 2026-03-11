@@ -192,52 +192,82 @@ const Dashboard = () => {
 
         {/* Drafts section */}
         {drafts.length > 0 && (
-          <div className="mb-6">
-            <div className="mb-3 flex items-center gap-2">
-              <FileEdit className="h-5 w-5 text-accent" />
-              <h2 className="text-lg font-semibold">Borradores en progreso</h2>
+          <div className="mb-8">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <FileEdit className="h-5 w-5 text-accent" />
+                <h2 className="text-lg font-semibold">Borradores en progreso</h2>
+                <Badge variant="secondary" className="text-xs">{drafts.length}</Badge>
+              </div>
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Timer className="h-3.5 w-3.5" />
+                Borradores inactivos se eliminan tras 15 días.
+              </span>
             </div>
-            <div className="flex gap-4 overflow-x-auto pb-2">
-              {drafts.slice(0, 4).map((t) => (
-                <Card
-                  key={t.id}
-                  className="min-w-[240px] max-w-[280px] shrink-0 cursor-pointer border-accent/30 transition-shadow hover:shadow-md"
-                  onClick={() => navigate(`/tramite/${t.id}`)}
-                >
-                  <CardContent className="flex flex-col gap-2 p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-semibold text-foreground">
-                        {t.tipo || "Nuevo trámite"}
-                      </span>
-                      <Badge variant="outline" className="shrink-0 border-accent/40 text-accent text-xs">
-                        Borrador
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-1">
-                      {getDraftDescription(t)}
-                    </p>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true, locale: es })}
-                      </span>
-                      <div className="flex items-center gap-1">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {drafts.slice(0, 4).map((t) => {
+                const progress = getDraftProgress(t);
+                const daysLeft = getDaysRemaining(t);
+                const isExpiringSoon = daysLeft <= 3;
+                return (
+                  <Card
+                    key={t.id}
+                    className="group relative cursor-pointer border-l-4 border-l-accent border-border transition-all hover:shadow-md hover:border-l-primary"
+                    onClick={() => navigate(`/tramite/${t.id}`)}
+                  >
+                    <CardContent className="flex flex-col gap-3 p-4">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-foreground truncate text-sm">
+                            {t.tipo || "Nuevo trámite"}
+                          </h3>
+                        </div>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-auto p-1 text-muted-foreground hover:text-destructive"
+                          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0"
                           onClick={(e) => { e.stopPropagation(); setDraftToDelete(t); }}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                          Continuar <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                        </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+
+                      {/* Summary */}
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <User className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{getDraftSummary(t)}</span>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="flex items-center gap-2">
+                        <Progress value={progress} className="h-1.5 flex-1" />
+                        <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">{progress}%</span>
+                      </div>
+
+                      {/* Footer */}
+                      <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true, locale: es })}
+                          </span>
+                          {isExpiringSoon && (
+                            <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4">
+                              {daysLeft}d restantes
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="flex items-center gap-1 text-xs font-medium text-primary group-hover:underline">
+                          Continuar <ArrowRight className="h-3 w-3" />
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}

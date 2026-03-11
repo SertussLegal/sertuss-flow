@@ -468,7 +468,7 @@ const Validacion = () => {
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
       <header className="border-b bg-notarial-dark text-white shrink-0">
         <div className="container flex h-14 items-center gap-4">
-          <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
+          <Button variant="ghost-dark" size="sm" onClick={handleBack}>
             <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
