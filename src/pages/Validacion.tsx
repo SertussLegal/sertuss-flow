@@ -146,6 +146,30 @@ const Validacion = () => {
     setIsDirty(false);
   };
 
+  const calculateProgress = () => {
+    const personaFields: (keyof Persona)[] = ["nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio"];
+    const inmuebleFields: (keyof Inmueble)[] = ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "direccion", "area", "linderos", "avaluo_catastral"];
+    const actosBaseFields: (keyof Actos)[] = ["tipo_acto", "valor_compraventa"];
+    const actosHipotecaFields: (keyof Actos)[] = ["entidad_bancaria", "valor_hipoteca", "apoderado_nombre"];
+
+    const allPersonas = [...vendedores, ...compradores];
+    let filled = 0;
+    let total = (personaFields.length * allPersonas.length) + inmuebleFields.length + actosBaseFields.length;
+
+    allPersonas.forEach(p => {
+      personaFields.forEach(f => { if (typeof p[f] === "string" && (p[f] as string).trim()) filled++; });
+    });
+    inmuebleFields.forEach(f => { if (typeof inmueble[f] === "string" && (inmueble[f] as string).trim()) filled++; });
+    actosBaseFields.forEach(f => { if (typeof actos[f] === "string" && (actos[f] as string).trim()) filled++; });
+
+    if (actos.es_hipoteca) {
+      total += actosHipotecaFields.length;
+      actosHipotecaFields.forEach(f => { if (typeof actos[f] === "string" && (actos[f] as string).trim()) filled++; });
+    }
+
+    return total > 0 ? Math.round((filled / total) * 100) : 0;
+  };
+
   const handleAutoSave = async () => {
     if (!profile?.organization_id) return;
     setSyncStatus("saving");
@@ -154,6 +178,7 @@ const Validacion = () => {
       const metadata = {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
+        progress: calculateProgress(),
       } as Record<string, unknown>;
 
       if (!tid) {
@@ -254,6 +279,7 @@ const Validacion = () => {
       const metadata = {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
+        progress: calculateProgress(),
       } as Record<string, unknown>;
 
       if (!tid) {
