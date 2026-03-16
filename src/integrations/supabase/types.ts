@@ -231,6 +231,50 @@ export type Database = {
           },
         ]
       }
+      notaria_styles: {
+        Row: {
+          ciudad: string
+          clausulas_personalizadas: Json | null
+          created_at: string
+          estilo_linderos: string
+          id: string
+          nombre_notaria: string
+          notario_titular: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          ciudad?: string
+          clausulas_personalizadas?: Json | null
+          created_at?: string
+          estilo_linderos?: string
+          id?: string
+          nombre_notaria?: string
+          notario_titular?: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          ciudad?: string
+          clausulas_personalizadas?: Json | null
+          created_at?: string
+          estilo_linderos?: string
+          id?: string
+          nombre_notaria?: string
+          notario_titular?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notaria_styles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           address: string | null
