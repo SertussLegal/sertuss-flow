@@ -145,6 +145,18 @@ export const createEmptyActos = (): Actos => ({
   apoderado_cedula: "",
 });
 
+export interface NotariaStyle {
+  id: string;
+  organization_id: string;
+  nombre_notaria: string;
+  ciudad: string;
+  estilo_linderos: string;
+  notario_titular: string;
+  clausulas_personalizadas: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CustomVariable {
   id: string;
   originalText: string;
