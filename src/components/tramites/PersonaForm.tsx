@@ -188,7 +188,7 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
             <div className="flex items-center gap-2">
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 className="hidden"
                 ref={(el) => { fileInputRefs.current[index] = el; }}
                 onChange={(e) => {
