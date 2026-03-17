@@ -234,7 +234,15 @@ serve(async (req) => {
     }
 
     const result = await response.json();
+
+    console.log("=== SERTUSS EXTRACT: Raw AI Response ===");
+    console.log(JSON.stringify(result, null, 2));
+
     const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+
+    console.log("=== SERTUSS EXTRACT: Tool Call ===");
+    console.log("Function name:", toolCall?.function?.name);
+    console.log("Arguments raw:", toolCall?.function?.arguments);
 
     if (!toolCall?.function?.arguments) {
       console.error("No tool call in response:", JSON.stringify(result));
@@ -245,6 +253,11 @@ serve(async (req) => {
     }
 
     const extractedData = JSON.parse(toolCall.function.arguments);
+
+    console.log("=== SERTUSS EXTRACT: Parsed Data ===");
+    console.log("Doc type:", type);
+    console.log("Extracted fields:", Object.keys(extractedData));
+    console.log("Full extracted data:", JSON.stringify(extractedData, null, 2));
 
     return new Response(JSON.stringify({ data: extractedData }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
