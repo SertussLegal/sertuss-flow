@@ -9,6 +9,7 @@ import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins } from "lucide-re
 import { Badge } from "@/components/ui/badge";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
+import type { ExtractedPersona, ExtractedDocumento } from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
@@ -247,6 +248,60 @@ const Validacion = () => {
     }
   }, []);
 
+  const handlePersonasExtracted = useCallback((personas: ExtractedPersona[]) => {
+    if (!personas.length) return;
+
+    // Auto-fill vendedores with extracted personas that have CC (natural persons)
+    const naturalPersons = personas.filter(p =>
+      !p.tipo_identificacion || p.tipo_identificacion === "CC" || p.tipo_identificacion === "CEDULA DE CIUDADANIA" || p.tipo_identificacion === "CE"
+    );
+
+    if (naturalPersons.length === 0) return;
+
+    setVendedores(prev => {
+      const updated = [...prev];
+      let insertIndex = 0;
+
+      for (const extracted of naturalPersons) {
+        // Check if this person already exists
+        const alreadyExists = updated.some(v =>
+          v.numero_cedula === extracted.numero_identificacion && extracted.numero_identificacion
+        );
+        if (alreadyExists) continue;
+
+        // Find first empty slot or add new
+        const emptySlot = updated.findIndex((v, i) => i >= insertIndex && !v.nombre_completo && !v.numero_cedula);
+        const newPersona = {
+          ...createEmptyPersona(),
+          nombre_completo: extracted.nombre_completo || "",
+          numero_cedula: extracted.numero_identificacion || "",
+          municipio_domicilio: extracted.lugar_expedicion || "",
+        };
+
+        if (emptySlot >= 0) {
+          updated[emptySlot] = newPersona;
+          insertIndex = emptySlot + 1;
+        } else {
+          updated.push(newPersona);
+          insertIndex = updated.length;
+        }
+      }
+
+      return updated;
+    });
+
+    toast({
+      title: "Personas extraídas",
+      description: `${naturalPersons.length} persona(s) detectada(s) en el certificado.`,
+    });
+  }, [toast]);
+
+  const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento) => {
+    // Store documento data in metadata for future use (e.g., document generation)
+    console.log("=== SERTUSS EXTRACT: Documento data ===", documento);
+    // Could be stored in tramite metadata or used elsewhere
+  }, []);
+
   const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
     const newVar: CustomVariable = {
       id: crypto.randomUUID(),
@@ -482,7 +537,12 @@ const Validacion = () => {
         <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
       </TabsContent>
       <TabsContent value="inmueble">
-        <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
+        <InmuebleForm
+          inmueble={inmueble}
+          onChange={setInmueble}
+          onPersonasExtracted={handlePersonasExtracted}
+          onDocumentoExtracted={handleDocumentoExtracted}
+        />
       </TabsContent>
       <TabsContent value="actos">
         <ActosForm actos={actos} onChange={setActos} />
