@@ -124,29 +124,46 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         const d = data.data;
 
         if (type === "certificado_tradicion") {
+          // New nested structure: { documento, inmueble, personas }
+          const inmData = d.inmueble || d;
+          const docData = d.documento;
+          const personasData = d.personas;
+
           // Map NUPRE → identificador_predial if starts with AAA
           const nupreMapping: Record<string, string | boolean> = {};
-          if (d.nupre && typeof d.nupre === "string" && d.nupre.startsWith("AAA")) {
-            nupreMapping.identificador_predial = d.nupre;
+          const nupre = inmData.nupre;
+          if (nupre && typeof nupre === "string" && nupre.startsWith("AAA")) {
+            nupreMapping.identificador_predial = nupre;
             nupreMapping.tipo_identificador_predial = "chip";
           }
 
           applyOcrResults({
-            matricula_inmobiliaria: d.matricula_inmobiliaria,
-            codigo_orip: d.codigo_orip,
-            direccion: d.direccion,
-            municipio: d.municipio,
-            departamento: d.departamento,
-            linderos: d.linderos,
-            ...(d.area_construida ? { area_construida: d.area_construida } : {}),
-            ...(d.area_privada ? { area_privada: d.area_privada } : {}),
+            matricula_inmobiliaria: inmData.matricula_inmobiliaria,
+            codigo_orip: inmData.codigo_orip,
+            direccion: inmData.direccion,
+            municipio: inmData.municipio,
+            departamento: inmData.departamento,
+            linderos: inmData.linderos,
+            ...(inmData.area_construida ? { area_construida: inmData.area_construida } : {}),
+            ...(inmData.area_privada ? { area_privada: inmData.area_privada } : {}),
             ...nupreMapping,
-            ...(d.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
-            ...(d.es_propiedad_horizontal != null ? { es_propiedad_horizontal: d.es_propiedad_horizontal } : {}),
-            ...(d.escritura_constitucion_ph ? { escritura_ph: d.escritura_constitucion_ph } : {}),
-            ...(d.reformas_ph ? { reformas_ph: d.reformas_ph } : {}),
+            ...(inmData.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
+            ...(inmData.es_propiedad_horizontal != null ? { es_propiedad_horizontal: inmData.es_propiedad_horizontal } : {}),
+            ...(inmData.escritura_constitucion_ph ? { escritura_ph: inmData.escritura_constitucion_ph } : {}),
+            ...(inmData.reformas_ph ? { reformas_ph: inmData.reformas_ph } : {}),
           }, inmueble);
-          toast({ title: "Certificado procesado", description: "Datos del inmueble extraídos correctamente." });
+
+          // Pass extracted personas to parent
+          if (personasData && Array.isArray(personasData) && onPersonasExtracted) {
+            onPersonasExtracted(personasData);
+          }
+
+          // Pass extracted documento to parent
+          if (docData && onDocumentoExtracted) {
+            onDocumentoExtracted(docData);
+          }
+
+          toast({ title: "Certificado procesado", description: "Datos del inmueble, personas y documento extraídos correctamente." });
         } else if (type === "predial") {
           applyOcrResults({
             identificador_predial: d.identificador_predial,
