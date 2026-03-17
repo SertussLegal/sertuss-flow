@@ -13,9 +13,24 @@ import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
 
+export interface ExtractedPersona {
+  nombre_completo: string;
+  numero_identificacion: string;
+  tipo_identificacion?: string;
+  lugar_expedicion?: string;
+}
+
+export interface ExtractedDocumento {
+  fecha_documento?: string;
+  notaria_origen?: string;
+  numero_escritura?: string;
+}
+
 interface InmuebleFormProps {
   inmueble: Inmueble;
   onChange: (inmueble: Inmueble) => void;
+  onPersonasExtracted?: (personas: ExtractedPersona[]) => void;
+  onDocumentoExtracted?: (documento: ExtractedDocumento) => void;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
