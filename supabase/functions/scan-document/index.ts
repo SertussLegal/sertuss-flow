@@ -31,38 +31,59 @@ const toolsByCertificado = [
     type: "function" as const,
     function: {
       name: "extract_certificado_tradicion",
-      description: "Extrae los datos principales de un certificado de tradición y libertad colombiano, incluyendo información de propiedad horizontal si aplica.",
+      description: "Extrae los datos principales de un certificado de tradición y libertad colombiano, estructurados en tres nodos: documento, inmueble y personas.",
       parameters: {
         type: "object",
         properties: {
-          matricula_inmobiliaria: { type: "string", description: "Número de matrícula inmobiliaria" },
-          codigo_orip: { type: "string", description: "Código o nombre de la Oficina de Registro (ORIP)" },
-          direccion: { type: "string", description: "Dirección del inmueble" },
-          municipio: { type: "string", description: "Municipio del inmueble" },
-          departamento: { type: "string", description: "Departamento del inmueble" },
-          linderos: { type: "string", description: "Linderos completos del inmueble, transcribir textualmente" },
-          nupre: { type: "string", description: "Código NUPRE del inmueble si aparece (suele comenzar con AAA, ej: AAA0216ZOWF)" },
-          area_construida: { type: "string", description: "Área construida del inmueble en m² (CONST), dejar vacío si no aparece" },
-          area_privada: { type: "string", description: "Área privada del inmueble en m² (PRIV), dejar vacío si no aparece" },
-          tipo_predio: { type: "string", description: "Tipo de predio: 'urbano' o 'rural'" },
-          es_propiedad_horizontal: { type: "boolean", description: "true si el inmueble tiene reglamento de propiedad horizontal" },
-          escritura_constitucion_ph: { type: "string", description: "Número de escritura de constitución de propiedad horizontal, si aplica" },
-          reformas_ph: { type: "string", description: "Reformas al reglamento de propiedad horizontal, si aplica" },
-          propietarios: {
+          documento: {
+            type: "object",
+            description: "Datos del documento o escritura de origen",
+            properties: {
+              fecha_documento: { type: "string", description: "Fecha del documento o escritura (DD-MM-AAAA)" },
+              notaria_origen: { type: "string", description: "Notaría de origen del documento" },
+              numero_escritura: { type: "string", description: "Número de escritura pública" },
+            },
+            required: ["fecha_documento", "notaria_origen", "numero_escritura"],
+            additionalProperties: false,
+          },
+          inmueble: {
+            type: "object",
+            description: "Datos del inmueble",
+            properties: {
+              matricula_inmobiliaria: { type: "string", description: "Número de matrícula inmobiliaria" },
+              codigo_orip: { type: "string", description: "Código o nombre de la Oficina de Registro (ORIP)" },
+              direccion: { type: "string", description: "Dirección del inmueble" },
+              municipio: { type: "string", description: "Municipio del inmueble" },
+              departamento: { type: "string", description: "Departamento del inmueble" },
+              linderos: { type: "string", description: "Linderos completos del inmueble, transcribir textualmente" },
+              nupre: { type: "string", description: "Código NUPRE/CHIP del inmueble (suele comenzar con AAA, ej: AAA0216ZOWF)" },
+              area_construida: { type: "string", description: "Área construida del inmueble en m² (CONST), dejar vacío si no aparece" },
+              area_privada: { type: "string", description: "Área privada del inmueble en m² (PRIV), dejar vacío si no aparece" },
+              tipo_predio: { type: "string", description: "Tipo de predio: 'urbano' o 'rural'" },
+              es_propiedad_horizontal: { type: "boolean", description: "true si el inmueble tiene reglamento de propiedad horizontal" },
+              escritura_constitucion_ph: { type: "string", description: "Número de escritura de constitución de propiedad horizontal, si aplica" },
+              reformas_ph: { type: "string", description: "Reformas al reglamento de propiedad horizontal, si aplica" },
+            },
+            required: ["matricula_inmobiliaria", "codigo_orip", "linderos"],
+            additionalProperties: false,
+          },
+          personas: {
             type: "array",
+            description: "Lista de todas las personas o entidades que aparecen en el certificado (propietarios, acreedores, intervinientes)",
             items: {
               type: "object",
               properties: {
-                nombre: { type: "string" },
-                cedula: { type: "string" },
+                nombre_completo: { type: "string", description: "Nombre completo de la persona o razón social" },
+                numero_identificacion: { type: "string", description: "Número de cédula o NIT" },
+                tipo_identificacion: { type: "string", description: "Tipo de documento: CC, NIT, CE, etc." },
+                lugar_expedicion: { type: "string", description: "Lugar de expedición del documento" },
               },
-              required: ["nombre"],
+              required: ["nombre_completo", "numero_identificacion"],
               additionalProperties: false,
             },
-            description: "Lista de propietarios actuales",
           },
         },
-        required: ["matricula_inmobiliaria", "codigo_orip", "linderos"],
+        required: ["documento", "inmueble", "personas"],
         additionalProperties: false,
       },
     },
@@ -161,7 +182,15 @@ const toolsMap: Record<DocType, { tools: any[]; toolName: string }> = {
 
 const systemPrompts: Record<DocType, string> = {
   cedula: `Eres un sistema OCR especializado en cédulas de ciudadanía colombianas. Analiza la imagen proporcionada y extrae el nombre completo, número de cédula y municipio de expedición. Sé preciso con los números y nombres.`,
-  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento escaneado y extrae todos los datos del inmueble: matrícula inmobiliaria, ORIP, dirección, linderos completos (transcribir textualmente tal cual aparecen), municipio, departamento, tipo de predio y propietarios actuales. Los linderos son críticos: transcribe CADA PALABRA tal como aparece en el documento. Además, identifica si el inmueble tiene reglamento de propiedad horizontal: si lo tiene, extrae el número de escritura de constitución y las reformas. IMPORTANTE sobre NUPRE: si el certificado tiene un campo NUPRE (código que suele comenzar con AAA, por ejemplo AAA0216ZOWF), extráelo en el campo "nupre". IMPORTANTE sobre áreas: diferencia entre área construida (CONST) y área privada (PRIV). Extrae cada una por separado. Si solo aparece una de las dos, deja la otra vacía. No inventes datos que no aparezcan en el documento.`,
+  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en tres nodos:
+
+1. DOCUMENTO: fecha del documento o escritura de origen, notaría de origen, número de escritura pública.
+
+2. INMUEBLE: matrícula inmobiliaria, ORIP, dirección, municipio, departamento, linderos completos (transcribir TEXTUALMENTE cada palabra), NUPRE/CHIP (código que suele comenzar con AAA), áreas (diferencia entre construida CONST y privada PRIV), tipo de predio, y si tiene propiedad horizontal con su escritura de constitución y reformas.
+
+3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
+
+IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.`,
   predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae el identificador predial (CHIP o número predial nacional), avalúo catastral, área y dirección.`,
   escritura_antecedente: `Eres un sistema OCR especializado en escrituras públicas colombianas. Extrae los linderos del inmueble de la escritura antecedente. Diferencia entre linderos especiales (del inmueble particular, como apartamento o local) y linderos generales (del edificio o conjunto, aplica en propiedad horizontal). Transcribe TEXTUALMENTE cada lindero, palabra por palabra, tal cual aparece en el documento. No resumas ni parafrasees.`,
   poder_banco: `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el poder otorgado por una entidad bancaria y extrae: nombre de la entidad bancaria, nombre completo del apoderado y su número de cédula.`,
