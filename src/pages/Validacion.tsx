@@ -9,6 +9,7 @@ import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins } from "lucide-re
 import { Badge } from "@/components/ui/badge";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
+import type { ExtractedPersona, ExtractedDocumento } from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
