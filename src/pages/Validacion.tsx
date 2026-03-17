@@ -483,7 +483,12 @@ const Validacion = () => {
         <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
       </TabsContent>
       <TabsContent value="inmueble">
-        <InmuebleForm inmueble={inmueble} onChange={setInmueble} />
+        <InmuebleForm
+          inmueble={inmueble}
+          onChange={setInmueble}
+          onPersonasExtracted={handlePersonasExtracted}
+          onDocumentoExtracted={handleDocumentoExtracted}
+        />
       </TabsContent>
       <TabsContent value="actos">
         <ActosForm actos={actos} onChange={setActos} />
