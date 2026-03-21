@@ -637,6 +637,10 @@ const Validacion = () => {
             customVariables={customVariables}
             onFieldEdit={handleFieldEdit}
             onCreateCustomVariable={handleCreateCustomVariable}
+            sugerenciasIA={sugerenciasIA}
+            generating={generatingWord}
+            textoFinalWord={textoFinalWord}
+            onSugerenciaAccepted={handleSugerenciaAccepted}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
