@@ -134,3 +134,20 @@ Frontend → consume_credit RPC → generate-document edge function (Gemini AI) 
 - Credit validation before generation
 - Status update triggers activity log
 - Loading state in PreviewModal during generation
+
+
+## Flujo Inteligente SERTUSS-EDITOR-PRO (IMPLEMENTED)
+
+### Architecture
+Frontend → save data → process-expediente (orchestrator) → reads DB + notaria_styles → builds Súper-JSON → Gemini 2.5 Pro → returns texto_final_word + sugerencias_ia → DocxPreview renders with highlights
+
+### Implemented
+- Edge function `supabase/functions/process-expediente/index.ts` — orchestrator that reads tramite data, notaria_styles, builds Súper-JSON, calls Gemini 2.5 Pro with SERTUSS-EDITOR-PRO prompt
+- `generate-document` kept as fallback, `process-expediente` is the primary pipeline
+- **DOMPurify** sanitization on all HTML rendered in DocxPreview (prevents XSS from LLM output)
+- **Skeleton screen** in DocxPreview during generation (`generating` prop) — simulates document lines with animation
+- **AI suggestion highlights**: `<mark>` tags — Orange for discrepancias, Blue for estilo adjustments
+- **SugerenciaPopover**: click on highlight → shows explanation + accept/ignore buttons
+- **Reverse sync**: accepting a suggestion updates the form field (if `campo` specified), updates `texto_final_word`, removes suggestion, and **forces immediate save** to Supabase
+- `sugerencias_ia` and `texto_final_word` persisted in `tramites.metadata` and restored on page load
+- New types: `SugerenciaIA`, `ResultadoEditorPro` in `src/lib/types.ts`
