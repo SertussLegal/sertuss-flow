@@ -14,7 +14,7 @@ import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos, CustomVariable } from "@/lib/types";
+import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
