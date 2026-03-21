@@ -441,14 +441,28 @@ const Validacion = () => {
     const unlocked = await ensureUnlocked();
     if (!unlocked) return;
 
+    // Save current data first
+    await handleAutoSave();
+
     setGenerating(true);
+    setGeneratingWord(true);
     try {
-
-      const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
-        body: { vendedores, compradores, inmueble, actos, customVariables },
+      // Call process-expediente (orchestrator)
+      const { data: result, error: fnError } = await supabase.functions.invoke("process-expediente", {
+        body: { tramite_id: tramiteId },
       });
-      if (aiError) throw new Error("Error en la IA legal: " + aiError.message);
+      if (fnError) throw new Error("Error en el pipeline de IA: " + fnError.message);
+      if (result?.error) throw new Error(result.error);
 
+      // Store AI results
+      const aiTexto = result.texto_final_word || "";
+      const aiSugerencias: SugerenciaIA[] = result.sugerencias_ia || [];
+      
+      setTextoFinalWord(aiTexto);
+      setSugerenciasIA(aiSugerencias);
+
+      // Also generate the .docx download using templateData
+      const templateData = result.templateData || result;
       const response = await fetch("/template_venta_hipoteca.docx");
       const content = await response.arrayBuffer();
 
@@ -463,9 +477,9 @@ const Validacion = () => {
         nullGetter: () => "___________",
       });
 
-      const templateFields = enrichedData.templateData || enrichedData;
       const safeData = Object.fromEntries(
-        Object.entries(templateFields).map(([k, v]) => [k, typeof v === "string" ? (v || "__________") : v])
+        Object.entries(templateData).filter(([k]) => k !== "texto_final_word" && k !== "sugerencias_ia")
+          .map(([k, v]) => [k, typeof v === "string" ? (v || "__________") : v])
       );
 
       doc.render(safeData);
@@ -500,11 +514,12 @@ const Validacion = () => {
       await refreshCredits();
       setIsDirty(false);
       setSyncStatus("saved");
-      toast({ title: "¡Éxito!", description: "Documento generado correctamente." });
+      toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setGenerating(false);
+      setGeneratingWord(false);
     }
   };
 
