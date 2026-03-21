@@ -64,6 +64,9 @@ const Validacion = () => {
   const [inmueble, setInmueble] = useState<Inmueble>(createEmptyInmueble());
   const [actos, setActos] = useState<Actos>(createEmptyActos());
   const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
+  const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
+  const [textoFinalWord, setTextoFinalWord] = useState<string>("");
+  const [generatingWord, setGeneratingWord] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
