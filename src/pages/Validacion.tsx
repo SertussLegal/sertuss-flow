@@ -327,6 +327,29 @@ const Validacion = () => {
     });
   }, [toast]);
 
+  // Reverse sync: accept AI suggestion → update form + force save
+  const handleSugerenciaAccepted = useCallback(async (idx: number, textoSugerido: string) => {
+    const sug = sugerenciasIA[idx];
+    if (!sug) return;
+
+    // If campo is specified, update form state
+    if (sug.campo) {
+      handleFieldEdit(sug.campo, textoSugerido);
+    }
+
+    // Update texto_final_word: replace original with suggested
+    if (textoFinalWord) {
+      setTextoFinalWord(prev => prev.replace(sug.texto_original, textoSugerido));
+    }
+
+    // Remove accepted suggestion
+    setSugerenciasIA(prev => prev.filter((_, i) => i !== idx));
+
+    // Force immediate save
+    setIsDirty(true);
+    setTimeout(() => handleAutoSave(), 100);
+  }, [sugerenciasIA, textoFinalWord, handleFieldEdit, handleAutoSave]);
+
   const handleSave = async () => {
     if (!inmueble.identificador_predial) {
       toast({ title: "Error", description: "El Identificador Predial es obligatorio.", variant: "destructive" });
