@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { FileText, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
-import type { Persona, Inmueble, Actos, CustomVariable } from "@/lib/types";
+import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X } from "lucide-react";
+import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
+import { Skeleton } from "@/components/ui/skeleton";
 import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
+import DOMPurify from "dompurify";
 
 interface DocxPreviewProps {
   vendedores: Persona[];
@@ -13,6 +15,10 @@ interface DocxPreviewProps {
   customVariables?: CustomVariable[];
   onFieldEdit?: (field: string, value: string) => void;
   onCreateCustomVariable?: (originalText: string, variableName: string) => void;
+  sugerenciasIA?: SugerenciaIA[];
+  generating?: boolean;
+  textoFinalWord?: string;
+  onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
 }
 
 const PAGE_WIDTH = 612;
@@ -22,6 +28,21 @@ const PAGE_PADDING_Y = 72;
 const CONTENT_HEIGHT = PAGE_HEIGHT - PAGE_PADDING_Y * 2;
 const NAV_BAR_HEIGHT = 56;
 
+// Configure DOMPurify to allow mark tags and data attributes
+const purifyConfig = {
+  ALLOWED_TAGS: [
+    "p", "br", "strong", "em", "b", "i", "u", "span", "mark",
+    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
+    "table", "tr", "td", "th", "thead", "tbody", "div", "a", "sup", "sub",
+  ],
+  ALLOWED_ATTR: [
+    "class", "style", "data-field", "data-custom-var", "data-sugerencia-idx",
+    "href", "target",
+  ],
+};
+
+const sanitize = (html: string) => DOMPurify.sanitize(html, purifyConfig);
+
 const DocxPreview = ({
   vendedores,
   compradores,
@@ -30,6 +51,10 @@ const DocxPreview = ({
   customVariables = [],
   onFieldEdit,
   onCreateCustomVariable,
+  sugerenciasIA = [],
+  generating = false,
+  textoFinalWord,
+  onSugerenciaAccepted,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -53,6 +78,13 @@ const DocxPreview = ({
   // Selection toolbar state
   const [selectionToolbar, setSelectionToolbar] = useState<{
     text: string;
+    position: { top: number; left: number };
+  } | null>(null);
+
+  // Sugerencia popover state
+  const [sugerenciaPopover, setSugerenciaPopover] = useState<{
+    idx: number;
+    sugerencia: SugerenciaIA;
     position: { top: number; left: number };
   } | null>(null);
 
@@ -130,8 +162,21 @@ const DocxPreview = ({
     };
   }, [vendedores, compradores, inmueble, actos]);
 
-  // Apply replacements
+  // Apply replacements or use textoFinalWord
   useEffect(() => {
+    // If we have AI-generated text, use it instead of template
+    if (textoFinalWord) {
+      let result = textoFinalWord;
+      
+      // Apply sugerencias_ia highlights
+      if (sugerenciasIA.length > 0) {
+        result = applySugerenciaHighlights(result, sugerenciasIA);
+      }
+
+      setHtml(sanitize(result));
+      return;
+    }
+
     if (!baseHtml) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -168,13 +213,13 @@ const DocxPreview = ({
         }
       }
 
-      setHtml(result);
+      setHtml(sanitize(result));
     }, 500);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, buildReplacements, customVariables]);
+  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA]);
 
   // Measure content and compute pages
   useEffect(() => {
@@ -190,9 +235,27 @@ const DocxPreview = ({
     return () => cancelAnimationFrame(frame);
   }, [html]);
 
-  // Handle click on variable spans
+  // Handle click on variable spans and sugerencia marks
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+
+    // Check for sugerencia click
+    const sugerenciaIdx = target.getAttribute("data-sugerencia-idx");
+    if (sugerenciaIdx !== null && sugerenciasIA.length > 0) {
+      const idx = parseInt(sugerenciaIdx, 10);
+      const sug = sugerenciasIA[idx];
+      if (sug) {
+        const rect = target.getBoundingClientRect();
+        setEditPopover(null);
+        setSelectionToolbar(null);
+        setSugerenciaPopover({
+          idx,
+          sugerencia: sug,
+          position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+        });
+        return;
+      }
+    }
 
     // Check for template variable click
     const field = target.getAttribute("data-field");
@@ -200,6 +263,7 @@ const DocxPreview = ({
       const text = target.textContent || "";
       const rect = target.getBoundingClientRect();
       setSelectionToolbar(null);
+      setSugerenciaPopover(null);
       setEditPopover({
         field,
         value: text,
@@ -215,6 +279,7 @@ const DocxPreview = ({
       if (cv) {
         const rect = target.getBoundingClientRect();
         setSelectionToolbar(null);
+        setSugerenciaPopover(null);
         setEditPopover({
           field: `__custom__${cv.id}`,
           value: cv.value || cv.originalText,
@@ -222,30 +287,21 @@ const DocxPreview = ({
         });
       }
     }
-  }, [onFieldEdit, customVariables]);
+  }, [onFieldEdit, customVariables, sugerenciasIA]);
 
   // Handle text selection for creating new variables
   const handleMouseUp = useCallback(() => {
     if (!onCreateCustomVariable) return;
 
-    // Small delay to let the selection finalize
     setTimeout(() => {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        return;
-      }
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
 
-      // Verify selection is within the content area
       const anchorNode = selection.anchorNode;
-      if (!contentRef.current || !anchorNode || !contentRef.current.contains(anchorNode)) {
-        return;
-      }
+      if (!contentRef.current || !anchorNode || !contentRef.current.contains(anchorNode)) return;
 
-      // Don't show toolbar if we clicked on an existing variable
       const anchorEl = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as HTMLElement);
-      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-custom-var")) {
-        return;
-      }
+      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-custom-var") || anchorEl?.hasAttribute("data-sugerencia-idx")) return;
 
       const text = selection.toString().trim();
       if (text.length < 2 || text.length > 200) return;
@@ -254,6 +310,7 @@ const DocxPreview = ({
       const rect = range.getBoundingClientRect();
 
       setEditPopover(null);
+      setSugerenciaPopover(null);
       setSelectionToolbar({
         text,
         position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
@@ -274,11 +331,79 @@ const DocxPreview = ({
     window.getSelection()?.removeAllRanges();
   }, [selectionToolbar, onCreateCustomVariable]);
 
+  const handleAcceptSugerencia = useCallback(() => {
+    if (!sugerenciaPopover || !onSugerenciaAccepted) return;
+    onSugerenciaAccepted(sugerenciaPopover.idx, sugerenciaPopover.sugerencia.texto_sugerido);
+    setSugerenciaPopover(null);
+  }, [sugerenciaPopover, onSugerenciaAccepted]);
+
   if (error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
         <FileText className="h-12 w-12 text-destructive/40" />
         <p className="text-sm text-destructive">{error}</p>
+      </div>
+    );
+  }
+
+  // Generating skeleton state
+  if (generating) {
+    return (
+      <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
+        <div className="flex-1 min-h-0 overflow-auto p-4 flex justify-center items-start">
+          <div
+            className="shrink-0 mt-2 mb-2"
+            style={{ width: `${PAGE_WIDTH * scale}px`, height: `${PAGE_HEIGHT * scale}px` }}
+          >
+            <div
+              className="bg-white rounded shadow-md"
+              style={{
+                width: `${PAGE_WIDTH}px`,
+                height: `${PAGE_HEIGHT}px`,
+                padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <div className="space-y-4">
+                {/* Title skeleton */}
+                <div className="flex justify-center mb-6">
+                  <Skeleton className="h-5 w-64" />
+                </div>
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-10/12" />
+                <div className="py-2" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-9/12" />
+                <div className="py-2" />
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-7/12" />
+                <div className="py-2" />
+                <Skeleton className="h-4 w-52" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-10/12" />
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Loading message bar */}
+        <div
+          className="flex items-center justify-center gap-3 border-t border-border bg-background px-4"
+          style={{ height: `${NAV_BAR_HEIGHT}px` }}
+        >
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm font-medium text-muted-foreground">
+            Redactando documento con IA…
+          </span>
+        </div>
       </div>
     );
   }
@@ -361,6 +486,14 @@ const DocxPreview = ({
         className="flex items-center justify-center gap-3 border-t border-border bg-background px-4"
         style={{ height: `${NAV_BAR_HEIGHT}px` }}
       >
+        {sugerenciasIA.length > 0 && (
+          <span className="text-xs text-muted-foreground mr-2 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3 text-orange-500" />
+            {sugerenciasIA.filter(s => s.tipo === "discrepancia").length} discrepancias
+            <Palette className="h-3 w-3 text-blue-500 ml-1" />
+            {sugerenciasIA.filter(s => s.tipo === "estilo").length} estilos
+          </span>
+        )}
         <Button
           variant="outline"
           size="icon"
@@ -408,8 +541,103 @@ const DocxPreview = ({
           onClose={() => setSelectionToolbar(null)}
         />
       )}
+
+      {/* Sugerencia popover */}
+      {sugerenciaPopover && (
+        <SugerenciaPopover
+          sugerencia={sugerenciaPopover.sugerencia}
+          position={sugerenciaPopover.position}
+          onAccept={handleAcceptSugerencia}
+          onIgnore={() => setSugerenciaPopover(null)}
+        />
+      )}
     </div>
   );
 };
+
+/** Apply <mark> highlights for AI suggestions */
+function applySugerenciaHighlights(html: string, sugerencias: SugerenciaIA[]): string {
+  let result = html;
+  for (let i = 0; i < sugerencias.length; i++) {
+    const sug = sugerencias[i];
+    const escaped = sug.texto_original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const markStyle = sug.tipo === "discrepancia"
+      ? "background:#fed7aa;border-bottom:2px solid #f97316;cursor:pointer;padding:0 2px;border-radius:2px"
+      : "background:#bfdbfe;border-bottom:2px solid #3b82f6;cursor:pointer;padding:0 2px;border-radius:2px";
+    
+    result = result.replace(
+      new RegExp(escaped, "i"),
+      `<mark data-sugerencia-idx="${i}" style="${markStyle}">${sug.texto_original}</mark>`
+    );
+  }
+  return result;
+}
+
+/** Popover for AI suggestions */
+function SugerenciaPopover({
+  sugerencia,
+  position,
+  onAccept,
+  onIgnore,
+}: {
+  sugerencia: SugerenciaIA;
+  position: { top: number; left: number };
+  onAccept: () => void;
+  onIgnore: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onIgnore();
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onIgnore();
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [onIgnore]);
+
+  const isDiscrepancia = sugerencia.tipo === "discrepancia";
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-[100] w-80 rounded-lg border bg-popover p-3 shadow-lg animate-in fade-in-0 zoom-in-95"
+      style={{ top: position.top, left: Math.min(position.left, window.innerWidth - 340) }}
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        {isDiscrepancia ? (
+          <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
+        ) : (
+          <Palette className="h-3.5 w-3.5 text-blue-500" />
+        )}
+        <span className="text-xs font-semibold" style={{ color: isDiscrepancia ? "#f97316" : "#3b82f6" }}>
+          {isDiscrepancia ? "Discrepancia detectada" : "Ajuste de estilo"}
+        </span>
+      </div>
+
+      <p className="text-xs text-muted-foreground mb-2">{sugerencia.mensaje}</p>
+
+      <div className="rounded bg-muted/50 px-2 py-1.5 mb-3">
+        <p className="text-xs text-muted-foreground line-through mb-0.5">{sugerencia.texto_original}</p>
+        <p className="text-xs font-medium text-foreground">{sugerencia.texto_sugerido}</p>
+      </div>
+
+      <div className="flex gap-2">
+        <Button size="sm" className="h-7 text-xs flex-1" onClick={onAccept}>
+          <Check className="h-3 w-3 mr-1" /> Aceptar
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs flex-1" onClick={onIgnore}>
+          <X className="h-3 w-3 mr-1" /> Ignorar
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default DocxPreview;

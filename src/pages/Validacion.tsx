@@ -14,7 +14,7 @@ import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos, CustomVariable } from "@/lib/types";
+import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -64,6 +64,9 @@ const Validacion = () => {
   const [inmueble, setInmueble] = useState<Inmueble>(createEmptyInmueble());
   const [actos, setActos] = useState<Actos>(createEmptyActos());
   const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
+  const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
+  const [textoFinalWord, setTextoFinalWord] = useState<string>("");
+  const [generatingWord, setGeneratingWord] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -129,6 +132,12 @@ const Validacion = () => {
     if (meta?.custom_variables) {
       setCustomVariables(meta.custom_variables);
     }
+    if (meta?.sugerencias_ia) {
+      setSugerenciasIA(meta.sugerencias_ia);
+    }
+    if (meta?.texto_final_word) {
+      setTextoFinalWord(meta.texto_final_word);
+    }
 
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
@@ -180,6 +189,8 @@ const Validacion = () => {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
+        ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
+        ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
 
       if (!tid) {
@@ -316,6 +327,29 @@ const Validacion = () => {
     });
   }, [toast]);
 
+  // Reverse sync: accept AI suggestion → update form + force save
+  const handleSugerenciaAccepted = useCallback(async (idx: number, textoSugerido: string) => {
+    const sug = sugerenciasIA[idx];
+    if (!sug) return;
+
+    // If campo is specified, update form state
+    if (sug.campo) {
+      handleFieldEdit(sug.campo, textoSugerido);
+    }
+
+    // Update texto_final_word: replace original with suggested
+    if (textoFinalWord) {
+      setTextoFinalWord(prev => prev.replace(sug.texto_original, textoSugerido));
+    }
+
+    // Remove accepted suggestion
+    setSugerenciasIA(prev => prev.filter((_, i) => i !== idx));
+
+    // Force immediate save
+    setIsDirty(true);
+    setTimeout(() => handleAutoSave(), 100);
+  }, [sugerenciasIA, textoFinalWord, handleFieldEdit, handleAutoSave]);
+
   const handleSave = async () => {
     if (!inmueble.identificador_predial) {
       toast({ title: "Error", description: "El Identificador Predial es obligatorio.", variant: "destructive" });
@@ -335,6 +369,8 @@ const Validacion = () => {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
+        ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
+        ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
 
       if (!tid) {
@@ -430,14 +466,28 @@ const Validacion = () => {
     const unlocked = await ensureUnlocked();
     if (!unlocked) return;
 
+    // Save current data first
+    await handleAutoSave();
+
     setGenerating(true);
+    setGeneratingWord(true);
     try {
-
-      const { data: enrichedData, error: aiError } = await supabase.functions.invoke("generate-document", {
-        body: { vendedores, compradores, inmueble, actos, customVariables },
+      // Call process-expediente (orchestrator)
+      const { data: result, error: fnError } = await supabase.functions.invoke("process-expediente", {
+        body: { tramite_id: tramiteId },
       });
-      if (aiError) throw new Error("Error en la IA legal: " + aiError.message);
+      if (fnError) throw new Error("Error en el pipeline de IA: " + fnError.message);
+      if (result?.error) throw new Error(result.error);
 
+      // Store AI results
+      const aiTexto = result.texto_final_word || "";
+      const aiSugerencias: SugerenciaIA[] = result.sugerencias_ia || [];
+      
+      setTextoFinalWord(aiTexto);
+      setSugerenciasIA(aiSugerencias);
+
+      // Also generate the .docx download using templateData
+      const templateData = result.templateData || result;
       const response = await fetch("/template_venta_hipoteca.docx");
       const content = await response.arrayBuffer();
 
@@ -452,9 +502,9 @@ const Validacion = () => {
         nullGetter: () => "___________",
       });
 
-      const templateFields = enrichedData.templateData || enrichedData;
       const safeData = Object.fromEntries(
-        Object.entries(templateFields).map(([k, v]) => [k, typeof v === "string" ? (v || "__________") : v])
+        Object.entries(templateData).filter(([k]) => k !== "texto_final_word" && k !== "sugerencias_ia")
+          .map(([k, v]) => [k, typeof v === "string" ? (v || "__________") : v])
       );
 
       doc.render(safeData);
@@ -489,11 +539,12 @@ const Validacion = () => {
       await refreshCredits();
       setIsDirty(false);
       setSyncStatus("saved");
-      toast({ title: "¡Éxito!", description: "Documento generado correctamente." });
+      toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setGenerating(false);
+      setGeneratingWord(false);
     }
   };
 
@@ -588,6 +639,10 @@ const Validacion = () => {
             customVariables={customVariables}
             onFieldEdit={handleFieldEdit}
             onCreateCustomVariable={handleCreateCustomVariable}
+            sugerenciasIA={sugerenciasIA}
+            generating={generatingWord}
+            textoFinalWord={textoFinalWord}
+            onSugerenciaAccepted={handleSugerenciaAccepted}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
