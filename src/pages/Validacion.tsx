@@ -132,6 +132,12 @@ const Validacion = () => {
     if (meta?.custom_variables) {
       setCustomVariables(meta.custom_variables);
     }
+    if (meta?.sugerencias_ia) {
+      setSugerenciasIA(meta.sugerencias_ia);
+    }
+    if (meta?.texto_final_word) {
+      setTextoFinalWord(meta.texto_final_word);
+    }
 
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
