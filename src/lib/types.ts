@@ -163,3 +163,16 @@ export interface CustomVariable {
   variableName: string;
   value: string;
 }
+
+export interface SugerenciaIA {
+  tipo: "discrepancia" | "estilo";
+  texto_original: string;
+  texto_sugerido: string;
+  mensaje: string;
+  campo?: string;
+}
+
+export interface ResultadoEditorPro {
+  texto_final_word: string;
+  sugerencias_ia: SugerenciaIA[];
+}
