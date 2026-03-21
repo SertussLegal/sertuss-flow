@@ -189,6 +189,8 @@ const Validacion = () => {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
+        ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
+        ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
 
       if (!tid) {
