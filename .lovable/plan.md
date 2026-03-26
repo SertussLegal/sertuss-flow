@@ -1,29 +1,42 @@
 
 
-## Plan: UI para configurar estilos de notaría
+## Plan: Hacer NotariaSettings amigable para abogados
 
-### Contexto
-La tabla `notaria_styles` ya existe (1:1 con `organizations`), y `process-expediente` ya la consume. Falta la interfaz para que el owner/admin configure los datos.
+### Cambios en `src/pages/NotariaSettings.tsx`
 
-### Cambios
+**1. Agregar textos de ayuda (helper text) debajo de cada campo** explicando para qué sirve y cómo se refleja en el documento:
+
+- **Nombre de la Notaría**: helper: *"Aparecerá en el encabezado de cada escritura: 'En la ciudad de Bogotá, ante la Notaría 32...'"*
+- **Ciudad**: helper: *"Se usará en la comparecencia: 'En la ciudad de [Ciudad]...'"*
+- **Notario Titular**: helper: *"Firmará como: 'Ante mí, [Notario Titular], Notario...' al cierre del documento"*
+- **Estilo de Linderos**: helper con ejemplo dinámico según la opción seleccionada:
+  - Estándar: *"Ejemplo: 'Por el NORTE, con la calle 80; por el SUR, con el lote 5...'"*
+  - Técnico: *"Ejemplo: 'Del punto 1 al punto 2: N 45°30' E, 12.50 m...'"*
+  - Narrativo: *"Ejemplo: 'El predio limita al costado norte con la vía principal que conduce...'"*
+
+**2. Reemplazar textarea JSON por formulario dinámico de cláusulas:**
+
+- Cambiar estado `clausulasRaw` (string) por `clausulas: { nombre: string; texto: string }[]`
+- Cada cláusula se muestra como: Input (nombre) + Textarea (texto) + botón Eliminar
+- Botón "+ Agregar cláusula" al final
+- Al cargar: `Object.entries(data) → [{ nombre, texto }]`
+- Al guardar: `Object.fromEntries(clausulas.map(c => [c.nombre, c.texto]))`
+- Helper: *"Estas cláusulas se insertarán automáticamente en las escrituras. Ej: una cláusula de paz y salvo específica de su notaría."*
+- Eliminar toda referencia a "JSON"
+
+**3. Agregar un bloque visual de "Vista previa" (texto informativo):**
+
+Un recuadro con fondo suave debajo del título que muestre cómo quedaría el encabezado del documento con los datos actuales:
+
+> *En la ciudad de **Bogotá D.C.**, ante la **Notaría 32 de Bogotá D.C.**, compareció... Ante mí, **Dr. Juan Pérez García**, Notario...*
+
+Este texto se actualiza en tiempo real conforme el usuario escribe.
+
+### Archivos a modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/pages/NotariaSettings.tsx` | **Crear**: Página con formulario para nombre_notaria, ciudad, notario_titular, estilo_linderos (select: estándar/técnico/narrativo), y textarea para cláusulas personalizadas (JSONB). Carga datos existentes vía SELECT, upsert on save. Solo accesible para owner/admin. |
-| `src/App.tsx` | Agregar ruta `/notaria` → `NotariaSettings` protegida |
-| `src/pages/Dashboard.tsx` | Agregar botón "Configuración Notaría" (ícono Settings) en el header, visible solo para owner/admin, navega a `/notaria` |
+| `src/pages/NotariaSettings.tsx` | Agregar helpers, vista previa dinámica, reemplazar textarea JSON por formulario de cláusulas |
 
-### Formulario (`NotariaSettings.tsx`)
-- **Nombre de la Notaría** (text input, requerido)
-- **Ciudad** (text input, requerido)
-- **Notario Titular** (text input, requerido)
-- **Estilo de Linderos** (select: "Estándar — puntos cardinales", "Técnico — coordenadas y medidas", "Narrativo — descripción literaria")
-- **Cláusulas Personalizadas** (textarea JSON, opcional, con validación de formato)
-- Botón "Guardar" → upsert en `notaria_styles` con `organization_id` del perfil
-- Toast de confirmación al guardar
-
-### Lógica
-- On mount: `SELECT * FROM notaria_styles WHERE organization_id = profile.organization_id`
-- On save: Si existe registro → UPDATE, si no → INSERT (upsert via `.upsert()`)
-- RLS ya permite owner/admin para ALL, y SELECT para cualquier miembro de la org
+Un solo archivo, sin cambios de backend.
 
