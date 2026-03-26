@@ -65,7 +65,7 @@ const NotariaSettings = () => {
       return;
     }
 
-    let clausulas: Record<string, unknown> = {};
+    let clausulas: Record<string, string> = {};
     if (clausulasRaw.trim()) {
       try {
         clausulas = JSON.parse(clausulasRaw);

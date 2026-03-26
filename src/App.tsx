@@ -34,6 +34,7 @@ const App = () => (
             <Route path="/tramite/:id" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/admin/entidad/:id" element={<ProtectedRoute><AdminOrgEdit /></ProtectedRoute>} />
+            <Route path="/notaria" element={<ProtectedRoute><NotariaSettings /></ProtectedRoute>} />
             <Route path="/equipo" element={<ProtectedRoute><Team /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
