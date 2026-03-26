@@ -154,6 +154,11 @@ const Dashboard = () => {
                 <Users className="mr-1 h-4 w-4" /> Equipo
               </Button>
             )}
+            {(profile?.role === "owner" || profile?.role === "admin") && (
+              <Button variant="ghost-dark" size="sm" onClick={() => navigate("/notaria")}>
+                <Settings className="mr-1 h-4 w-4" /> Notaría
+              </Button>
+            )}
             <Button variant="ghost-dark" size="sm" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" /> Salir
             </Button>
