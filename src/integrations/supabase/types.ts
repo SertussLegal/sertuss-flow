@@ -109,6 +109,27 @@ export type Database = {
           },
         ]
       }
+      config_tramites: {
+        Row: {
+          campos_obligatorios: Json
+          created_at: string | null
+          id: string
+          tipo_acto: string
+        }
+        Insert: {
+          campos_obligatorios?: Json
+          created_at?: string | null
+          id?: string
+          tipo_acto: string
+        }
+        Update: {
+          campos_obligatorios?: Json
+          created_at?: string | null
+          id?: string
+          tipo_acto?: string
+        }
+        Relationships: []
+      }
       inmuebles: {
         Row: {
           area: string | null
@@ -227,6 +248,41 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      logs_extraccion: {
+        Row: {
+          created_at: string | null
+          data_final: Json | null
+          data_ia: Json
+          id: string
+          tramite_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data_final?: Json | null
+          data_ia: Json
+          id?: string
+          tramite_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data_final?: Json | null
+          data_ia?: Json
+          id?: string
+          tramite_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "logs_extraccion_tramite_id_fkey"
+            columns: ["tramite_id"]
+            isOneToOne: false
+            referencedRelation: "tramites"
             referencedColumns: ["id"]
           },
         ]
