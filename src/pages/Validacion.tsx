@@ -71,8 +71,20 @@ const Validacion = () => {
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
+  const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
+
+  const handleConfianzaChange = useCallback((field: string, confianza: NivelConfianza) => {
+    setConfianzaFields(prev => {
+      const next = new Map(prev);
+      next.set(field, confianza);
+      return next;
+    });
+  }, []);
+
+  // Count mandatory low-confidence fields
+  const lowConfCount = Array.from(confianzaFields.values()).filter(c => c === "baja").length;
 
   // Keep ref in sync
   useEffect(() => { tramiteIdRef.current = tramiteId; }, [tramiteId]);
