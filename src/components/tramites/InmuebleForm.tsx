@@ -5,8 +5,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Loader2 } from "lucide-react";
-import type { Inmueble } from "@/lib/types";
+import { Upload, Loader2, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { Inmueble, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -31,11 +32,13 @@ interface InmuebleFormProps {
   onChange: (inmueble: Inmueble) => void;
   onPersonasExtracted?: (personas: ExtractedPersona[]) => void;
   onDocumentoExtracted?: (documento: ExtractedDocumento) => void;
+  confianzaFields?: Map<string, NivelConfianza>;
+  onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
-const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted }: InmuebleFormProps) => {
+const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, confianzaFields, onConfianzaChange }: InmuebleFormProps) => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
@@ -52,13 +55,16 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
       next.delete(field);
       return next;
     });
-    // Clear any pending suggestion for this field when user edits manually
     setSuggestions(prev => {
       if (!prev.has(field)) return prev;
       const next = new Map(prev);
       next.delete(field);
       return next;
     });
+    // Auto-promote confidence to "alta" on manual edit
+    if (confianzaFields?.get(field) === "baja" && onConfianzaChange) {
+      onConfianzaChange(field, "alta");
+    }
     onChange({ ...inmueble, [field]: value });
   };
 
@@ -81,7 +87,6 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
       const hasExistingValue = typeof currentVal === "string" ? currentVal.length > 0 : false;
 
       if (hasExistingValue && typeof value === "string") {
-        // Field already has content → show suggestion instead of overwriting
         newSuggestions.set(field, value);
       } else {
         (updated as any)[field] = value;
@@ -124,56 +129,94 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         const d = data.data;
 
         if (type === "certificado_tradicion") {
-          // New nested structure: { documento, inmueble, personas }
           const inmData = d.inmueble || d;
           const docData = d.documento;
           const personasData = d.personas;
 
-          // Map NUPRE → identificador_predial if starts with AAA
+          // Unwrap confidence wrappers for inmueble fields
+          const unwrapped: Record<string, string | boolean> = {};
+          for (const [key, val] of Object.entries(inmData || {})) {
+            if (val && typeof val === "object" && "valor" in (val as any)) {
+              unwrapped[key] = (val as any).valor;
+              if ((val as any).confianza && onConfianzaChange) {
+                onConfianzaChange(key, (val as any).confianza);
+              }
+            } else if (val != null) {
+              unwrapped[key] = val as string | boolean;
+            }
+          }
+
           const nupreMapping: Record<string, string | boolean> = {};
-          const nupre = inmData.nupre;
+          const nupre = unwrapped.nupre;
           if (nupre && typeof nupre === "string" && nupre.startsWith("AAA")) {
             nupreMapping.identificador_predial = nupre;
             nupreMapping.tipo_identificador_predial = "chip";
           }
 
           applyOcrResults({
-            matricula_inmobiliaria: inmData.matricula_inmobiliaria,
-            codigo_orip: inmData.codigo_orip,
-            direccion: inmData.direccion,
-            municipio: inmData.municipio,
-            departamento: inmData.departamento,
-            linderos: inmData.linderos,
-            ...(inmData.area_construida ? { area_construida: inmData.area_construida } : {}),
-            ...(inmData.area_privada ? { area_privada: inmData.area_privada } : {}),
+            matricula_inmobiliaria: unwrapped.matricula_inmobiliaria as string,
+            codigo_orip: unwrapped.codigo_orip as string,
+            direccion: unwrapped.direccion as string,
+            municipio: unwrapped.municipio as string,
+            departamento: unwrapped.departamento as string,
+            linderos: unwrapped.linderos as string,
+            ...(unwrapped.area_construida ? { area_construida: unwrapped.area_construida as string } : {}),
+            ...(unwrapped.area_privada ? { area_privada: unwrapped.area_privada as string } : {}),
             ...nupreMapping,
-            ...(inmData.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
-            ...(inmData.es_propiedad_horizontal != null ? { es_propiedad_horizontal: inmData.es_propiedad_horizontal } : {}),
-            ...(inmData.escritura_constitucion_ph ? { escritura_ph: inmData.escritura_constitucion_ph } : {}),
-            ...(inmData.reformas_ph ? { reformas_ph: inmData.reformas_ph } : {}),
+            ...(unwrapped.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
+            ...(unwrapped.es_propiedad_horizontal != null ? { es_propiedad_horizontal: unwrapped.es_propiedad_horizontal as boolean } : {}),
+            ...(unwrapped.escritura_constitucion_ph ? { escritura_ph: unwrapped.escritura_constitucion_ph as string } : {}),
+            ...(unwrapped.reformas_ph ? { reformas_ph: unwrapped.reformas_ph as string } : {}),
           }, inmueble);
 
-          // Pass extracted personas to parent
           if (personasData && Array.isArray(personasData) && onPersonasExtracted) {
             onPersonasExtracted(personasData);
           }
 
-          // Pass extracted documento to parent
+          // Unwrap documento confidence
           if (docData && onDocumentoExtracted) {
-            onDocumentoExtracted(docData);
+            const unwrappedDoc: Record<string, string> = {};
+            for (const [key, val] of Object.entries(docData)) {
+              if (val && typeof val === "object" && "valor" in (val as any)) {
+                unwrappedDoc[key] = (val as any).valor;
+              } else if (typeof val === "string") {
+                unwrappedDoc[key] = val;
+              }
+            }
+            onDocumentoExtracted(unwrappedDoc as ExtractedDocumento);
           }
 
           toast({ title: "Certificado procesado", description: "Datos del inmueble, personas y documento extraídos correctamente." });
         } else if (type === "predial") {
+          // Unwrap confidence for predial
+          const unwrapped: Record<string, string> = {};
+          for (const [key, val] of Object.entries(d)) {
+            if (val && typeof val === "object" && "valor" in (val as any)) {
+              unwrapped[key] = (val as any).valor;
+              if ((val as any).confianza && onConfianzaChange) {
+                onConfianzaChange(key, (val as any).confianza);
+              }
+            } else if (typeof val === "string") {
+              unwrapped[key] = val;
+            }
+          }
           applyOcrResults({
-            identificador_predial: d.identificador_predial,
-            avaluo_catastral: d.avaluo_catastral,
-            area: d.area,
-            direccion: d.direccion,
+            identificador_predial: unwrapped.identificador_predial,
+            avaluo_catastral: unwrapped.avaluo_catastral,
+            area: unwrapped.area,
+            direccion: unwrapped.direccion,
           }, inmueble);
           toast({ title: "Predial procesado", description: "Cédula catastral y avalúo extraídos correctamente." });
         } else if (type === "escritura_antecedente") {
-          const linderos = [d.linderos_especiales, d.linderos_generales].filter(Boolean).join("\n\n--- Linderos Generales ---\n\n");
+          // Unwrap confidence for escritura
+          const leRaw = d.linderos_especiales;
+          const lgRaw = d.linderos_generales;
+          const le = (leRaw && typeof leRaw === "object" && "valor" in leRaw) ? leRaw.valor : (typeof leRaw === "string" ? leRaw : "");
+          const lg = (lgRaw && typeof lgRaw === "object" && "valor" in lgRaw) ? lgRaw.valor : (typeof lgRaw === "string" ? lgRaw : "");
+
+          if (leRaw?.confianza && onConfianzaChange) onConfianzaChange("linderos", leRaw.confianza);
+
+          const linderos = [le, lg].filter(Boolean).join("\n\n--- Linderos Generales ---\n\n");
           if (linderos) {
             applyOcrResults({ linderos }, inmueble);
           }
@@ -233,6 +276,28 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
     );
   };
 
+  // Confidence-aware field styling
+  const fieldClassName = (field: string, base: string = "") => {
+    const conf = confianzaFields?.get(field);
+    if (conf === "baja") return `${base} border-amber-400 ring-1 ring-amber-300`;
+    return base;
+  };
+
+  const confBadge = (field: string) => {
+    const conf = confianzaFields?.get(field);
+    if (conf !== "baja") return null;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <AlertTriangle className="inline h-3.5 w-3.5 text-amber-500 ml-1" />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs">
+          Verificación requerida — la IA tiene baja confianza en este dato
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -246,9 +311,9 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>Matrícula Inmobiliaria {ocr("matricula_inmobiliaria")}</Label>
+          <Label>Matrícula Inmobiliaria {ocr("matricula_inmobiliaria")} {confBadge("matricula_inmobiliaria")}</Label>
           {wrapWithSuggestion("matricula_inmobiliaria",
-            <Input value={inmueble.matricula_inmobiliaria} onChange={(e) => update("matricula_inmobiliaria", e.target.value)} />
+            <Input className={fieldClassName("matricula_inmobiliaria")} value={inmueble.matricula_inmobiliaria} onChange={(e) => update("matricula_inmobiliaria", e.target.value)} />
           )}
         </div>
 
@@ -265,7 +330,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
 
         <div className="space-y-2 sm:col-span-2">
           <Label>
-            Identificador Predial * {ocr("identificador_predial")}
+            Identificador Predial * {ocr("identificador_predial")} {confBadge("identificador_predial")}
             {inmueble.tipo_identificador_predial === "chip" && (
               <span className="ml-2 text-xs text-muted-foreground">(Formato: AAA0000AAAA)</span>
             )}
@@ -275,6 +340,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
           </Label>
           {wrapWithSuggestion("identificador_predial",
             <Input
+              className={fieldClassName("identificador_predial")}
               value={inmueble.identificador_predial}
               onChange={(e) => update("identificador_predial", e.target.value)}
               required
@@ -284,23 +350,23 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         </div>
 
         <div className="space-y-2">
-          <Label>Departamento {ocr("departamento")}</Label>
+          <Label>Departamento {ocr("departamento")} {confBadge("departamento")}</Label>
           {wrapWithSuggestion("departamento",
-            <Input value={inmueble.departamento} onChange={(e) => update("departamento", e.target.value)} />
+            <Input className={fieldClassName("departamento")} value={inmueble.departamento} onChange={(e) => update("departamento", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Municipio {ocr("municipio")}</Label>
+          <Label>Municipio {ocr("municipio")} {confBadge("municipio")}</Label>
           {wrapWithSuggestion("municipio",
-            <Input value={inmueble.municipio} onChange={(e) => update("municipio", e.target.value)} />
+            <Input className={fieldClassName("municipio")} value={inmueble.municipio} onChange={(e) => update("municipio", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Oficina de Registro (ORIP) {ocr("codigo_orip")}</Label>
+          <Label>Oficina de Registro (ORIP) {ocr("codigo_orip")} {confBadge("codigo_orip")}</Label>
           {wrapWithSuggestion("codigo_orip",
-            <Input value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Ej: Oficina de Registro de Instrumentos Públicos de Bogotá Zona Norte" />
+            <Input className={fieldClassName("codigo_orip")} value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Ej: Oficina de Registro de Instrumentos Públicos de Bogotá Zona Norte" />
           )}
         </div>
 
@@ -316,42 +382,42 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         </div>
 
         <div className="space-y-2">
-          <Label>Dirección {ocr("direccion")}</Label>
+          <Label>Dirección {ocr("direccion")} {confBadge("direccion")}</Label>
           {wrapWithSuggestion("direccion",
-            <Input value={inmueble.direccion} onChange={(e) => update("direccion", e.target.value)} />
+            <Input className={fieldClassName("direccion")} value={inmueble.direccion} onChange={(e) => update("direccion", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Área Construida (m²) {ocr("area_construida")}</Label>
+          <Label>Área Construida (m²) {ocr("area_construida")} {confBadge("area_construida")}</Label>
           {wrapWithSuggestion("area_construida",
-            <Input value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
+            <Input className={fieldClassName("area_construida")} value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Área Privada (m²) {ocr("area_privada")}</Label>
+          <Label>Área Privada (m²) {ocr("area_privada")} {confBadge("area_privada")}</Label>
           {wrapWithSuggestion("area_privada",
-            <Input value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
+            <Input className={fieldClassName("area_privada")} value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
           )}
         </div>
 
         <div className="space-y-2 sm:col-span-2">
-          <Label>Avalúo Catastral (COP) {ocr("avaluo_catastral")}</Label>
+          <Label>Avalúo Catastral (COP) {ocr("avaluo_catastral")} {confBadge("avaluo_catastral")}</Label>
           {wrapWithSuggestion("avaluo_catastral",
-            <Input value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
+            <Input className={fieldClassName("avaluo_catastral")} value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
           )}
         </div>
       </div>
 
       <div className="space-y-2">
-        <Label>Linderos {ocr("linderos")}</Label>
+        <Label>Linderos {ocr("linderos")} {confBadge("linderos")}</Label>
         {wrapWithSuggestion("linderos",
           <Textarea
+            className={fieldClassName("linderos", "min-h-[200px] resize-y")}
             value={inmueble.linderos}
             onChange={(e) => update("linderos", e.target.value)}
             placeholder="Describa los linderos completos del inmueble..."
-            className="min-h-[200px] resize-y"
           />
         )}
       </div>
@@ -368,15 +434,15 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         {inmueble.es_propiedad_horizontal && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Escritura de Constitución PH {ocr("escritura_ph")}</Label>
+              <Label>Escritura de Constitución PH {ocr("escritura_ph")} {confBadge("escritura_ph")}</Label>
               {wrapWithSuggestion("escritura_ph",
-                <Input value={inmueble.escritura_ph} onChange={(e) => update("escritura_ph", e.target.value)} placeholder="No. escritura de constitución" />
+                <Input className={fieldClassName("escritura_ph")} value={inmueble.escritura_ph} onChange={(e) => update("escritura_ph", e.target.value)} placeholder="No. escritura de constitución" />
               )}
             </div>
             <div className="space-y-2">
-              <Label>Reformas PH {ocr("reformas_ph")}</Label>
+              <Label>Reformas PH {ocr("reformas_ph")} {confBadge("reformas_ph")}</Label>
               {wrapWithSuggestion("reformas_ph",
-                <Input value={inmueble.reformas_ph} onChange={(e) => update("reformas_ph", e.target.value)} placeholder="Reformas a la PH (si aplica)" />
+                <Input className={fieldClassName("reformas_ph")} value={inmueble.reformas_ph} onChange={(e) => update("reformas_ph", e.target.value)} placeholder="Reformas a la PH (si aplica)" />
               )}
             </div>
           </div>

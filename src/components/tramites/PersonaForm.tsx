@@ -5,8 +5,8 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Info, Upload, Loader2 } from "lucide-react";
-import type { Persona } from "@/lib/types";
+import { Plus, Trash2, Info, Upload, Loader2, AlertTriangle } from "lucide-react";
+import type { Persona, NivelConfianza } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,20 +18,21 @@ interface PersonaFormProps {
   title: string;
   personas: Persona[];
   onChange: (personas: Persona[]) => void;
+  confianzaFields?: Map<string, NivelConfianza>;
+  onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
 }
 
-const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
+const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange }: PersonaFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
   const [scanningIndex, setScanningIndex] = useState<number | null>(null);
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
-  const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map()); // key: "index:field"
+  const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const suggestionKey = (index: number, field: string) => `${index}:${field}`;
 
   const updatePersona = (index: number, field: keyof Persona, value: any) => {
-    // Clear OCR badge on manual edit
     setOcrFields(prev => {
       const personaSet = prev.get(index);
       if (!personaSet?.has(field)) return prev;
@@ -41,7 +42,6 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       next.set(index, newSet);
       return next;
     });
-    // Clear suggestion on manual edit
     const sk = suggestionKey(index, field);
     setSuggestions(prev => {
       if (!prev.has(sk)) return prev;
@@ -49,6 +49,11 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       next.delete(sk);
       return next;
     });
+    // Auto-promote confidence on manual edit
+    const confKey = `persona.${index}.${field}`;
+    if (confianzaFields?.get(confKey) === "baja" && onConfianzaChange) {
+      onConfianzaChange(confKey, "alta");
+    }
     const updated = [...personas];
     updated[index] = { ...updated[index], [field]: value };
     onChange(updated);
@@ -74,7 +79,6 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
     const value = suggestions.get(sk);
     if (!value) return;
     setSuggestions(prev => { const n = new Map(prev); n.delete(sk); return n; });
-    // Mark as OCR
     setOcrFields(prev => {
       const next = new Map(prev);
       const existing = next.get(index) || new Set<string>();
@@ -115,8 +119,19 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
         const filled: string[] = [];
         const newSuggestions = new Map(suggestions);
 
-        const tryApply = (ocrField: string, personaField: keyof Persona, ocrValue: string | undefined) => {
+        const tryApply = (ocrField: string, personaField: keyof Persona, ocrRaw: any) => {
+          // Unwrap confidence wrapper
+          let ocrValue: string | undefined;
+          if (ocrRaw && typeof ocrRaw === "object" && "valor" in ocrRaw) {
+            ocrValue = ocrRaw.valor;
+            if (ocrRaw.confianza && onConfianzaChange) {
+              onConfianzaChange(`persona.${index}.${personaField}`, ocrRaw.confianza);
+            }
+          } else if (typeof ocrRaw === "string") {
+            ocrValue = ocrRaw;
+          }
           if (!ocrValue) return;
+          
           const current = updated[index][personaField];
           const hasValue = typeof current === "string" && current.length > 0;
           if (hasValue) {
@@ -166,6 +181,29 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
       <OcrSuggestion value={suggested} onConfirm={() => confirmSuggestion(index, field)} onIgnore={() => ignoreSuggestion(index, field)}>
         <div>{input}</div>
       </OcrSuggestion>
+    );
+  };
+
+  const fieldClassName = (index: number, field: string) => {
+    const confKey = `persona.${index}.${field}`;
+    const conf = confianzaFields?.get(confKey);
+    if (conf === "baja") return "border-amber-400 ring-1 ring-amber-300";
+    return "";
+  };
+
+  const confBadge = (index: number, field: string) => {
+    const confKey = `persona.${index}.${field}`;
+    const conf = confianzaFields?.get(confKey);
+    if (conf !== "baja") return null;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <AlertTriangle className="inline h-3.5 w-3.5 text-amber-500 ml-1" />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs">
+          Verificación requerida — la IA tiene baja confianza en este dato
+        </TooltipContent>
+      </Tooltip>
     );
   };
 
@@ -256,15 +294,15 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Nombre Completo {ocr(index, "nombre_completo")}</Label>
+                <Label>Nombre Completo {ocr(index, "nombre_completo")} {confBadge(index, "nombre_completo")}</Label>
                 {wrapWithSuggestion(index, "nombre_completo",
-                  <Input value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
+                  <Input className={fieldClassName(index, "nombre_completo")} value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Número de Cédula {ocr(index, "numero_cedula")}</Label>
+                <Label>Número de Cédula {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")}</Label>
                 {wrapWithSuggestion(index, "numero_cedula",
-                  <Input value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
+                  <Input className={fieldClassName(index, "numero_cedula")} value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
                 )}
               </div>
               <div className="space-y-2">
@@ -272,9 +310,9 @@ const PersonaForm = ({ title, personas, onChange }: PersonaFormProps) => {
                 <Input value={persona.estado_civil} onChange={(e) => updatePersona(index, "estado_civil", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")}</Label>
+                <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")} {confBadge(index, "municipio_domicilio")}</Label>
                 {wrapWithSuggestion(index, "municipio_domicilio",
-                  <Input value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
+                  <Input className={fieldClassName(index, "municipio_domicilio")} value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
                 )}
               </div>
               <div className="space-y-2 sm:col-span-2">

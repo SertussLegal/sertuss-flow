@@ -15,6 +15,7 @@ import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
 import NotariaSettings from "./pages/NotariaSettings";
+import DocumentUploadStep from "./components/tramites/DocumentUploadStep";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/nuevo-tramite" element={<ProtectedRoute><DocumentUploadStep /></ProtectedRoute>} />
             <Route path="/tramite/nuevo" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
             <Route path="/tramite/:id" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
