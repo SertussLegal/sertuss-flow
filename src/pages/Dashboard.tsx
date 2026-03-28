@@ -71,24 +71,8 @@ const Dashboard = () => {
     navigate("/");
   };
 
-  const handleNewTramite = async () => {
-    if (!profile?.organization_id || !user) return;
-    try {
-      const { data: newTramite, error: createErr } = await supabase
-        .from("tramites")
-        .insert({
-          tipo: "Compraventa",
-          organization_id: profile.organization_id,
-          created_by: user.id,
-          status: "pendiente" as any,
-        })
-        .select()
-        .single();
-      if (createErr || !newTramite) throw createErr || new Error("No se pudo crear el trámite");
-      navigate(`/tramite/${newTramite.id}`);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    }
+  const handleNewTramite = () => {
+    navigate("/nuevo-tramite");
   };
 
   const handleDeleteDraft = async () => {
