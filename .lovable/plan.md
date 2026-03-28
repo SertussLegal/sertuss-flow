@@ -1,42 +1,38 @@
 
 
-## Plan: Hacer NotariaSettings amigable para abogados
+## Plan: Corregir eliminación de borradores + implementar auto-purga
 
-### Cambios en `src/pages/NotariaSettings.tsx`
+### Problema 1: Delete silencioso
+El `handleDeleteDraft` en Dashboard.tsx remueve la tarjeta del estado local **antes** de confirmar que la DB lo eliminó. Si falla, la tarjeta reaparece al recargar.
 
-**1. Agregar textos de ayuda (helper text) debajo de cada campo** explicando para qué sirve y cómo se refleja en el documento:
+### Problema 2: Sin auto-purga
+No existe lógica backend para eliminar borradores inactivos tras 15 días. Solo es texto decorativo en la UI.
 
-- **Nombre de la Notaría**: helper: *"Aparecerá en el encabezado de cada escritura: 'En la ciudad de Bogotá, ante la Notaría 32...'"*
-- **Ciudad**: helper: *"Se usará en la comparecencia: 'En la ciudad de [Ciudad]...'"*
-- **Notario Titular**: helper: *"Firmará como: 'Ante mí, [Notario Titular], Notario...' al cierre del documento"*
-- **Estilo de Linderos**: helper con ejemplo dinámico según la opción seleccionada:
-  - Estándar: *"Ejemplo: 'Por el NORTE, con la calle 80; por el SUR, con el lote 5...'"*
-  - Técnico: *"Ejemplo: 'Del punto 1 al punto 2: N 45°30' E, 12.50 m...'"*
-  - Narrativo: *"Ejemplo: 'El predio limita al costado norte con la vía principal que conduce...'"*
+---
 
-**2. Reemplazar textarea JSON por formulario dinámico de cláusulas:**
+### Cambios
 
-- Cambiar estado `clausulasRaw` (string) por `clausulas: { nombre: string; texto: string }[]`
-- Cada cláusula se muestra como: Input (nombre) + Textarea (texto) + botón Eliminar
-- Botón "+ Agregar cláusula" al final
-- Al cargar: `Object.entries(data) → [{ nombre, texto }]`
-- Al guardar: `Object.fromEntries(clausulas.map(c => [c.nombre, c.texto]))`
-- Helper: *"Estas cláusulas se insertarán automáticamente en las escrituras. Ej: una cláusula de paz y salvo específica de su notaría."*
-- Eliminar toda referencia a "JSON"
+**1. `src/pages/Dashboard.tsx` — Corregir handleDeleteDraft**
+- Verificar el `error` del delete de `tramites` antes de actualizar el estado local
+- Solo llamar `setTramites(prev => prev.filter(...))` si el delete fue exitoso
+- Mostrar el error real si falla
 
-**3. Agregar un bloque visual de "Vista previa" (texto informativo):**
+**2. Migración SQL — Crear función de purga automática**
+- Crear función `purge_expired_drafts()` que elimine tramites con `status = 'pendiente'` y `updated_at < now() - interval '15 days'`
+- También elimina sus personas, inmuebles y actos asociados
+- Se ejecuta con `SECURITY DEFINER` para bypassear RLS
 
-Un recuadro con fondo suave debajo del título que muestre cómo quedaría el encabezado del documento con los datos actuales:
+**3. Cron job via `pg_cron`**
+- Programar `purge_expired_drafts()` para ejecutarse diariamente a las 3:00 AM UTC
+- `SELECT cron.schedule('purge-expired-drafts', '0 3 * * *', 'SELECT purge_expired_drafts()')`
 
-> *En la ciudad de **Bogotá D.C.**, ante la **Notaría 32 de Bogotá D.C.**, compareció... Ante mí, **Dr. Juan Pérez García**, Notario...*
-
-Este texto se actualiza en tiempo real conforme el usuario escribe.
+**4. Eliminar el borrador huérfano actual**
+- Ejecutar una limpieza manual del borrador `8831f06c` que el usuario ya intentó eliminar (si confirma)
 
 ### Archivos a modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/pages/NotariaSettings.tsx` | Agregar helpers, vista previa dinámica, reemplazar textarea JSON por formulario de cláusulas |
-
-Un solo archivo, sin cambios de backend.
+| `src/pages/Dashboard.tsx` | Verificar resultado de delete antes de actualizar estado |
+| Migración SQL | Crear `purge_expired_drafts()` + cron schedule |
 
