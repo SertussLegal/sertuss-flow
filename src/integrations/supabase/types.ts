@@ -504,6 +504,7 @@ export type Database = {
         Args: { uid: string }
         Returns: Database["public"]["Enums"]["org_role"]
       }
+      purge_expired_drafts: { Args: never; Returns: undefined }
       restore_credit: { Args: { org_id: string }; Returns: undefined }
       unlock_expediente: {
         Args: { p_org_id: string; p_tramite_id: string; p_user_id: string }
