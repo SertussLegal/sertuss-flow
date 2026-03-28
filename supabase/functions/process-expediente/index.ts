@@ -32,23 +32,25 @@ serve(async (req) => {
     if (tramiteRes.error) throw new Error("Trámite no encontrado");
     const tramite = tramiteRes.data;
 
-    // 2. Fetch notaria_styles for the organization
-    const { data: estiloNotaria } = await sb
-      .from("notaria_styles")
-      .select("*")
-      .eq("organization_id", tramite.organization_id)
-      .single();
+    // 2. Fetch notaria_styles + config_tramites in parallel
+    const tipoActo = tramite.tipo || "Compraventa";
+    const [estiloRes, configRes] = await Promise.all([
+      sb.from("notaria_styles").select("*").eq("organization_id", tramite.organization_id).single(),
+      sb.from("config_tramites").select("campos_obligatorios").eq("tipo_acto", tipoActo).single(),
+    ]);
+
+    const estiloNotaria = estiloRes.data;
+    const camposObligatorios: string[] = configRes.data?.campos_obligatorios as string[] || [];
 
     // 3. Separate vendedores/compradores
     const personas = personasRes.data || [];
     const vendedores = personas.filter((p: any) => p.rol === "vendedor");
     const compradores = personas.filter((p: any) => p.rol === "comprador");
 
-    // 4. Role validation: compare extracted_personas from metadata with certificate owners
+    // 4. Role validation
     const metadata = tramite.metadata as Record<string, any> || {};
     const extractedPersonas = metadata.extracted_personas || [];
 
-    // Auto-assign vendedor role if names match certificate owners
     if (extractedPersonas.length > 0 && vendedores.length > 0) {
       for (const vendedor of vendedores) {
         const nameNorm = (vendedor.nombre_completo || "").toUpperCase().trim();
@@ -75,10 +77,11 @@ serve(async (req) => {
         clausulas_personalizadas: estiloNotaria.clausulas_personalizadas,
       } : null,
       custom_variables: metadata.custom_variables || [],
+      campos_obligatorios: camposObligatorios,
     };
 
-    // 6. Call generate-document (SERTUSS-EDITOR-PRO) via AI gateway directly
-    const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria);
+    // 6. Call SERTUSS-EDITOR-PRO via AI gateway
+    const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria, camposObligatorios);
     const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
 
     const tools = [
@@ -100,28 +103,28 @@ serve(async (req) => {
                 items: {
                   type: "object",
                   properties: {
-                    tipo: { type: "string", enum: ["discrepancia", "estilo"], description: "discrepancia = dato inconsistente, estilo = ajuste de formato/protocolo" },
-                    texto_original: { type: "string", description: "Fragmento exacto del texto que se señala (debe existir en texto_final_word)" },
+                    tipo: { type: "string", enum: ["discrepancia", "estilo"] },
+                    texto_original: { type: "string", description: "Fragmento exacto del texto que se señala" },
                     texto_sugerido: { type: "string", description: "Texto corregido o mejorado" },
-                    mensaje: { type: "string", description: "Explicación breve de por qué se sugiere el cambio" },
-                    campo: { type: "string", description: "Campo del formulario relacionado (ej: municipio, direccion_inmueble, etc.) si aplica, vacío si no" },
+                    mensaje: { type: "string", description: "Explicación breve" },
+                    campo: { type: "string", description: "Campo del formulario relacionado si aplica" },
                   },
                   required: ["tipo", "texto_original", "texto_sugerido", "mensaje"],
                   additionalProperties: false,
                 },
               },
-              numero_escritura: { type: "string", description: "Número de escritura (vacío si no se conoce)" },
-              fecha_escritura: { type: "string", description: "Fecha en letras" },
-              comparecientes_vendedor: { type: "string", description: "Texto legal de comparecencia vendedores" },
-              comparecientes_comprador: { type: "string", description: "Texto legal de comparecencia compradores" },
-              clausula_objeto: { type: "string", description: "Cláusula PRIMERA" },
-              clausula_precio: { type: "string", description: "Cláusula SEGUNDA" },
-              clausula_tradicion: { type: "string", description: "Cláusula TERCERA" },
-              clausula_entrega: { type: "string", description: "Cláusula CUARTA" },
-              clausula_gastos: { type: "string", description: "Cláusula QUINTA" },
-              clausula_hipoteca: { type: "string", description: "Cláusula de hipoteca (vacío si no aplica)" },
-              clausula_afectacion_vivienda: { type: "string", description: "Cláusula de afectación a vivienda familiar (vacío si no aplica)" },
-              clausula_apoderado: { type: "string", description: "Cláusula de poder (vacío si no aplica)" },
+              numero_escritura: { type: "string" },
+              fecha_escritura: { type: "string" },
+              comparecientes_vendedor: { type: "string" },
+              comparecientes_comprador: { type: "string" },
+              clausula_objeto: { type: "string" },
+              clausula_precio: { type: "string" },
+              clausula_tradicion: { type: "string" },
+              clausula_entrega: { type: "string" },
+              clausula_gastos: { type: "string" },
+              clausula_hipoteca: { type: "string" },
+              clausula_afectacion_vivienda: { type: "string" },
+              clausula_apoderado: { type: "string" },
               matricula_inmobiliaria: { type: "string" },
               identificador_predial: { type: "string" },
               direccion_inmueble: { type: "string" },
@@ -200,6 +203,12 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }).eq("id", tramite_id);
 
+    // 8. Insert logs_extraccion
+    await sb.from("logs_extraccion").insert({
+      tramite_id,
+      data_ia: editorResult,
+    });
+
     return new Response(JSON.stringify({
       texto_final_word: editorResult.texto_final_word,
       sugerencias_ia: editorResult.sugerencias_ia || [],
@@ -215,7 +224,7 @@ serve(async (req) => {
   }
 });
 
-function buildEditorProPrompt(estiloNotaria: any): string {
+function buildEditorProPrompt(estiloNotaria: any, camposObligatorios: string[]): string {
   let base = `Eres SERTUSS-EDITOR-PRO, un redactor jurídico experto en derecho notarial colombiano (Ley 1579 de 2012, Decreto 960 de 1970).
 
 Tu tarea es:
@@ -237,6 +246,11 @@ Para las sugerencias:
 - tipo "estilo": mejoras de formato, concordancia de género, protocolo notarial (AZUL en la UI)
 - El campo "texto_original" DEBE existir textualmente en "texto_final_word"
 - El campo "campo" debe mapear al campo del formulario cuando sea posible`;
+
+  if (camposObligatorios.length > 0) {
+    base += `\n\nCAMPOS OBLIGATORIOS para este tipo de acto: ${camposObligatorios.join(", ")}
+Si alguno de estos campos está vacío o falta, genera una sugerencia de tipo "discrepancia" indicando que el campo es requerido por ley.`;
+  }
 
   if (estiloNotaria) {
     base += `\n\nEstilo de la Notaría:

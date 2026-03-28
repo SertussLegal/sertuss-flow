@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
@@ -14,7 +14,7 @@ import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
+import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -71,8 +71,20 @@ const Validacion = () => {
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
+  const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
+
+  const handleConfianzaChange = useCallback((field: string, confianza: NivelConfianza) => {
+    setConfianzaFields(prev => {
+      const next = new Map(prev);
+      next.set(field, confianza);
+      return next;
+    });
+  }, []);
+
+  // Count mandatory low-confidence fields
+  const lowConfCount = Array.from(confianzaFields.values()).filter(c => c === "baja").length;
 
   // Keep ref in sync
   useEffect(() => { tramiteIdRef.current = tramiteId; }, [tramiteId]);
@@ -138,18 +150,52 @@ const Validacion = () => {
     if (meta?.texto_final_word) {
       setTextoFinalWord(meta.texto_final_word);
     }
+    // Restore confianza map
+    if (meta?.confianza_map) {
+      const map = new Map<string, NivelConfianza>();
+      for (const [k, v] of Object.entries(meta.confianza_map)) {
+        map.set(k, v as NivelConfianza);
+      }
+      setConfianzaFields(map);
+    }
 
+    // Pre-populate from extracted data if no personas/inmuebles saved yet
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
     const { data: act } = await supabase.from("actos").select("*").eq("tramite_id", tid).single();
 
-    if (personas) {
+    if (personas && personas.length > 0) {
       const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p } as Persona));
       const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p } as Persona));
       if (v.length) setVendedores(v);
       if (c.length) setCompradores(c);
+    } else if (meta?.extracted_personas?.length) {
+      // Auto-fill vendedores from extracted personas
+      const naturalPersons = meta.extracted_personas.filter((p: any) =>
+        !p.tipo_identificacion || p.tipo_identificacion === "CC" || p.tipo_identificacion === "CE"
+      );
+      if (naturalPersons.length) {
+        setVendedores(naturalPersons.map((p: any) => ({
+          ...createEmptyPersona(),
+          nombre_completo: p.nombre_completo || "",
+          numero_cedula: p.numero_identificacion || "",
+          municipio_domicilio: p.lugar_expedicion || "",
+        })));
+      }
     }
-    if (inm) setInmueble(inm as any);
+
+    if (inm) {
+      setInmueble(inm as any);
+    } else if (meta?.extracted_inmueble) {
+      // Pre-populate from extraction
+      const ei = meta.extracted_inmueble;
+      setInmueble(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(ei).filter(([_, v]) => v != null && v !== "")
+        ),
+      }));
+    }
     if (act) setActos(act as any);
 
     setSyncStatus("saved");
@@ -189,6 +235,7 @@ const Validacion = () => {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
+        confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
@@ -369,6 +416,7 @@ const Validacion = () => {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
+        confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
@@ -499,7 +547,7 @@ const Validacion = () => {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
-        nullGetter: () => "___________",
+        nullGetter: () => undefined,
       });
 
       const safeData = Object.fromEntries(
@@ -582,10 +630,10 @@ const Validacion = () => {
         <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
       </TabsList>
       <TabsContent value="vendedores">
-        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
+        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} />
       </TabsContent>
       <TabsContent value="compradores">
-        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} />
       </TabsContent>
       <TabsContent value="inmueble">
         <InmuebleForm
@@ -593,6 +641,8 @@ const Validacion = () => {
           onChange={setInmueble}
           onPersonasExtracted={handlePersonasExtracted}
           onDocumentoExtracted={handleDocumentoExtracted}
+          confianzaFields={confianzaFields}
+          onConfianzaChange={handleConfianzaChange}
         />
       </TabsContent>
       <TabsContent value="actos">
