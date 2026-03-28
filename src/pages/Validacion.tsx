@@ -416,6 +416,7 @@ const Validacion = () => {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
+        confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
