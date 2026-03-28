@@ -547,7 +547,7 @@ const Validacion = () => {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
-        nullGetter: () => "___________",
+        nullGetter: () => undefined,
       });
 
       const safeData = Object.fromEntries(
