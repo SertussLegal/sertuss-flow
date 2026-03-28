@@ -629,10 +629,10 @@ const Validacion = () => {
         <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
       </TabsList>
       <TabsContent value="vendedores">
-        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} />
+        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} />
       </TabsContent>
       <TabsContent value="compradores">
-        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} />
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} />
       </TabsContent>
       <TabsContent value="inmueble">
         <InmuebleForm
@@ -640,6 +640,8 @@ const Validacion = () => {
           onChange={setInmueble}
           onPersonasExtracted={handlePersonasExtracted}
           onDocumentoExtracted={handleDocumentoExtracted}
+          confianzaFields={confianzaFields}
+          onConfianzaChange={handleConfianzaChange}
         />
       </TabsContent>
       <TabsContent value="actos">
