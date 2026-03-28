@@ -97,6 +97,28 @@ export interface Tramite {
   actos: Actos;
 }
 
+// Confidence level for AI-extracted fields
+export type NivelConfianza = "alta" | "media" | "baja";
+
+export interface ConfianzaField {
+  valor: string;
+  confianza: NivelConfianza;
+}
+
+export interface ConfianzaBoolField {
+  valor: boolean;
+  confianza: NivelConfianza;
+}
+
+export interface LogExtraccion {
+  id: string;
+  tramite_id: string;
+  data_ia: Record<string, unknown>;
+  data_final: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const createEmptyPersona = (): Persona => ({
   id: crypto.randomUUID(),
   nombre_completo: "",
@@ -175,4 +197,21 @@ export interface SugerenciaIA {
 export interface ResultadoEditorPro {
   texto_final_word: string;
   sugerencias_ia: SugerenciaIA[];
+}
+
+// Helper to unwrap confidence fields from AI response
+export function unwrapConfianza(
+  field: ConfianzaField | string | undefined
+): { valor: string; confianza: NivelConfianza } {
+  if (!field) return { valor: "", confianza: "alta" };
+  if (typeof field === "string") return { valor: field, confianza: "alta" };
+  return { valor: field.valor || "", confianza: field.confianza || "alta" };
+}
+
+export function unwrapConfianzaBool(
+  field: ConfianzaBoolField | boolean | undefined
+): { valor: boolean; confianza: NivelConfianza } {
+  if (field == null) return { valor: false, confianza: "alta" };
+  if (typeof field === "boolean") return { valor: field, confianza: "alta" };
+  return { valor: !!field.valor, confianza: field.confianza || "alta" };
 }

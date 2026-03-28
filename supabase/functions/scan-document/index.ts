@@ -6,18 +6,45 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ── Confidence wrapper helper ──
+// Each extracted field now returns { valor, confianza } where confianza ∈ { alta, media, baja }
+
 const toolsByCedula = [
   {
     type: "function" as const,
     function: {
       name: "extract_cedula",
-      description: "Extrae los datos de una cédula de ciudadanía colombiana a partir de la imagen.",
+      description: "Extrae los datos de una cédula de ciudadanía colombiana a partir de la imagen. Cada campo incluye un nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
-          nombre_completo: { type: "string", description: "Nombre completo tal como aparece en la cédula" },
-          numero_cedula: { type: "string", description: "Número de cédula sin puntos ni separadores" },
-          municipio_expedicion: { type: "string", description: "Municipio de expedición de la cédula" },
+          nombre_completo: {
+            type: "object",
+            properties: {
+              valor: { type: "string", description: "Nombre completo tal como aparece en la cédula" },
+              confianza: { type: "string", enum: ["alta", "media", "baja"], description: "Nivel de confianza de la extracción" },
+            },
+            required: ["valor", "confianza"],
+            additionalProperties: false,
+          },
+          numero_cedula: {
+            type: "object",
+            properties: {
+              valor: { type: "string", description: "Número de cédula sin puntos ni separadores" },
+              confianza: { type: "string", enum: ["alta", "media", "baja"] },
+            },
+            required: ["valor", "confianza"],
+            additionalProperties: false,
+          },
+          municipio_expedicion: {
+            type: "object",
+            properties: {
+              valor: { type: "string", description: "Municipio de expedición de la cédula" },
+              confianza: { type: "string", enum: ["alta", "media", "baja"] },
+            },
+            required: ["valor", "confianza"],
+            additionalProperties: false,
+          },
         },
         required: ["nombre_completo", "numero_cedula", "municipio_expedicion"],
         additionalProperties: false,
@@ -26,12 +53,32 @@ const toolsByCedula = [
   },
 ];
 
+const confField = (desc: string) => ({
+  type: "object",
+  properties: {
+    valor: { type: "string", description: desc },
+    confianza: { type: "string", enum: ["alta", "media", "baja"], description: "Nivel de confianza" },
+  },
+  required: ["valor", "confianza"],
+  additionalProperties: false,
+});
+
+const confBoolField = (desc: string) => ({
+  type: "object",
+  properties: {
+    valor: { type: "boolean", description: desc },
+    confianza: { type: "string", enum: ["alta", "media", "baja"], description: "Nivel de confianza" },
+  },
+  required: ["valor", "confianza"],
+  additionalProperties: false,
+});
+
 const toolsByCertificado = [
   {
     type: "function" as const,
     function: {
       name: "extract_certificado_tradicion",
-      description: "Extrae los datos principales de un certificado de tradición y libertad colombiano, estructurados en tres nodos: documento, inmueble y personas.",
+      description: "Extrae los datos principales de un certificado de tradición y libertad colombiano, estructurados en tres nodos: documento, inmueble y personas. Cada campo tiene un nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
@@ -39,9 +86,9 @@ const toolsByCertificado = [
             type: "object",
             description: "Datos del documento o escritura de origen",
             properties: {
-              fecha_documento: { type: "string", description: "Fecha del documento o escritura (DD-MM-AAAA)" },
-              notaria_origen: { type: "string", description: "Notaría de origen del documento" },
-              numero_escritura: { type: "string", description: "Número de escritura pública" },
+              fecha_documento: confField("Fecha del documento o escritura (DD-MM-AAAA)"),
+              notaria_origen: confField("Notaría de origen del documento"),
+              numero_escritura: confField("Número de escritura pública"),
             },
             required: ["fecha_documento", "notaria_origen", "numero_escritura"],
             additionalProperties: false,
@@ -50,26 +97,26 @@ const toolsByCertificado = [
             type: "object",
             description: "Datos del inmueble",
             properties: {
-              matricula_inmobiliaria: { type: "string", description: "Número de matrícula inmobiliaria" },
-              codigo_orip: { type: "string", description: "Código o nombre de la Oficina de Registro (ORIP)" },
-              direccion: { type: "string", description: "Dirección del inmueble" },
-              municipio: { type: "string", description: "Municipio del inmueble" },
-              departamento: { type: "string", description: "Departamento del inmueble" },
-              linderos: { type: "string", description: "Linderos completos del inmueble, transcribir textualmente" },
-              nupre: { type: "string", description: "Código NUPRE/CHIP del inmueble (suele comenzar con AAA, ej: AAA0216ZOWF)" },
-              area_construida: { type: "string", description: "Área construida del inmueble en m² (CONST), dejar vacío si no aparece" },
-              area_privada: { type: "string", description: "Área privada del inmueble en m² (PRIV), dejar vacío si no aparece" },
-              tipo_predio: { type: "string", description: "Tipo de predio: 'urbano' o 'rural'" },
-              es_propiedad_horizontal: { type: "boolean", description: "true si el inmueble tiene reglamento de propiedad horizontal" },
-              escritura_constitucion_ph: { type: "string", description: "Número de escritura de constitución de propiedad horizontal, si aplica" },
-              reformas_ph: { type: "string", description: "Reformas al reglamento de propiedad horizontal, si aplica" },
+              matricula_inmobiliaria: confField("Número de matrícula inmobiliaria"),
+              codigo_orip: confField("Código o nombre de la Oficina de Registro (ORIP)"),
+              direccion: confField("Dirección del inmueble"),
+              municipio: confField("Municipio del inmueble"),
+              departamento: confField("Departamento del inmueble"),
+              linderos: confField("Linderos completos del inmueble, transcribir textualmente"),
+              nupre: confField("Código NUPRE/CHIP del inmueble (suele comenzar con AAA, ej: AAA0216ZOWF)"),
+              area_construida: confField("Área construida del inmueble en m² (CONST), dejar vacío si no aparece"),
+              area_privada: confField("Área privada del inmueble en m² (PRIV), dejar vacío si no aparece"),
+              tipo_predio: confField("Tipo de predio: 'urbano' o 'rural'"),
+              es_propiedad_horizontal: confBoolField("true si el inmueble tiene reglamento de propiedad horizontal"),
+              escritura_constitucion_ph: confField("Número de escritura de constitución de propiedad horizontal, si aplica"),
+              reformas_ph: confField("Reformas al reglamento de propiedad horizontal, si aplica"),
             },
             required: ["matricula_inmobiliaria", "codigo_orip", "linderos"],
             additionalProperties: false,
           },
           personas: {
             type: "array",
-            description: "Lista de todas las personas o entidades que aparecen en el certificado (propietarios, acreedores, intervinientes)",
+            description: "Lista de todas las personas o entidades que aparecen en el certificado",
             items: {
               type: "object",
               properties: {
@@ -77,8 +124,9 @@ const toolsByCertificado = [
                 numero_identificacion: { type: "string", description: "Número de cédula o NIT" },
                 tipo_identificacion: { type: "string", description: "Tipo de documento: CC, NIT, CE, etc." },
                 lugar_expedicion: { type: "string", description: "Lugar de expedición del documento" },
+                confianza: { type: "string", enum: ["alta", "media", "baja"], description: "Confianza en la extracción de esta persona" },
               },
-              required: ["nombre_completo", "numero_identificacion"],
+              required: ["nombre_completo", "numero_identificacion", "confianza"],
               additionalProperties: false,
             },
           },
@@ -95,14 +143,14 @@ const toolsByPredial = [
     type: "function" as const,
     function: {
       name: "extract_predial",
-      description: "Extrae datos de un documento predial o boletín catastral colombiano.",
+      description: "Extrae datos de un documento predial o boletín catastral colombiano. Cada campo incluye nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
-          identificador_predial: { type: "string", description: "Número predial o CHIP del inmueble" },
-          avaluo_catastral: { type: "string", description: "Valor del avalúo catastral en pesos colombianos" },
-          area: { type: "string", description: "Área del predio en m²" },
-          direccion: { type: "string", description: "Dirección del predio" },
+          identificador_predial: confField("Número predial o CHIP del inmueble"),
+          avaluo_catastral: confField("Valor del avalúo catastral en pesos colombianos"),
+          area: confField("Área del predio en m²"),
+          direccion: confField("Dirección del predio"),
         },
         required: ["identificador_predial", "avaluo_catastral"],
         additionalProperties: false,
@@ -116,12 +164,12 @@ const toolsByEscritura = [
     type: "function" as const,
     function: {
       name: "extract_escritura_antecedente",
-      description: "Extrae los linderos de una escritura pública antecedente colombiana.",
+      description: "Extrae los linderos de una escritura pública antecedente colombiana. Cada campo incluye nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
-          linderos_especiales: { type: "string", description: "Linderos especiales (particulares) del inmueble, transcribir textualmente cada palabra" },
-          linderos_generales: { type: "string", description: "Linderos generales del edificio o conjunto (aplica si es propiedad horizontal), transcribir textualmente" },
+          linderos_especiales: confField("Linderos especiales (particulares) del inmueble, transcribir textualmente cada palabra"),
+          linderos_generales: confField("Linderos generales del edificio o conjunto (aplica si es propiedad horizontal), transcribir textualmente"),
         },
         required: ["linderos_especiales"],
         additionalProperties: false,
@@ -135,13 +183,13 @@ const toolsByPoderBanco = [
     type: "function" as const,
     function: {
       name: "extract_poder_banco",
-      description: "Extrae datos del poder otorgado por una entidad bancaria a su apoderado para escrituración.",
+      description: "Extrae datos del poder otorgado por una entidad bancaria. Cada campo incluye nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
-          entidad_bancaria: { type: "string", description: "Nombre de la entidad bancaria" },
-          apoderado_nombre: { type: "string", description: "Nombre completo del apoderado del banco" },
-          apoderado_cedula: { type: "string", description: "Número de cédula del apoderado del banco" },
+          entidad_bancaria: confField("Nombre de la entidad bancaria"),
+          apoderado_nombre: confField("Nombre completo del apoderado del banco"),
+          apoderado_cedula: confField("Número de cédula del apoderado del banco"),
         },
         required: ["entidad_bancaria", "apoderado_nombre", "apoderado_cedula"],
         additionalProperties: false,
@@ -155,12 +203,12 @@ const toolsByCartaCredito = [
     type: "function" as const,
     function: {
       name: "extract_carta_credito",
-      description: "Extrae el valor del crédito hipotecario de una carta de aprobación de crédito.",
+      description: "Extrae el valor del crédito hipotecario de una carta de aprobación. Cada campo incluye nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
-          valor_credito: { type: "string", description: "Valor aprobado del crédito hipotecario en pesos colombianos" },
-          entidad_bancaria: { type: "string", description: "Nombre de la entidad bancaria que otorga el crédito" },
+          valor_credito: confField("Valor aprobado del crédito hipotecario en pesos colombianos"),
+          entidad_bancaria: confField("Nombre de la entidad bancaria que otorga el crédito"),
         },
         required: ["valor_credito"],
         additionalProperties: false,
@@ -180,8 +228,14 @@ const toolsMap: Record<DocType, { tools: any[]; toolName: string }> = {
   carta_credito: { tools: toolsByCartaCredito, toolName: "extract_carta_credito" },
 };
 
-const systemPrompts: Record<DocType, string> = {
-  cedula: `Eres un sistema OCR especializado en cédulas de ciudadanía colombianas. Analiza la imagen proporcionada y extrae el nombre completo, número de cédula y municipio de expedición. Sé preciso con los números y nombres.`,
+const baseSystemPrompts: Record<DocType, string> = {
+  cedula: `Eres un sistema OCR especializado en cédulas de ciudadanía colombianas. Analiza la imagen proporcionada y extrae el nombre completo, número de cédula y municipio de expedición. Sé preciso con los números y nombres.
+
+CONFIANZA: Para cada campo, asigna un nivel de confianza:
+- "alta": el dato es claramente legible y no hay ambigüedad
+- "media": el dato es parcialmente legible o podría tener variaciones menores
+- "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado`,
+
   certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en tres nodos:
 
 1. DOCUMENTO: fecha del documento o escritura de origen, notaría de origen, número de escritura pública.
@@ -190,11 +244,40 @@ const systemPrompts: Record<DocType, string> = {
 
 3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
 
-IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.`,
-  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae el identificador predial (CHIP o número predial nacional), avalúo catastral, área y dirección.`,
-  escritura_antecedente: `Eres un sistema OCR especializado en escrituras públicas colombianas. Extrae los linderos del inmueble de la escritura antecedente. Diferencia entre linderos especiales (del inmueble particular, como apartamento o local) y linderos generales (del edificio o conjunto, aplica en propiedad horizontal). Transcribe TEXTUALMENTE cada lindero, palabra por palabra, tal cual aparece en el documento. No resumas ni parafrasees.`,
-  poder_banco: `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el poder otorgado por una entidad bancaria y extrae: nombre de la entidad bancaria, nombre completo del apoderado y su número de cédula.`,
-  carta_credito: `Eres un sistema OCR especializado en documentos bancarios colombianos. Analiza la carta de aprobación de crédito hipotecario y extrae el valor aprobado del crédito y la entidad bancaria.`,
+IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.
+
+LÓGICA LEGAL (Compraventa):
+- La matrícula inmobiliaria es OBLIGATORIA
+- El identificador predial (cédula catastral de 30 dígitos) es OBLIGATORIO — busca el campo "Cédula Catastral" o "NUPRE"
+- Los linderos son OBLIGATORIOS — transcripción literal completa
+- Si el inmueble es propiedad horizontal, DEBES buscar y extraer: escritura de constitución PH y reformas PH
+
+CONFIANZA: Para cada campo, asigna un nivel de confianza:
+- "alta": el dato es claramente legible y no hay ambigüedad
+- "media": el dato es parcialmente legible o podría tener variaciones menores  
+- "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
+
+  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae el identificador predial (CHIP o número predial nacional), avalúo catastral, área y dirección.
+
+CONFIANZA: Para cada campo, asigna un nivel de confianza:
+- "alta": el dato es claramente legible
+- "media": parcialmente legible
+- "baja": difícil de leer o ambiguo`,
+
+  escritura_antecedente: `Eres un sistema OCR especializado en escrituras públicas colombianas. Extrae los linderos del inmueble de la escritura antecedente. Diferencia entre linderos especiales (del inmueble particular) y linderos generales (del edificio o conjunto). Transcribe TEXTUALMENTE cada lindero, palabra por palabra.
+
+CONFIANZA: Para cada campo, asigna un nivel de confianza:
+- "alta": el dato es claramente legible
+- "media": parcialmente legible
+- "baja": difícil de leer o ambiguo`,
+
+  poder_banco: `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el poder otorgado por una entidad bancaria y extrae: nombre de la entidad bancaria, nombre completo del apoderado y su número de cédula.
+
+CONFIANZA: Para cada campo, asigna un nivel de confianza: "alta", "media" o "baja".`,
+
+  carta_credito: `Eres un sistema OCR especializado en documentos bancarios colombianos. Analiza la carta de aprobación de crédito hipotecario y extrae el valor aprobado del crédito y la entidad bancaria.
+
+CONFIANZA: Para cada campo, asigna un nivel de confianza: "alta", "media" o "baja".`,
 };
 
 serve(async (req) => {
@@ -226,11 +309,11 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: systemPrompts[type] },
+          { role: "system", content: baseSystemPrompts[type] },
           {
             role: "user",
             content: [
-              { type: "text", text: "Analiza esta imagen y extrae los datos solicitados." },
+              { type: "text", text: "Analiza esta imagen y extrae los datos solicitados. Asigna un nivel de confianza a cada campo." },
               { type: "image_url", image_url: { url: imageDataUri } },
             ],
           },
@@ -246,19 +329,16 @@ serve(async (req) => {
 
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Límite de solicitudes excedido. Intenta de nuevo en unos minutos." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
         return new Response(JSON.stringify({ error: "Créditos de IA agotados. Contacta al administrador." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       return new Response(JSON.stringify({ error: "Error al procesar documento con IA" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -276,8 +356,7 @@ serve(async (req) => {
     if (!toolCall?.function?.arguments) {
       console.error("No tool call in response:", JSON.stringify(result));
       return new Response(JSON.stringify({ error: "La IA no pudo extraer datos del documento" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -294,8 +373,7 @@ serve(async (req) => {
   } catch (e) {
     console.error("scan-document error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error desconocido" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
