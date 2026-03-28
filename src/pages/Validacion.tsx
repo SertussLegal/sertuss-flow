@@ -150,18 +150,52 @@ const Validacion = () => {
     if (meta?.texto_final_word) {
       setTextoFinalWord(meta.texto_final_word);
     }
+    // Restore confianza map
+    if (meta?.confianza_map) {
+      const map = new Map<string, NivelConfianza>();
+      for (const [k, v] of Object.entries(meta.confianza_map)) {
+        map.set(k, v as NivelConfianza);
+      }
+      setConfianzaFields(map);
+    }
 
+    // Pre-populate from extracted data if no personas/inmuebles saved yet
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
     const { data: act } = await supabase.from("actos").select("*").eq("tramite_id", tid).single();
 
-    if (personas) {
+    if (personas && personas.length > 0) {
       const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p } as Persona));
       const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p } as Persona));
       if (v.length) setVendedores(v);
       if (c.length) setCompradores(c);
+    } else if (meta?.extracted_personas?.length) {
+      // Auto-fill vendedores from extracted personas
+      const naturalPersons = meta.extracted_personas.filter((p: any) =>
+        !p.tipo_identificacion || p.tipo_identificacion === "CC" || p.tipo_identificacion === "CE"
+      );
+      if (naturalPersons.length) {
+        setVendedores(naturalPersons.map((p: any) => ({
+          ...createEmptyPersona(),
+          nombre_completo: p.nombre_completo || "",
+          numero_cedula: p.numero_identificacion || "",
+          municipio_domicilio: p.lugar_expedicion || "",
+        })));
+      }
     }
-    if (inm) setInmueble(inm as any);
+
+    if (inm) {
+      setInmueble(inm as any);
+    } else if (meta?.extracted_inmueble) {
+      // Pre-populate from extraction
+      const ei = meta.extracted_inmueble;
+      setInmueble(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(ei).filter(([_, v]) => v != null && v !== "")
+        ),
+      }));
+    }
     if (act) setActos(act as any);
 
     setSyncStatus("saved");
