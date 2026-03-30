@@ -91,10 +91,12 @@ const Validacion = () => {
   useEffect(() => { tramiteIdRef.current = tramiteId; }, [tramiteId]);
 
   useEffect(() => {
-    if (id) {
-      isLoadingRef.current = true;
-      loadTramite(id).finally(() => { isLoadingRef.current = false; });
+    if (!id) {
+      navigate("/nuevo-tramite", { replace: true });
+      return;
     }
+    isLoadingRef.current = true;
+    loadTramite(id).finally(() => { isLoadingRef.current = false; });
   }, [id]);
 
   // Mark dirty when data changes (skip during initial load)
