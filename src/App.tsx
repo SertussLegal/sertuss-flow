@@ -32,7 +32,7 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/nuevo-tramite" element={<ProtectedRoute><DocumentUploadStep /></ProtectedRoute>} />
-            <Route path="/tramite/nuevo" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
+            <Route path="/tramite/nuevo" element={<ProtectedRoute><DocumentUploadStep /></ProtectedRoute>} />
             <Route path="/tramite/:id" element={<ProtectedRoute><Validacion /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/admin/entidad/:id" element={<ProtectedRoute><AdminOrgEdit /></ProtectedRoute>} />
