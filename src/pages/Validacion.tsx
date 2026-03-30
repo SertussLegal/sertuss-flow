@@ -540,7 +540,6 @@ const Validacion = () => {
       setSugerenciasIA(aiSugerencias);
 
       // Also generate the .docx download using templateData
-      const templateData = result.templateData || result;
       const response = await fetch("/template_venta_hipoteca.docx");
       const content = await response.arrayBuffer();
 
