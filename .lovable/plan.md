@@ -1,48 +1,49 @@
 
 
-## Plan: Restaurar slots de cédulas de personas en DocumentUploadStep
+## Plan: Logging de correcciones — comparar data_ia vs datos editados
 
-### Problema
-La refactorización eliminó los slots para cédulas de compradores y vendedores. Solo quedaron los 3 documentos del inmueble.
+### Contexto
+La tabla `logs_extraccion` ya tiene columnas `data_ia` (lo que devolvió la IA) y `data_final` (lo que el usuario corrigió). El edge function `process-expediente` ya inserta `data_ia`. Falta capturar `data_final` al guardar.
 
-### Cambio en `src/components/tramites/DocumentUploadStep.tsx`
+### Cambio en `src/pages/Validacion.tsx`
 
-**Agregar sección dinámica de cédulas** antes de los documentos del inmueble:
+**1. Almacenar snapshot inicial de la IA** cuando se reciben los resultados de `process-expediente` (línea ~531):
+- Guardar en un `useRef` llamado `dataIaSnapshot` el objeto completo `result.templateData` que devolvió la IA al momento de generación.
 
-1. **Dos grupos de slots dinámicos**:
-   - "Cédulas de Vendedores" — inicia con 1 slot, botón "+ Agregar vendedor"
-   - "Cédulas de Compradores" — inicia con 1 slot, botón "+ Agregar comprador"
-   - Cada slot acepta imagen o PDF y se envía a `scan-document` con `type: "cedula_persona"`
+**2. Construir `data_final` al guardar** (en `handleSave`, después de guardar personas/inmueble/actos):
+- Construir un objeto con la misma estructura que `data_ia` pero usando los valores actuales del formulario (vendedores, compradores, inmueble, actos).
+- Comparar con `dataIaSnapshot`: solo guardar si hay diferencias.
 
-2. **Los 3 slots existentes del inmueble se mantienen** (certificado, predial, escritura)
+**3. Upsert en `logs_extraccion`**:
+- Buscar el registro existente para el `tramite_id`.
+- Hacer UPDATE de `data_final` y `updated_at`.
 
-3. **Al continuar**: los datos extraídos de cédulas se agregan a `extracted_personas` en el metadata, con su rol (vendedor/comprador) y nivel de confianza
-
-### UI
-```text
-┌─────────────────────────────────┐
-│  Cédulas de Vendedores          │
-│  [Slot 1: Subir]  [+ Agregar]  │
-├─────────────────────────────────┤
-│  Cédulas de Compradores         │
-│  [Slot 1: Subir]  [+ Agregar]  │
-├─────────────────────────────────┤
-│  Documentos del Inmueble        │
-│  - Certificado de Tradición     │
-│  - Cédula Catastral / Predial   │
-│  - Escritura Antecedente        │
-└─────────────────────────────────┘
+### Estructura de `data_final`
+```typescript
+{
+  vendedores: vendedores.map(v => ({ nombre_completo, numero_cedula, ... })),
+  compradores: compradores.map(c => ({ ... })),
+  inmueble: { matricula_inmobiliaria, direccion, ... },
+  actos: { tipo_acto, valor_compraventa, ... },
+  correcciones: [
+    { campo: "inmueble.direccion", valor_ia: "CRA 80A", valor_final: "Carrera 80A #17-85" }
+  ]
+}
 ```
 
-### Lógica de `handleContinue`
-- Personas extraídas de cédulas se insertan en `extracted_personas` con `rol: "vendedor"` o `"comprador"`
-- Se fusionan con las personas que ya se extraen del certificado de tradición (evitando duplicados por número de cédula)
+El array `correcciones` se genera automáticamente comparando campos entre `dataIaSnapshot` y el estado actual.
+
+### Lógica de diff
+Una función `buildCorrecciones(dataIa, dataActual)` que:
+- Itera campos planos de inmueble y actos
+- Itera personas por número de cédula
+- Registra solo los campos donde `valor_ia !== valor_final`
 
 ### Archivos a modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/components/tramites/DocumentUploadStep.tsx` | Agregar slots dinámicos para cédulas de vendedores y compradores |
+| `src/pages/Validacion.tsx` | Agregar `dataIaSnapshot` ref, función `buildCorrecciones`, upsert `data_final` en `handleSave` |
 
 Un solo archivo.
 
