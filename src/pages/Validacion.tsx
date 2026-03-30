@@ -160,6 +160,18 @@ const Validacion = () => {
       setConfianzaFields(map);
     }
 
+    // Restore AI snapshot from logs_extraccion for correction tracking
+    const { data: logData } = await supabase
+      .from("logs_extraccion")
+      .select("data_ia")
+      .eq("tramite_id", tid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (logData?.data_ia && !dataIaSnapshot.current) {
+      dataIaSnapshot.current = logData.data_ia as Record<string, unknown>;
+    }
+
     // Pre-populate from extracted data if no personas/inmuebles saved yet
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
