@@ -532,6 +532,10 @@ const Validacion = () => {
       const aiTexto = result.texto_final_word || "";
       const aiSugerencias: SugerenciaIA[] = result.sugerencias_ia || [];
       
+      // Snapshot the AI data for correction logging
+      const templateData = result.templateData || result;
+      dataIaSnapshot.current = JSON.parse(JSON.stringify(templateData));
+
       setTextoFinalWord(aiTexto);
       setSugerenciasIA(aiSugerencias);
 
