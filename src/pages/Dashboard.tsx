@@ -78,13 +78,14 @@ const Dashboard = () => {
   const handleDeleteDraft = async () => {
     if (!draftToDelete) return;
     try {
+      await supabase.from("logs_extraccion").delete().eq("tramite_id", draftToDelete.id);
       await supabase.from("personas").delete().eq("tramite_id", draftToDelete.id);
       await supabase.from("inmuebles").delete().eq("tramite_id", draftToDelete.id);
       await supabase.from("actos").delete().eq("tramite_id", draftToDelete.id);
       const { error } = await supabase.from("tramites").delete().eq("id", draftToDelete.id);
       if (error) throw error;
-      setTramites((prev) => prev.filter((t) => t.id !== draftToDelete.id));
       toast({ title: "Borrador eliminado" });
+      await fetchTramites();
     } catch (err: any) {
       toast({ title: "Error al eliminar", description: err?.message ?? "Intenta de nuevo", variant: "destructive" });
     } finally {

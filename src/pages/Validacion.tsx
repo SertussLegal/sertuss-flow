@@ -256,22 +256,9 @@ const Validacion = () => {
       } as Record<string, unknown>;
 
       if (!tid) {
-        // Create new draft
-        const { data, error } = await supabase
-          .from("tramites")
-          .insert({
-            tipo: actos.tipo_acto || "Compraventa",
-            organization_id: profile.organization_id,
-            created_by: profile.id,
-            status: "pendiente" as any,
-            metadata: metadata as any,
-          })
-          .select()
-          .single();
-        if (error) throw error;
-        tid = data.id;
-        setTramiteId(tid);
-        navigate(`/tramite/${tid}`, { replace: true });
+        // No tramite ID — don't create orphan drafts silently
+        setSyncStatus("unsaved");
+        return;
       } else {
         await supabase.from("tramites").update({
           updated_at: new Date().toISOString(),
