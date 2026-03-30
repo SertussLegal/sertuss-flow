@@ -398,6 +398,71 @@ const Validacion = () => {
     setTimeout(() => handleAutoSave(), 100);
   }, [sugerenciasIA, textoFinalWord, handleFieldEdit, handleAutoSave]);
 
+  // Build correction diff between AI snapshot and current form state
+  const buildCorrecciones = (
+    dataIa: Record<string, unknown>,
+    currentData: { vendedores: Persona[]; compradores: Persona[]; inmueble: Inmueble; actos: Actos }
+  ): Array<{ campo: string; valor_ia: string; valor_final: string }> => {
+    const correcciones: Array<{ campo: string; valor_ia: string; valor_final: string }> = [];
+
+    // Compare inmueble fields
+    const inmuebleKeys: (keyof Inmueble)[] = [
+      "matricula_inmobiliaria", "identificador_predial", "departamento", "municipio",
+      "direccion", "area", "area_construida", "area_privada", "linderos",
+      "avaluo_catastral", "codigo_orip", "tipo_predio",
+    ];
+    for (const key of inmuebleKeys) {
+      const iaVal = String((dataIa as any)?.[key] ?? (dataIa as any)?.inmueble?.[key] ?? "");
+      const curVal = String(currentData.inmueble[key] ?? "");
+      if (iaVal !== curVal && (iaVal || curVal)) {
+        correcciones.push({ campo: `inmueble.${key}`, valor_ia: iaVal, valor_final: curVal });
+      }
+    }
+
+    // Compare actos fields
+    const actosKeys: (keyof Actos)[] = [
+      "tipo_acto", "valor_compraventa", "es_hipoteca" as any, "valor_hipoteca", "entidad_bancaria",
+    ];
+    for (const key of actosKeys) {
+      const iaVal = String((dataIa as any)?.[key] ?? (dataIa as any)?.actos?.[key] ?? "");
+      const curVal = String(currentData.actos[key] ?? "");
+      if (iaVal !== curVal && (iaVal || curVal)) {
+        correcciones.push({ campo: `actos.${key}`, valor_ia: iaVal, valor_final: curVal });
+      }
+    }
+
+    // Compare personas by cedula
+    const iaPersonas = [
+      ...((dataIa as any)?.vendedores || []),
+      ...((dataIa as any)?.compradores || []),
+    ];
+    const curPersonas = [...currentData.vendedores, ...currentData.compradores];
+    const personaFields: (keyof Persona)[] = [
+      "nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio",
+    ];
+
+    for (const curP of curPersonas) {
+      if (!curP.numero_cedula) continue;
+      const iaP = iaPersonas.find((p: any) =>
+        (p.numero_cedula || p.numero_identificacion) === curP.numero_cedula
+      );
+      if (!iaP) continue;
+      for (const key of personaFields) {
+        const iaVal = String(iaP[key] ?? iaP[key === "numero_cedula" ? "numero_identificacion" : key] ?? "");
+        const curVal = String(curP[key] ?? "");
+        if (iaVal !== curVal && (iaVal || curVal)) {
+          correcciones.push({
+            campo: `persona.${curP.numero_cedula}.${key}`,
+            valor_ia: iaVal,
+            valor_final: curVal,
+          });
+        }
+      }
+    }
+
+    return correcciones;
+  };
+
   const handleSave = async () => {
     if (!inmueble.identificador_predial) {
       toast({ title: "Error", description: "El Identificador Predial es obligatorio.", variant: "destructive" });
@@ -459,6 +524,26 @@ const Validacion = () => {
 
       const { error: actError } = await supabase.from("actos").insert({ ...actosToRow(actos), tramite_id: tid! });
       if (actError) throw actError;
+
+      // --- Logging de correcciones ---
+      if (dataIaSnapshot.current && tid) {
+        const currentData = { vendedores, compradores, inmueble, actos };
+        const correcciones = buildCorrecciones(dataIaSnapshot.current, currentData);
+
+        const dataFinal = {
+          vendedores: vendedores.map(v => ({ nombre_completo: v.nombre_completo, numero_cedula: v.numero_cedula, estado_civil: v.estado_civil, direccion: v.direccion, municipio_domicilio: v.municipio_domicilio })),
+          compradores: compradores.map(c => ({ nombre_completo: c.nombre_completo, numero_cedula: c.numero_cedula, estado_civil: c.estado_civil, direccion: c.direccion, municipio_domicilio: c.municipio_domicilio })),
+          inmueble: { matricula_inmobiliaria: inmueble.matricula_inmobiliaria, identificador_predial: inmueble.identificador_predial, departamento: inmueble.departamento, municipio: inmueble.municipio, direccion: inmueble.direccion, area: inmueble.area, linderos: inmueble.linderos, avaluo_catastral: inmueble.avaluo_catastral },
+          actos: { tipo_acto: actos.tipo_acto, valor_compraventa: actos.valor_compraventa, es_hipoteca: actos.es_hipoteca, valor_hipoteca: actos.valor_hipoteca, entidad_bancaria: actos.entidad_bancaria },
+          correcciones,
+        };
+
+        // Only write if there were actual corrections or first save
+        await supabase
+          .from("logs_extraccion")
+          .update({ data_final: dataFinal as any, updated_at: new Date().toISOString() })
+          .eq("tramite_id", tid);
+      }
 
       setIsDirty(false);
       setSyncStatus("saved");
