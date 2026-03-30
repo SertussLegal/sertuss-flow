@@ -1,49 +1,51 @@
 
 
-## Plan: Logging de correcciones — comparar data_ia vs datos editados
+## Análisis QA del flujo de borradores
 
-### Contexto
-La tabla `logs_extraccion` ya tiene columnas `data_ia` (lo que devolvió la IA) y `data_final` (lo que el usuario corrigió). El edge function `process-expediente` ya inserta `data_ia`. Falta capturar `data_final` al guardar.
+### Estado actual en la base de datos
 
-### Cambio en `src/pages/Validacion.tsx`
+Hay **2 borradores pendientes**:
+1. `fb139817` — Creado el 28 mar, **sin metadata de progreso**, sin personas ni inmuebles. Es un borrador huérfano creado al navegar a `/nuevo-tramite` y presionar "Continuar" sin datos útiles.
+2. `de0a906c` — Creado el 16 mar, con progreso 80%, tiene 2 personas. Este tiene más de 14 días y será purgado pronto por el cron.
 
-**1. Almacenar snapshot inicial de la IA** cuando se reciben los resultados de `process-expediente` (línea ~531):
-- Guardar en un `useRef` llamado `dataIaSnapshot` el objeto completo `result.templateData` que devolvió la IA al momento de generación.
+Ninguno tiene registros en `logs_extraccion`, así que la eliminación manual **no debería fallar** por foreign keys.
 
-**2. Construir `data_final` al guardar** (en `handleSave`, después de guardar personas/inmueble/actos):
-- Construir un objeto con la misma estructura que `data_ia` pero usando los valores actuales del formulario (vendedores, compradores, inmueble, actos).
-- Comparar con `dataIaSnapshot`: solo guardar si hay diferencias.
+### Problemas identificados
 
-**3. Upsert en `logs_extraccion`**:
-- Buscar el registro existente para el `tramite_id`.
-- Hacer UPDATE de `data_final` y `updated_at`.
+**Problema 1: Borrador se crea al dar "Continuar" sin validación suficiente**
+En `DocumentUploadStep.tsx` línea 225, al presionar "Continuar" se hace `INSERT INTO tramites` inmediatamente, sin importar si se subieron documentos o no. Si el usuario luego se devuelve al Dashboard, queda un borrador vacío.
 
-### Estructura de `data_final`
+**Problema 2: El botón de eliminar (basura) no funciona correctamente**
+El `handleDeleteDraft` en Dashboard.tsx no elimina `logs_extraccion` antes de intentar borrar el trámite. Aunque ahora no hay registros de logs para estos borradores, cuando el flujo completo funcione sí los habrá, y el DELETE fallará silenciosamente por la dependencia.
+
+**Problema 3: Sin CASCADE en tablas dependientes**
+Las tablas `personas`, `inmuebles`, `actos` y `logs_extraccion` **no tienen foreign keys definidas** hacia `tramites` (confirmado en el schema). La función `purge_expired_drafts` y `handleDeleteDraft` eliminan manualmente de cada tabla, pero si se agrega alguna tabla nueva relacionada, se rompe.
+
+### Plan de corrección
+
+| # | Cambio | Archivo |
+|---|--------|---------|
+| 1 | **Agregar `logs_extraccion` al delete manual** | `src/pages/Dashboard.tsx` |
+| 2 | **No crear trámite si no hay al menos 1 documento procesado** | `src/components/tramites/DocumentUploadStep.tsx` |
+| 3 | **Agregar `logs_extraccion` a `purge_expired_drafts()`** | Migración SQL |
+| 4 | **Limpiar los 2 borradores huérfanos actuales** | Migración SQL (DELETE) |
+
+### Detalle técnico
+
+**Dashboard.tsx** — Agregar antes de eliminar personas:
 ```typescript
-{
-  vendedores: vendedores.map(v => ({ nombre_completo, numero_cedula, ... })),
-  compradores: compradores.map(c => ({ ... })),
-  inmueble: { matricula_inmobiliaria, direccion, ... },
-  actos: { tipo_acto, valor_compraventa, ... },
-  correcciones: [
-    { campo: "inmueble.direccion", valor_ia: "CRA 80A", valor_final: "Carrera 80A #17-85" }
-  ]
-}
+await supabase.from("logs_extraccion").delete().eq("tramite_id", draftToDelete.id);
 ```
 
-El array `correcciones` se genera automáticamente comparando campos entre `dataIaSnapshot` y el estado actual.
+**DocumentUploadStep.tsx** — Deshabilitar "Continuar" si ningún slot tiene `status: "done"`:
+```typescript
+const hasAnyProcessed = allSlots.some(s => s.status === "done");
+// Botón Continuar disabled={!hasAnyProcessed}
+```
 
-### Lógica de diff
-Una función `buildCorrecciones(dataIa, dataActual)` que:
-- Itera campos planos de inmueble y actos
-- Itera personas por número de cédula
-- Registra solo los campos donde `valor_ia !== valor_final`
-
-### Archivos a modificar
-
-| Archivo | Cambio |
-|---------|--------|
-| `src/pages/Validacion.tsx` | Agregar `dataIaSnapshot` ref, función `buildCorrecciones`, upsert `data_final` en `handleSave` |
-
-Un solo archivo.
-
+**Migración SQL** — Actualizar `purge_expired_drafts`:
+```sql
+DELETE FROM public.logs_extraccion WHERE tramite_id IN (
+  SELECT id FROM public.tramites WHERE status = 'pendiente' AND updated_at < now() - interval '15 days'
+);
+```
