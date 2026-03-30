@@ -74,6 +74,7 @@ const Validacion = () => {
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
+  const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
 
   const handleConfianzaChange = useCallback((field: string, confianza: NivelConfianza) => {
     setConfianzaFields(prev => {
