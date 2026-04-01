@@ -2,3 +2,6 @@ project_id = "cmcikwbszokxeepchqib"
 
 [functions.scan-document]
 verify_jwt = false
+
+[functions.validar-con-claude]
+verify_jwt = false

@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings } from "lucide-react";
+import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings, FlaskConical } from "lucide-react";
 
 interface Org {
   id: string;
@@ -44,6 +44,12 @@ const Admin = () => {
   const [newBalance, setNewBalance] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Claude test state
+  const [testingClaude, setTestingClaude] = useState(false);
+  const [claudeResult, setClaudeResult] = useState<any>(null);
+  const [claudeError, setClaudeError] = useState<string | null>(null);
+  const [showClaudeDialog, setShowClaudeDialog] = useState(false);
 
   // Access guard
   useEffect(() => {
@@ -99,6 +105,70 @@ const Admin = () => {
     }
   };
 
+  const handleTestClaude = async () => {
+    setTestingClaude(true);
+    setClaudeResult(null);
+    setClaudeError(null);
+    setShowClaudeDialog(true);
+
+    try {
+      const testPayload = {
+        modo: "campos",
+        tramite_id: "00000000-0000-0000-0000-000000000000",
+        organization_id: profile?.organization_id || "00000000-0000-0000-0000-000000000000",
+        tipo_acto: "compraventa",
+        tab_origen: "vendedores",
+        datos_extraidos: {
+          vendedores: [
+            {
+              nombre_completo: "juan carlos garcia lopez",
+              numero_identificacion: "1234567890",
+              tipo_identificacion: "CC",
+              estado_civil: "casado",
+              domicilio: "Bogotá D.C.",
+              expedida_en: "Bogotá",
+            },
+          ],
+          compradores: [
+            {
+              nombre_completo: "MARIA FERNANDA RODRIGUEZ",
+              numero_identificacion: "98765432",
+              tipo_identificacion: "C.C.",
+              estado_civil: "",
+              domicilio: "",
+              expedida_en: "",
+            },
+          ],
+          inmueble: {
+            matricula: "50C-1817286",
+            direccion: "Calle 100 # 15-20 Apto 501",
+            cedula_catastral: "AAA0123BCDE",
+            departamento: "Cundinamarca",
+            municipio: "Bogotá D.C.",
+            orip: "Bogotá Zona Centro",
+          },
+          actos: {
+            cuantia_compraventa_numero: "350000000",
+            cuantia_compraventa_letras: "TRESCIENTOS CINCUENTA MILLONES DE PESOS",
+          },
+        },
+        correcciones_gemini: [],
+        validaciones_app: ["cruce_roles_certificado_completado"],
+      };
+
+      const res = await supabase.functions.invoke("validar-con-claude", {
+        body: testPayload,
+      });
+
+      if (res.error) throw new Error(res.error.message);
+      setClaudeResult(res.data);
+    } catch (err: any) {
+      setClaudeError(err.message || "Error desconocido");
+    } finally {
+      setTestingClaude(false);
+    }
+  };
+
   if (authLoading || profile?.role !== "owner") {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -149,6 +219,20 @@ const Admin = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Claude Test Button */}
+        <Card>
+          <CardContent className="flex items-center justify-between pt-6">
+            <div>
+              <p className="font-medium">Prueba de Validación con IA</p>
+              <p className="text-sm text-muted-foreground">Envía datos ficticios al motor de validación para verificar que funciona correctamente.</p>
+            </div>
+            <Button onClick={handleTestClaude} disabled={testingClaude} variant="outline">
+              <FlaskConical className="mr-2 h-4 w-4" />
+              {testingClaude ? "Validando..." : "Probar Validación"}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Search */}
         <div className="relative max-w-md">
@@ -220,6 +304,33 @@ const Admin = () => {
               {saving ? "Guardando..." : "Confirmar"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Claude Test Result Dialog */}
+      <Dialog open={showClaudeDialog} onOpenChange={setShowClaudeDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Resultado Validación IA</DialogTitle>
+            <DialogDescription>Respuesta del motor de validación con datos de prueba.</DialogDescription>
+          </DialogHeader>
+          {testingClaude && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+              <span className="ml-3 text-muted-foreground">Consultando IA...</span>
+            </div>
+          )}
+          {claudeError && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-4 text-sm text-destructive">
+              <p className="font-medium">Error:</p>
+              <p>{claudeError}</p>
+            </div>
+          )}
+          {claudeResult && (
+            <pre className="rounded-lg bg-muted p-4 text-xs overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(claudeResult, null, 2)}
+            </pre>
+          )}
         </DialogContent>
       </Dialog>
     </div>
