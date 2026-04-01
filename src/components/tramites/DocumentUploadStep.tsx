@@ -475,6 +475,7 @@ const DocumentUploadStep = () => {
                 `vendedor-${i}`,
                 (file) => handlePersonaFile("vendedor", i, file),
                 () => removePersonaSlot("vendedor", i),
+                getSlotAlert("vendedor", i),
               )
             )}
           </div>
@@ -496,6 +497,7 @@ const DocumentUploadStep = () => {
                 `comprador-${i}`,
                 (file) => handlePersonaFile("comprador", i, file),
                 () => removePersonaSlot("comprador", i),
+                getSlotAlert("comprador", i),
               )
             )}
           </div>
@@ -515,6 +517,22 @@ const DocumentUploadStep = () => {
               )
             )}
           </div>
+
+          {/* Missing cédulas alert */}
+          {missingAlerts.length > 0 && (
+            <Alert className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800 dark:text-amber-200">
+                <p className="font-medium mb-1">Cédulas faltantes según el certificado de tradición:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  {missingAlerts.map((a, i) => (
+                    <li key={i} className="text-sm">{a.nombre} (CC {a.cedula})</li>
+                  ))}
+                </ul>
+                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Debes cargarlas como Vendedores.</p>
+              </AlertDescription>
+            </Alert>
+          )}
 
           {lowConfCount > 0 && (
             <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3">
