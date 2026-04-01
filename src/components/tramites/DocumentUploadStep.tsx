@@ -329,6 +329,7 @@ const DocumentUploadStep = () => {
       }
     }
 
+    const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
       extracted_personas: extractedPersonas,
       extracted_documento: extractedDocumento,
