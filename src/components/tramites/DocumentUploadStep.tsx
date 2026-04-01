@@ -142,10 +142,15 @@ const DocumentUploadStep = () => {
   const certSlot = propSlots.find(s => s.type === "certificado_tradicion" && s.status === "done");
   const propietariosCert: { nombre: string; cedula: string }[] = useMemo(() => {
     if (!certSlot?.result?.personas) return [];
-    return (certSlot.result.personas as any[]).map((p: any) => ({
-      nombre: p.nombre_completo || p.nombre || "",
-      cedula: p.numero_identificacion || p.numero_cedula || "",
-    })).filter((p: any) => p.cedula);
+    const ENTITY_PATTERNS = /\b(S\.?A\.?S?\.?|LTDA|BANCO|BANCOLOMBIA|DAVIVIENDA|BBVA|FIDUCIARIA|CONSTRUCTORA|FONDO|LEASING|CORP|INC|FUNDACION|E\.?S\.?P)\b/i;
+    const deduped = new Map<string, { nombre: string; cedula: string }>();
+    for (const p of certSlot.result.personas as any[]) {
+      const nombre = p.nombre_completo || p.nombre || "";
+      const cedula = String(p.numero_identificacion ?? p.numero_cedula ?? "").replace(/\D/g, "");
+      if (!cedula || ENTITY_PATTERNS.test(nombre)) continue;
+      if (!deduped.has(cedula)) deduped.set(cedula, { nombre, cedula });
+    }
+    return Array.from(deduped.values());
   }, [certSlot?.result]);
 
   const roleAlerts = useMemo((): RoleAlert[] => {
