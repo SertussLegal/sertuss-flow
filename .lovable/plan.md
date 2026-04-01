@@ -1,22 +1,43 @@
 
 
-## Plan: Insertar datos semilla en reglas_validacion y plantillas_validacion
+## Plan: Crear edge function `validar-con-claude` + botón de prueba en Admin
 
-### Contexto
-Las tablas están vacías y listas para recibir los registros. Son 2 tablas:
-- `reglas_validacion`: 22 registros (7 formato, 7 coherencia, 6 legales, 6 negocio)
-- `plantillas_validacion`: 3 registros (compraventa, hipoteca, poder)
+### 1. Crear `supabase/functions/validar-con-claude/index.ts`
 
-### Implementación
+Se usará el código proporcionado con estos ajustes:
 
-Se usará la herramienta de inserción de datos (no migración) para ejecutar los INSERT exactos que proporcionaste, sin modificar estructura de tablas.
+| Original | Ajuste |
+|---|---|
+| `notaria_id` en el payload/interfaz | `organization_id` |
+| `notaria_id` en query a `configuracion_notaria` | `.eq("organization_id", payload.organization_id)` |
+| `notaria_id` en insert a `historial_validaciones` | `organization_id: payload.organization_id` |
+| CORS headers | Ampliar para incluir headers de Supabase SDK (`x-supabase-client-platform`, etc.) como en las otras funciones |
+| `error.message` en catch | `error instanceof Error ? error.message : "Unknown error"` (type safety) |
 
-**Paso 1** — Insertar las 22 reglas de validación en `reglas_validacion` (4 bloques: formato, coherencia, legal, negocio)
+La lógica, prompts y funciones auxiliares se mantienen exactamente como los proporcionaste.
 
-**Paso 2** — Insertar las 3 plantillas en `plantillas_validacion` (compraventa, hipoteca, poder)
+### 2. Agregar config en `supabase/config.toml`
 
-**Paso 3** — Verificar con SELECT que los conteos sean correctos (22 reglas, 3 plantillas)
+```toml
+[functions.validar-con-claude]
+verify_jwt = false
+```
 
-### Archivos a modificar
-Ninguno. Solo operaciones de datos en la base de datos.
+### 3. Botón temporal de prueba en `src/pages/Admin.tsx`
+
+Se agregará debajo de las stats cards:
+- Un botón "Probar Validación Claude" visible solo para `role === "owner"`
+- Al hacer clic, envía datos de prueba (un vendedor y un inmueble ficticios, tipo_acto `compraventa`, modo `campos`)
+- Muestra la respuesta en un Dialog con el JSON formateado
+- Muestra estados de carga y errores
+
+### Archivos a crear/modificar
+
+| Archivo | Cambio |
+|---|---|
+| `supabase/functions/validar-con-claude/index.ts` | Crear con código ajustado |
+| `supabase/config.toml` | Agregar bloque de la función |
+| `src/pages/Admin.tsx` | Agregar botón temporal + dialog de respuesta |
+
+3 archivos.
 
