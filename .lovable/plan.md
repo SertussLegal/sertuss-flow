@@ -1,55 +1,48 @@
 
 
-## Plan: No pre-llenar datos de personas desde el certificado de tradición
+## Plan: Crear 4 tablas de validación con Claude API
 
-### Problema
+### Problemas detectados en el SQL proporcionado
 
-Actualmente en `handleContinue` (líneas 286-302), cuando el certificado de tradición tiene personas listadas, estas se agregan a `extractedPersonas` con nombre y número de identificación extraídos del certificado. Esto pre-llena campos que deberían quedar vacíos si el usuario no aportó la cédula correspondiente.
+Antes de ejecutar la migración, hay **4 incompatibilidades** con tu esquema actual que debo resolver:
 
-Los datos de personas solo deben provenir del escaneo de cédulas. Si no se subió cédula, esa persona debe aparecer con campos vacíos (o no aparecer) para ser llenada manualmente después.
+1. **`notarias(id)` no existe** — Tu app usa `organizations` como entidad de notaría. La FK en `configuracion_notaria` debe apuntar a `organizations(id)`.
 
-### Cambio en `src/components/tramites/DocumentUploadStep.tsx`
+2. **`usuarios_notaria` no existe** — Las políticas RLS que filtran por notaría deben usar `get_user_org(auth.uid())` (tu patrón existente) en lugar de una tabla inexistente.
 
-**1. Eliminar el merge de personas del certificado (líneas 286-302)**
+3. **CHECK constraints** — Según las mejores prácticas del proyecto, las validaciones como `categoria IN (...)` deben implementarse como **triggers de validación** en lugar de CHECK constraints para evitar problemas de restauración.
 
-Quitar el bloque que agrega personas del certificado de tradición a `extractedPersonas`. Solo las cédulas escaneadas deben poblar los datos de personas.
+4. **Política INSERT con USING** — `"Service role inserta historial"` usa `USING` pero INSERT requiere `WITH CHECK`.
 
-**2. Crear placeholders vacíos para propietarios sin cédula**
+### Cambios que haré al SQL
 
-Para propietarios del certificado que no tienen cédula cargada, agregar entradas placeholder con:
-- `nombre_completo`: nombre del certificado (solo como referencia)
-- `numero_identificacion`: número del certificado (solo como referencia)
-- Todos los demás campos vacíos (`""`)
-- Flag `pendiente: true` para indicar que es un placeholder
-- `rol: "vendedor"` (son propietarios)
+| Original | Ajuste |
+|---|---|
+| `REFERENCES notarias(id)` | `REFERENCES organizations(id)` |
+| `notaria_id IN (SELECT ... FROM usuarios_notaria)` | `notaria_id = get_user_org(auth.uid())` o aislamiento por `organization_id` |
+| CHECK constraints en `categoria`, `nivel_severidad`, `momento`, `tipo_notario` | Triggers de validación |
+| `USING (true)` en INSERT | `WITH CHECK (true)` |
+| `historial_validaciones.notaria_id` | Renombrar a `organization_id` para consistencia con el resto del schema |
 
-Esto permite que aparezcan en el formulario de validación pero con campos personales en blanco.
+### Migración resultante
 
-**3. Actualizar texto de alerta de cédulas faltantes (línea 537)**
+Se creará **1 migración SQL** con:
 
-De: *"Debes cargarlas como Vendedores."*
-A: *"Puedes continuar sin estas cédulas. Los campos correspondientes quedarán en blanco en la escritura para completar manualmente en la notaría."*
+- 4 tablas nuevas con RLS habilitado
+- Índices según tu especificación
+- Triggers de validación en lugar de CHECK constraints
+- Políticas RLS adaptadas al patrón `get_user_org(auth.uid())` existente
+- Política adicional para que edge functions (service_role) puedan insertar historial
 
-### Cambio en `supabase/functions/generate-document/index.ts`
+### Tablas existentes
 
-**4. Agregar instrucción al prompt para campos faltantes**
-
-En el `systemPrompt`, agregar la regla:
-*"Si un vendedor o comprador tiene datos incompletos (sin estado civil, sin dirección, sin lugar de expedición), deja esos campos con líneas en blanco (___________) para ser llenados manualmente en la notaría."*
-
-### Resultado esperado
-
-- Si se sube cédula → datos completos extraídos por OCR
-- Si NO se sube cédula → persona aparece con nombre/CC del certificado pero demás campos vacíos
-- El documento Word generado tiene líneas en blanco (`___________`) donde faltan datos
-- El flujo nunca se bloquea por cédulas faltantes
+No se modifica ninguna tabla existente.
 
 ### Archivos a modificar
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocumentUploadStep.tsx` | Reemplazar merge de personas del certificado por placeholders vacíos, actualizar texto de alerta |
-| `supabase/functions/generate-document/index.ts` | Agregar instrucción de campos en blanco al prompt |
+| Nueva migración SQL | Crear las 4 tablas con ajustes de compatibilidad |
 
-2 archivos.
+Solo 1 migración, 0 archivos de código.
 
