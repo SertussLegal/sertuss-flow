@@ -105,6 +105,70 @@ const Admin = () => {
     }
   };
 
+  const handleTestClaude = async () => {
+    setTestingClaude(true);
+    setClaudeResult(null);
+    setClaudeError(null);
+    setShowClaudeDialog(true);
+
+    try {
+      const testPayload = {
+        modo: "campos",
+        tramite_id: "00000000-0000-0000-0000-000000000000",
+        organization_id: profile?.organization_id || "00000000-0000-0000-0000-000000000000",
+        tipo_acto: "compraventa",
+        tab_origen: "vendedores",
+        datos_extraidos: {
+          vendedores: [
+            {
+              nombre_completo: "juan carlos garcia lopez",
+              numero_identificacion: "1234567890",
+              tipo_identificacion: "CC",
+              estado_civil: "casado",
+              domicilio: "Bogotá D.C.",
+              expedida_en: "Bogotá",
+            },
+          ],
+          compradores: [
+            {
+              nombre_completo: "MARIA FERNANDA RODRIGUEZ",
+              numero_identificacion: "98765432",
+              tipo_identificacion: "C.C.",
+              estado_civil: "",
+              domicilio: "",
+              expedida_en: "",
+            },
+          ],
+          inmueble: {
+            matricula: "50C-1817286",
+            direccion: "Calle 100 # 15-20 Apto 501",
+            cedula_catastral: "AAA0123BCDE",
+            departamento: "Cundinamarca",
+            municipio: "Bogotá D.C.",
+            orip: "Bogotá Zona Centro",
+          },
+          actos: {
+            cuantia_compraventa_numero: "350000000",
+            cuantia_compraventa_letras: "TRESCIENTOS CINCUENTA MILLONES DE PESOS",
+          },
+        },
+        correcciones_gemini: [],
+        validaciones_app: ["cruce_roles_certificado_completado"],
+      };
+
+      const res = await supabase.functions.invoke("validar-con-claude", {
+        body: testPayload,
+      });
+
+      if (res.error) throw new Error(res.error.message);
+      setClaudeResult(res.data);
+    } catch (err: any) {
+      setClaudeError(err.message || "Error desconocido");
+    } finally {
+      setTestingClaude(false);
+    }
+  };
+
   if (authLoading || profile?.role !== "owner") {
     return (
       <div className="flex min-h-screen items-center justify-center">
