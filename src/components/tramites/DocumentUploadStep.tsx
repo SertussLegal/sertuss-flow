@@ -1,18 +1,29 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users,
+  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft,
 } from "lucide-react";
 import type { NivelConfianza } from "@/lib/types";
 import { unwrapConfianza, unwrapConfianzaBool } from "@/lib/types";
+
+type RoleAlert = {
+  type: "wrong_role" | "missing_cedula";
+  message: string;
+  cedula?: string;
+  nombre?: string;
+  currentRol?: "vendedor" | "comprador";
+  suggestedRol?: "vendedor" | "comprador";
+  slotIndex?: number;
+};
 
 type DocSlot = {
   label: string;
