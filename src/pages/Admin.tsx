@@ -220,6 +220,20 @@ const Admin = () => {
           </Card>
         </div>
 
+        {/* Claude Test Button */}
+        <Card>
+          <CardContent className="flex items-center justify-between pt-6">
+            <div>
+              <p className="font-medium">Prueba de Validación con IA</p>
+              <p className="text-sm text-muted-foreground">Envía datos ficticios al motor de validación para verificar que funciona correctamente.</p>
+            </div>
+            <Button onClick={handleTestClaude} disabled={testingClaude} variant="outline">
+              <FlaskConical className="mr-2 h-4 w-4" />
+              {testingClaude ? "Validando..." : "Probar Validación"}
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
