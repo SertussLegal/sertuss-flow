@@ -97,7 +97,7 @@ const DocumentUploadStep = () => {
     setter(prev => prev.map((s, i) => i === index ? { ...s, file, status: "uploading", error: null } : s));
 
     try {
-      const result = await processFile(file, "cedula_persona");
+      const result = await processFile(file, "cedula");
       setter(prev => prev.map((s, i) => i === index ? { ...s, status: "done", result } : s));
       toast({ title: `Cédula procesada`, description: "Datos extraídos correctamente." });
     } catch (err: any) {
