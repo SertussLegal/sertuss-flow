@@ -520,7 +520,7 @@ const DocumentUploadStep = () => {
                     <li key={i} className="text-sm">{a.nombre} (CC {a.cedula})</li>
                   ))}
                 </ul>
-                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Debes cargarlas como Vendedores.</p>
+                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Puedes continuar sin estas cédulas. Los campos correspondientes quedarán en blanco en la escritura para completar manualmente en la notaría.</p>
               </AlertDescription>
             </Alert>
           )}
