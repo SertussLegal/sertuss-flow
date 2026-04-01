@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings } from "lucide-react";
+import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings, FlaskConical } from "lucide-react";
 
 interface Org {
   id: string;
