@@ -305,7 +305,30 @@ const DocumentUploadStep = () => {
       }
     }
 
-    const metadata: Record<string, any> = {
+    // Add empty placeholders for propietarios from certificado that don't have uploaded cédulas
+    if (propietariosCert.length > 0) {
+      const loadedCedulas = new Set(
+        extractedPersonas.map(p => String(p.numero_identificacion ?? "").replace(/\D/g, ""))
+      );
+      for (const prop of propietariosCert) {
+        const normalizedCedula = prop.cedula.replace(/\D/g, "");
+        if (!loadedCedulas.has(normalizedCedula)) {
+          extractedPersonas.push({
+            nombre_completo: prop.nombre,
+            numero_identificacion: normalizedCedula,
+            tipo_identificacion: "CC",
+            lugar_expedicion: "",
+            estado_civil: "",
+            direccion: "",
+            municipio_domicilio: "",
+            confianza: "alta",
+            pendiente: true,
+            rol: "vendedor",
+          });
+        }
+      }
+    }
+
       extracted_inmueble: extractedInmueble,
       extracted_personas: extractedPersonas,
       extracted_documento: extractedDocumento,
