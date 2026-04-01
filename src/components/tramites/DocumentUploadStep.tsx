@@ -138,6 +138,95 @@ const DocumentUploadStep = () => {
     setter(prev => [...prev, makePersonaSlot(rol, prev.length)]);
   };
 
+  // Cross-validate roles against certificado de tradición
+  const certSlot = propSlots.find(s => s.type === "certificado_tradicion" && s.status === "done");
+  const propietariosCert: { nombre: string; cedula: string }[] = useMemo(() => {
+    if (!certSlot?.result?.personas) return [];
+    return (certSlot.result.personas as any[]).map((p: any) => ({
+      nombre: p.nombre_completo || p.nombre || "",
+      cedula: p.numero_identificacion || p.numero_cedula || "",
+    })).filter((p: any) => p.cedula);
+  }, [certSlot?.result]);
+
+  const roleAlerts = useMemo((): RoleAlert[] => {
+    if (propietariosCert.length === 0) return [];
+    const alerts: RoleAlert[] = [];
+    const cedulasPropietarios = new Set(propietariosCert.map(p => p.cedula.replace(/\D/g, "")));
+    const allCedulasLoaded = new Set<string>();
+
+    // Check compradores that are actually propietarios (should be vendedores)
+    compradorSlots.forEach((slot, i) => {
+      if (slot.status !== "done" || !slot.result) return;
+      const cedula = (slot.result.numero_identificacion || slot.result.numero_cedula || "").replace(/\D/g, "");
+      if (cedula) allCedulasLoaded.add(cedula);
+      if (cedula && cedulasPropietarios.has(cedula)) {
+        alerts.push({
+          type: "wrong_role",
+          message: "Esta persona aparece como propietaria en el certificado de tradición. Debería ser vendedor.",
+          cedula, nombre: slot.result.nombre_completo || slot.result.nombre || "",
+          currentRol: "comprador", suggestedRol: "vendedor", slotIndex: i,
+        });
+      }
+    });
+
+    // Check vendedores that are NOT propietarios (might be compradores)
+    vendedorSlots.forEach((slot, i) => {
+      if (slot.status !== "done" || !slot.result) return;
+      const cedula = (slot.result.numero_identificacion || slot.result.numero_cedula || "").replace(/\D/g, "");
+      if (cedula) allCedulasLoaded.add(cedula);
+      if (cedula && !cedulasPropietarios.has(cedula)) {
+        alerts.push({
+          type: "wrong_role",
+          message: "Esta persona no aparece como propietaria en el certificado. ¿Debería ser comprador?",
+          cedula, nombre: slot.result.nombre_completo || slot.result.nombre || "",
+          currentRol: "vendedor", suggestedRol: "comprador", slotIndex: i,
+        });
+      }
+    });
+
+    // Check missing propietarios
+    propietariosCert.forEach(p => {
+      const normalized = p.cedula.replace(/\D/g, "");
+      if (!allCedulasLoaded.has(normalized)) {
+        alerts.push({
+          type: "missing_cedula",
+          message: `Falta cédula del propietario: ${p.nombre} (CC ${p.cedula})`,
+          cedula: p.cedula, nombre: p.nombre,
+        });
+      }
+    });
+
+    return alerts;
+  }, [propietariosCert, vendedorSlots, compradorSlots]);
+
+  const moveSlot = (fromRol: "vendedor" | "comprador", toRol: "vendedor" | "comprador", index: number) => {
+    const fromSetter = fromRol === "vendedor" ? setVendedorSlots : setCompradorSlots;
+    const toSetter = toRol === "vendedor" ? setVendedorSlots : setCompradorSlots;
+
+    let slotToMove: PersonaSlot | null = null;
+    fromSetter(prev => {
+      slotToMove = prev[index] ? { ...prev[index], rol: toRol } : null;
+      const remaining = prev.filter((_, i) => i !== index);
+      if (remaining.length === 0) return [makePersonaSlot(fromRol, 0)];
+      return remaining.map((s, i) => ({ ...s, label: `Cédula ${fromRol === "vendedor" ? "Vendedor" : "Comprador"} ${i + 1}` }));
+    });
+
+    if (slotToMove) {
+      const captured = slotToMove;
+      toSetter(prev => {
+        const newSlot: PersonaSlot = { ...captured, label: `Cédula ${toRol === "vendedor" ? "Vendedor" : "Comprador"} ${prev.length + 1}` };
+        return [...prev, newSlot];
+      });
+      toast({ title: "Movido", description: `Cédula movida a ${toRol === "vendedor" ? "Vendedores" : "Compradores"}.` });
+    }
+  };
+
+  const wrongRoleAlerts = roleAlerts.filter(a => a.type === "wrong_role");
+  const missingAlerts = roleAlerts.filter(a => a.type === "missing_cedula");
+
+  const getSlotAlert = (rol: "vendedor" | "comprador", index: number) =>
+    wrongRoleAlerts.find(a => a.currentRol === rol && a.slotIndex === index);
+
   // Build pre-populated state and navigate to validation
   const handleContinue = async () => {
     if (!profile?.organization_id || !profile?.id) return;
