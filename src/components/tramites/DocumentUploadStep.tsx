@@ -157,7 +157,7 @@ const DocumentUploadStep = () => {
     // Check compradores that are actually propietarios (should be vendedores)
     compradorSlots.forEach((slot, i) => {
       if (slot.status !== "done" || !slot.result) return;
-      const cedula = (slot.result.numero_identificacion || slot.result.numero_cedula || "").replace(/\D/g, "");
+      const cedula = String(slot.result.numero_identificacion ?? slot.result.numero_cedula ?? "").replace(/\D/g, "");
       if (cedula) allCedulasLoaded.add(cedula);
       if (cedula && cedulasPropietarios.has(cedula)) {
         alerts.push({
