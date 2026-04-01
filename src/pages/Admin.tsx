@@ -45,6 +45,12 @@ const Admin = () => {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Claude test state
+  const [testingClaude, setTestingClaude] = useState(false);
+  const [claudeResult, setClaudeResult] = useState<any>(null);
+  const [claudeError, setClaudeError] = useState<string | null>(null);
+  const [showClaudeDialog, setShowClaudeDialog] = useState(false);
+
   // Access guard
   useEffect(() => {
     if (!authLoading && profile?.role !== "owner") {
