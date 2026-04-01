@@ -25,7 +25,8 @@ Reglas:
 - Si hay hipoteca, incluye las cláusulas hipotecarias completas.
 - Si hay afectación a vivienda familiar, incluye la cláusula correspondiente.
 - Si hay apoderado, incluye la cláusula de poder.
-- Si hay persona jurídica, usa la razón social y NIT en lugar de nombre y cédula.`;
+- Si hay persona jurídica, usa la razón social y NIT en lugar de nombre y cédula.
+- Si un vendedor o comprador tiene datos incompletos (sin estado civil, sin dirección, sin lugar de expedición), deja esos campos con líneas en blanco (___________) para ser llenados manualmente en la notaría. Esto es normal en el proceso notarial colombiano.`;
 
     const userPrompt = `Datos del trámite:
 

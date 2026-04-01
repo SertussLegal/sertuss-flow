@@ -283,23 +283,9 @@ const DocumentUploadStep = () => {
             }
           }
         }
-        // Merge personas from certificado (avoid duplicates by ID)
-        if (d.personas && Array.isArray(d.personas)) {
-          for (const p of d.personas) {
-            const existingIdx = extractedPersonas.findIndex(
-              ep => ep.numero_identificacion === (p.numero_identificacion || p.numero_cedula)
-            );
-            if (existingIdx === -1) {
-              extractedPersonas.push({
-                nombre_completo: p.nombre_completo,
-                numero_identificacion: p.numero_identificacion,
-                tipo_identificacion: p.tipo_identificacion,
-                lugar_expedicion: p.lugar_expedicion,
-                confianza: p.confianza || "alta",
-              });
-            }
-          }
-        }
+        // Don't merge persona data from certificado - only cédulas provide full data.
+        // Instead, create empty placeholders for propietarios without uploaded cédulas.
+        // (handled below after processing all slots)
       } else if (slot.type === "predial") {
         for (const [key, val] of Object.entries(d)) {
           const { valor, confianza } = unwrapConfianza(val as any);
@@ -315,6 +301,30 @@ const DocumentUploadStep = () => {
         if (linderos) {
           extractedInmueble.linderos = linderos;
           confianzaMap["inmueble.linderos"] = le.confianza === "baja" || lg.confianza === "baja" ? "baja" : le.confianza;
+        }
+      }
+    }
+
+    // Add empty placeholders for propietarios from certificado that don't have uploaded cédulas
+    if (propietariosCert.length > 0) {
+      const loadedCedulas = new Set(
+        extractedPersonas.map(p => String(p.numero_identificacion ?? "").replace(/\D/g, ""))
+      );
+      for (const prop of propietariosCert) {
+        const normalizedCedula = prop.cedula.replace(/\D/g, "");
+        if (!loadedCedulas.has(normalizedCedula)) {
+          extractedPersonas.push({
+            nombre_completo: prop.nombre,
+            numero_identificacion: normalizedCedula,
+            tipo_identificacion: "CC",
+            lugar_expedicion: "",
+            estado_civil: "",
+            direccion: "",
+            municipio_domicilio: "",
+            confianza: "alta",
+            pendiente: true,
+            rol: "vendedor",
+          });
         }
       }
     }
@@ -534,7 +544,7 @@ const DocumentUploadStep = () => {
                     <li key={i} className="text-sm">{a.nombre} (CC {a.cedula})</li>
                   ))}
                 </ul>
-                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Debes cargarlas como Vendedores.</p>
+                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Puedes continuar sin estas cédulas. Los campos correspondientes quedarán en blanco en la escritura para completar manualmente en la notaría.</p>
               </AlertDescription>
             </Alert>
           )}
