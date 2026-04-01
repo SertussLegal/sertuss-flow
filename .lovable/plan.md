@@ -1,44 +1,55 @@
 
 
-## Plan: Corregir alertas de cédulas faltantes — deduplicar y filtrar entidades irrelevantes
+## Plan: No pre-llenar datos de personas desde el certificado de tradición
 
-### Problemas identificados
+### Problema
 
-1. **Duplicados**: `propietariosCert` extrae TODAS las personas del certificado sin deduplicar por número de cédula. Si "GIL LUCUARA CAROLINA (52483193)" aparece 3 veces en el certificado, se lista 3 veces como faltante.
+Actualmente en `handleContinue` (líneas 286-302), cuando el certificado de tradición tiene personas listadas, estas se agregan a `extractedPersonas` con nombre y número de identificación extraídos del certificado. Esto pre-llena campos que deberían quedar vacíos si el usuario no aportó la cédula correspondiente.
 
-2. **Entidades irrelevantes**: Bancos (BANCOLOMBIA) y constructoras aparecen como "propietarios" en el certificado porque tienen anotaciones (hipotecas, gravámenes). No son vendedores — son acreedores hipotecarios. No se les debe pedir cédula.
+Los datos de personas solo deben provenir del escaneo de cédulas. Si no se subió cédula, esa persona debe aparecer con campos vacíos (o no aparecer) para ser llenada manualmente después.
 
-### Cambios en `src/components/tramites/DocumentUploadStep.tsx`
+### Cambio en `src/components/tramites/DocumentUploadStep.tsx`
 
-**1. Deduplicar `propietariosCert` por número de cédula normalizado**
+**1. Eliminar el merge de personas del certificado (líneas 286-302)**
 
-En el `useMemo` de `propietariosCert` (línea 143-149):
-- Usar un `Map` por cédula normalizada para eliminar duplicados
-- Mantener solo la primera ocurrencia de cada número
+Quitar el bloque que agrega personas del certificado de tradición a `extractedPersonas`. Solo las cédulas escaneadas deben poblar los datos de personas.
 
-**2. Filtrar entidades que no son personas naturales vendedoras**
+**2. Crear placeholders vacíos para propietarios sin cédula**
 
-Detectar entidades jurídicas (S.A., S.A.S., LTDA, bancos conocidos) y excluirlas de la lista de "cédulas faltantes". 
+Para propietarios del certificado que no tienen cédula cargada, agregar entradas placeholder con:
+- `nombre_completo`: nombre del certificado (solo como referencia)
+- `numero_identificacion`: número del certificado (solo como referencia)
+- Todos los demás campos vacíos (`""`)
+- Flag `pendiente: true` para indicar que es un placeholder
+- `rol: "vendedor"` (son propietarios)
 
-Lógica:
-- Si el nombre contiene patrones como `S.A.`, `S.A.S`, `LTDA`, `BANCO`, `BANCOLOMBIA`, `FIDUCIARIA` → es persona jurídica / entidad financiera
-- Estas se excluyen de `missing_cedula` alerts
-- Si por algún motivo un banco SÍ aparece como vendedor (cesión de derechos), se muestra con nota explicativa: "Entidad financiera — puede ser vendedor en caso de cesión de cartera o dación en pago"
+Esto permite que aparezcan en el formulario de validación pero con campos personales en blanco.
 
-**3. Resultado esperado**
+**3. Actualizar texto de alerta de cédulas faltantes (línea 537)**
 
-La lista de "Cédulas faltantes" solo mostrará personas naturales únicas que realmente son propietarios y necesitan cédula. Ejemplo:
-- GIL LUCUARA CAROLINA (CC 52483193) — 1 vez
-- LUCUARA CARRILO MARIA LILA (CC 36149251) — 1 vez
-- ALFONSO GIL LUIS (CC 4889839) — 1 vez
+De: *"Debes cargarlas como Vendedores."*
+A: *"Puedes continuar sin estas cédulas. Los campos correspondientes quedarán en blanco en la escritura para completar manualmente en la notaría."*
 
-Sin bancos, sin constructoras, sin duplicados.
+### Cambio en `supabase/functions/generate-document/index.ts`
 
-### Archivo a modificar
+**4. Agregar instrucción al prompt para campos faltantes**
+
+En el `systemPrompt`, agregar la regla:
+*"Si un vendedor o comprador tiene datos incompletos (sin estado civil, sin dirección, sin lugar de expedición), deja esos campos con líneas en blanco (___________) para ser llenados manualmente en la notaría."*
+
+### Resultado esperado
+
+- Si se sube cédula → datos completos extraídos por OCR
+- Si NO se sube cédula → persona aparece con nombre/CC del certificado pero demás campos vacíos
+- El documento Word generado tiene líneas en blanco (`___________`) donde faltan datos
+- El flujo nunca se bloquea por cédulas faltantes
+
+### Archivos a modificar
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocumentUploadStep.tsx` | Deduplicar propietariosCert, filtrar entidades jurídicas/financieras, agregar nota para entidades vendedoras |
+| `src/components/tramites/DocumentUploadStep.tsx` | Reemplazar merge de personas del certificado por placeholders vacíos, actualizar texto de alerta |
+| `supabase/functions/generate-document/index.ts` | Agregar instrucción de campos en blanco al prompt |
 
-Un solo archivo.
+2 archivos.
 
