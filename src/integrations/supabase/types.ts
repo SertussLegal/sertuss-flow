@@ -130,6 +130,133 @@ export type Database = {
         }
         Relationships: []
       }
+      configuracion_notaria: {
+        Row: {
+          activa: boolean | null
+          circulo: string
+          created_at: string | null
+          decreto_nombramiento: string | null
+          departamento: string
+          formato_encabezado: string | null
+          id: string
+          nombre_notario: string | null
+          numero_notaria: number
+          organization_id: string | null
+          reglas_especificas: Json | null
+          tipo_notario: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          activa?: boolean | null
+          circulo: string
+          created_at?: string | null
+          decreto_nombramiento?: string | null
+          departamento: string
+          formato_encabezado?: string | null
+          id?: string
+          nombre_notario?: string | null
+          numero_notaria: number
+          organization_id?: string | null
+          reglas_especificas?: Json | null
+          tipo_notario?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          activa?: boolean | null
+          circulo?: string
+          created_at?: string | null
+          decreto_nombramiento?: string | null
+          departamento?: string
+          formato_encabezado?: string | null
+          id?: string
+          nombre_notario?: string | null
+          numero_notaria?: number
+          organization_id?: string | null
+          reglas_especificas?: Json | null
+          tipo_notario?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "configuracion_notaria_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      historial_validaciones: {
+        Row: {
+          correcciones_aplicadas: Json | null
+          costo_estimado_usd: number | null
+          created_at: string | null
+          datos_enviados: Json | null
+          id: string
+          momento: string
+          organization_id: string | null
+          puntuacion: number | null
+          respuesta_claude: Json | null
+          tab_origen: string | null
+          tiempo_respuesta_ms: number | null
+          tipo_acto: string | null
+          tokens_input: number | null
+          tokens_output: number | null
+          total_advertencias: number | null
+          total_errores: number | null
+          total_sugerencias: number | null
+          tramite_id: string
+        }
+        Insert: {
+          correcciones_aplicadas?: Json | null
+          costo_estimado_usd?: number | null
+          created_at?: string | null
+          datos_enviados?: Json | null
+          id?: string
+          momento: string
+          organization_id?: string | null
+          puntuacion?: number | null
+          respuesta_claude?: Json | null
+          tab_origen?: string | null
+          tiempo_respuesta_ms?: number | null
+          tipo_acto?: string | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+          total_advertencias?: number | null
+          total_errores?: number | null
+          total_sugerencias?: number | null
+          tramite_id: string
+        }
+        Update: {
+          correcciones_aplicadas?: Json | null
+          costo_estimado_usd?: number | null
+          created_at?: string | null
+          datos_enviados?: Json | null
+          id?: string
+          momento?: string
+          organization_id?: string | null
+          puntuacion?: number | null
+          respuesta_claude?: Json | null
+          tab_origen?: string | null
+          tiempo_respuesta_ms?: number | null
+          tipo_acto?: string | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+          total_advertencias?: number | null
+          total_errores?: number | null
+          total_sugerencias?: number | null
+          tramite_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "historial_validaciones_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inmuebles: {
         Row: {
           area: string | null
@@ -429,6 +556,45 @@ export type Database = {
           },
         ]
       }
+      plantillas_validacion: {
+        Row: {
+          activa: boolean | null
+          campos_opcionales: Json | null
+          campos_requeridos: Json
+          codigo_acto: string | null
+          created_at: string | null
+          id: string
+          nombre_acto: string
+          relaciones_entre_campos: Json | null
+          tipo_acto: string
+          updated_at: string | null
+        }
+        Insert: {
+          activa?: boolean | null
+          campos_opcionales?: Json | null
+          campos_requeridos: Json
+          codigo_acto?: string | null
+          created_at?: string | null
+          id?: string
+          nombre_acto: string
+          relaciones_entre_campos?: Json | null
+          tipo_acto: string
+          updated_at?: string | null
+        }
+        Update: {
+          activa?: boolean | null
+          campos_opcionales?: Json | null
+          campos_requeridos?: Json
+          codigo_acto?: string | null
+          created_at?: string | null
+          id?: string
+          nombre_acto?: string
+          relaciones_entre_campos?: Json | null
+          tipo_acto?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -463,6 +629,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      reglas_validacion: {
+        Row: {
+          activa: boolean | null
+          aplica_a_momento: string[] | null
+          auto_corregible: boolean | null
+          campo_aplicable: string | null
+          categoria: string
+          codigo: string
+          created_at: string | null
+          descripcion: string
+          id: string
+          nivel_severidad: string
+          regla_detalle: string
+          tipo_acto: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          activa?: boolean | null
+          aplica_a_momento?: string[] | null
+          auto_corregible?: boolean | null
+          campo_aplicable?: string | null
+          categoria: string
+          codigo: string
+          created_at?: string | null
+          descripcion: string
+          id?: string
+          nivel_severidad: string
+          regla_detalle: string
+          tipo_acto?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          activa?: boolean | null
+          aplica_a_momento?: string[] | null
+          auto_corregible?: boolean | null
+          campo_aplicable?: string | null
+          categoria?: string
+          codigo?: string
+          created_at?: string | null
+          descripcion?: string
+          id?: string
+          nivel_severidad?: string
+          regla_detalle?: string
+          tipo_acto?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       tramites: {
         Row: {
