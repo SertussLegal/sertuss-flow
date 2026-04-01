@@ -283,23 +283,9 @@ const DocumentUploadStep = () => {
             }
           }
         }
-        // Merge personas from certificado (avoid duplicates by ID)
-        if (d.personas && Array.isArray(d.personas)) {
-          for (const p of d.personas) {
-            const existingIdx = extractedPersonas.findIndex(
-              ep => ep.numero_identificacion === (p.numero_identificacion || p.numero_cedula)
-            );
-            if (existingIdx === -1) {
-              extractedPersonas.push({
-                nombre_completo: p.nombre_completo,
-                numero_identificacion: p.numero_identificacion,
-                tipo_identificacion: p.tipo_identificacion,
-                lugar_expedicion: p.lugar_expedicion,
-                confianza: p.confianza || "alta",
-              });
-            }
-          }
-        }
+        // Don't merge persona data from certificado - only cédulas provide full data.
+        // Instead, create empty placeholders for propietarios without uploaded cédulas.
+        // (handled below after processing all slots)
       } else if (slot.type === "predial") {
         for (const [key, val] of Object.entries(d)) {
           const { valor, confianza } = unwrapConfianza(val as any);
