@@ -369,8 +369,9 @@ const DocumentUploadStep = () => {
     refKey: string,
     onFile: (file: File) => void,
     onRemove: () => void,
+    alert?: RoleAlert | undefined,
   ) => (
-    <Card key={refKey} className="p-4">
+    <Card key={refKey} className={`p-4 ${alert ? "border-amber-400 dark:border-amber-600" : ""}`}>
       <div className="flex items-center gap-3">
         {statusIcon(slot.status)}
         <div className="flex-1 min-w-0">
@@ -412,6 +413,21 @@ const DocumentUploadStep = () => {
           </Button>
         </div>
       </div>
+      {alert && (
+        <div className="mt-3 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+          <p className="text-xs text-amber-800 dark:text-amber-200 flex-1">{alert.message}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 text-xs"
+            onClick={() => moveSlot(alert.currentRol!, alert.suggestedRol!, alert.slotIndex!)}
+          >
+            <ArrowRightLeft className="mr-1 h-3 w-3" />
+            Mover a {alert.suggestedRol === "vendedor" ? "Vendedores" : "Compradores"}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 
