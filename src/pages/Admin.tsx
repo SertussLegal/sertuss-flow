@@ -306,6 +306,33 @@ const Admin = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Claude Test Result Dialog */}
+      <Dialog open={showClaudeDialog} onOpenChange={setShowClaudeDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Resultado Validación IA</DialogTitle>
+            <DialogDescription>Respuesta del motor de validación con datos de prueba.</DialogDescription>
+          </DialogHeader>
+          {testingClaude && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+              <span className="ml-3 text-muted-foreground">Consultando IA...</span>
+            </div>
+          )}
+          {claudeError && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-4 text-sm text-destructive">
+              <p className="font-medium">Error:</p>
+              <p>{claudeError}</p>
+            </div>
+          )}
+          {claudeResult && (
+            <pre className="rounded-lg bg-muted p-4 text-xs overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(claudeResult, null, 2)}
+            </pre>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
