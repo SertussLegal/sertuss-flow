@@ -157,9 +157,12 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
           }
           // If cedula_catastral comes from OCR (long numeric), use it as identificador_predial
           const cedulaCatastral = unwrapped.cedula_catastral;
-          if (cedulaCatastral && typeof cedulaCatastral === "string" && /^\d{10,}$/.test(cedulaCatastral)) {
-            chipMapping.identificador_predial = cedulaCatastral;
-            chipMapping.tipo_identificador_predial = "cedula_catastral";
+          if (cedulaCatastral && typeof cedulaCatastral === "string") {
+            const cleanCedula = cedulaCatastral.replace(/[\s.\-]/g, "");
+            if (/^\d{10,}$/.test(cleanCedula)) {
+              chipMapping.identificador_predial = cleanCedula;
+              chipMapping.tipo_identificador_predial = "cedula_catastral";
+            }
           }
 
           applyOcrResults({
