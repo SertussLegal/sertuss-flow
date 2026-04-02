@@ -300,28 +300,39 @@ serve(async (req) => {
 
     const imageDataUri = image.startsWith("data:") ? image : `data:image/jpeg;base64,${image}`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: baseSystemPrompts[type] },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Analiza esta imagen y extrae los datos solicitados. Asigna un nivel de confianza a cada campo." },
-              { type: "image_url", image_url: { url: imageDataUri } },
-            ],
-          },
-        ],
-        tools,
-        tool_choice: { type: "function", function: { name: toolName } },
-      }),
+    const aiBody = JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: baseSystemPrompts[type] },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Analiza esta imagen y extrae los datos solicitados. Asigna un nivel de confianza a cada campo." },
+            { type: "image_url", image_url: { url: imageDataUri } },
+          ],
+        },
+      ],
+      tools,
+      tool_choice: { type: "function", function: { name: toolName } },
     });
+
+    const aiHeaders = {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    };
+
+    // Retry up to 2 times on transient errors (503, 502, 429)
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: aiHeaders,
+        body: aiBody,
+      });
+      if (response.ok || (response.status !== 503 && response.status !== 502)) break;
+      await response.text(); // consume body
+      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+    }
 
     if (!response.ok) {
       const errText = await response.text();
