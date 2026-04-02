@@ -285,19 +285,37 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado`,
 
-  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en CUATRO nodos:
+  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en CINCO nodos:
 
 1. DOCUMENTO: fecha del documento o escritura de origen, notaría de origen, número de escritura pública.
 
 2. INMUEBLE: matrícula inmobiliaria, ORIP, dirección, municipio, departamento, linderos completos (transcribir TEXTUALMENTE cada palabra), NUPRE/CHIP (código que suele comenzar con AAA), áreas (diferencia entre construida CONST y privada PRIV), tipo de predio, y si tiene propiedad horizontal con su escritura de constitución y reformas.
 
+INFERENCIA JURÍDICA PH: Si detectas las palabras "Régimen de Propiedad Horizontal", "P.H.", "PH" o "PROPIEDAD HORIZONTAL" en cualquier anotación:
+- Marca es_propiedad_horizontal: true
+- Busca OBLIGATORIAMENTE: nombre del conjunto/edificio/agrupación, coeficiente de copropiedad, matrícula inmobiliaria matriz, escritura de constitución PH con su número, fecha, notaría y ciudad
+- El nombre del conjunto suele aparecer como "CONJUNTO CERRADO [NOMBRE]" o "EDIFICIO [NOMBRE]" o "AGRUPACIÓN [NOMBRE]"
+
 3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
+
+ROLES SEMÁNTICOS: Asigna roles basados en la estructura del acto:
+- Si una persona aparece después de "DE:" en una compraventa → es el vendedor (quien transfirió)
+- Si aparece después de "A FAVOR DE:" → es el comprador/propietario actual
+- "Sujeto Pasivo" en predial = propietario actual
 
 4. ACTOS: Busca la sección "ACTOS: CUANTÍA" o "ANOTACIONES". Identifica:
    - El acto principal (Compraventa, Donación, Permuta, Cesión, etc.) y su cuantía en pesos
    - Si hay hipoteca (abierta o cerrada), su valor y la entidad bancaria acreedora con su NIT
    - Si hay afectación a vivienda familiar (SI/NO)
    - El acto más reciente y de mayor relevancia es el "principal"
+
+5. TÍTULO ANTECEDENTE: Identifica la anotación que dio origen a la propiedad ACTUAL del vendedor. Busca el acto de compraventa, donación, sentencia o resolución más reciente que transfirió la propiedad al propietario actual. Extrae:
+   - Tipo de documento (Escritura Pública, Sentencia Judicial, Resolución)
+   - Número del documento
+   - Fecha
+   - Notaría o juzgado donde se otorgó
+   - Ciudad
+   - Nombre de quien transfirió el bien (el vendedor anterior)
 
 IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.
 
