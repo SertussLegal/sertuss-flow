@@ -335,6 +335,8 @@ const DocumentUploadStep = () => {
     delete (extractedInmueble as any).__extracted_actos;
     const extractedPredialSeparate = (extractedInmueble as any).__predial_data;
     delete (extractedInmueble as any).__predial_data;
+    const extractedTituloAntecedente = (extractedInmueble as any).__extracted_titulo_antecedente;
+    delete (extractedInmueble as any).__extracted_titulo_antecedente;
 
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
