@@ -18,6 +18,8 @@ import InmuebleForm from "@/components/tramites/InmuebleForm";
 import type { ExtractedPersona, ExtractedDocumento } from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
 import DocxPreview from "@/components/tramites/DocxPreview";
+import PizZip from "pizzip";
+import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
