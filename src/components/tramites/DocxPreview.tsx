@@ -623,7 +623,7 @@ const DocxPreview = ({
 
       // Clean remaining loop markers and unmapped placeholders
       result = result.replace(/\{[#/^][^}]*\}/g, "");
-      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:#fef3c7;text-decoration:underline">___________</span>');
+      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline">___________</span>');
 
       // Apply custom variables
       for (const cv of customVariables) {

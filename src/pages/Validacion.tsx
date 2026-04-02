@@ -1065,6 +1065,7 @@ const Validacion = () => {
             notariaConfig={notariaConfig}
             extractedDocumento={extractedDocumento}
             extractedPredial={extractedPredial}
+            onScrollToField={onScrollToField}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
