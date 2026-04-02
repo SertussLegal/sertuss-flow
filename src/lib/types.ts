@@ -179,6 +179,17 @@ export const createEmptyActos = (): Actos => ({
   entidad_bancaria: "",
   apoderado_nombre: "",
   apoderado_cedula: "",
+  apoderado_expedida_en: "",
+  apoderado_escritura_poder: "",
+  apoderado_fecha_poder: "",
+  apoderado_notaria_poder: "",
+  apoderado_notaria_ciudad: "",
+  apoderado_email: "",
+  pago_inicial: "",
+  saldo_financiado: "",
+  fecha_credito: "",
+  entidad_nit: "",
+  entidad_domicilio: "",
 });
 
 export interface NotariaStyle {
