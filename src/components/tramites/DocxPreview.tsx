@@ -412,7 +412,7 @@ const DocxPreview = ({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       // Step 1: Process loops (vendedores, compradores, conditionals)
-      let result = processLoops(baseHtml, vendedores, compradores, actos);
+      let result = processLoops(baseHtml, vendedores, compradores, inmueble, actos);
       
       // Step 2: Apply flat replacements
       const replacements = buildReplacements();
