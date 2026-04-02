@@ -88,6 +88,9 @@ const Validacion = () => {
     notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
     modo_adquisicion?: string; adquirido_de?: string;
   } | null>(null);
+  const [extractedPredial, setExtractedPredial] = useState<{
+    numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
+  } | null>(null);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
