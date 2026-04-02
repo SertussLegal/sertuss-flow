@@ -229,15 +229,75 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
               )}
             </div>
             <div className="space-y-2">
-              <Label>Apoderado del Banco — Nombre {ocr("apoderado_nombre")}</Label>
+              <Label>NIT del Banco</Label>
+              <Input value={actos.entidad_nit || ""} onChange={(e) => update("entidad_nit", e.target.value)} placeholder="NIT de la entidad bancaria" />
+            </div>
+            <div className="space-y-2">
+              <Label>Domicilio del Banco</Label>
+              <Input value={actos.entidad_domicilio || ""} onChange={(e) => update("entidad_domicilio", e.target.value)} placeholder="Ciudad principal de la entidad" />
+            </div>
+            <div className="space-y-2">
+              <Label>Pago Inicial (COP)</Label>
+              <Input value={actos.pago_inicial || ""} onChange={(e) => update("pago_inicial", e.target.value)} placeholder="Valor del pago inicial" />
+            </div>
+            <div className="space-y-2">
+              <Label>Saldo Financiado (COP)</Label>
+              <Input value={actos.saldo_financiado || ""} onChange={(e) => update("saldo_financiado", e.target.value)} placeholder="Auto-calculado o manual" />
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha del Crédito</Label>
+              <Input type="date" value={actos.fecha_credito || ""} onChange={(e) => update("fecha_credito", e.target.value)} />
+            </div>
+          </div>
+
+          <h4 className="text-sm font-semibold text-muted-foreground mt-4">Apoderado del Banco</h4>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Nombre {ocr("apoderado_nombre")}</Label>
               {wrapWithSuggestion("apoderado_nombre",
                 <Input value={actos.apoderado_nombre} onChange={(e) => update("apoderado_nombre", e.target.value)} />
               )}
             </div>
             <div className="space-y-2">
-              <Label>Apoderado del Banco — Cédula {ocr("apoderado_cedula")}</Label>
+              <Label>Cédula {ocr("apoderado_cedula")}</Label>
               {wrapWithSuggestion("apoderado_cedula",
                 <Input value={actos.apoderado_cedula} onChange={(e) => update("apoderado_cedula", e.target.value)} />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Expedida en {ocr("apoderado_expedida_en")}</Label>
+              {wrapWithSuggestion("apoderado_expedida_en",
+                <Input value={actos.apoderado_expedida_en || ""} onChange={(e) => update("apoderado_expedida_en", e.target.value)} placeholder="Lugar de expedición cédula" />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Email {ocr("apoderado_email")}</Label>
+              {wrapWithSuggestion("apoderado_email",
+                <Input value={actos.apoderado_email || ""} onChange={(e) => update("apoderado_email", e.target.value)} placeholder="Correo del apoderado" />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Escritura del Poder No. {ocr("apoderado_escritura_poder")}</Label>
+              {wrapWithSuggestion("apoderado_escritura_poder",
+                <Input value={actos.apoderado_escritura_poder || ""} onChange={(e) => update("apoderado_escritura_poder", e.target.value)} placeholder="No. escritura del poder" />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha del Poder {ocr("apoderado_fecha_poder")}</Label>
+              {wrapWithSuggestion("apoderado_fecha_poder",
+                <Input value={actos.apoderado_fecha_poder || ""} onChange={(e) => update("apoderado_fecha_poder", e.target.value)} placeholder="DD-MM-AAAA" />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Notaría del Poder {ocr("apoderado_notaria_poder")}</Label>
+              {wrapWithSuggestion("apoderado_notaria_poder",
+                <Input value={actos.apoderado_notaria_poder || ""} onChange={(e) => update("apoderado_notaria_poder", e.target.value)} placeholder="Notaría donde se otorgó el poder" />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Ciudad Notaría Poder {ocr("apoderado_notaria_ciudad")}</Label>
+              {wrapWithSuggestion("apoderado_notaria_ciudad",
+                <Input value={actos.apoderado_notaria_ciudad || ""} onChange={(e) => update("apoderado_notaria_ciudad", e.target.value)} placeholder="Ciudad de la notaría del poder" />
               )}
             </div>
           </div>
