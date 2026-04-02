@@ -947,6 +947,7 @@ const Validacion = () => {
             generating={generatingWord}
             textoFinalWord={textoFinalWord}
             onSugerenciaAccepted={handleSugerenciaAccepted}
+            notariaConfig={notariaConfig}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
