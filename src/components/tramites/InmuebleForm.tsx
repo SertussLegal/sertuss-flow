@@ -446,6 +446,10 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
                 <Input className={fieldClassName("reformas_ph")} value={inmueble.reformas_ph} onChange={(e) => update("reformas_ph", e.target.value)} placeholder="Reformas a la PH (si aplica)" />
               )}
             </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Matrícula Matriz</Label>
+              <Input value={inmueble.matricula_matriz || ""} onChange={(e) => update("matricula_matriz", e.target.value)} placeholder="Matrícula inmobiliaria del lote o edificio matriz" />
+            </div>
           </div>
         )}
       </div>
