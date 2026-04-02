@@ -168,7 +168,7 @@ const toolsByCertificado = [
             additionalProperties: false,
           },
         },
-        required: ["documento", "inmueble", "personas", "actos"],
+        required: ["documento", "inmueble", "personas", "actos", "titulo_antecedente"],
         additionalProperties: false,
       },
     },
