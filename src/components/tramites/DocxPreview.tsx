@@ -161,7 +161,13 @@ const DocxPreview = ({
         const buffer = await response.arrayBuffer();
         const mammoth = await import("mammoth");
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-        setBaseHtml(normalizeTemplateTags(result.value));
+        const normalized = normalizeTemplateTags(result.value);
+        
+        // DIAGNOSTIC: Log all placeholders found in the template HTML
+        const templatePlaceholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
+        console.log("=== DOCX PREVIEW: Placeholders in template ===", templatePlaceholders);
+        
+        setBaseHtml(normalized);
       } catch (err: any) {
         console.error("Template load error:", err);
         setError("Error al cargar plantilla: " + err.message);
