@@ -25,6 +25,14 @@ export interface ExtractedDocumento {
   fecha_documento?: string;
   notaria_origen?: string;
   numero_escritura?: string;
+  titulo_antecedente?: {
+    tipo_documento?: string;
+    numero_documento?: string;
+    fecha_documento?: string;
+    notaria_documento?: string;
+    ciudad_documento?: string;
+    adquirido_de?: string;
+  };
 }
 
 interface InmuebleFormProps {
