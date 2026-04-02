@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
 import DOMPurify from "dompurify";
+import mammoth from "mammoth";
 
 // ── Number to words (Spanish) ──────────────────────────────────
 const UNITS = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
