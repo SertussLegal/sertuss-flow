@@ -22,6 +22,7 @@ import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
+import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Maps template field names back to the form state they control
