@@ -816,8 +816,7 @@ const Validacion = () => {
       const response = await fetch("/template_venta_hipoteca.docx");
       const content = await response.arrayBuffer();
 
-      const PizZip = (await import("pizzip")).default;
-      const Docxtemplater = (await import("docxtemplater")).default;
+      // PizZip and Docxtemplater are now static imports at top of file
 
       const zip = new PizZip(content);
       const doc = new Docxtemplater(zip, {

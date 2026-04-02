@@ -373,7 +373,6 @@ const DocxPreview = ({
           return;
         }
         const buffer = await response.arrayBuffer();
-        const mammoth = await import("mammoth");
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
         const normalized = normalizeTemplateTags(result.value);
         
