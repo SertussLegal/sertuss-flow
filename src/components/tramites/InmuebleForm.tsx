@@ -205,8 +205,9 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             avaluo_catastral: unwrapped.avaluo_catastral,
             area: unwrapped.area,
             direccion: unwrapped.direccion,
+            ...(unwrapped.estrato ? { estrato: unwrapped.estrato } : {}),
           }, inmueble);
-          toast({ title: "Predial procesado", description: "Cédula catastral y avalúo extraídos correctamente." });
+          toast({ title: "Predial procesado", description: "Cédula catastral, avalúo y datos adicionales extraídos." });
         } else if (type === "escritura_antecedente") {
           // Unwrap confidence for escritura
           const leRaw = d.linderos_especiales;
