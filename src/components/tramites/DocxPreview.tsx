@@ -727,6 +727,16 @@ const DocxPreview = ({
 
   return (
     <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
+      {/* Coherence banner: notary mismatch */}
+      {extractedDocumento?.notaria_origen && notariaConfig?.nombre_notaria &&
+        extractedDocumento.notaria_origen.toLowerCase().trim() !== notariaConfig.nombre_notaria.toLowerCase().trim() && (
+        <div className="flex items-start gap-2 bg-accent/20 border border-accent/40 text-accent-foreground text-xs px-3 py-2 mx-2 mt-2 rounded">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-accent-foreground" />
+          <span>
+            El certificado de tradición menciona <strong>{extractedDocumento.notaria_origen}</strong>, pero tu notaría configurada es <strong>{notariaConfig.nombre_notaria}</strong>. Esto es normal si el inmueble fue previamente escriturado en otra notaría.
+          </span>
+        </div>
+      )}
       {/* Hidden measuring container */}
       <div
         aria-hidden="true"
