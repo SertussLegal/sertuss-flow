@@ -7,6 +7,12 @@ import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
 import DOMPurify from "dompurify";
 
+interface NotariaConfig {
+  nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
+  numero_notaria: number | null; circulo: string; departamento: string; tipo_notario: string;
+  nombre_notario: string; decreto_nombramiento: string;
+}
+
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
@@ -19,6 +25,7 @@ interface DocxPreviewProps {
   generating?: boolean;
   textoFinalWord?: string;
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
+  notariaConfig?: NotariaConfig | null;
 }
 
 const PAGE_WIDTH = 612;
