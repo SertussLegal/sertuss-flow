@@ -94,6 +94,10 @@ const Validacion = () => {
   const [extractedDocumento, setExtractedDocumento] = useState<{
     notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
     modo_adquisicion?: string; adquirido_de?: string;
+    titulo_antecedente?: {
+      tipo_documento?: string; numero_documento?: string; fecha_documento?: string;
+      notaria_documento?: string; ciudad_documento?: string; adquirido_de?: string;
+    };
   } | null>(null);
   const [extractedPredial, setExtractedPredial] = useState<{
     numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
