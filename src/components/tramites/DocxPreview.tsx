@@ -13,6 +13,11 @@ interface NotariaConfig {
   nombre_notario: string; decreto_nombramiento: string;
 }
 
+interface ExtractedDocumento {
+  notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
+  modo_adquisicion?: string; adquirido_de?: string;
+}
+
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
@@ -26,6 +31,7 @@ interface DocxPreviewProps {
   textoFinalWord?: string;
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
   notariaConfig?: NotariaConfig | null;
+  extractedDocumento?: ExtractedDocumento | null;
 }
 
 const PAGE_WIDTH = 612;
@@ -232,6 +238,7 @@ const DocxPreview = ({
   textoFinalWord,
   onSugerenciaAccepted,
   notariaConfig,
+  extractedDocumento,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -407,22 +414,22 @@ const DocxPreview = ({
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "rph.notaria_ciudad": notariaConfig?.ciudad || "___________",
       "rph.matricula_matriz": "___________",
-      // Antecedentes
-      "antecedentes.modo": "___________",
-      "antecedentes.modo_adquisicion": "___________",
-      "antecedentes.adquirido_de": "___________",
-      "antecedentes.escritura": "___________",
-      "antecedentes.escritura_num_letras": "___________",
-      "antecedentes.escritura_num_numero": "___________",
-      "antecedentes.escritura_dia_letras": "___________",
-      "antecedentes.escritura_dia_num": "___________",
-      "antecedentes.escritura_mes": "___________",
-      "antecedentes.escritura_anio_letras": "___________",
-      "antecedentes.escritura_anio_num": "___________",
-      "antecedentes.notaria": "___________",
-      "antecedentes.notaria_previa_numero": "___________",
+      // Antecedentes — from extracted documento (OCR)
+      "antecedentes.modo": extractedDocumento?.modo_adquisicion || "___________",
+      "antecedentes.modo_adquisicion": extractedDocumento?.modo_adquisicion || "___________",
+      "antecedentes.adquirido_de": extractedDocumento?.adquirido_de || "___________",
+      "antecedentes.escritura": extractedDocumento?.numero_escritura || "___________",
+      "antecedentes.escritura_num_letras": extractedDocumento?.numero_escritura ? `(${extractedDocumento.numero_escritura})` : "___________",
+      "antecedentes.escritura_num_numero": extractedDocumento?.numero_escritura || "___________",
+      "antecedentes.escritura_dia_letras": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getDate().toString(); } catch { return "___________"; } })() : "___________",
+      "antecedentes.escritura_dia_num": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getDate().toString(); } catch { return "___________"; } })() : "___________",
+      "antecedentes.escritura_mes": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]; return isNaN(d.getTime()) ? "___________" : meses[d.getMonth()]; } catch { return "___________"; } })() : "___________",
+      "antecedentes.escritura_anio_letras": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getFullYear().toString(); } catch { return "___________"; } })() : "___________",
+      "antecedentes.escritura_anio_num": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getFullYear().toString(); } catch { return "___________"; } })() : "___________",
+      "antecedentes.notaria": extractedDocumento?.notaria_origen || "___________",
+      "antecedentes.notaria_previa_numero": extractedDocumento?.notaria_origen || "___________",
       "antecedentes.notaria_previa_circulo": "___________",
-      "antecedentes.fecha": "___________",
+      "antecedentes.fecha": extractedDocumento?.fecha_documento || "___________",
       // Apoderado banco
       "apoderado_banco.nombre": actos.apoderado_nombre || "___________",
       "apoderado_banco.cedula": actos.apoderado_cedula || "___________",
@@ -457,7 +464,7 @@ const DocxPreview = ({
     console.log("Empty:", empty);
 
     return replacements;
-  }, [vendedores, compradores, inmueble, actos, notariaConfig]);
+  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {
@@ -720,6 +727,16 @@ const DocxPreview = ({
 
   return (
     <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
+      {/* Coherence banner: notary mismatch */}
+      {extractedDocumento?.notaria_origen && notariaConfig?.nombre_notaria &&
+        extractedDocumento.notaria_origen.toLowerCase().trim() !== notariaConfig.nombre_notaria.toLowerCase().trim() && (
+        <div className="flex items-start gap-2 bg-accent/20 border border-accent/40 text-accent-foreground text-xs px-3 py-2 mx-2 mt-2 rounded">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-accent-foreground" />
+          <span>
+            El certificado de tradición menciona <strong>{extractedDocumento.notaria_origen}</strong>, pero tu notaría configurada es <strong>{notariaConfig.nombre_notaria}</strong>. Esto es normal si el inmueble fue previamente escriturado en otra notaría.
+          </span>
+        </div>
+      )}
       {/* Hidden measuring container */}
       <div
         aria-hidden="true"
