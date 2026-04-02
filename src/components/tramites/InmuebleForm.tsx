@@ -209,13 +209,41 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
               unwrapped[key] = val;
             }
           }
+
+          // Separate CHIP/NUPRE from cédula catastral in predial
+          const predialId = unwrapped.identificador_predial || unwrapped.chip_nupre || "";
+          const predialCedula = unwrapped.cedula_catastral || "";
+          const inmuebleUpdates: Record<string, string> = {};
+          
+          if (predialId.startsWith("AAA")) {
+            inmuebleUpdates.nupre = predialId;
+          } else if (/^\d{10,}$/.test(predialId)) {
+            inmuebleUpdates.identificador_predial = predialId;
+          }
+          if (predialCedula && /^\d{10,}$/.test(predialCedula)) {
+            inmuebleUpdates.identificador_predial = predialCedula;
+            inmuebleUpdates.tipo_identificador_predial = "cedula_catastral";
+          }
+
           applyOcrResults({
-            identificador_predial: unwrapped.identificador_predial,
+            ...inmuebleUpdates,
             avaluo_catastral: unwrapped.avaluo_catastral,
             area: unwrapped.area,
             direccion: unwrapped.direccion,
             ...(unwrapped.estrato ? { estrato: unwrapped.estrato } : {}),
+            ...(unwrapped.valorizacion ? { valorizacion: unwrapped.valorizacion } : {}),
           }, inmueble);
+
+          // Emit predial data to parent for metadata persistence
+          if (onPredialExtracted) {
+            onPredialExtracted({
+              numero_recibo: unwrapped.numero_recibo,
+              anio_gravable: unwrapped.anio_gravable,
+              valor_pagado: unwrapped.valor_pagado,
+              estrato: unwrapped.estrato,
+            });
+          }
+
           toast({ title: "Predial procesado", description: "Cédula catastral, avalúo y datos adicionales extraídos." });
         } else if (type === "escritura_antecedente") {
           // Unwrap confidence for escritura

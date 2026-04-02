@@ -172,6 +172,9 @@ export const createEmptyInmueble = (): Inmueble => ({
   escritura_ph: "",
   reformas_ph: "",
   es_propiedad_horizontal: false,
+  nupre: "",
+  estrato: "",
+  valorizacion: "",
 });
 
 export const createEmptyActos = (): Actos => ({
