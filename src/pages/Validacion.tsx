@@ -335,7 +335,12 @@ const Validacion = () => {
 
     // Load extracted_documento from metadata for antecedentes placeholders
     if (meta?.extracted_documento) {
-      setExtractedDocumento(meta.extracted_documento);
+      const doc = meta.extracted_documento;
+      // Also load titulo_antecedente if stored separately
+      if (meta?.extracted_titulo_antecedente && !doc.titulo_antecedente) {
+        doc.titulo_antecedente = meta.extracted_titulo_antecedente;
+      }
+      setExtractedDocumento(doc);
     }
 
     // Load extracted_predial from metadata for predial placeholders
