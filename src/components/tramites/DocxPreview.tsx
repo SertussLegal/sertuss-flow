@@ -47,16 +47,47 @@ const sanitize = (html: string) => DOMPurify.sanitize(html, purifyConfig);
  * Normaliza placeholders fragmentados por mammoth.
  * Word divide internamente los "runs" XML, así que `{comparecientes_vendedor}`
  * puede convertirse en `<span>{comparecientes_</span><span>vendedor}</span>`.
- * Esta función detecta `{` seguido de texto+tags hasta `}` y lo une en un solo `{variable}`.
+ * 
+ * Enfoque robusto: extrae texto plano, encuentra placeholders `{...}` en el texto,
+ * y reemplaza las secciones correspondientes del HTML original.
  */
 function normalizeTemplateTags(html: string): string {
-  // Match a `{` that may be followed by a mix of HTML tags and text until `}`
-  return html.replace(/\{(?:[^}<]*(?:<[^>]*>[^}<]*)*)\}/g, (match) => {
-    // Strip all HTML tags, keep only text
-    const text = match.replace(/<[^>]*>/g, "");
-    // Remove any whitespace that Word may have injected
-    return text.replace(/\s+/g, "");
+  // Step 1: Try the simple regex first for non-fragmented cases
+  let result = html.replace(/\{(?:[^}<]*(?:<[^>]*>[^}<]*)*)\}/g, (match) => {
+    const text = match.replace(/<[^>]*>/g, "").replace(/\s+/g, "");
+    return text;
   });
+
+  // Step 2: Handle cases where { and } are in completely different elements
+  // Build a text-to-html position map
+  const textOnly = result.replace(/<[^>]*>/g, "");
+  const placeholderRegex = /\{([a-zA-Z_#/^][a-zA-Z0-9_.#/^]*)\}/g;
+  let match: RegExpExecArray | null;
+  const foundInText: string[] = [];
+  while ((match = placeholderRegex.exec(textOnly)) !== null) {
+    foundInText.push(match[0]);
+  }
+
+  // For each placeholder found in plain text, ensure it exists as a continuous string in the HTML
+  for (const placeholder of foundInText) {
+    if (result.includes(placeholder)) continue; // Already continuous, skip
+
+    // Build a regex that matches the placeholder chars with optional HTML tags between them
+    const chars = placeholder.split("");
+    const flexPattern = chars.map(c => {
+      const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return escaped;
+    }).join("(?:<[^>]*>)*\\s*");
+    
+    try {
+      const flexRegex = new RegExp(flexPattern, "g");
+      result = result.replace(flexRegex, placeholder);
+    } catch {
+      // If regex fails, skip this placeholder
+    }
+  }
+
+  return result;
 }
 
 const DocxPreview = ({
@@ -130,7 +161,13 @@ const DocxPreview = ({
         const buffer = await response.arrayBuffer();
         const mammoth = await import("mammoth");
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-        setBaseHtml(normalizeTemplateTags(result.value));
+        const normalized = normalizeTemplateTags(result.value);
+        
+        // DIAGNOSTIC: Log all placeholders found in the template HTML
+        const templatePlaceholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
+        console.log("=== DOCX PREVIEW: Placeholders in template ===", templatePlaceholders);
+        
+        setBaseHtml(normalized);
       } catch (err: any) {
         console.error("Template load error:", err);
         setError("Error al cargar plantilla: " + err.message);
@@ -150,7 +187,7 @@ const DocxPreview = ({
       return `${p.nombre_completo || "___________"}, mayor de edad, identificado(a) con cédula de ciudadanía No. ${p.numero_cedula || "___________"}, de estado civil ${p.estado_civil || "___________"}, domiciliado(a) en ${p.municipio_domicilio || "___________"}`;
     };
 
-    return {
+    const replacements: Record<string, string> = {
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
       "comparecientes_comprador": compradores.map(formatPersona).join("; y ") || "___________",
       "matricula_inmobiliaria": inmueble.matricula_inmobiliaria || "___________",
@@ -175,7 +212,31 @@ const DocxPreview = ({
       "avaluo_catastral": inmueble.avaluo_catastral || "___________",
       "codigo_orip": inmueble.codigo_orip || "___________",
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
+      // Campos adicionales del inmueble
+      "nupre": (inmueble as any).nupre || "___________",
+      "inmueble.nupre": (inmueble as any).nupre || "___________",
+      "tipo_predio": inmueble.tipo_predio || "___________",
+      "inmueble.tipo_predio": inmueble.tipo_predio || "___________",
+      "area_construida": inmueble.area_construida || "___________",
+      "inmueble.area_construida": inmueble.area_construida || "___________",
+      "area_privada": inmueble.area_privada || "___________",
+      "inmueble.area_privada": inmueble.area_privada || "___________",
+      "escritura_ph": inmueble.escritura_ph || "___________",
+      "inmueble.escritura_ph": inmueble.escritura_ph || "___________",
+      "reformas_ph": inmueble.reformas_ph || "___________",
+      "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
+      "estrato": (inmueble as any).estrato || "___________",
+      "inmueble.estrato": (inmueble as any).estrato || "___________",
     };
+
+    // DIAGNOSTIC: Log replacement keys and which ones have values
+    const filled = Object.entries(replacements).filter(([, v]) => v !== "___________").map(([k, v]) => `${k}=${v.substring(0, 40)}`);
+    const empty = Object.entries(replacements).filter(([, v]) => v === "___________").map(([k]) => k);
+    console.log("=== DOCX PREVIEW: buildReplacements ===");
+    console.log("Filled:", filled);
+    console.log("Empty:", empty);
+
+    return replacements;
   }, [vendedores, compradores, inmueble, actos]);
 
   // Apply replacements or use textoFinalWord
