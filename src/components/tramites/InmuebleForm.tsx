@@ -147,11 +147,19 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             }
           }
 
-          const nupreMapping: Record<string, string | boolean> = {};
+          // Separate NUPRE/CHIP from cédula catastral
+          // CHIP starts with "AAA" and is exclusive to Bogotá
           const nupre = unwrapped.nupre;
+          const chipMapping: Record<string, string | boolean> = {};
           if (nupre && typeof nupre === "string" && nupre.startsWith("AAA")) {
-            nupreMapping.identificador_predial = nupre;
-            nupreMapping.tipo_identificador_predial = "chip";
+            chipMapping.nupre = nupre;
+            chipMapping.tipo_identificador_predial = "chip";
+          }
+          // If cedula_catastral comes from OCR (long numeric), use it as identificador_predial
+          const cedulaCatastral = unwrapped.cedula_catastral;
+          if (cedulaCatastral && typeof cedulaCatastral === "string" && /^\d{10,}$/.test(cedulaCatastral)) {
+            chipMapping.identificador_predial = cedulaCatastral;
+            chipMapping.tipo_identificador_predial = "cedula_catastral";
           }
 
           applyOcrResults({
@@ -163,7 +171,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             linderos: unwrapped.linderos as string,
             ...(unwrapped.area_construida ? { area_construida: unwrapped.area_construida as string } : {}),
             ...(unwrapped.area_privada ? { area_privada: unwrapped.area_privada as string } : {}),
-            ...nupreMapping,
+            ...chipMapping,
             ...(unwrapped.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
             ...(unwrapped.es_propiedad_horizontal != null ? { es_propiedad_horizontal: unwrapped.es_propiedad_horizontal as boolean } : {}),
             ...(unwrapped.escritura_constitucion_ph ? { escritura_ph: unwrapped.escritura_constitucion_ph as string } : {}),
