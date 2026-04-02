@@ -319,6 +319,9 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
               <div className="space-y-2">
                 <Label>Estado Civil</Label>
                 <Input value={persona.estado_civil} onChange={(e) => updatePersona(index, "estado_civil", e.target.value)} />
+                {persona.nombre_completo && persona.numero_cedula && !persona.estado_civil && (
+                  <span className="text-xs text-muted-foreground italic">ⓘ Escanea la cédula para completar</span>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")} {confBadge(index, "municipio_domicilio")}</Label>
@@ -329,6 +332,9 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
               <div className="space-y-2 sm:col-span-2">
                 <Label>Dirección</Label>
                 <Input value={persona.direccion} onChange={(e) => updatePersona(index, "direccion", e.target.value)} />
+                {persona.nombre_completo && persona.numero_cedula && !persona.direccion && (
+                  <span className="text-xs text-muted-foreground italic">ⓘ Escanea la cédula para completar</span>
+                )}
               </div>
             </div>
           )}

@@ -498,8 +498,18 @@ const DocxPreview = ({
       "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
-      "actos.entidad_domicilio": (actos as any).entidad_domicilio || "___________",
-      "actos.entidad_nit": (actos as any).entidad_nit || "___________",
+      "actos.entidad_domicilio": (() => {
+        const val = (actos as any).entidad_domicilio;
+        if (val) return val;
+        const bank = lookupBank(actos.entidad_bancaria || "");
+        return bank?.domicilio || "___________";
+      })(),
+      "actos.entidad_nit": (() => {
+        const val = (actos as any).entidad_nit;
+        if (val) return val;
+        const bank = lookupBank(actos.entidad_bancaria || "");
+        return bank?.nit || "___________";
+      })(),
       "valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
