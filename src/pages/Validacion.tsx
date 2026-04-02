@@ -185,8 +185,8 @@ const Validacion = () => {
 
     // Pre-populate from extracted data if no personas/inmuebles saved yet
     const { data: personas } = await supabase.from("personas").select("*").eq("tramite_id", tid);
-    const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).single();
-    const { data: act } = await supabase.from("actos").select("*").eq("tramite_id", tid).single();
+    const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).maybeSingle();
+    const { data: act } = await supabase.from("actos").select("*").eq("tramite_id", tid).maybeSingle();
 
     if (personas && personas.length > 0) {
       const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p } as Persona));
