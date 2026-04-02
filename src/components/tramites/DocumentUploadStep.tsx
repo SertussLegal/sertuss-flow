@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { monitored } from "@/services/monitoredClient";
 import {
   Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft,
 } from "lucide-react";
@@ -79,9 +80,7 @@ const DocumentUploadStep = () => {
 
   const processFile = useCallback(async (file: File, type: string): Promise<any> => {
     const base64 = await fileToBase64(file);
-    const { data, error } = await supabase.functions.invoke("scan-document", {
-      body: { image: base64, type },
-    });
+    const { data, error } = await monitored.invoke("scan-document", { image: base64, type });
     if (error) throw new Error(error.message);
     return data?.data || null;
   }, []);

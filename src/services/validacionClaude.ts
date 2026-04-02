@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { monitored } from "@/services/monitoredClient";
 
 interface ValidacionParams {
   modo: "campos" | "documento";
@@ -41,19 +42,17 @@ interface ValidacionResultado {
  */
 export async function validarConClaude(params: ValidacionParams): Promise<ValidacionResultado> {
   try {
-    const { data, error } = await supabase.functions.invoke("validar-con-claude", {
-      body: {
-        modo: params.modo,
-        tramite_id: params.tramiteId,
-        organization_id: params.organizationId,
-        tipo_acto: params.tipoActo,
-        tab_origen: params.tabOrigen,
-        datos_extraidos: params.datosExtraidos,
-        correcciones_gemini: params.correccionesGemini || [],
-        validaciones_app: params.validacionesApp || [],
-        texto_preview: params.textoPreview,
-      },
-    });
+    const { data, error } = await monitored.invoke("validar-con-claude", {
+      modo: params.modo,
+      tramite_id: params.tramiteId,
+      organization_id: params.organizationId,
+      tipo_acto: params.tipoActo,
+      tab_origen: params.tabOrigen,
+      datos_extraidos: params.datosExtraidos,
+      correcciones_gemini: params.correccionesGemini || [],
+      validaciones_app: params.validacionesApp || [],
+      texto_preview: params.textoPreview,
+    }, { tramiteId: params.tramiteId });
 
     if (error) throw error;
     return data as ValidacionResultado;

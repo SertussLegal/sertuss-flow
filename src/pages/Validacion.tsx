@@ -22,6 +22,7 @@ import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
+import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Maps template field names back to the form state they control
@@ -739,9 +740,9 @@ const Validacion = () => {
     setGeneratingWord(true);
     try {
       // Call process-expediente (orchestrator)
-      const { data: result, error: fnError } = await supabase.functions.invoke("process-expediente", {
-        body: { tramite_id: tramiteId },
-      });
+      const { data: result, error: fnError } = await monitored.invoke("process-expediente", {
+        tramite_id: tramiteId,
+      }, { tramiteId });
       if (fnError) throw new Error("Error en el pipeline de IA: " + fnError.message);
       if (result?.error) throw new Error(result.error);
 

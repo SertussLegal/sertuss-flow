@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -383,6 +384,19 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("scan-document error:", e);
+    // Log to system_events
+    try {
+      const sb = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      await sb.from("system_events").insert({
+        evento: "scan-document",
+        resultado: "error",
+        categoria: "edge_function",
+        detalle: { message: e instanceof Error ? e.message : "Unknown", stack: e instanceof Error ? e.stack?.slice(0, 500) : null },
+      });
+    } catch { /* never break main flow */ }
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error desconocido" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
