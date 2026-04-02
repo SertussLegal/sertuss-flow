@@ -268,7 +268,7 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores  
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
 
-  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae el identificador predial (CHIP o número predial nacional), avalúo catastral, área y dirección.
+  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles: identificador predial (CHIP o número predial nacional), avalúo catastral, área, dirección, número de recibo de pago, año gravable, valor pagado y estrato socioeconómico.
 
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
