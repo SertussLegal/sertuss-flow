@@ -90,6 +90,107 @@ function normalizeTemplateTags(html: string): string {
   return result;
 }
 
+/**
+ * Process loop sections like {#vendedores}...{/vendedores} and conditionals like {#afectacion_vivienda}...{/afectacion_vivienda}
+ */
+function processLoops(
+  html: string,
+  vendedores: Persona[],
+  compradores: Persona[],
+  actos: Actos
+): string {
+  let result = html;
+
+  // Helper: expand a person loop
+  const expandPersonLoop = (tag: string, personas: Persona[], src: string): string => {
+    const openTag = `{#${tag}}`;
+    const closeTag = `{/${tag}}`;
+    let output = src;
+    let safety = 0;
+
+    while (output.includes(openTag) && safety < 10) {
+      safety++;
+      const startIdx = output.indexOf(openTag);
+      const endIdx = output.indexOf(closeTag, startIdx);
+      if (endIdx === -1) break;
+
+      const before = output.substring(0, startIdx);
+      const inner = output.substring(startIdx + openTag.length, endIdx);
+      const after = output.substring(endIdx + closeTag.length);
+
+      const expanded = personas.map((p) => {
+        let block = inner;
+        const personaFields: Record<string, string> = {
+          nombre: p.nombre_completo || "___________",
+          nombre_completo: p.nombre_completo || "___________",
+          cedula: p.numero_cedula || "___________",
+          numero_cedula: p.numero_cedula || "___________",
+          numero_identificacion: p.numero_cedula || "___________",
+          expedida_en: p.lugar_expedicion || p.municipio_domicilio || "___________",
+          lugar_expedicion: p.lugar_expedicion || p.municipio_domicilio || "___________",
+          estado_civil: p.estado_civil || "___________",
+          domicilio: p.municipio_domicilio || "___________",
+          municipio_domicilio: p.municipio_domicilio || "___________",
+          direccion: p.direccion || "___________",
+          razon_social: p.razon_social || "___________",
+          nit: p.nit || "___________",
+          representante_legal_nombre: p.representante_legal_nombre || "___________",
+          representante_legal_cedula: p.representante_legal_cedula || "___________",
+        };
+        for (const [key, value] of Object.entries(personaFields)) {
+          block = block.replace(new RegExp(`\\{${key}\\}`, "g"), value);
+        }
+        return block;
+      }).join("");
+
+      output = before + expanded + after;
+    }
+    return output;
+  };
+
+  result = expandPersonLoop("vendedores", vendedores, result);
+  result = expandPersonLoop("compradores", compradores, result);
+
+  // Process boolean conditionals: {#key}...{/key} (show if truthy) and {^key}...{/key} (show if falsy)
+  const conditionals: Record<string, boolean> = {
+    afectacion_vivienda: !!(actos as any).afectacion_vivienda_familiar,
+    es_hipoteca: actos.es_hipoteca,
+  };
+
+  for (const [key, value] of Object.entries(conditionals)) {
+    // Positive conditional {#key}...{/key}
+    const posOpen = `{#${key}}`;
+    const posClose = `{/${key}}`;
+    let s = 0;
+    while (result.includes(posOpen) && s < 10) {
+      s++;
+      const si = result.indexOf(posOpen);
+      const ei = result.indexOf(posClose, si);
+      if (ei === -1) break;
+      const before = result.substring(0, si);
+      const inner = result.substring(si + posOpen.length, ei);
+      const after = result.substring(ei + posClose.length);
+      result = before + (value ? inner : "") + after;
+    }
+
+    // Negative conditional {^key}...{/key}
+    const negOpen = `{^${key}}`;
+    s = 0;
+    while (result.includes(negOpen) && s < 10) {
+      s++;
+      const si = result.indexOf(negOpen);
+      const ei = result.indexOf(posClose, si);
+      if (ei === -1) break;
+      const before = result.substring(0, si);
+      const inner = result.substring(si + negOpen.length, ei);
+      const after = result.substring(ei + posClose.length);
+      result = before + (!value ? inner : "") + after;
+    }
+  }
+
+  return result;
+}
+
 const DocxPreview = ({
   vendedores,
   compradores,
