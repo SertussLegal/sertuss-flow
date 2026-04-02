@@ -7,6 +7,12 @@ import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
 import DOMPurify from "dompurify";
 
+interface NotariaConfig {
+  nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
+  numero_notaria: number | null; circulo: string; departamento: string; tipo_notario: string;
+  nombre_notario: string; decreto_nombramiento: string;
+}
+
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
@@ -19,6 +25,7 @@ interface DocxPreviewProps {
   generating?: boolean;
   textoFinalWord?: string;
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
+  notariaConfig?: NotariaConfig | null;
 }
 
 const PAGE_WIDTH = 612;
@@ -224,6 +231,7 @@ const DocxPreview = ({
   generating = false,
   textoFinalWord,
   onSugerenciaAccepted,
+  notariaConfig,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -395,9 +403,9 @@ const DocxPreview = ({
       "rph.escritura_mes": "___________",
       "rph.escritura_anio_letras": "___________",
       "rph.escritura_anio_num": "___________",
-      "rph.notaria": "___________",
-      "rph.notaria_numero": "___________",
-      "rph.notaria_ciudad": "___________",
+      "rph.notaria": notariaConfig?.nombre_notaria || "___________",
+      "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
+      "rph.notaria_ciudad": notariaConfig?.ciudad || "___________",
       "rph.matricula_matriz": "___________",
       // Antecedentes
       "antecedentes.modo": "___________",
@@ -429,8 +437,14 @@ const DocxPreview = ({
       "apoderado_banco.notaria_poder_ciudad": "___________",
       "apoderado_banco.email": "___________",
       // Notario — from notaria config
-      "notario_nombre": "___________",
-      "notario_decreto": "___________",
+      "notario_nombre": notariaConfig?.nombre_notario || notariaConfig?.notario_titular || "___________",
+      "notario_decreto": notariaConfig?.decreto_nombramiento || "___________",
+      "notario_tipo": notariaConfig?.tipo_notario || "___________",
+      "notaria_nombre": notariaConfig?.nombre_notaria || "___________",
+      "notaria_ciudad": notariaConfig?.ciudad || "___________",
+      "notaria_circulo": notariaConfig?.circulo || "___________",
+      "notaria_departamento": notariaConfig?.departamento || "___________",
+      "notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "escritura_numero": "___________",
       "fecha_escritura_corta": "___________",
     };
@@ -443,7 +457,7 @@ const DocxPreview = ({
     console.log("Empty:", empty);
 
     return replacements;
-  }, [vendedores, compradores, inmueble, actos]);
+  }, [vendedores, compradores, inmueble, actos, notariaConfig]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {

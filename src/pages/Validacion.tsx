@@ -79,6 +79,11 @@ const Validacion = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
+  const [notariaConfig, setNotariaConfig] = useState<{
+    nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
+    numero_notaria: number | null; circulo: string; departamento: string; tipo_notario: string;
+    nombre_notario: string; decreto_nombramiento: string;
+  } | null>(null);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
@@ -240,6 +245,28 @@ const Validacion = () => {
       }));
     }
     if (act) setActos(act as any);
+
+    // Load notaria config for document coherence
+    if (t.organization_id) {
+      const [{ data: ns }, { data: cn }] = await Promise.all([
+        supabase.from("notaria_styles").select("*").eq("organization_id", t.organization_id).maybeSingle(),
+        supabase.from("configuracion_notaria").select("*").eq("organization_id", t.organization_id).maybeSingle(),
+      ]);
+      if (ns || cn) {
+        setNotariaConfig({
+          nombre_notaria: ns?.nombre_notaria || "",
+          ciudad: ns?.ciudad || "",
+          notario_titular: ns?.notario_titular || "",
+          estilo_linderos: ns?.estilo_linderos || "",
+          numero_notaria: cn?.numero_notaria ?? null,
+          circulo: cn?.circulo || "",
+          departamento: cn?.departamento || "",
+          tipo_notario: cn?.tipo_notario || "",
+          nombre_notario: cn?.nombre_notario || "",
+          decreto_nombramiento: cn?.decreto_nombramiento || "",
+        });
+      }
+    }
 
     setSyncStatus("saved");
     setIsDirty(false);
@@ -920,6 +947,7 @@ const Validacion = () => {
             generating={generatingWord}
             textoFinalWord={textoFinalWord}
             onSugerenciaAccepted={handleSugerenciaAccepted}
+            notariaConfig={notariaConfig}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
