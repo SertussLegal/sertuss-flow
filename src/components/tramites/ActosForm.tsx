@@ -113,6 +113,12 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
             entidad_bancaria: d.entidad_bancaria,
             apoderado_nombre: d.apoderado_nombre,
             apoderado_cedula: d.apoderado_cedula,
+            apoderado_expedida_en: d.apoderado_expedida_en,
+            apoderado_escritura_poder: d.escritura_poder_num,
+            apoderado_fecha_poder: d.fecha_poder,
+            apoderado_notaria_poder: d.notaria_poder,
+            apoderado_notaria_ciudad: d.notaria_poder_ciudad,
+            apoderado_email: d.apoderado_email,
           });
           toast({ title: "Poder procesado", description: "Datos del apoderado bancario extraídos." });
         } else if (type === "carta_credito") {
