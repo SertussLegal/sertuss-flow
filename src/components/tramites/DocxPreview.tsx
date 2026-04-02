@@ -1,11 +1,81 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X } from "lucide-react";
+import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info } from "lucide-react";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
 import DOMPurify from "dompurify";
+
+// ── Number to words (Spanish) ──────────────────────────────────
+const UNITS = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
+const TEENS = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISÉIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
+const TENS = ["", "DIEZ", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
+const HUNDREDS = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINIENTOS", "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"];
+
+function numberToWords(input: string): string {
+  // Clean: remove $, dots, spaces, commas
+  const cleaned = input.replace(/[$.\s]/g, "").replace(/,/g, "");
+  const num = parseInt(cleaned, 10);
+  if (isNaN(num) || num <= 0) return "";
+  if (num === 100) return "CIEN";
+
+  const convertGroup = (n: number): string => {
+    if (n === 0) return "";
+    if (n === 100) return "CIEN";
+    if (n < 10) return UNITS[n];
+    if (n < 20) return TEENS[n - 10];
+    if (n < 30) return n === 20 ? "VEINTE" : `VEINTI${UNITS[n % 10]}`;
+    if (n < 100) {
+      const t = Math.floor(n / 10), u = n % 10;
+      return u === 0 ? TENS[t] : `${TENS[t]} Y ${UNITS[u]}`;
+    }
+    const h = Math.floor(n / 100), rest = n % 100;
+    if (h === 1 && rest === 0) return "CIEN";
+    return rest === 0 ? HUNDREDS[h] : `${HUNDREDS[h]} ${convertGroup(rest)}`;
+  };
+
+  const groups: [number, string, string][] = [
+    [1_000_000_000, "MIL MILLONES", "MIL MILLONES"],
+    [1_000_000, "MILLÓN", "MILLONES"],
+    [1_000, "MIL", "MIL"],
+    [1, "", ""],
+  ];
+
+  let result = "";
+  let remaining = num;
+  for (const [divisor, singular, plural] of groups) {
+    const q = Math.floor(remaining / divisor);
+    remaining = remaining % divisor;
+    if (q === 0) continue;
+    if (divisor === 1) {
+      result += ` ${convertGroup(q)}`;
+    } else if (q === 1) {
+      result += divisor === 1000 ? ` MIL` : ` UN ${singular}`;
+    } else {
+      result += ` ${convertGroup(q)} ${plural}`;
+    }
+  }
+  return (result.trim() + " PESOS M/CTE").replace(/\s+/g, " ");
+}
+
+// ── Parse structured text like "ESCRITURA 5035 DEL 07-09-2018 NOTARÍA VEINTIOCHO" ──
+function parseEscrituraString(text: string | undefined): {
+  numero?: string; dia?: string; mes?: string; anio?: string; notaria?: string;
+} {
+  if (!text) return {};
+  const numMatch = text.match(/(?:ESCRITURA|ESC\.?)\s*(?:NO?\.?\s*)?(\d+)/i);
+  const dateMatch = text.match(/(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})/);
+  const notariaMatch = text.match(/NOTAR[IÍ]A\s+(.+?)(?:\s+DE\s+|$)/i);
+  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  return {
+    numero: numMatch?.[1],
+    dia: dateMatch?.[1],
+    mes: dateMatch ? meses[parseInt(dateMatch[2], 10) - 1] || dateMatch[2] : undefined,
+    anio: dateMatch?.[3],
+    notaria: notariaMatch?.[1]?.trim(),
+  };
+}
 
 interface NotariaConfig {
   nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
@@ -300,10 +370,10 @@ const DocxPreview = ({
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
         const normalized = normalizeTemplateTags(result.value);
         
-        // DIAGNOSTIC: Log all placeholders found in the template HTML
         const templatePlaceholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
-        console.log("=== DOCX PREVIEW: Placeholders in template ===", templatePlaceholders);
-        
+        if (templatePlaceholders.length > 0) {
+          console.debug("[DocxPreview] Template loaded with", templatePlaceholders.length, "placeholders");
+        }
         setBaseHtml(normalized);
       } catch (err: any) {
         console.error("Template load error:", err);
@@ -324,6 +394,17 @@ const DocxPreview = ({
       return `${p.nombre_completo || "___________"}, mayor de edad, identificado(a) con cédula de ciudadanía No. ${p.numero_cedula || "___________"}, de estado civil ${p.estado_civil || "___________"}, domiciliado(a) en ${p.municipio_domicilio || "___________"}`;
     };
 
+    // Derived values
+    const areaValue = inmueble.area || inmueble.area_construida || inmueble.area_privada || "";
+    const valorCompraventa = actos.valor_compraventa || "";
+    const valorCompraventaLetras = valorCompraventa ? numberToWords(valorCompraventa) : "";
+    const valorHipoteca = actos.valor_hipoteca || "";
+    const valorHipotecaLetras = valorHipoteca ? numberToWords(valorHipoteca) : "";
+
+    // Parse RPH from escritura_ph / reformas_ph
+    const rphData = parseEscrituraString(inmueble.escritura_ph);
+    const rphReformas = parseEscrituraString(inmueble.reformas_ph);
+
     const replacements: Record<string, string> = {
       // Legacy flat persona fields
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
@@ -341,8 +422,8 @@ const DocxPreview = ({
       "inmueble.municipio": inmueble.municipio || "___________",
       "departamento": inmueble.departamento || "___________",
       "inmueble.departamento": inmueble.departamento || "___________",
-      "area": inmueble.area || "___________",
-      "inmueble.area": inmueble.area || "___________",
+      "area": areaValue || "___________",
+      "inmueble.area": areaValue || "___________",
       "linderos": inmueble.linderos || "___________",
       "avaluo_catastral": inmueble.avaluo_catastral || "___________",
       "inmueble.avaluo_catastral": inmueble.avaluo_catastral || "___________",
@@ -366,20 +447,20 @@ const DocxPreview = ({
       "inmueble.estrato": (inmueble as any).estrato || "___________",
       "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
       "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
-      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || "___________",
-      // Actos
+      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || (inmueble as any).coeficiente || "___________",
+      // Actos — with number→words conversion
       "tipo_acto": actos.tipo_acto || "___________",
-      "valor_compraventa_letras": actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
+      "valor_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
       "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
-      "actos.cuantia_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.cuantia_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_domicilio": "___________",
       "actos.entidad_nit": "___________",
-      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
-      "actos.valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
+      "actos.valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
       "actos.fecha_escritura_letras": "___________",
       "actos.pago_inicial_letras": "___________",
@@ -401,16 +482,16 @@ const DocxPreview = ({
       "inmueble.idu_vigencia": "___________",
       "inmueble.admin_fecha": "___________",
       "inmueble.admin_vigencia": "___________",
-      // RPH (propiedad horizontal)
+      // RPH (propiedad horizontal) — parsed from escritura_ph string
       "rph.escritura": inmueble.escritura_ph || "___________",
-      "rph.escritura_num_letras": "___________",
-      "rph.escritura_num_numero": "___________",
-      "rph.escritura_dia_letras": "___________",
-      "rph.escritura_dia_num": "___________",
-      "rph.escritura_mes": "___________",
-      "rph.escritura_anio_letras": "___________",
-      "rph.escritura_anio_num": "___________",
-      "rph.notaria": notariaConfig?.nombre_notaria || "___________",
+      "rph.escritura_num_letras": rphData.numero ? `(${rphData.numero})` : "___________",
+      "rph.escritura_num_numero": rphData.numero || "___________",
+      "rph.escritura_dia_letras": rphData.dia || "___________",
+      "rph.escritura_dia_num": rphData.dia || "___________",
+      "rph.escritura_mes": rphData.mes || "___________",
+      "rph.escritura_anio_letras": rphData.anio || "___________",
+      "rph.escritura_anio_num": rphData.anio || "___________",
+      "rph.notaria": rphData.notaria || notariaConfig?.nombre_notaria || "___________",
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "rph.notaria_ciudad": notariaConfig?.ciudad || "___________",
       "rph.matricula_matriz": "___________",
@@ -455,13 +536,6 @@ const DocxPreview = ({
       "escritura_numero": "___________",
       "fecha_escritura_corta": "___________",
     };
-
-    // DIAGNOSTIC: Log replacement keys and which ones have values
-    const filled = Object.entries(replacements).filter(([, v]) => v !== "___________").map(([k, v]) => `${k}=${v.substring(0, 40)}`);
-    const empty = Object.entries(replacements).filter(([, v]) => v === "___________").map(([k]) => k);
-    console.log("=== DOCX PREVIEW: buildReplacements ===");
-    console.log("Filled:", filled);
-    console.log("Empty:", empty);
 
     return replacements;
   }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento]);
@@ -727,6 +801,15 @@ const DocxPreview = ({
 
   return (
     <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
+      {/* Banner: missing notaria config */}
+      {!notariaConfig?.nombre_notaria && (
+        <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 text-foreground text-xs px-3 py-2 mx-2 mt-2 rounded">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            Configure los datos de su notaría en <strong>Ajustes</strong> para completar automáticamente los campos del notario en el documento.
+          </span>
+        </div>
+      )}
       {/* Coherence banner: notary mismatch */}
       {extractedDocumento?.notaria_origen && notariaConfig?.nombre_notaria &&
         extractedDocumento.notaria_origen.toLowerCase().trim() !== notariaConfig.nombre_notaria.toLowerCase().trim() && (
