@@ -1,125 +1,149 @@
 
 
-## Auditoría del Plan — Resultado: 2 riesgos críticos, 2 riesgos medios, plan seguro con correcciones
+## Plan v2.0 — Edición Blindada: Extracción de Actos desde Certificado + Reactividad Atómica
 
-### Riesgo Crítico 1: Bucle infinito en el useEffect propuesto
+### Diagnóstico crítico del plan original
 
-El plan propone agregar un `useEffect` que sincronice `extractedPredial` → `inmueble`:
+Audité los 6 archivos del pipeline completo. El plan original tiene **4 puntos débiles**:
+
+**1. Stale State en handleActosExtracted**: El `useCallback` con deps vacías (`[]`) es correcto porque solo usa setters (estables). Sin embargo, la guarda `!prev.tipo_acto` es insuficiente: si el OCR del certificado termina 30s después de que el usuario seleccionó manualmente "Compraventa" en el dropdown, el OCR no debe sobrescribirlo. El plan necesita un **dirty fields tracker** por campo individual, no solo por objeto.
+
+**2. Esquema asume un solo acto**: Un certificado de tradición real puede contener: Compraventa + Hipoteca + Afectación a vivienda familiar + Cancelación de hipoteca anterior. El esquema `actos` propuesto es plano y solo captura un acto. Necesitamos un `acto_principal` (el de mayor cuantía o el más reciente) más un array de `actos_secundarios` para referencia.
+
+**3. El DocxPreview ya es reactivo**: La previsualización YA se actualiza en tiempo real sin "Guardar" — el `useEffect` con debounce de 500ms en línea 586-646 escucha `buildReplacements` (que depende de `inmueble`, `actos`, etc.). El plan original no necesita agregar reactividad, pero SÍ necesita asegurar que los nuevos campos de actos lleguen al `buildReplacements`.
+
+**4. Moneda asumida COP**: El esquema no especifica moneda. En el 99.9% de casos es COP, pero se debe normalizar el string (`$450.000.000,00` → `450000000`) antes de guardarlo en estado.
+
+### Mejoras proactivas integradas
+
+#### A. Dirty Fields Tracker (Prevención de sobreescritura)
+
+Agregar un `Set<string>` llamado `manuallyEditedFields` en `Validacion.tsx`. Cada vez que el usuario edita un campo manualmente (via `handleFieldEdit`, `update()` en formularios, o dropdown changes), el campo se registra como "dirty". Los handlers OCR (`handleActosExtracted`, etc.) verifican este set antes de escribir:
 
 ```typescript
-useEffect(() => {
-  if (!extractedPredial) return;
-  setInmueble(prev => { ... return { ...prev, ...updates }; });
-}, [extractedPredial]);
+const manuallyEditedFieldsRef = useRef<Set<string>>(new Set());
+
+// En handleFieldEdit:
+manuallyEditedFieldsRef.current.add(field);
+
+// En handleActosExtracted:
+if (extracted.tipo_acto && !manuallyEditedFieldsRef.current.has("tipo_acto") && !prev.tipo_acto)
+  updates.tipo_acto = extracted.tipo_acto;
 ```
 
-**Problema**: En `Validacion.tsx` línea 127-132, ya existe un `useEffect` que marca `isDirty` cada vez que `inmueble` cambia. Al cambiar `inmueble` desde el nuevo effect, se dispara `isDirty → true`, lo que activa el autosave (línea 135-141). El autosave a su vez puede recargar metadata. Sin embargo, **no hay bucle infinito** porque:
-- `setInmueble` con spread solo dispara re-render si el objeto es nuevo (siempre lo es con spread)
-- Pero `extractedPredial` no cambia como resultado, así que el effect no re-dispara
+#### B. Lista blanca de entidades bancarias (Enriquecimiento semántico)
 
-**Riesgo real**: El effect **sí se ejecutará en cada recarga** de trámite (porque `loadTramite` hace `setExtractedPredial`), sobrescribiendo datos que el usuario ya editó manualmente.
-
-**Corrección necesaria**: La guarda `!prev.estrato` es insuficiente. Se debe usar una bandera `isLoadingRef.current` para bloquear este effect durante la carga inicial, y verificar si los datos vienen de tabla relacional (`inmuebles`) — en cuyo caso NO aplicar el fallback:
+Diccionario interno hardcodeado en DocxPreview o en un helper:
 
 ```typescript
-useEffect(() => {
-  if (!extractedPredial || isLoadingRef.current) return;
-  setInmueble(prev => {
-    const updates: Partial<Inmueble> = {};
-    // Solo aplicar si el campo está genuinamente vacío (no editado por usuario)
-    if (extractedPredial.estrato && !prev.estrato) updates.estrato = extractedPredial.estrato;
-    if (extractedPredial.valor_pagado && !prev.avaluo_catastral) updates.avaluo_catastral = extractedPredial.valor_pagado;
-    return Object.keys(updates).length ? { ...prev, ...updates } : prev;
-  });
-}, [extractedPredial]);
-```
-
-Y el `return prev` sin cambios **evita** re-renders innecesarios cuando no hay updates.
-
----
-
-### Riesgo Crítico 2: Regex de cédula catastral demasiado restrictivo
-
-En `InmuebleForm.tsx` línea 160:
-```typescript
-/^\d{10,}$/.test(cedulaCatastral)
-```
-
-Esto **falla** con formatos reales como:
-- `00-1101-0658-0070-9005` (con guiones)
-- `001.101.0658.0070.9005` (con puntos)
-- `00 1101 0658 0070 9005` (con espacios)
-
-**Corrección**: Limpiar antes de validar:
-```typescript
-const cleanCedula = (cedulaCatastral || "").replace(/[\s.\-]/g, "");
-if (cleanCedula && /^\d{10,}$/.test(cleanCedula)) {
-  chipMapping.identificador_predial = cleanCedula;
-  chipMapping.tipo_identificador_predial = "cedula_catastral";
-}
-```
-
-Aplicar la misma limpieza en el bloque de predial (líneas 220-226).
-
----
-
-### Riesgo Medio 1: buildReplacements genera objetos nuevos en cada render
-
-`buildReplacements` está envuelto en `useCallback` con deps `[vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento, extractedPredial]`. Esto es correcto — solo se recalcula cuando cambian los datos. El `useEffect` que aplica replacements (línea 584-644) ya tiene un debounce de 500ms. **No hay riesgo de parpadeo**.
-
-Sin embargo, hay una ineficiencia menor: las llamadas repetidas a `parseFechaDoc` dentro de IIFEs en líneas 545-549. Se pueden mover fuera del objeto literal. No es crítico.
-
----
-
-### Riesgo Medio 2: onScrollToField con tabs ocultos
-
-El plan propone un `onScrollToField` que active el tab correcto y scrollee al input. El riesgo es que React necesita un tick para renderizar el contenido del tab antes de poder scrollear. 
-
-**Corrección necesaria**: Usar `requestAnimationFrame` o `setTimeout(0)` después de cambiar el tab activo:
-```typescript
-const onScrollToField = (field: string) => {
-  // Determinar tab
-  const tab = field.startsWith("inmueble") ? "inmueble" : "actos";
-  setActiveTab(tab);
-  // Esperar render del tab
-  requestAnimationFrame(() => {
-    const el = document.querySelector(`[data-field-input="${field}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    (el as HTMLElement)?.focus();
-  });
+const ENTIDADES_BANCARIAS: Record<string, { nit: string; domicilio: string }> = {
+  "BANCO DE BOGOTA": { nit: "860.002.964-4", domicilio: "Bogotá D.C." },
+  "BANCOLOMBIA": { nit: "890.903.938-8", domicilio: "Medellín" },
+  "DAVIVIENDA": { nit: "860.034.313-7", domicilio: "Bogotá D.C." },
+  "BBVA COLOMBIA": { nit: "860.003.020-1", domicilio: "Bogotá D.C." },
+  // ... ~15 bancos principales
 };
 ```
 
----
+Cuando el OCR devuelve `entidad_bancaria: "BANCO DE BOGOTA"` pero `entidad_nit` está vacío, autocompletar NIT y domicilio desde la lista blanca.
 
-### Riesgo adicional: FIELD_TO_INMUEBLE incompleto
+#### C. Normalización monetaria
 
-El mapeo `FIELD_TO_INMUEBLE` (líneas 31-49) no incluye `nupre` ni `estrato`. El plan menciona agregarlos pero no lo lista como paso explícito. Agregar:
+Helper `cleanCurrency`:
 ```typescript
-nupre: "nupre",
-"inmueble.nupre": "nupre",
-estrato: "estrato",
-"inmueble.estrato": "estrato",
+const cleanCurrency = (val: string): string => {
+  if (!val) return "";
+  return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
+};
+```
+Aplicar al guardar `valor_compraventa` y `valor_hipoteca` en `handleActosExtracted`.
+
+#### D. Verificación visual OCR ↔ formulario
+
+En `buildReplacements`, para campos que tienen valor Y coinciden con el dato OCR original, usar un estilo diferente (check verde). Los campos que el usuario cambió manualmente se muestran en azul (editado). Esto requiere comparar el valor actual con `extractedPredial`/`extractedDocumento`.
+
+### Cambios por archivo
+
+**Archivo 1: `supabase/functions/scan-document/index.ts`**
+
+Expandir `toolsByCertificado` con un nodo `actos`:
+```
+actos: {
+  type: "object",
+  properties: {
+    tipo_acto_principal: confField("Acto principal: Compraventa, Donación, etc."),
+    valor_compraventa: confField("Valor del acto principal en pesos (solo número)"),
+    es_hipoteca: confBoolField("true si incluye hipoteca"),
+    valor_hipoteca: confField("Valor hipoteca en pesos (0 si sin límite de cuantía)"),
+    entidad_bancaria: confField("Nombre de la entidad bancaria acreedora"),
+    entidad_nit: confField("NIT de la entidad bancaria con dígito verificador"),
+    afectacion_vivienda_familiar: confBoolField("true si tiene afectación a vivienda familiar"),
+    actos_secundarios: {
+      type: "array",
+      items: confField("Descripción breve de acto secundario"),
+      description: "Otros actos registrados (cancelaciones, afectaciones, etc.)"
+    }
+  },
+  required: ["tipo_acto_principal"],
+}
 ```
 
----
+Actualizar `baseSystemPrompts.certificado_tradicion` para incluir instrucción de buscar la sección "ACTOS: CUANTÍA" y los actos registrados con sus valores.
 
-### Veredicto
+Agregar `"actos"` a la lista `required` del tool (junto a documento, inmueble, personas).
 
-El plan es **seguro para ejecutar** con las 4 correcciones mencionadas:
+**Archivo 2: `src/lib/bankDirectory.ts`** (nuevo)
 
-1. Agregar guarda `isLoadingRef.current` al useEffect de sync predial→inmueble, y retornar `prev` sin cambios cuando no hay updates
-2. Limpiar cédula catastral (`replace(/[\s.\-]/g, "")`) antes de validar con regex
-3. Usar `requestAnimationFrame` en `onScrollToField` para esperar render del tab
-4. Agregar `nupre` y `estrato` a `FIELD_TO_INMUEBLE`
+Diccionario de ~15 bancos colombianos principales con NIT y domicilio. Función `lookupBank(name: string)` con matching fuzzy por `includes`.
 
-### Archivos a modificar (con correcciones integradas)
+**Archivo 3: `src/pages/Validacion.tsx`**
+
+1. Agregar `manuallyEditedFieldsRef = useRef<Set<string>>(new Set())` 
+2. En `handleFieldEdit`: registrar campo en el set
+3. Agregar `handleActosExtracted` con dirty-field checks + `cleanCurrency` para valores monetarios + lookup en `bankDirectory` para autocompletar NIT/domicilio
+4. En `loadTramite`: si `meta.extracted_actos` existe y no hay `actos` en DB, pre-poblar estado con dirty-check
+5. Pasar `onActosExtracted={handleActosExtracted}` a `InmuebleForm`
+6. En `actosToRow`: agregar `afectacion_vivienda_familiar: a.afectacion_vivienda_familiar ?? false`
+
+**Archivo 4: `src/components/tramites/InmuebleForm.tsx`**
+
+1. Agregar prop `onActosExtracted?: (actos: Record<string, any>) => void`
+2. En `handleScanDocument` para `certificado_tradicion`: si `d.actos` existe, emitir `onActosExtracted(d.actos)` después de unwrap de confianza
+3. Unwrap de confianza para el nodo actos igual que para inmueble y personas
+
+**Archivo 5: `src/components/tramites/DocumentUploadStep.tsx`**
+
+En `handleContinue`: al procesar certificado, si `result.actos`, guardar en `metadata.extracted_actos`.
+
+**Archivo 6: `src/components/tramites/PersonaForm.tsx`**
+
+Agregar indicador sutil en campos vacíos cuando el nombre y cédula están llenos pero estado_civil/dirección están vacíos:
+```
+<span className="text-xs text-muted-foreground italic">
+  ⓘ Escanea la cédula para completar
+</span>
+```
+
+**Archivo 7: `src/components/tramites/DocxPreview.tsx`**
+
+En `buildReplacements`: agregar `"actos.afectacion_vivienda"` placeholder. Importar `lookupBank` y usarlo como fallback para `entidad_nit` y `entidad_domicilio` cuando están vacíos pero `entidad_bancaria` tiene valor.
+
+**Archivo 8: `src/lib/types.ts`**
+
+Agregar `afectacion_vivienda_familiar?: boolean` a la interfaz `Actos` y al `createEmptyActos()`.
+
+### Resumen
 
 | Archivo | Cambio |
 |---|---|
-| `src/pages/Validacion.tsx` | useEffect con guarda `isLoadingRef`, FIELD_TO_INMUEBLE +4 entries, onScrollToField con rAF |
-| `src/components/tramites/DocxPreview.tsx` | Fallbacks de predial en buildReplacements, highlighting rojo para pendientes, click→scroll |
-| `src/components/tramites/InmuebleForm.tsx` | Regex con limpieza previa para cédula catastral en certificado y predial |
+| `supabase/functions/scan-document/index.ts` | +nodo `actos` en schema certificado, prompt expandido |
+| `src/lib/bankDirectory.ts` | Nuevo: diccionario de bancos colombianos |
+| `src/lib/types.ts` | +`afectacion_vivienda_familiar` en Actos |
+| `src/pages/Validacion.tsx` | dirty-fields tracker, handleActosExtracted con cleanCurrency + bank lookup, loadTramite con extracted_actos |
+| `src/components/tramites/InmuebleForm.tsx` | +prop onActosExtracted, emitir actos del certificado |
+| `src/components/tramites/DocumentUploadStep.tsx` | Guardar extracted_actos en metadata |
+| `src/components/tramites/PersonaForm.tsx` | Indicador "Escanea la cédula" |
+| `src/components/tramites/DocxPreview.tsx` | Bank lookup fallback para NIT/domicilio, placeholder afectación |
 
-3 archivos. Sin cambios de DB.
+8 archivos (1 nuevo) + 0 migraciones DB (la columna `afectacion_vivienda_familiar` ya existe en la tabla `actos`).
 
