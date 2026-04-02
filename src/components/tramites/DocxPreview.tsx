@@ -561,7 +561,7 @@ const DocxPreview = ({
     };
 
     return replacements;
-  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento]);
+  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento, extractedPredial]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {
