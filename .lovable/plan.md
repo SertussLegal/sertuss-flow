@@ -1,45 +1,37 @@
 
 
-## Plan: Integrar validación Claude al flujo de "Previsualizar"
+## Plan: Corregir `[object Object]`, vendedores extra, y agregar UX de cédulas faltantes
 
-### Aclaración del flujo
+### Problemas raíz
 
-Tienes razón. El flujo real es:
-1. Usuario carga documentos en `DocumentUploadStep` → click "Continuar"
-2. Se abre la pantalla de `Validacion.tsx` que **ya muestra** el `DocxPreview` a la izquierda y los tabs con campos a la derecha — no hay botón para ver la previsualización, es automática.
-3. El botón "Previsualizar" (línea 760) abre un `PreviewModal` que es el **resumen final antes de generar el Word**.
+1. **`[object Object]` en campos de persona**: En `DocumentUploadStep.tsx` líneas 248-251, los campos del scan-document (`nombre_completo`, `numero_cedula`) vienen como objetos `{valor: "...", confianza: "alta"}` pero se almacenan sin hacer unwrap. Luego en `Validacion.tsx` línea 204, `p.nombre_completo` sigue siendo un objeto → `[object Object]`.
 
-### Punto de integración correcto
+2. **Vendedores extra no solicitados**: Líneas 308-330 de `DocumentUploadStep.tsx` agregan placeholders de propietarios del certificado de tradición como vendedores, incluso si el usuario solo cargó una cédula. Esto causa que aparezcan vendedores adicionales que el usuario nunca pidió.
 
-La validación de Claude debe ejecutarse **cuando el usuario hace clic en "Previsualizar" (el botón dorado en el header)**, que es el paso previo a generar el documento Word. Es decir, se intercepta el `onClick={() => setPreviewOpen(true)}` del botón en línea 762.
+3. **Sin UX para cédulas faltantes/ilegibles**: En el paso 2 (Validacion), no hay indicador visual cuando no se cargaron cédulas o cuando no se pudieron leer.
 
-El `DocxPreview` del panel izquierdo sigue funcionando igual — es reactivo y se actualiza en tiempo real con los datos de los tabs. No se toca.
+### Cambios
 
-### Implementación
+**`src/components/tramites/DocumentUploadStep.tsx`**:
+- Líneas 248-255: Usar `unwrapConfianza` para extraer `.valor` de `nombre_completo`, `numero_cedula`, y `lugar_expedicion` antes de almacenarlos en `extractedPersonas`. Importar `unwrapConfianza` del types.
+- Líneas 308-330: Eliminar la lógica que agrega placeholders de propietarios del certificado como vendedores extra. Los propietarios del certificado son solo informacionales — no deben crear formularios automáticos.
 
-**En `src/pages/Validacion.tsx`**:
+**`src/pages/Validacion.tsx`**:
+- Líneas 202-208: Agregar protección para que si `p.nombre_completo` o `p.numero_identificacion` son objetos `{valor, confianza}`, se extraiga el `.valor`. Esto cubre datos ya guardados en la BD con el bug anterior.
 
-1. **Imports**: `validarConClaude`, `tieneErroresCriticos`, `contarPorNivel` del servicio
-2. **3 estados nuevos**: `validando`, `validacionResultado`, `validacionDialogOpen`
-3. **Función `handlePrevisualizar`**:
-   - `validando = true`, muestra spinner en botón
-   - Construye payload con datos de los 4 tabs (vendedores, compradores, inmueble, actos)
-   - Agrega flags a `validacionesApp` según estado actual
-   - Llama `validarConClaude`
-   - Decide según resultado:
-     - Aprobado → abre `PreviewModal` directo
-     - Solo advertencias → toast informativo + abre `PreviewModal`
-     - Errores críticos → abre `AlertDialog` con lista de problemas. Botones: "Corregir" / "Continuar de todas formas"
-     - Error sistema → abre `PreviewModal` sin mostrar nada
-   - `validando = false`
-4. **Botón "Previsualizar"**: cambia `onClick` a `handlePrevisualizar`, muestra "Validando..." con spinner cuando `validando === true`
-5. **AlertDialog**: lista validaciones agrupadas por nivel (rojo = error, amarillo = advertencia, azul = sugerencia), puntuación y retroalimentación general
+**`src/components/tramites/PersonaForm.tsx`**:
+- Agregar estado visual cuando la persona tiene campos vacíos (no se cargó cédula o no se pudo leer):
+  - Si `nombre_completo` y `numero_cedula` están ambos vacíos: mostrar un banner "No se cargó cédula. Cárguela aquí" con botón de upload
+  - Si solo se ven datos parciales/vacíos tras un scan: ya existe el botón "Cargar Cédula" en cada persona, se mantiene
+  - Estos son informativos, no bloqueantes
 
 ### Archivos a modificar
 
 | Archivo | Cambio |
 |---|---|
-| `src/pages/Validacion.tsx` | Interceptar botón Previsualizar con validación Claude, agregar AlertDialog de errores |
+| `src/components/tramites/DocumentUploadStep.tsx` | Unwrap `{valor, confianza}` en persona slots; eliminar placeholders de certificado |
+| `src/pages/Validacion.tsx` | Protección de unwrap en loadTramite para datos legacy |
+| `src/components/tramites/PersonaForm.tsx` | Banner informativo cuando persona no tiene datos de cédula |
 
-1 solo archivo. No se toca `DocxPreview`, `PreviewModal`, ni ningún otro componente.
+3 archivos.
 
