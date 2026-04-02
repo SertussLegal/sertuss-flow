@@ -1,29 +1,48 @@
 
 
-## Plan: Corregir error de carga dinámica de módulo `mammoth`
+## Plan: Corrección de raíz — 3 problemas identificados
 
-### Diagnóstico
+### Diagnóstico profesional
 
-El error `Failed to fetch dynamically imported module: .../assets/index-C2PVO_hb.js` (404) ocurre porque:
+Analicé los documentos que cargaste, los datos en la base de datos, y el flujo completo. Los datos SÍ se extraen correctamente por la IA. El problema es de **conexión entre datos y plantilla**.
 
-1. `DocxPreview.tsx` usa `await import("mammoth")` — Vite lo separa en un chunk con hash
-2. Después de un redeploy, el hash del chunk cambia, pero el navegador tiene cacheado el JS principal que referencia el hash viejo
-3. El chunk viejo ya no existe → 404 → la plantilla no carga
+**Datos extraídos confirmados en la DB:**
+- `matricula_inmobiliaria`: "50C-2025538" ✓
+- `direccion`: "KR 4 1 46 SUR ET 3 TO 7 AP 905" ✓
+- `linderos`: completos ✓
+- `nupre`: "AAA0264SBWW" ✓
+- `area_construida`: "45.20 M2" ✓
+- `avaluo_catastral`: "113598000" ✓
+- `notaria_origen`: "VEINTIUNO de BOGOTA D. C." ✓
+- `numero_escritura`: "300" ✓
+- Y muchos más...
 
-Esto también afecta al `import("pizzip")` y `import("docxtemplater")` en `Validacion.tsx`.
+### Problema 1: Banner de "Configure su notaría" incorrecto
 
-### Solución
+El banner aparece porque las tablas `notaria_styles` y `configuracion_notaria` están vacías. Pero los datos de la notaría de origen YA están en `extractedDocumento.notaria_origen` ("VEINTIUNO de BOGOTA D. C."). El sistema no debería pedir configuración manual si puede extraer esos datos del certificado.
 
-Cambiar de `import()` dinámico a **import estático** para `mammoth`, `pizzip` y `docxtemplater`. Estas librerías se usan siempre en la página de validación, así que no hay beneficio real en cargarlas lazy. Al importarlas estáticamente, Vite las incluye en el bundle principal y elimina el problema de chunks huérfanos.
+**Solución**: El banner solo debe mostrarse si NO hay notariaConfig Y TAMPOCO hay datos en extractedDocumento. Además, cuando no existe config de notaría pero sí hay datos del certificado, usar esos datos como fallback para los placeholders de notaría del documento de origen (antecedentes).
 
-Adicionalmente, agregar un **retry con recarga** como fallback para cualquier import dinámico futuro que pueda fallar.
+### Problema 2: `extracted_predial` nunca se guarda separado
+
+En `DocumentUploadStep.tsx` línea 291-298, los datos del predial se mezclan DENTRO de `extractedInmueble` en vez de guardarse también como `extracted_predial`. En `Validacion.tsx` se busca `metadata.extracted_predial` que nunca existe.
+
+**Solución**: Guardar los datos prediales TAMBIÉN como `extracted_predial` en metadata para que `Validacion.tsx` los encuentre y los pase al preview.
+
+### Problema 3: Campos que aparecen como vacíos en el preview pero tienen datos
+
+Los datos ESTÁN en el inmueble pero el preview no los muestra porque:
+- `extractedPredial` es null (problema 2)
+- El banner de notaría bloquea visualmente la percepción
+- Algunos campos como `reformas_ph` y `escritura_constitucion_ph` se guardaron con texto descriptivo largo en vez del formato esperado por `parseEscrituraString()`
 
 ### Cambios
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocxPreview.tsx` | Cambiar `await import("mammoth")` → `import mammoth from "mammoth"` estático al top del archivo |
-| `src/pages/Validacion.tsx` | Cambiar `await import("pizzip")` y `await import("docxtemplater")` → imports estáticos al top del archivo |
+| `src/components/tramites/DocxPreview.tsx` | Cambiar condición del banner: solo mostrar si no hay notariaConfig NI extractedDocumento. Usar extractedDocumento como fallback para `notario_nombre`, `notaria_nombre`, etc. |
+| `src/components/tramites/DocumentUploadStep.tsx` | Agregar `extracted_predial` como copia separada en metadata cuando el slot es tipo "predial" |
+| `src/pages/Validacion.tsx` | Fallback: si `metadata.extracted_predial` no existe, intentar leer campos prediales desde `extracted_inmueble` |
 
-2 archivos, 4 líneas cambiadas. Sin cambios de DB.
+3 archivos, cambios quirúrgicos.
 
