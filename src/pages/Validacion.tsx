@@ -453,9 +453,16 @@ const Validacion = () => {
   }, [toast]);
 
   const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento) => {
-    // Store documento data in metadata for future use (e.g., document generation)
-    console.log("=== SERTUSS EXTRACT: Documento data ===", documento);
-    // Could be stored in tramite metadata or used elsewhere
+    setExtractedDocumento(documento);
+    // Persist to metadata immediately (non-destructive merge)
+    const tid = tramiteIdRef.current;
+    if (tid) {
+      supabase.from("tramites").select("metadata").eq("id", tid).single()
+        .then(({ data }) => {
+          const merged = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        });
+    }
   }, []);
 
   const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
