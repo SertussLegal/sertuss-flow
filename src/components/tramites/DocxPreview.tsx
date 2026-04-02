@@ -78,6 +78,23 @@ function parseEscrituraString(text: string | undefined): {
   };
 }
 
+// Robust date parser for DD-MM-AAAA format (OCR returns this format)
+function parseFechaDoc(f?: string): { dia?: string; mes?: string; anio?: string } {
+  if (!f) return {};
+  const m = f.match(/(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})/);
+  if (m) {
+    const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    return { dia: m[1], mes: meses[parseInt(m[2], 10) - 1], anio: m[3] };
+  }
+  // Try YYYY-MM-DD
+  const iso = f.match(/(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})/);
+  if (iso) {
+    const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    return { dia: iso[3], mes: meses[parseInt(iso[2], 10) - 1], anio: iso[1] };
+  }
+  return {};
+}
+
 interface NotariaConfig {
   nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
   numero_notaria: number | null; circulo: string; departamento: string; tipo_notario: string;
