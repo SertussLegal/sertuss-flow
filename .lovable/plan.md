@@ -1,37 +1,44 @@
 
 
-## Plan: Corregir `[object Object]`, vendedores extra, y agregar UX de cédulas faltantes
+## Plan: Corregir la previsualización que no llena datos en el panel izquierdo
 
-### Problemas raíz
+### Problema raíz
 
-1. **`[object Object]` en campos de persona**: En `DocumentUploadStep.tsx` líneas 248-251, los campos del scan-document (`nombre_completo`, `numero_cedula`) vienen como objetos `{valor: "...", confianza: "alta"}` pero se almacenan sin hacer unwrap. Luego en `Validacion.tsx` línea 204, `p.nombre_completo` sigue siendo un objeto → `[object Object]`.
+El componente `DocxPreview.tsx` convierte el archivo `.docx` a HTML usando **mammoth**. El problema es que Word internamente divide el texto en múltiples "runs" XML, así que un placeholder como `{comparecientes_vendedor}` en el docx se convierte en HTML fragmentado:
 
-2. **Vendedores extra no solicitados**: Líneas 308-330 de `DocumentUploadStep.tsx` agregan placeholders de propietarios del certificado de tradición como vendedores, incluso si el usuario solo cargó una cédula. Esto causa que aparezcan vendedores adicionales que el usuario nunca pidió.
+```text
+<span>{comparecientes_</span><span>vendedor}</span>
+```
 
-3. **Sin UX para cédulas faltantes/ilegibles**: En el paso 2 (Validacion), no hay indicador visual cuando no se cargaron cédulas o cuando no se pudieron leer.
+o incluso:
 
-### Cambios
+```text
+<span>{</span><span>comparecientes_vendedor</span><span>}</span>
+```
 
-**`src/components/tramites/DocumentUploadStep.tsx`**:
-- Líneas 248-255: Usar `unwrapConfianza` para extraer `.valor` de `nombre_completo`, `numero_cedula`, y `lugar_expedicion` antes de almacenarlos en `extractedPersonas`. Importar `unwrapConfianza` del types.
-- Líneas 308-330: Eliminar la lógica que agrega placeholders de propietarios del certificado como vendedores extra. Los propietarios del certificado son solo informacionales — no deben crear formularios automáticos.
+La regex actual (`\{comparecientes_vendedor\}`) busca el texto como cadena continua en el HTML, **no lo encuentra** porque hay tags intermedios, y por eso todos los campos quedan como `___________`.
 
-**`src/pages/Validacion.tsx`**:
-- Líneas 202-208: Agregar protección para que si `p.nombre_completo` o `p.numero_identificacion` son objetos `{valor, confianza}`, se extraiga el `.valor`. Esto cubre datos ya guardados en la BD con el bug anterior.
+### Solución
 
-**`src/components/tramites/PersonaForm.tsx`**:
-- Agregar estado visual cuando la persona tiene campos vacíos (no se cargó cédula o no se pudo leer):
-  - Si `nombre_completo` y `numero_cedula` están ambos vacíos: mostrar un banner "No se cargó cédula. Cárguela aquí" con botón de upload
-  - Si solo se ven datos parciales/vacíos tras un scan: ya existe el botón "Cargar Cédula" en cada persona, se mantiene
-  - Estos son informativos, no bloqueantes
+Agregar una función de **normalización** que se ejecute justo después de que mammoth convierta el docx a HTML (línea 117). Esta función busca patrones de `{` seguido de texto y tags intermedios hasta `}` y los une en un solo texto limpio.
 
-### Archivos a modificar
+### Cambios en `src/components/tramites/DocxPreview.tsx`
+
+**Agregar función `normalizeTemplateTags`** (antes del componente):
+- Usa una regex que detecta `{` seguido de cualquier combinación de texto y tags HTML hasta `}` 
+- Extrae solo el texto (strip tags), reconstruye como `{variable_limpia}`
+- Esto garantiza que `{comparecientes_vendedor}` quede como texto continuo para que las sustituciones funcionen
+
+**Aplicar la normalización** en el `loadTemplate` (línea 117):
+```
+setBaseHtml(normalizeTemplateTags(result.value));
+```
+
+### Archivo a modificar
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocumentUploadStep.tsx` | Unwrap `{valor, confianza}` en persona slots; eliminar placeholders de certificado |
-| `src/pages/Validacion.tsx` | Protección de unwrap en loadTramite para datos legacy |
-| `src/components/tramites/PersonaForm.tsx` | Banner informativo cuando persona no tiene datos de cédula |
+| `src/components/tramites/DocxPreview.tsx` | Agregar `normalizeTemplateTags()` y aplicarla al resultado de mammoth |
 
-3 archivos.
+1 solo archivo. No se toca la lógica de reemplazo ni ningún otro componente.
 
