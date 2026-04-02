@@ -528,6 +528,97 @@ const Validacion = () => {
     }
   }, []);
 
+  // Currency normalization helper
+  const cleanCurrency = (val: string): string => {
+    if (!val) return "";
+    return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
+  };
+
+  // Handle actos extracted from certificado de tradición OCR
+  const handleActosExtracted = useCallback((extracted: Record<string, any>) => {
+    setActos(prev => {
+      const updates: Partial<Actos> = {};
+      const isDirty = (field: string) => manuallyEditedFieldsRef.current.has(field);
+
+      // Unwrap confidence wrappers
+      const unwrap = (v: any): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+        return String(v);
+      };
+      const unwrapBool = (v: any): boolean => {
+        if (v == null) return false;
+        if (typeof v === "boolean") return v;
+        if (typeof v === "object" && "valor" in v) return !!v.valor;
+        return false;
+      };
+
+      const tipoActo = unwrap(extracted.tipo_acto_principal);
+      if (tipoActo && !isDirty("tipo_acto") && !prev.tipo_acto) {
+        // Compose tipo_acto intelligently
+        const esHipoteca = unwrapBool(extracted.es_hipoteca);
+        if (esHipoteca && !tipoActo.toLowerCase().includes("hipoteca")) {
+          updates.tipo_acto = `${tipoActo} con Hipoteca`;
+        } else {
+          updates.tipo_acto = tipoActo;
+        }
+      }
+
+      const valorCV = cleanCurrency(unwrap(extracted.valor_compraventa));
+      if (valorCV && !isDirty("valor_compraventa") && !prev.valor_compraventa) {
+        updates.valor_compraventa = valorCV;
+      }
+
+      const esHipoteca = unwrapBool(extracted.es_hipoteca);
+      if (esHipoteca && !isDirty("es_hipoteca") && !prev.es_hipoteca) {
+        updates.es_hipoteca = true;
+      }
+
+      const valorHip = cleanCurrency(unwrap(extracted.valor_hipoteca));
+      if (valorHip && !isDirty("valor_hipoteca") && !prev.valor_hipoteca) {
+        updates.valor_hipoteca = valorHip;
+      }
+
+      const entidad = unwrap(extracted.entidad_bancaria);
+      if (entidad && !isDirty("entidad_bancaria") && !prev.entidad_bancaria) {
+        updates.entidad_bancaria = entidad;
+        // Bank directory enrichment
+        const bankInfo = lookupBank(entidad);
+        if (bankInfo) {
+          if (!isDirty("entidad_nit") && !prev.entidad_nit) {
+            updates.entidad_nit = bankInfo.nit;
+          }
+          if (!isDirty("entidad_domicilio") && !prev.entidad_domicilio) {
+            updates.entidad_domicilio = bankInfo.domicilio;
+          }
+        }
+      }
+
+      const entidadNit = unwrap(extracted.entidad_nit);
+      if (entidadNit && !isDirty("entidad_nit") && !prev.entidad_nit && !updates.entidad_nit) {
+        updates.entidad_nit = entidadNit;
+      }
+
+      const afectacion = unwrapBool(extracted.afectacion_vivienda_familiar);
+      if (afectacion && !isDirty("afectacion_vivienda_familiar")) {
+        updates.afectacion_vivienda_familiar = true;
+      }
+
+      return Object.keys(updates).length ? { ...prev, ...updates } : prev;
+    });
+
+    // Persist extracted_actos to metadata
+    const tid = tramiteIdRef.current;
+    if (tid) {
+      supabase.from("tramites").select("metadata").eq("id", tid).single()
+        .then(({ data }) => {
+          const merged = { ...((data?.metadata as any) || {}), extracted_actos: extracted };
+          supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        });
+    }
+  }, []);
+
   const handlePredialExtracted = useCallback((data: { numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string }) => {
     setExtractedPredial(data);
     // Persist to metadata immediately (non-destructive merge)
