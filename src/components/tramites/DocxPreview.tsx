@@ -370,10 +370,10 @@ const DocxPreview = ({
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
         const normalized = normalizeTemplateTags(result.value);
         
-        // DIAGNOSTIC: Log all placeholders found in the template HTML
         const templatePlaceholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
-        console.log("=== DOCX PREVIEW: Placeholders in template ===", templatePlaceholders);
-        
+        if (templatePlaceholders.length > 0) {
+          console.debug("[DocxPreview] Template loaded with", templatePlaceholders.length, "placeholders");
+        }
         setBaseHtml(normalized);
       } catch (err: any) {
         console.error("Template load error:", err);
