@@ -97,6 +97,7 @@ function processLoops(
   html: string,
   vendedores: Persona[],
   compradores: Persona[],
+  inmueble: Inmueble,
   actos: Actos
 ): string {
   let result = html;
