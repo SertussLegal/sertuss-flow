@@ -130,7 +130,7 @@ const DocxPreview = ({
         const buffer = await response.arrayBuffer();
         const mammoth = await import("mammoth");
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-        setBaseHtml(result.value);
+        setBaseHtml(normalizeTemplateTags(result.value));
       } catch (err: any) {
         console.error("Template load error:", err);
         setError("Error al cargar plantilla: " + err.message);
