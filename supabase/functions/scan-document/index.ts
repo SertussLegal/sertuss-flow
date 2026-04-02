@@ -270,7 +270,14 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores  
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
 
-  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles: identificador predial (CHIP o número predial nacional), avalúo catastral, área, dirección, número de recibo de pago, año gravable, valor pagado y estrato socioeconómico.
+  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles.
+
+DISTINCIÓN LEGAL CRÍTICA:
+- CHIP (NUPRE): Código alfanumérico que SIEMPRE comienza con "AAA" (ej: AAA0264SBWW). Es EXCLUSIVO de Bogotá D.C. y lo asigna la Unidad Administrativa Especial de Catastro Distrital.
+- Cédula catastral: Código NUMÉRICO largo de ~20-30 dígitos (ej: 001101065800709005). Es el identificador catastral nacional.
+- Estos son DOS campos DISTINTOS. NUNCA confundir uno con otro.
+
+Extrae: CHIP/NUPRE (si existe), cédula catastral (si existe), avalúo catastral, área, dirección, número de recibo de pago, año gravable, valor pagado y estrato socioeconómico.
 
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
