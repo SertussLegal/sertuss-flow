@@ -1,149 +1,91 @@
 
 
-## Plan v2.0 — Edición Blindada: Extracción de Actos desde Certificado + Reactividad Atómica
+## Plan: Motor de Razonamiento Jurídico — 4 Capas de Inteligencia Legal
 
-### Diagnóstico crítico del plan original
+### Diagnóstico
 
-Audité los 6 archivos del pipeline completo. El plan original tiene **4 puntos débiles**:
+El sistema actual es un "extractor de texto" que copia campos sin contexto jurídico. Hay 4 brechas fundamentales:
 
-**1. Stale State en handleActosExtracted**: El `useCallback` con deps vacías (`[]`) es correcto porque solo usa setters (estables). Sin embargo, la guarda `!prev.tipo_acto` es insuficiente: si el OCR del certificado termina 30s después de que el usuario seleccionó manualmente "Compraventa" en el dropdown, el OCR no debe sobrescribirlo. El plan necesita un **dirty fields tracker** por campo individual, no solo por objeto.
-
-**2. Esquema asume un solo acto**: Un certificado de tradición real puede contener: Compraventa + Hipoteca + Afectación a vivienda familiar + Cancelación de hipoteca anterior. El esquema `actos` propuesto es plano y solo captura un acto. Necesitamos un `acto_principal` (el de mayor cuantía o el más reciente) más un array de `actos_secundarios` para referencia.
-
-**3. El DocxPreview ya es reactivo**: La previsualización YA se actualiza en tiempo real sin "Guardar" — el `useEffect` con debounce de 500ms en línea 586-646 escucha `buildReplacements` (que depende de `inmueble`, `actos`, etc.). El plan original no necesita agregar reactividad, pero SÍ necesita asegurar que los nuevos campos de actos lleguen al `buildReplacements`.
-
-**4. Moneda asumida COP**: El esquema no especifica moneda. En el 99.9% de casos es COP, pero se debe normalizar el string (`$450.000.000,00` → `450000000`) antes de guardarlo en estado.
-
-### Mejoras proactivas integradas
-
-#### A. Dirty Fields Tracker (Prevención de sobreescritura)
-
-Agregar un `Set<string>` llamado `manuallyEditedFields` en `Validacion.tsx`. Cada vez que el usuario edita un campo manualmente (via `handleFieldEdit`, `update()` en formularios, o dropdown changes), el campo se registra como "dirty". Los handlers OCR (`handleActosExtracted`, etc.) verifican este set antes de escribir:
-
-```typescript
-const manuallyEditedFieldsRef = useRef<Set<string>>(new Set());
-
-// En handleFieldEdit:
-manuallyEditedFieldsRef.current.add(field);
-
-// En handleActosExtracted:
-if (extracted.tipo_acto && !manuallyEditedFieldsRef.current.has("tipo_acto") && !prev.tipo_acto)
-  updates.tipo_acto = extracted.tipo_acto;
-```
-
-#### B. Lista blanca de entidades bancarias (Enriquecimiento semántico)
-
-Diccionario interno hardcodeado en DocxPreview o en un helper:
-
-```typescript
-const ENTIDADES_BANCARIAS: Record<string, { nit: string; domicilio: string }> = {
-  "BANCO DE BOGOTA": { nit: "860.002.964-4", domicilio: "Bogotá D.C." },
-  "BANCOLOMBIA": { nit: "890.903.938-8", domicilio: "Medellín" },
-  "DAVIVIENDA": { nit: "860.034.313-7", domicilio: "Bogotá D.C." },
-  "BBVA COLOMBIA": { nit: "860.003.020-1", domicilio: "Bogotá D.C." },
-  // ... ~15 bancos principales
-};
-```
-
-Cuando el OCR devuelve `entidad_bancaria: "BANCO DE BOGOTA"` pero `entidad_nit` está vacío, autocompletar NIT y domicilio desde la lista blanca.
-
-#### C. Normalización monetaria
-
-Helper `cleanCurrency`:
-```typescript
-const cleanCurrency = (val: string): string => {
-  if (!val) return "";
-  return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
-};
-```
-Aplicar al guardar `valor_compraventa` y `valor_hipoteca` en `handleActosExtracted`.
-
-#### D. Verificación visual OCR ↔ formulario
-
-En `buildReplacements`, para campos que tienen valor Y coinciden con el dato OCR original, usar un estilo diferente (check verde). Los campos que el usuario cambió manualmente se muestran en azul (editado). Esto requiere comparar el valor actual con `extractedPredial`/`extractedDocumento`.
+1. **Sin inferencia de hechos jurídicos**: El OCR no deduce que si dice "Régimen de Propiedad Horizontal" → el inmueble es URBANO_PH y debe buscar coeficiente + matrícula matriz
+2. **Sin cadena de tradición**: No extrae el título antecedente (cómo el vendedor adquirió el bien) — dato obligatorio en toda escritura notarial
+3. **Sin normalización legal**: Los montos se muestran como números planos, no en formato notarial ("CIENTO CINCUENTA MILLONES DE PESOS M/CTE ($150.000.000)")
+4. **Sin validación cruzada**: Si el certificado dice "JOHN MAYA" pero la cédula cargada es de "PEDRO LÓPEZ", el sistema no alerta
 
 ### Cambios por archivo
 
-**Archivo 1: `supabase/functions/scan-document/index.ts`**
+**Archivo 1: `supabase/functions/scan-document/index.ts`** — Motor de inferencia en el prompt + schema expandido
 
-Expandir `toolsByCertificado` con un nodo `actos`:
+- Expandir el schema `toolsByCertificado` con un nodo `titulo_antecedente`:
 ```
-actos: {
-  type: "object",
-  properties: {
-    tipo_acto_principal: confField("Acto principal: Compraventa, Donación, etc."),
-    valor_compraventa: confField("Valor del acto principal en pesos (solo número)"),
-    es_hipoteca: confBoolField("true si incluye hipoteca"),
-    valor_hipoteca: confField("Valor hipoteca en pesos (0 si sin límite de cuantía)"),
-    entidad_bancaria: confField("Nombre de la entidad bancaria acreedora"),
-    entidad_nit: confField("NIT de la entidad bancaria con dígito verificador"),
-    afectacion_vivienda_familiar: confBoolField("true si tiene afectación a vivienda familiar"),
-    actos_secundarios: {
-      type: "array",
-      items: confField("Descripción breve de acto secundario"),
-      description: "Otros actos registrados (cancelaciones, afectaciones, etc.)"
-    }
-  },
-  required: ["tipo_acto_principal"],
+titulo_antecedente: {
+  tipo_documento: "Escritura Pública / Sentencia Judicial / Resolución",
+  numero_documento: "Número del documento",
+  fecha_documento: "Fecha DD-MM-AAAA",
+  notaria_documento: "Notaría donde se otorgó",
+  ciudad_documento: "Ciudad de la notaría",
+  adquirido_de: "Nombre de quien transfirió el bien al actual propietario"
 }
 ```
+- Expandir el prompt del certificado con instrucciones de **inferencia jurídica**:
+  - "Si detectas 'Régimen de Propiedad Horizontal' o 'PH', marca `es_propiedad_horizontal: true` y busca OBLIGATORIAMENTE: nombre del conjunto/edificio, coeficiente de copropiedad, matrícula matriz, escritura de constitución PH con fecha/notaría/ciudad"
+  - "Identifica el TÍTULO ANTECEDENTE: busca la anotación que dio origen a la propiedad actual del vendedor. Extrae tipo de documento, número, fecha, notaría y ciudad"
+  - "Asigna ROLES semánticos: si una persona aparece como 'DE:' en una compraventa, es vendedor previo. Si aparece como 'A FAVOR DE:', es el comprador/propietario actual"
+- Agregar campos PH estructurados al nodo `inmueble`: `nombre_conjunto_edificio`, `escritura_ph_numero`, `escritura_ph_fecha`, `escritura_ph_notaria`, `escritura_ph_ciudad`, `coeficiente_copropiedad`
+- Expandir `toolsByEscritura` para extraer más que solo linderos: agregar `numero_escritura`, `fecha`, `notaria`, `ciudad`, `tipo_acto`, `comparecientes` (nombre+cédula+rol)
 
-Actualizar `baseSystemPrompts.certificado_tradicion` para incluir instrucción de buscar la sección "ACTOS: CUANTÍA" y los actos registrados con sus valores.
+**Archivo 2: `src/lib/types.ts`** — Tipos expandidos
 
-Agregar `"actos"` a la lista `required` del tool (junto a documento, inmueble, personas).
+- Agregar a `Inmueble`: `nombre_edificio_conjunto?: string`, `escritura_ph_numero?: string`, `escritura_ph_fecha?: string`, `escritura_ph_notaria?: string`, `escritura_ph_ciudad?: string`, `coeficiente_copropiedad?: string`
+- Agregar a `ExtractedDocumento` (en DocxPreview): `titulo_antecedente` con sus subcampos
+- Actualizar `createEmptyInmueble()` con defaults vacíos para los nuevos campos
 
-**Archivo 2: `src/lib/bankDirectory.ts`** (nuevo)
+**Archivo 3: `src/lib/legalFormatters.ts`** (nuevo) — Capa de formateo legal
 
-Diccionario de ~15 bancos colombianos principales con NIT y domicilio. Función `lookupBank(name: string)` con matching fuzzy por `includes`.
+- `formatMonedaLegal(valor: string): string` — Convierte "150000000" → "CIENTO CINCUENTA MILLONES DE PESOS M/CTE ($150.000.000,00)". Usa el `numberToWords` existente + formateo con puntos de miles
+- `formatFechaLegal(fecha: string): string` — Convierte "02-02-2018" → "dos (2) de febrero de dos mil dieciocho (2018)". Día y año en letras y números
+- `formatCedulaLegal(cedula: string, expedicion?: string): string` — "79.681.841 expedida en Bogotá D.C."
 
-**Archivo 3: `src/pages/Validacion.tsx`**
+**Archivo 4: `src/pages/Validacion.tsx`** — Distribución de título antecedente + validación cruzada
 
-1. Agregar `manuallyEditedFieldsRef = useRef<Set<string>>(new Set())` 
-2. En `handleFieldEdit`: registrar campo en el set
-3. Agregar `handleActosExtracted` con dirty-field checks + `cleanCurrency` para valores monetarios + lookup en `bankDirectory` para autocompletar NIT/domicilio
-4. En `loadTramite`: si `meta.extracted_actos` existe y no hay `actos` en DB, pre-poblar estado con dirty-check
-5. Pasar `onActosExtracted={handleActosExtracted}` a `InmuebleForm`
-6. En `actosToRow`: agregar `afectacion_vivienda_familiar: a.afectacion_vivienda_familiar ?? false`
-
-**Archivo 4: `src/components/tramites/InmuebleForm.tsx`**
-
-1. Agregar prop `onActosExtracted?: (actos: Record<string, any>) => void`
-2. En `handleScanDocument` para `certificado_tradicion`: si `d.actos` existe, emitir `onActosExtracted(d.actos)` después de unwrap de confianza
-3. Unwrap de confianza para el nodo actos igual que para inmueble y personas
-
-**Archivo 5: `src/components/tramites/DocumentUploadStep.tsx`**
-
-En `handleContinue`: al procesar certificado, si `result.actos`, guardar en `metadata.extracted_actos`.
-
-**Archivo 6: `src/components/tramites/PersonaForm.tsx`**
-
-Agregar indicador sutil en campos vacíos cuando el nombre y cédula están llenos pero estado_civil/dirección están vacíos:
+- En `loadTramite`: leer `meta.extracted_titulo_antecedente` y pasarlo a `extractedDocumento` (ampliar el estado con los nuevos campos)
+- **Validación cruzada**: después de cargar personas del certificado y personas de cédulas, comparar nombres+cédulas. Si hay discrepancia, mostrar un toast de alerta:
+```typescript
+// Cross-check: cert says owner is "JOHN MAYA CC 79681841"
+// but cedula scan returned "PEDRO LOPEZ CC 12345678"
+// → Alert: "Discrepancia detectada: el certificado indica propietario JOHN MAYA pero la cédula cargada es de PEDRO LOPEZ"
 ```
-<span className="text-xs text-muted-foreground italic">
-  ⓘ Escanea la cédula para completar
-</span>
-```
+- Pasar `titulo_antecedente` como parte de `extractedDocumento` al DocxPreview
+- En `handleActosExtracted`: si viene `titulo_antecedente`, guardarlo en metadata
 
-**Archivo 7: `src/components/tramites/DocxPreview.tsx`**
+**Archivo 5: `src/components/tramites/InmuebleForm.tsx`** — Mapeo de campos PH estructurados
 
-En `buildReplacements`: agregar `"actos.afectacion_vivienda"` placeholder. Importar `lookupBank` y usarlo como fallback para `entidad_nit` y `entidad_domicilio` cuando están vacíos pero `entidad_bancaria` tiene valor.
+- En `handleScanDocument` para certificado: mapear los nuevos campos PH del OCR (`nombre_conjunto_edificio`, `escritura_ph_numero`, etc.) al estado `inmueble`
+- Emitir `titulo_antecedente` como parte del callback `onDocumentoExtracted`
 
-**Archivo 8: `src/lib/types.ts`**
+**Archivo 6: `src/components/tramites/DocxPreview.tsx`** — Formateo legal + placeholders antecedentes
 
-Agregar `afectacion_vivienda_familiar?: boolean` a la interfaz `Actos` y al `createEmptyActos()`.
+- Importar `formatMonedaLegal`, `formatFechaLegal` de `legalFormatters`
+- En `buildReplacements`:
+  - Usar `formatMonedaLegal` para `actos.cuantia_compraventa_letras`, `actos.cuantia_hipoteca_letras` (en vez del `numberToWords` raw)
+  - Agregar placeholders de título antecedente: `antecedentes.titulo_tipo`, `antecedentes.titulo_numero`, `antecedentes.titulo_fecha_dia/mes/anio`, `antecedentes.titulo_notaria`, `antecedentes.titulo_ciudad`, `antecedentes.adquirido_de`
+  - Usar campos PH estructurados (`escritura_ph_numero`, `escritura_ph_fecha`, etc.) como fuente primaria para los placeholders RPH, con fallback al parseo del string `escritura_ph`
+  - Aplicar `formatFechaLegal` para fechas en la previsualización donde corresponda
+
+**Archivo 7: `src/components/tramites/DocumentUploadStep.tsx`** — Persistir título antecedente
+
+- En `handleContinue`: si el resultado del certificado incluye `titulo_antecedente`, guardarlo en `metadata.extracted_titulo_antecedente`
 
 ### Resumen
 
 | Archivo | Cambio |
 |---|---|
-| `supabase/functions/scan-document/index.ts` | +nodo `actos` en schema certificado, prompt expandido |
-| `src/lib/bankDirectory.ts` | Nuevo: diccionario de bancos colombianos |
-| `src/lib/types.ts` | +`afectacion_vivienda_familiar` en Actos |
-| `src/pages/Validacion.tsx` | dirty-fields tracker, handleActosExtracted con cleanCurrency + bank lookup, loadTramite con extracted_actos |
-| `src/components/tramites/InmuebleForm.tsx` | +prop onActosExtracted, emitir actos del certificado |
-| `src/components/tramites/DocumentUploadStep.tsx` | Guardar extracted_actos en metadata |
-| `src/components/tramites/PersonaForm.tsx` | Indicador "Escanea la cédula" |
-| `src/components/tramites/DocxPreview.tsx` | Bank lookup fallback para NIT/domicilio, placeholder afectación |
+| `supabase/functions/scan-document/index.ts` | +nodo `titulo_antecedente`, +7 campos PH estructurados, prompt con inferencia jurídica |
+| `src/lib/types.ts` | +6 campos PH en Inmueble |
+| `src/lib/legalFormatters.ts` | Nuevo: `formatMonedaLegal`, `formatFechaLegal`, `formatCedulaLegal` |
+| `src/pages/Validacion.tsx` | Distribución título antecedente, validación cruzada personas cert↔cédula |
+| `src/components/tramites/InmuebleForm.tsx` | Mapeo campos PH estructurados + título antecedente |
+| `src/components/tramites/DocxPreview.tsx` | Formateo legal en montos/fechas, placeholders título antecedente, PH estructurado |
+| `src/components/tramites/DocumentUploadStep.tsx` | Persistir `extracted_titulo_antecedente` |
 
-8 archivos (1 nuevo) + 0 migraciones DB (la columna `afectacion_vivienda_familiar` ya existe en la tabla `actos`).
+7 archivos (1 nuevo). Sin migraciones DB.
 
