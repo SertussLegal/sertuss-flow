@@ -683,16 +683,24 @@ const DocxPreview = ({
 
     // Check for template variable click
     const field = target.getAttribute("data-field");
-    if (field && onFieldEdit) {
+    if (field) {
       const text = target.textContent || "";
-      const rect = target.getBoundingClientRect();
-      setSelectionToolbar(null);
-      setSugerenciaPopover(null);
-      setEditPopover({
-        field,
-        value: text,
-        position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
-      });
+      // If pending (empty) field → scroll to the form input
+      if (text === "___________" && onScrollToField) {
+        onScrollToField(field);
+        return;
+      }
+      // Otherwise open edit popover
+      if (onFieldEdit) {
+        const rect = target.getBoundingClientRect();
+        setSelectionToolbar(null);
+        setSugerenciaPopover(null);
+        setEditPopover({
+          field,
+          value: text,
+          position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+        });
+      }
       return;
     }
 
