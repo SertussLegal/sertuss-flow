@@ -930,6 +930,89 @@ const Validacion = () => {
         onConfirm={handleConfirmGenerate}
         generating={generating}
       />
+
+      {/* Dialog de validación Claude — errores críticos */}
+      <AlertDialog open={validacionDialogOpen} onOpenChange={setValidacionDialogOpen}>
+        <AlertDialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              Revisión de validación
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {validacionResultado && (
+                  <>
+                    {validacionResultado.puntuacion != null && (
+                      <p className="text-sm font-medium">
+                        Puntuación: <span className="text-foreground">{validacionResultado.puntuacion}/100</span>
+                      </p>
+                    )}
+                    <p className="text-sm">{validacionResultado.retroalimentacion_general}</p>
+
+                    {/* Errores */}
+                    {validacionResultado.validaciones.filter(v => v.nivel === "error").length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-destructive flex items-center gap-1">
+                          <AlertCircle className="h-3.5 w-3.5" /> Errores
+                        </p>
+                        {validacionResultado.validaciones.filter(v => v.nivel === "error").map((v, i) => (
+                          <div key={i} className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                            {v.valor_sugerido && (
+                              <span className="block text-muted-foreground mt-0.5">Sugerido: {v.valor_sugerido}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Advertencias */}
+                    {validacionResultado.validaciones.filter(v => v.nivel === "advertencia").length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-yellow-600 flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" /> Advertencias
+                        </p>
+                        {validacionResultado.validaciones.filter(v => v.nivel === "advertencia").map((v, i) => (
+                          <div key={i} className="rounded border border-yellow-500/30 bg-yellow-500/5 p-2 text-xs">
+                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Sugerencias */}
+                    {validacionResultado.validaciones.filter(v => v.nivel === "sugerencia").length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-blue-600 flex items-center gap-1">
+                          <Info className="h-3.5 w-3.5" /> Sugerencias
+                        </p>
+                        {validacionResultado.validaciones.filter(v => v.nivel === "sugerencia").map((v, i) => (
+                          <div key={i} className="rounded border border-blue-500/30 bg-blue-500/5 p-2 text-xs">
+                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Corregir</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setValidacionDialogOpen(false);
+                setPreviewOpen(true);
+              }}
+              className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
+            >
+              Continuar de todas formas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
