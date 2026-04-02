@@ -289,13 +289,17 @@ const DocumentUploadStep = () => {
         // Instead, create empty placeholders for propietarios without uploaded cédulas.
         // (handled below after processing all slots)
       } else if (slot.type === "predial") {
+        const extractedPredialData: Record<string, any> = {};
         for (const [key, val] of Object.entries(d)) {
           const { valor, confianza } = unwrapConfianza(val as any);
           if (valor) {
             extractedInmueble[key] = valor;
+            extractedPredialData[key] = valor;
             confianzaMap[`inmueble.${key}`] = confianza;
           }
         }
+        // Store predial data separately so Validacion.tsx can find it
+        (metadata as any).extracted_predial = extractedPredialData;
       } else if (slot.type === "escritura_antecedente") {
         const le = unwrapConfianza(d.linderos_especiales);
         const lg = unwrapConfianza(d.linderos_generales);

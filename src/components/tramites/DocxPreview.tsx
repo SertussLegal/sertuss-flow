@@ -547,7 +547,7 @@ const DocxPreview = ({
       "apoderado_banco.notaria_poder_num": (actos as any).apoderado_notaria_poder || "___________",
       "apoderado_banco.notaria_poder_ciudad": (actos as any).apoderado_notaria_ciudad || "___________",
       "apoderado_banco.email": (actos as any).apoderado_email || "___________",
-      // Notario — from notaria config
+      // Notario — from notaria config, fallback to extractedDocumento
       "notario_nombre": notariaConfig?.nombre_notario || notariaConfig?.notario_titular || "___________",
       "notario_decreto": notariaConfig?.decreto_nombramiento || "___________",
       "notario_tipo": notariaConfig?.tipo_notario || "___________",
