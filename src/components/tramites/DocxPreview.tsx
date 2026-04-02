@@ -97,6 +97,7 @@ function processLoops(
   html: string,
   vendedores: Persona[],
   compradores: Persona[],
+  inmueble: Inmueble,
   actos: Actos
 ): string {
   let result = html;
@@ -120,6 +121,7 @@ function processLoops(
 
       const expanded = personas.map((p) => {
         let block = inner;
+        const pAny = p as any;
         const personaFields: Record<string, string> = {
           nombre: p.nombre_completo || "___________",
           nombre_completo: p.nombre_completo || "___________",
@@ -132,11 +134,27 @@ function processLoops(
           domicilio: p.municipio_domicilio || "___________",
           municipio_domicilio: p.municipio_domicilio || "___________",
           direccion: p.direccion || "___________",
+          direccion_residencia: p.direccion || "___________",
           razon_social: p.razon_social || "___________",
           nit: p.nit || "___________",
           representante_legal_nombre: p.representante_legal_nombre || "___________",
           representante_legal_cedula: p.representante_legal_cedula || "___________",
+          telefono: pAny.telefono || "___________",
+          actividad_economica: pAny.actividad_economica || "___________",
+          email: pAny.email || "___________",
         };
+        // Process per-person conditionals: {#es_pep}...{/es_pep}, {^es_pep}...{/es_pep}
+        const personConds: Record<string, boolean> = {
+          es_pep: !!p.es_pep,
+          acepta_notificaciones: !!(pAny.acepta_notificaciones),
+        };
+        for (const [ck, cv] of Object.entries(personConds)) {
+          const po = `{#${ck}}`, pc = `{/${ck}}`, no = `{^${ck}}`;
+          let ss = 0;
+          while (block.includes(po) && ss < 5) { ss++; const si2=block.indexOf(po); const ei2=block.indexOf(pc,si2); if(ei2===-1)break; block=block.substring(0,si2)+(cv?block.substring(si2+po.length,ei2):"")+block.substring(ei2+pc.length); }
+          ss = 0;
+          while (block.includes(no) && ss < 5) { ss++; const si2=block.indexOf(no); const ei2=block.indexOf(pc,si2); if(ei2===-1)break; block=block.substring(0,si2)+(!cv?block.substring(si2+no.length,ei2):"")+block.substring(ei2+pc.length); }
+        }
         for (const [key, value] of Object.entries(personaFields)) {
           block = block.replace(new RegExp(`\\{${key}\\}`, "g"), value);
         }
@@ -154,7 +172,10 @@ function processLoops(
   // Process boolean conditionals: {#key}...{/key} (show if truthy) and {^key}...{/key} (show if falsy)
   const conditionals: Record<string, boolean> = {
     afectacion_vivienda: !!(actos as any).afectacion_vivienda_familiar,
+    "actos.afectacion_vivienda": !!(actos as any).afectacion_vivienda_familiar,
     es_hipoteca: actos.es_hipoteca,
+    tiene_hipoteca: actos.es_hipoteca,
+    "inmueble.es_rph": inmueble.es_propiedad_horizontal,
   };
 
   for (const [key, value] of Object.entries(conditionals)) {
@@ -336,8 +357,12 @@ const DocxPreview = ({
       "valor_compraventa_letras": actos.valor_compraventa || "___________",
       "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
       "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
+      "actos.cuantia_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
+      "actos.entidad_domicilio": "___________",
+      "actos.entidad_nit": "___________",
       "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_letras": actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
@@ -346,19 +371,68 @@ const DocxPreview = ({
       "actos.pago_inicial_numero": "___________",
       "actos.saldo_financiado_letras": "___________",
       "actos.saldo_financiado_numero": "___________",
-      // RPH (propiedad horizontal) — user fills manually
+      "actos.credito_dia_letras": "___________",
+      "actos.credito_dia_num": "___________",
+      "actos.credito_mes": "___________",
+      "actos.credito_anio_letras": "___________",
+      "actos.credito_anio_num": "___________",
+      "actos.redam_resultado": "___________",
+      // Inmueble extended
+      "inmueble.predial_anio": "___________",
+      "inmueble.predial_num": "___________",
+      "inmueble.predial_valor": "___________",
+      "inmueble.idu_num": "___________",
+      "inmueble.idu_fecha": "___________",
+      "inmueble.idu_vigencia": "___________",
+      "inmueble.admin_fecha": "___________",
+      "inmueble.admin_vigencia": "___________",
+      // RPH (propiedad horizontal)
       "rph.escritura": inmueble.escritura_ph || "___________",
+      "rph.escritura_num_letras": "___________",
+      "rph.escritura_num_numero": "___________",
+      "rph.escritura_dia_letras": "___________",
+      "rph.escritura_dia_num": "___________",
+      "rph.escritura_mes": "___________",
+      "rph.escritura_anio_letras": "___________",
+      "rph.escritura_anio_num": "___________",
       "rph.notaria": "___________",
+      "rph.notaria_numero": "___________",
+      "rph.notaria_ciudad": "___________",
       "rph.matricula_matriz": "___________",
-      // Antecedentes — user fills manually
+      // Antecedentes
+      "antecedentes.modo": "___________",
       "antecedentes.modo_adquisicion": "___________",
+      "antecedentes.adquirido_de": "___________",
       "antecedentes.escritura": "___________",
+      "antecedentes.escritura_num_letras": "___________",
+      "antecedentes.escritura_num_numero": "___________",
+      "antecedentes.escritura_dia_letras": "___________",
+      "antecedentes.escritura_dia_num": "___________",
+      "antecedentes.escritura_mes": "___________",
+      "antecedentes.escritura_anio_letras": "___________",
+      "antecedentes.escritura_anio_num": "___________",
       "antecedentes.notaria": "___________",
+      "antecedentes.notaria_previa_numero": "___________",
+      "antecedentes.notaria_previa_circulo": "___________",
       "antecedentes.fecha": "___________",
+      // Apoderado banco
+      "apoderado_banco.nombre": actos.apoderado_nombre || "___________",
+      "apoderado_banco.cedula": actos.apoderado_cedula || "___________",
+      "apoderado_banco.expedida_en": "___________",
+      "apoderado_banco.escritura_poder_num": "___________",
+      "apoderado_banco.poder_dia_letras": "___________",
+      "apoderado_banco.poder_dia_num": "___________",
+      "apoderado_banco.poder_mes": "___________",
+      "apoderado_banco.poder_anio_letras": "___________",
+      "apoderado_banco.poder_anio_num": "___________",
+      "apoderado_banco.notaria_poder_num": "___________",
+      "apoderado_banco.notaria_poder_ciudad": "___________",
+      "apoderado_banco.email": "___________",
       // Notario — from notaria config
       "notario_nombre": "___________",
       "notario_decreto": "___________",
       "escritura_numero": "___________",
+      "fecha_escritura_corta": "___________",
     };
 
     // DIAGNOSTIC: Log replacement keys and which ones have values
@@ -391,7 +465,7 @@ const DocxPreview = ({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       // Step 1: Process loops (vendedores, compradores, conditionals)
-      let result = processLoops(baseHtml, vendedores, compradores, actos);
+      let result = processLoops(baseHtml, vendedores, compradores, inmueble, actos);
       
       // Step 2: Apply flat replacements
       const replacements = buildReplacements();
