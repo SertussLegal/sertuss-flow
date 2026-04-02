@@ -120,6 +120,7 @@ function processLoops(
 
       const expanded = personas.map((p) => {
         let block = inner;
+        const pAny = p as any;
         const personaFields: Record<string, string> = {
           nombre: p.nombre_completo || "___________",
           nombre_completo: p.nombre_completo || "___________",
@@ -132,11 +133,27 @@ function processLoops(
           domicilio: p.municipio_domicilio || "___________",
           municipio_domicilio: p.municipio_domicilio || "___________",
           direccion: p.direccion || "___________",
+          direccion_residencia: p.direccion || "___________",
           razon_social: p.razon_social || "___________",
           nit: p.nit || "___________",
           representante_legal_nombre: p.representante_legal_nombre || "___________",
           representante_legal_cedula: p.representante_legal_cedula || "___________",
+          telefono: pAny.telefono || "___________",
+          actividad_economica: pAny.actividad_economica || "___________",
+          email: pAny.email || "___________",
         };
+        // Process per-person conditionals: {#es_pep}...{/es_pep}, {^es_pep}...{/es_pep}
+        const personConds: Record<string, boolean> = {
+          es_pep: !!p.es_pep,
+          acepta_notificaciones: !!(pAny.acepta_notificaciones),
+        };
+        for (const [ck, cv] of Object.entries(personConds)) {
+          const po = `{#${ck}}`, pc = `{/${ck}}`, no = `{^${ck}}`;
+          let ss = 0;
+          while (block.includes(po) && ss < 5) { ss++; const si2=block.indexOf(po); const ei2=block.indexOf(pc,si2); if(ei2===-1)break; block=block.substring(0,si2)+(cv?block.substring(si2+po.length,ei2):"")+block.substring(ei2+pc.length); }
+          ss = 0;
+          while (block.includes(no) && ss < 5) { ss++; const si2=block.indexOf(no); const ei2=block.indexOf(pc,si2); if(ei2===-1)break; block=block.substring(0,si2)+(!cv?block.substring(si2+no.length,ei2):"")+block.substring(ei2+pc.length); }
+        }
         for (const [key, value] of Object.entries(personaFields)) {
           block = block.replace(new RegExp(`\\{${key}\\}`, "g"), value);
         }
