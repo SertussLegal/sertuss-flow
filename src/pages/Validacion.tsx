@@ -272,6 +272,11 @@ const Validacion = () => {
       }
     }
 
+    // Load extracted_documento from metadata for antecedentes placeholders
+    if (meta?.extracted_documento) {
+      setExtractedDocumento(meta.extracted_documento);
+    }
+
     setSyncStatus("saved");
     setIsDirty(false);
   };
