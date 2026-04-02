@@ -104,6 +104,7 @@ const Validacion = () => {
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
+  const manuallyEditedFieldsRef = useRef<Set<string>>(new Set());
 
   const handleConfianzaChange = useCallback((field: string, confianza: NivelConfianza) => {
     setConfianzaFields(prev => {
