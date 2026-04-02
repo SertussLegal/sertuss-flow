@@ -292,8 +292,21 @@ const Validacion = () => {
     }
 
     // Load extracted_predial from metadata for predial placeholders
+    // Fallback: if extracted_predial doesn't exist, try to read predial fields from extracted_inmueble
     if (meta?.extracted_predial) {
       setExtractedPredial(meta.extracted_predial);
+    } else if (meta?.extracted_inmueble) {
+      const ei = meta.extracted_inmueble;
+      const predialFields: Record<string, string> = {};
+      const predialKeys = ["numero_recibo", "anio_gravable", "valor_pagado", "estrato", "nupre", "valorizacion"];
+      for (const key of predialKeys) {
+        if (ei[key]) {
+          predialFields[key] = typeof ei[key] === "object" && "valor" in ei[key] ? ei[key].valor : String(ei[key]);
+        }
+      }
+      if (Object.keys(predialFields).length > 0) {
+        setExtractedPredial(predialFields as any);
+      }
     }
 
     setSyncStatus("saved");

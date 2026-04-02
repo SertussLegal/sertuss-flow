@@ -547,7 +547,7 @@ const DocxPreview = ({
       "apoderado_banco.notaria_poder_num": (actos as any).apoderado_notaria_poder || "___________",
       "apoderado_banco.notaria_poder_ciudad": (actos as any).apoderado_notaria_ciudad || "___________",
       "apoderado_banco.email": (actos as any).apoderado_email || "___________",
-      // Notario — from notaria config
+      // Notario — from notaria config, fallback to extractedDocumento
       "notario_nombre": notariaConfig?.nombre_notario || notariaConfig?.notario_titular || "___________",
       "notario_decreto": notariaConfig?.decreto_nombramiento || "___________",
       "notario_tipo": notariaConfig?.tipo_notario || "___________",
@@ -824,8 +824,8 @@ const DocxPreview = ({
 
   return (
     <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
-      {/* Banner: missing notaria config */}
-      {!notariaConfig?.nombre_notaria && (
+      {/* Banner: missing notaria config — only show if no config AND no extracted data */}
+      {!notariaConfig?.nombre_notaria && !extractedDocumento?.notaria_origen && (
         <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 text-foreground text-xs px-3 py-2 mx-2 mt-2 rounded">
           <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
           <span>
