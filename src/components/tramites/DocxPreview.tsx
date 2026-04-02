@@ -125,6 +125,7 @@ interface DocxPreviewProps {
   notariaConfig?: NotariaConfig | null;
   extractedDocumento?: ExtractedDocumento | null;
   extractedPredial?: ExtractedPredial | null;
+  onScrollToField?: (field: string) => void;
 }
 
 const PAGE_WIDTH = 612;
@@ -333,6 +334,7 @@ const DocxPreview = ({
   notariaConfig,
   extractedDocumento,
   extractedPredial,
+  onScrollToField,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -615,14 +617,14 @@ const DocxPreview = ({
         } else {
           result = result.replace(
             new RegExp(`\\{${escaped}\\}`, "g"),
-            `<span data-field="${key}" class="var-pending" style="background:#fef3c7;text-decoration:underline;cursor:pointer">___________</span>`
+            `<span data-field="${key}" class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer" title="Haz clic para ir al campo">___________</span>`
           );
         }
       }
 
       // Clean remaining loop markers and unmapped placeholders
       result = result.replace(/\{[#/^][^}]*\}/g, "");
-      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:#fef3c7;text-decoration:underline">___________</span>');
+      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline">___________</span>');
 
       // Apply custom variables
       for (const cv of customVariables) {
@@ -681,16 +683,24 @@ const DocxPreview = ({
 
     // Check for template variable click
     const field = target.getAttribute("data-field");
-    if (field && onFieldEdit) {
+    if (field) {
       const text = target.textContent || "";
-      const rect = target.getBoundingClientRect();
-      setSelectionToolbar(null);
-      setSugerenciaPopover(null);
-      setEditPopover({
-        field,
-        value: text,
-        position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
-      });
+      // If pending (empty) field → scroll to the form input
+      if (text === "___________" && onScrollToField) {
+        onScrollToField(field);
+        return;
+      }
+      // Otherwise open edit popover
+      if (onFieldEdit) {
+        const rect = target.getBoundingClientRect();
+        setSelectionToolbar(null);
+        setSugerenciaPopover(null);
+        setEditPopover({
+          field,
+          value: text,
+          position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+        });
+      }
       return;
     }
 
@@ -709,7 +719,7 @@ const DocxPreview = ({
         });
       }
     }
-  }, [onFieldEdit, customVariables, sugerenciasIA]);
+  }, [onFieldEdit, onScrollToField, customVariables, sugerenciasIA]);
 
   // Handle text selection for creating new variables
   const handleMouseUp = useCallback(() => {

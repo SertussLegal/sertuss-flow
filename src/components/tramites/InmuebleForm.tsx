@@ -157,9 +157,12 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
           }
           // If cedula_catastral comes from OCR (long numeric), use it as identificador_predial
           const cedulaCatastral = unwrapped.cedula_catastral;
-          if (cedulaCatastral && typeof cedulaCatastral === "string" && /^\d{10,}$/.test(cedulaCatastral)) {
-            chipMapping.identificador_predial = cedulaCatastral;
-            chipMapping.tipo_identificador_predial = "cedula_catastral";
+          if (cedulaCatastral && typeof cedulaCatastral === "string") {
+            const cleanCedula = cedulaCatastral.replace(/[\s.\-]/g, "");
+            if (/^\d{10,}$/.test(cleanCedula)) {
+              chipMapping.identificador_predial = cleanCedula;
+              chipMapping.tipo_identificador_predial = "cedula_catastral";
+            }
           }
 
           applyOcrResults({
@@ -217,12 +220,18 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
           
           if (predialId.startsWith("AAA")) {
             inmuebleUpdates.nupre = predialId;
-          } else if (/^\d{10,}$/.test(predialId)) {
-            inmuebleUpdates.identificador_predial = predialId;
+          } else {
+            const cleanPredialId = predialId.replace(/[\s.\-]/g, "");
+            if (/^\d{10,}$/.test(cleanPredialId)) {
+              inmuebleUpdates.identificador_predial = cleanPredialId;
+            }
           }
-          if (predialCedula && /^\d{10,}$/.test(predialCedula)) {
-            inmuebleUpdates.identificador_predial = predialCedula;
-            inmuebleUpdates.tipo_identificador_predial = "cedula_catastral";
+          if (predialCedula) {
+            const cleanPredialCedula = predialCedula.replace(/[\s.\-]/g, "");
+            if (/^\d{10,}$/.test(cleanPredialCedula)) {
+              inmuebleUpdates.identificador_predial = cleanPredialCedula;
+              inmuebleUpdates.tipo_identificador_predial = "cedula_catastral";
+            }
           }
 
           applyOcrResults({
