@@ -318,7 +318,9 @@ const DocumentUploadStep = () => {
     // Propietarios del certificado son solo informacionales.
     // No se crean vendedores automáticos — solo las cédulas cargadas generan personas.
 
-    // Extract predial data before building metadata
+    // Extract actos and predial data before building metadata
+    const extractedActosSeparate = (extractedInmueble as any).__extracted_actos;
+    delete (extractedInmueble as any).__extracted_actos;
     const extractedPredialSeparate = (extractedInmueble as any).__predial_data;
     delete (extractedInmueble as any).__predial_data;
 
