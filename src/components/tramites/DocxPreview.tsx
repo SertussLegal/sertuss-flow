@@ -47,16 +47,47 @@ const sanitize = (html: string) => DOMPurify.sanitize(html, purifyConfig);
  * Normaliza placeholders fragmentados por mammoth.
  * Word divide internamente los "runs" XML, así que `{comparecientes_vendedor}`
  * puede convertirse en `<span>{comparecientes_</span><span>vendedor}</span>`.
- * Esta función detecta `{` seguido de texto+tags hasta `}` y lo une en un solo `{variable}`.
+ * 
+ * Enfoque robusto: extrae texto plano, encuentra placeholders `{...}` en el texto,
+ * y reemplaza las secciones correspondientes del HTML original.
  */
 function normalizeTemplateTags(html: string): string {
-  // Match a `{` that may be followed by a mix of HTML tags and text until `}`
-  return html.replace(/\{(?:[^}<]*(?:<[^>]*>[^}<]*)*)\}/g, (match) => {
-    // Strip all HTML tags, keep only text
-    const text = match.replace(/<[^>]*>/g, "");
-    // Remove any whitespace that Word may have injected
-    return text.replace(/\s+/g, "");
+  // Step 1: Try the simple regex first for non-fragmented cases
+  let result = html.replace(/\{(?:[^}<]*(?:<[^>]*>[^}<]*)*)\}/g, (match) => {
+    const text = match.replace(/<[^>]*>/g, "").replace(/\s+/g, "");
+    return text;
   });
+
+  // Step 2: Handle cases where { and } are in completely different elements
+  // Build a text-to-html position map
+  const textOnly = result.replace(/<[^>]*>/g, "");
+  const placeholderRegex = /\{([a-zA-Z_#/^][a-zA-Z0-9_.#/^]*)\}/g;
+  let match: RegExpExecArray | null;
+  const foundInText: string[] = [];
+  while ((match = placeholderRegex.exec(textOnly)) !== null) {
+    foundInText.push(match[0]);
+  }
+
+  // For each placeholder found in plain text, ensure it exists as a continuous string in the HTML
+  for (const placeholder of foundInText) {
+    if (result.includes(placeholder)) continue; // Already continuous, skip
+
+    // Build a regex that matches the placeholder chars with optional HTML tags between them
+    const chars = placeholder.split("");
+    const flexPattern = chars.map(c => {
+      const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return escaped;
+    }).join("(?:<[^>]*>)*\\s*");
+    
+    try {
+      const flexRegex = new RegExp(flexPattern, "g");
+      result = result.replace(flexRegex, placeholder);
+    } catch {
+      // If regex fails, skip this placeholder
+    }
+  }
+
+  return result;
 }
 
 const DocxPreview = ({
