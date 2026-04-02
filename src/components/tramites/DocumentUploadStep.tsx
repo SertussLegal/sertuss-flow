@@ -298,8 +298,8 @@ const DocumentUploadStep = () => {
             confianzaMap[`inmueble.${key}`] = confianza;
           }
         }
-        // Store predial data separately so Validacion.tsx can find it
-        (metadata as any).extracted_predial = extractedPredialData;
+        // Will be added to metadata below
+        (extractedInmueble as any).__predial_data = extractedPredialData;
       } else if (slot.type === "escritura_antecedente") {
         const le = unwrapConfianza(d.linderos_especiales);
         const lg = unwrapConfianza(d.linderos_generales);
@@ -314,12 +314,17 @@ const DocumentUploadStep = () => {
     // Propietarios del certificado son solo informacionales.
     // No se crean vendedores automáticos — solo las cédulas cargadas generan personas.
 
+    // Extract predial data before building metadata
+    const extractedPredialSeparate = (extractedInmueble as any).__predial_data;
+    delete (extractedInmueble as any).__predial_data;
+
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
       extracted_personas: extractedPersonas,
       extracted_documento: extractedDocumento,
       confianza_map: confianzaMap,
       progress: 0,
+      ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
     };
 
     const { data: tramite, error } = await supabase.from("tramites").insert({
