@@ -1130,6 +1130,17 @@ const actosToRow = (a: Actos) => ({
   entidad_bancaria: a.entidad_bancaria,
   apoderado_nombre: a.apoderado_nombre,
   apoderado_cedula: a.apoderado_cedula,
+  apoderado_expedida_en: a.apoderado_expedida_en || "",
+  apoderado_escritura_poder: a.apoderado_escritura_poder || "",
+  apoderado_fecha_poder: a.apoderado_fecha_poder || "",
+  apoderado_notaria_poder: a.apoderado_notaria_poder || "",
+  apoderado_notaria_ciudad: a.apoderado_notaria_ciudad || "",
+  apoderado_email: a.apoderado_email || "",
+  pago_inicial: a.pago_inicial || "",
+  saldo_financiado: a.saldo_financiado || "",
+  fecha_credito: a.fecha_credito || "",
+  entidad_nit: a.entidad_nit || "",
+  entidad_domicilio: a.entidad_domicilio || "",
   afectacion_vivienda_familiar: false,
 });
 
