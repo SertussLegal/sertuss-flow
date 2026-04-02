@@ -268,7 +268,44 @@ const Validacion = () => {
       if (!mapped.area && mapped.area_privada) mapped.area = mapped.area_privada;
       setInmueble(prev => ({ ...prev, ...mapped }));
     }
-    if (act) setActos(act as any);
+    if (act) {
+      setActos(act as any);
+    } else if (meta?.extracted_actos) {
+      // Pre-populate actos from OCR extraction
+      const ea = meta.extracted_actos;
+      const unwrapVal = (v: any): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+        return String(v);
+      };
+      const unwrapBoolVal = (v: any): boolean => {
+        if (v == null) return false;
+        if (typeof v === "boolean") return v;
+        if (typeof v === "object" && "valor" in v) return !!v.valor;
+        return false;
+      };
+      const cleanCurr = (val: string): string => {
+        if (!val) return "";
+        return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
+      };
+      const tipoActo = unwrapVal(ea.tipo_acto_principal);
+      const esHipoteca = unwrapBoolVal(ea.es_hipoteca);
+      const entidad = unwrapVal(ea.entidad_bancaria);
+      const entidadNit = unwrapVal(ea.entidad_nit);
+      const bankInfo = entidad ? lookupBank(entidad) : null;
+      setActos(prev => ({
+        ...prev,
+        ...(tipoActo ? { tipo_acto: esHipoteca && !tipoActo.toLowerCase().includes("hipoteca") ? `${tipoActo} con Hipoteca` : tipoActo } : {}),
+        ...(unwrapVal(ea.valor_compraventa) ? { valor_compraventa: cleanCurr(unwrapVal(ea.valor_compraventa)) } : {}),
+        ...(esHipoteca ? { es_hipoteca: true } : {}),
+        ...(unwrapVal(ea.valor_hipoteca) ? { valor_hipoteca: cleanCurr(unwrapVal(ea.valor_hipoteca)) } : {}),
+        ...(entidad ? { entidad_bancaria: entidad } : {}),
+        ...(entidadNit ? { entidad_nit: entidadNit } : bankInfo ? { entidad_nit: bankInfo.nit } : {}),
+        ...(bankInfo && !unwrapVal(ea.entidad_domicilio) ? { entidad_domicilio: bankInfo.domicilio } : {}),
+        ...(unwrapBoolVal(ea.afectacion_vivienda_familiar) ? { afectacion_vivienda_familiar: true } : {}),
+      }));
+    }
 
     // Load notaria config for document coherence
     if (t.organization_id) {
