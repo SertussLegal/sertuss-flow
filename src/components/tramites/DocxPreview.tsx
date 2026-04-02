@@ -390,7 +390,10 @@ const DocxPreview = ({
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      let result = baseHtml;
+      // Step 1: Process loops (vendedores, compradores, conditionals)
+      let result = processLoops(baseHtml, vendedores, compradores, actos);
+      
+      // Step 2: Apply flat replacements
       const replacements = buildReplacements();
 
       for (const [key, value] of Object.entries(replacements)) {
@@ -408,6 +411,7 @@ const DocxPreview = ({
         }
       }
 
+      // Clean remaining loop markers and unmapped placeholders
       result = result.replace(/\{[#/^][^}]*\}/g, "");
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:#fef3c7;text-decoration:underline">___________</span>');
 
