@@ -79,6 +79,11 @@ const Validacion = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
+  const [notariaConfig, setNotariaConfig] = useState<{
+    nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
+    numero_notaria: number | null; circulo: string; departamento: string; tipo_notario: string;
+    nombre_notario: string; decreto_nombramiento: string;
+  } | null>(null);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
