@@ -196,91 +196,108 @@ const Admin = () => {
       </header>
 
       <main className="container py-8 space-y-6">
-        {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-notarial-blue/10">
-                <Building2 className="h-6 w-6 text-notarial-blue" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Organizaciones</p>
-                <p className="text-2xl font-bold">{orgs.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-notarial-gold/10">
-                <Coins className="h-6 w-6 text-notarial-gold" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Créditos en Circulación</p>
-                <p className="text-2xl font-bold">{totalCredits}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Tabs defaultValue="organizaciones">
+          <TabsList>
+            <TabsTrigger value="organizaciones">
+              <Building2 className="mr-1 h-4 w-4" /> Organizaciones
+            </TabsTrigger>
+            <TabsTrigger value="monitor">
+              <Activity className="mr-1 h-4 w-4" /> Monitor del Sistema
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Claude Test Button */}
-        <Card>
-          <CardContent className="flex items-center justify-between pt-6">
-            <div>
-              <p className="font-medium">Prueba de Validación con IA</p>
-              <p className="text-sm text-muted-foreground">Envía datos ficticios al motor de validación para verificar que funciona correctamente.</p>
+          <TabsContent value="organizaciones" className="space-y-6 mt-4">
+            {/* Stats */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Card>
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-notarial-blue/10">
+                    <Building2 className="h-6 w-6 text-notarial-blue" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Organizaciones</p>
+                    <p className="text-2xl font-bold">{orgs.length}</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="flex items-center gap-4 pt-6">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-notarial-gold/10">
+                    <Coins className="h-6 w-6 text-notarial-gold" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Créditos en Circulación</p>
+                    <p className="text-2xl font-bold">{totalCredits}</p>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-            <Button onClick={handleTestClaude} disabled={testingClaude} variant="outline">
-              <FlaskConical className="mr-2 h-4 w-4" />
-              {testingClaude ? "Validando..." : "Probar Validación"}
-            </Button>
-          </CardContent>
-        </Card>
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar por razón social o NIT..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
+            {/* Claude Test Button */}
+            <Card>
+              <CardContent className="flex items-center justify-between pt-6">
+                <div>
+                  <p className="font-medium">Prueba de Validación con IA</p>
+                  <p className="text-sm text-muted-foreground">Envía datos ficticios al motor de validación para verificar que funciona correctamente.</p>
+                </div>
+                <Button onClick={handleTestClaude} disabled={testingClaude} variant="outline">
+                  <FlaskConical className="mr-2 h-4 w-4" />
+                  {testingClaude ? "Validando..." : "Probar Validación"}
+                </Button>
+              </CardContent>
+            </Card>
 
-        {/* Table */}
-        <Card>
-          <CardContent className="pt-6">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Razón Social</TableHead>
-                  <TableHead>NIT</TableHead>
-                  <TableHead>Créditos</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="font-medium">{o.name}</TableCell>
-                    <TableCell>{o.nit ?? "—"}</TableCell>
-                    <TableCell>{o.credit_balance}</TableCell>
-                    <TableCell>{getStatusBadge(o.credit_balance)}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => navigate(`/admin/entidad/${o.id}`)}>
-                        <Settings className="mr-1 h-3 w-3" /> Configurar
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => openEditModal(o)}>
-                        <Pencil className="mr-1 h-3 w-3" /> Editar Créditos
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!loading && filtered.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No se encontraron organizaciones</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+            {/* Search */}
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Buscar por razón social o NIT..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            </div>
+
+            {/* Table */}
+            <Card>
+              <CardContent className="pt-6">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Razón Social</TableHead>
+                      <TableHead>NIT</TableHead>
+                      <TableHead>Créditos</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((o) => (
+                      <TableRow key={o.id}>
+                        <TableCell className="font-medium">{o.name}</TableCell>
+                        <TableCell>{o.nit ?? "—"}</TableCell>
+                        <TableCell>{o.credit_balance}</TableCell>
+                        <TableCell>{getStatusBadge(o.credit_balance)}</TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/admin/entidad/${o.id}`)}>
+                            <Settings className="mr-1 h-3 w-3" /> Configurar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openEditModal(o)}>
+                            <Pencil className="mr-1 h-3 w-3" /> Editar Créditos
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!loading && filtered.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No se encontraron organizaciones</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="monitor" className="mt-4">
+            <SystemMonitor />
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Edit Credits Dialog */}
