@@ -1,0 +1,12 @@
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS apoderado_expedida_en text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS apoderado_escritura_poder text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS apoderado_fecha_poder text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS apoderado_notaria_poder text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS apoderado_notaria_ciudad text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS apoderado_email text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS pago_inicial text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS saldo_financiado text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS fecha_credito text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS entidad_nit text DEFAULT '';
+ALTER TABLE public.actos ADD COLUMN IF NOT EXISTS entidad_domicilio text DEFAULT '';
+ALTER TABLE public.inmuebles ADD COLUMN IF NOT EXISTS matricula_matriz text DEFAULT '';
