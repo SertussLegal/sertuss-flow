@@ -314,6 +314,7 @@ const DocxPreview = ({
   onSugerenciaAccepted,
   notariaConfig,
   extractedDocumento,
+  extractedPredial,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
