@@ -452,8 +452,8 @@ const DocxPreview = ({
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
       "inmueble.orip_zona": inmueble.codigo_orip || "___________",
       // Inmueble extended
-      "nupre": (inmueble as any).nupre || "___________",
-      "inmueble.nupre": (inmueble as any).nupre || "___________",
+      "nupre": inmueble.nupre || "___________",
+      "inmueble.nupre": inmueble.nupre || "___________",
       "tipo_predio": inmueble.tipo_predio || "___________",
       "inmueble.tipo_predio": inmueble.tipo_predio || "___________",
       "area_construida": inmueble.area_construida || "___________",
