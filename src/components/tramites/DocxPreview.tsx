@@ -125,6 +125,7 @@ interface DocxPreviewProps {
   notariaConfig?: NotariaConfig | null;
   extractedDocumento?: ExtractedDocumento | null;
   extractedPredial?: ExtractedPredial | null;
+  onScrollToField?: (field: string) => void;
 }
 
 const PAGE_WIDTH = 612;
