@@ -78,6 +78,9 @@ const Validacion = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
+  const [validando, setValidando] = useState(false);
+  const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
+  const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
