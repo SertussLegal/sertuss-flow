@@ -225,8 +225,8 @@ const DocxPreview = ({
       "inmueble.escritura_ph": inmueble.escritura_ph || "___________",
       "reformas_ph": inmueble.reformas_ph || "___________",
       "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
-      "estrato": inmueble.estrato || "___________",
-      "inmueble.estrato": inmueble.estrato || "___________",
+      "estrato": (inmueble as any).estrato || "___________",
+      "inmueble.estrato": (inmueble as any).estrato || "___________",
     };
 
     // DIAGNOSTIC: Log replacement keys and which ones have values
