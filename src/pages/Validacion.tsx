@@ -46,6 +46,10 @@ const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
   avaluo_catastral: "avaluo_catastral",
   codigo_orip: "codigo_orip",
   "inmueble.orip_ciudad": "codigo_orip",
+  nupre: "nupre",
+  "inmueble.nupre": "nupre",
+  estrato: "estrato",
+  "inmueble.estrato": "estrato",
 };
 
 const FIELD_TO_ACTOS: Record<string, keyof Actos> = {
