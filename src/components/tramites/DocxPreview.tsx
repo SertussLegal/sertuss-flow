@@ -428,9 +428,9 @@ const DocxPreview = ({
     // Derived values
     const areaValue = inmueble.area || inmueble.area_construida || inmueble.area_privada || "";
     const valorCompraventa = actos.valor_compraventa || "";
-    const valorCompraventaLetras = valorCompraventa ? numberToWords(valorCompraventa) : "";
+    const valorCompraventaLetras = valorCompraventa ? formatMonedaLegal(valorCompraventa) : "";
     const valorHipoteca = actos.valor_hipoteca || "";
-    const valorHipotecaLetras = valorHipoteca ? numberToWords(valorHipoteca) : "";
+    const valorHipotecaLetras = valorHipoteca ? formatMonedaLegal(valorHipoteca) : "";
 
     // Parse RPH from escritura_ph / reformas_ph
     const rphData = parseEscrituraString(inmueble.escritura_ph);
