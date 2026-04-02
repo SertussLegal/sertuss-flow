@@ -342,7 +342,7 @@ const Validacion = () => {
     setSyncStatus("saving");
     try {
       let tid = tramiteIdRef.current;
-      const metadata = {
+      const formMetadata = {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
@@ -356,9 +356,19 @@ const Validacion = () => {
         setSyncStatus("unsaved");
         return;
       } else {
+        // Read-then-merge: preserve extracted_* keys from OCR
+        const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
+        const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
+        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas"];
+        const merged: Record<string, unknown> = { ...formMetadata };
+        for (const key of preservedKeys) {
+          if (existingMeta[key] && !merged[key]) {
+            merged[key] = existingMeta[key];
+          }
+        }
         await supabase.from("tramites").update({
           updated_at: new Date().toISOString(),
-          metadata: metadata as any,
+          metadata: merged as any,
           tipo: actos.tipo_acto || "Compraventa",
         }).eq("id", tid);
       }
@@ -453,9 +463,29 @@ const Validacion = () => {
   }, [toast]);
 
   const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento) => {
-    // Store documento data in metadata for future use (e.g., document generation)
-    console.log("=== SERTUSS EXTRACT: Documento data ===", documento);
-    // Could be stored in tramite metadata or used elsewhere
+    setExtractedDocumento(documento);
+    // Persist to metadata immediately (non-destructive merge)
+    const tid = tramiteIdRef.current;
+    if (tid) {
+      supabase.from("tramites").select("metadata").eq("id", tid).single()
+        .then(({ data }) => {
+          const merged = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        });
+    }
+  }, []);
+
+  const handlePredialExtracted = useCallback((data: { numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string }) => {
+    setExtractedPredial(data);
+    // Persist to metadata immediately (non-destructive merge)
+    const tid = tramiteIdRef.current;
+    if (tid) {
+      supabase.from("tramites").select("metadata").eq("id", tid).single()
+        .then(({ data: existing }) => {
+          const merged = { ...((existing?.metadata as any) || {}), extracted_predial: data };
+          supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        });
+    }
   }, []);
 
   const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
@@ -930,6 +960,7 @@ const Validacion = () => {
           onChange={setInmueble}
           onPersonasExtracted={handlePersonasExtracted}
           onDocumentoExtracted={handleDocumentoExtracted}
+          onPredialExtracted={handlePredialExtracted}
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
         />
@@ -1133,17 +1164,18 @@ const inmuebleToRow = (i: Inmueble) => ({
   codigo_orip: i.codigo_orip,
   tipo_predio: i.tipo_predio,
   direccion: i.direccion,
-  estrato: "",
+  estrato: i.estrato || "",
   area: i.area,
   area_construida: i.area_construida,
   area_privada: i.area_privada,
   linderos: i.linderos,
-  valorizacion: "",
+  valorizacion: i.valorizacion || "",
   avaluo_catastral: i.avaluo_catastral,
   escritura_ph: i.escritura_ph,
   reformas_ph: i.reformas_ph,
   es_propiedad_horizontal: i.es_propiedad_horizontal,
   matricula_matriz: i.matricula_matriz || "",
+  nupre: i.nupre || "",
 });
 
 const actosToRow = (a: Actos) => ({

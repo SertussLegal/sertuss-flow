@@ -308,6 +308,7 @@ export type Database = {
           matricula_inmobiliaria: string | null
           matricula_matriz: string | null
           municipio: string | null
+          nupre: string | null
           reformas_ph: string | null
           tipo_identificador_predial: string | null
           tipo_predio: string | null
@@ -331,6 +332,7 @@ export type Database = {
           matricula_inmobiliaria?: string | null
           matricula_matriz?: string | null
           municipio?: string | null
+          nupre?: string | null
           reformas_ph?: string | null
           tipo_identificador_predial?: string | null
           tipo_predio?: string | null
@@ -354,6 +356,7 @@ export type Database = {
           matricula_inmobiliaria?: string | null
           matricula_matriz?: string | null
           municipio?: string | null
+          nupre?: string | null
           reformas_ph?: string | null
           tipo_identificador_predial?: string | null
           tipo_predio?: string | null

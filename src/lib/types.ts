@@ -75,6 +75,9 @@ export interface Inmueble {
   reformas_ph: string;
   es_propiedad_horizontal: boolean;
   matricula_matriz?: string;
+  nupre?: string;
+  estrato?: string;
+  valorizacion?: string;
 }
 
 export interface Actos {
@@ -169,6 +172,9 @@ export const createEmptyInmueble = (): Inmueble => ({
   escritura_ph: "",
   reformas_ph: "",
   es_propiedad_horizontal: false,
+  nupre: "",
+  estrato: "",
+  valorizacion: "",
 });
 
 export const createEmptyActos = (): Actos => ({

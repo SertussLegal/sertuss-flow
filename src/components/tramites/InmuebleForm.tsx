@@ -32,13 +32,14 @@ interface InmuebleFormProps {
   onChange: (inmueble: Inmueble) => void;
   onPersonasExtracted?: (personas: ExtractedPersona[]) => void;
   onDocumentoExtracted?: (documento: ExtractedDocumento) => void;
+  onPredialExtracted?: (data: { numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string }) => void;
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
-const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, confianzaFields, onConfianzaChange }: InmuebleFormProps) => {
+const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, confianzaFields, onConfianzaChange }: InmuebleFormProps) => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
@@ -146,11 +147,19 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             }
           }
 
-          const nupreMapping: Record<string, string | boolean> = {};
+          // Separate NUPRE/CHIP from cédula catastral
+          // CHIP starts with "AAA" and is exclusive to Bogotá
           const nupre = unwrapped.nupre;
+          const chipMapping: Record<string, string | boolean> = {};
           if (nupre && typeof nupre === "string" && nupre.startsWith("AAA")) {
-            nupreMapping.identificador_predial = nupre;
-            nupreMapping.tipo_identificador_predial = "chip";
+            chipMapping.nupre = nupre;
+            chipMapping.tipo_identificador_predial = "chip";
+          }
+          // If cedula_catastral comes from OCR (long numeric), use it as identificador_predial
+          const cedulaCatastral = unwrapped.cedula_catastral;
+          if (cedulaCatastral && typeof cedulaCatastral === "string" && /^\d{10,}$/.test(cedulaCatastral)) {
+            chipMapping.identificador_predial = cedulaCatastral;
+            chipMapping.tipo_identificador_predial = "cedula_catastral";
           }
 
           applyOcrResults({
@@ -162,7 +171,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             linderos: unwrapped.linderos as string,
             ...(unwrapped.area_construida ? { area_construida: unwrapped.area_construida as string } : {}),
             ...(unwrapped.area_privada ? { area_privada: unwrapped.area_privada as string } : {}),
-            ...nupreMapping,
+            ...chipMapping,
             ...(unwrapped.tipo_predio === "rural" ? { tipo_predio: "rural" } : {}),
             ...(unwrapped.es_propiedad_horizontal != null ? { es_propiedad_horizontal: unwrapped.es_propiedad_horizontal as boolean } : {}),
             ...(unwrapped.escritura_constitucion_ph ? { escritura_ph: unwrapped.escritura_constitucion_ph as string } : {}),
@@ -200,13 +209,41 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
               unwrapped[key] = val;
             }
           }
+
+          // Separate CHIP/NUPRE from cédula catastral in predial
+          const predialId = unwrapped.identificador_predial || unwrapped.chip_nupre || "";
+          const predialCedula = unwrapped.cedula_catastral || "";
+          const inmuebleUpdates: Record<string, string> = {};
+          
+          if (predialId.startsWith("AAA")) {
+            inmuebleUpdates.nupre = predialId;
+          } else if (/^\d{10,}$/.test(predialId)) {
+            inmuebleUpdates.identificador_predial = predialId;
+          }
+          if (predialCedula && /^\d{10,}$/.test(predialCedula)) {
+            inmuebleUpdates.identificador_predial = predialCedula;
+            inmuebleUpdates.tipo_identificador_predial = "cedula_catastral";
+          }
+
           applyOcrResults({
-            identificador_predial: unwrapped.identificador_predial,
+            ...inmuebleUpdates,
             avaluo_catastral: unwrapped.avaluo_catastral,
             area: unwrapped.area,
             direccion: unwrapped.direccion,
             ...(unwrapped.estrato ? { estrato: unwrapped.estrato } : {}),
+            ...(unwrapped.valorizacion ? { valorizacion: unwrapped.valorizacion } : {}),
           }, inmueble);
+
+          // Emit predial data to parent for metadata persistence
+          if (onPredialExtracted) {
+            onPredialExtracted({
+              numero_recibo: unwrapped.numero_recibo,
+              anio_gravable: unwrapped.anio_gravable,
+              valor_pagado: unwrapped.valor_pagado,
+              estrato: unwrapped.estrato,
+            });
+          }
+
           toast({ title: "Predial procesado", description: "Cédula catastral, avalúo y datos adicionales extraídos." });
         } else if (type === "escritura_antecedente") {
           // Unwrap confidence for escritura

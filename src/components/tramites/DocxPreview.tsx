@@ -78,6 +78,23 @@ function parseEscrituraString(text: string | undefined): {
   };
 }
 
+// Robust date parser for DD-MM-AAAA format (OCR returns this format)
+function parseFechaDoc(f?: string): { dia?: string; mes?: string; anio?: string } {
+  if (!f) return {};
+  const m = f.match(/(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})/);
+  if (m) {
+    const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    return { dia: m[1], mes: meses[parseInt(m[2], 10) - 1], anio: m[3] };
+  }
+  // Try YYYY-MM-DD
+  const iso = f.match(/(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})/);
+  if (iso) {
+    const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    return { dia: iso[3], mes: meses[parseInt(iso[2], 10) - 1], anio: iso[1] };
+  }
+  return {};
+}
+
 interface NotariaConfig {
   nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
   numero_notaria: number | null; circulo: string; departamento: string; tipo_notario: string;
@@ -452,8 +469,8 @@ const DocxPreview = ({
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
       "inmueble.orip_zona": inmueble.codigo_orip || "___________",
       // Inmueble extended
-      "nupre": (inmueble as any).nupre || "___________",
-      "inmueble.nupre": (inmueble as any).nupre || "___________",
+      "nupre": inmueble.nupre || "___________",
+      "inmueble.nupre": inmueble.nupre || "___________",
       "tipo_predio": inmueble.tipo_predio || "___________",
       "inmueble.tipo_predio": inmueble.tipo_predio || "___________",
       "area_construida": inmueble.area_construida || "___________",
@@ -464,8 +481,8 @@ const DocxPreview = ({
       "inmueble.escritura_ph": inmueble.escritura_ph || "___________",
       "reformas_ph": inmueble.reformas_ph || "___________",
       "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
-      "estrato": (inmueble as any).estrato || "___________",
-      "inmueble.estrato": (inmueble as any).estrato || "___________",
+      "estrato": inmueble.estrato || "___________",
+      "inmueble.estrato": inmueble.estrato || "___________",
       "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
       "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
       "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || (inmueble as any).coeficiente || "___________",
@@ -525,11 +542,11 @@ const DocxPreview = ({
       "antecedentes.escritura": extractedDocumento?.numero_escritura || "___________",
       "antecedentes.escritura_num_letras": extractedDocumento?.numero_escritura ? `(${extractedDocumento.numero_escritura})` : "___________",
       "antecedentes.escritura_num_numero": extractedDocumento?.numero_escritura || "___________",
-      "antecedentes.escritura_dia_letras": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getDate().toString(); } catch { return "___________"; } })() : "___________",
-      "antecedentes.escritura_dia_num": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getDate().toString(); } catch { return "___________"; } })() : "___________",
-      "antecedentes.escritura_mes": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]; return isNaN(d.getTime()) ? "___________" : meses[d.getMonth()]; } catch { return "___________"; } })() : "___________",
-      "antecedentes.escritura_anio_letras": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getFullYear().toString(); } catch { return "___________"; } })() : "___________",
-      "antecedentes.escritura_anio_num": extractedDocumento?.fecha_documento ? (() => { try { const d = new Date(extractedDocumento.fecha_documento!); return isNaN(d.getTime()) ? "___________" : d.getFullYear().toString(); } catch { return "___________"; } })() : "___________",
+      "antecedentes.escritura_dia_letras": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.dia || "___________"; })() : "___________",
+      "antecedentes.escritura_dia_num": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.dia || "___________"; })() : "___________",
+      "antecedentes.escritura_mes": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.mes || "___________"; })() : "___________",
+      "antecedentes.escritura_anio_letras": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.anio || "___________"; })() : "___________",
+      "antecedentes.escritura_anio_num": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.anio || "___________"; })() : "___________",
       "antecedentes.notaria": extractedDocumento?.notaria_origen || "___________",
       "antecedentes.notaria_previa_numero": extractedDocumento?.notaria_origen || "___________",
       "antecedentes.notaria_previa_circulo": "___________",

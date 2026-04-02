@@ -148,7 +148,9 @@ const toolsByPredial = [
       parameters: {
         type: "object",
         properties: {
-          identificador_predial: confField("Número predial o CHIP del inmueble"),
+          chip_nupre: confField("CHIP o NUPRE del inmueble (código alfanumérico que comienza con AAA, exclusivo de Bogotá). NO es la cédula catastral."),
+          cedula_catastral: confField("Cédula catastral numérica del predio (~20-30 dígitos). NO es el CHIP/NUPRE. Ejemplo: 001101065800709005"),
+          identificador_predial: confField("Identificador predial si no se puede clasificar como CHIP ni cédula catastral"),
           avaluo_catastral: confField("Valor del avalúo catastral en pesos colombianos"),
           area: confField("Área del predio en m²"),
           direccion: confField("Dirección del predio"),
@@ -157,7 +159,7 @@ const toolsByPredial = [
           valor_pagado: confField("Valor total pagado del impuesto predial en pesos colombianos"),
           estrato: confField("Estrato socioeconómico del predio (1-6)"),
         },
-        required: ["identificador_predial", "avaluo_catastral"],
+        required: ["avaluo_catastral"],
         additionalProperties: false,
       },
     },
@@ -259,7 +261,8 @@ IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como apar
 
 LÓGICA LEGAL (Compraventa):
 - La matrícula inmobiliaria es OBLIGATORIA
-- El identificador predial (cédula catastral de 30 dígitos) es OBLIGATORIO — busca el campo "Cédula Catastral" o "NUPRE"
+- El identificador predial (cédula catastral de 30 dígitos) es OBLIGATORIO — busca el campo "Cédula Catastral" o "Número Predial Nacional"
+- El CHIP/NUPRE (código alfanumérico que comienza con AAA, exclusivo de Bogotá) es un campo SEPARADO de la cédula catastral. NO los confundas.
 - Los linderos son OBLIGATORIOS — transcripción literal completa
 - Si el inmueble es propiedad horizontal, DEBES buscar y extraer: escritura de constitución PH y reformas PH
 
@@ -268,7 +271,14 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores  
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
 
-  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles: identificador predial (CHIP o número predial nacional), avalúo catastral, área, dirección, número de recibo de pago, año gravable, valor pagado y estrato socioeconómico.
+  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles.
+
+DISTINCIÓN LEGAL CRÍTICA:
+- CHIP (NUPRE): Código alfanumérico que SIEMPRE comienza con "AAA" (ej: AAA0264SBWW). Es EXCLUSIVO de Bogotá D.C. y lo asigna la Unidad Administrativa Especial de Catastro Distrital.
+- Cédula catastral: Código NUMÉRICO largo de ~20-30 dígitos (ej: 001101065800709005). Es el identificador catastral nacional.
+- Estos son DOS campos DISTINTOS. NUNCA confundir uno con otro.
+
+Extrae: CHIP/NUPRE (si existe), cédula catastral (si existe), avalúo catastral, área, dirección, número de recibo de pago, año gravable, valor pagado y estrato socioeconómico.
 
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
