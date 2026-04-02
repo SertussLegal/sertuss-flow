@@ -285,6 +285,10 @@ const DocumentUploadStep = () => {
             }
           }
         }
+        // Extract actos from certificado
+        if (d.actos) {
+          (extractedInmueble as any).__extracted_actos = d.actos;
+        }
         // Don't merge persona data from certificado - only cédulas provide full data.
         // Instead, create empty placeholders for propietarios without uploaded cédulas.
         // (handled below after processing all slots)
