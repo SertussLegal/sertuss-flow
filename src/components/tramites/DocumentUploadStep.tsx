@@ -245,11 +245,14 @@ const DocumentUploadStep = () => {
     for (const slot of [...vendedorSlots, ...compradorSlots]) {
       if (slot.status !== "done" || !slot.result) continue;
       const d = slot.result;
+      const rawNombre = d.nombre_completo || d.nombre || "";
+      const rawCedula = d.numero_identificacion || d.numero_cedula || "";
+      const rawLugar = d.lugar_expedicion || "";
       extractedPersonas.push({
-        nombre_completo: d.nombre_completo || d.nombre || "",
-        numero_identificacion: d.numero_identificacion || d.numero_cedula || "",
+        nombre_completo: unwrapConfianza(rawNombre).valor,
+        numero_identificacion: unwrapConfianza(rawCedula).valor,
         tipo_identificacion: d.tipo_identificacion || "CC",
-        lugar_expedicion: d.lugar_expedicion || "",
+        lugar_expedicion: unwrapConfianza(rawLugar).valor,
         confianza: d.confianza || "alta",
         rol: slot.rol,
       });
