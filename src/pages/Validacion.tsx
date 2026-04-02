@@ -568,7 +568,11 @@ const Validacion = () => {
     if (tid) {
       supabase.from("tramites").select("metadata").eq("id", tid).single()
         .then(({ data }) => {
-          const merged = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          const merged: Record<string, any> = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          // Also persist titulo_antecedente separately for easy access
+          if (documento.titulo_antecedente) {
+            merged.extracted_titulo_antecedente = documento.titulo_antecedente;
+          }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
