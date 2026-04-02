@@ -491,9 +491,6 @@ const DocxPreview = ({
       "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
       "estrato": inmueble.estrato || "___________",
       "inmueble.estrato": inmueble.estrato || "___________",
-      "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
-      "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
-      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || (inmueble as any).coeficiente || "___________",
       // Actos — with number→words conversion
       "tipo_acto": actos.tipo_acto || "___________",
       "valor_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
