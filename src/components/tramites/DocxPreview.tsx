@@ -464,7 +464,7 @@ const DocxPreview = ({
     console.log("Empty:", empty);
 
     return replacements;
-  }, [vendedores, compradores, inmueble, actos, notariaConfig]);
+  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {
