@@ -188,6 +188,13 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             ...(unwrapped.es_propiedad_horizontal != null ? { es_propiedad_horizontal: unwrapped.es_propiedad_horizontal as boolean } : {}),
             ...(unwrapped.escritura_constitucion_ph ? { escritura_ph: unwrapped.escritura_constitucion_ph as string } : {}),
             ...(unwrapped.reformas_ph ? { reformas_ph: unwrapped.reformas_ph as string } : {}),
+            ...(unwrapped.nombre_conjunto_edificio ? { nombre_edificio_conjunto: unwrapped.nombre_conjunto_edificio as string } : {}),
+            ...(unwrapped.escritura_ph_numero ? { escritura_ph_numero: unwrapped.escritura_ph_numero as string } : {}),
+            ...(unwrapped.escritura_ph_fecha ? { escritura_ph_fecha: unwrapped.escritura_ph_fecha as string } : {}),
+            ...(unwrapped.escritura_ph_notaria ? { escritura_ph_notaria: unwrapped.escritura_ph_notaria as string } : {}),
+            ...(unwrapped.escritura_ph_ciudad ? { escritura_ph_ciudad: unwrapped.escritura_ph_ciudad as string } : {}),
+            ...(unwrapped.matricula_matriz ? { matricula_matriz: unwrapped.matricula_matriz as string } : {}),
+            ...(unwrapped.coeficiente_copropiedad ? { coeficiente_copropiedad: unwrapped.coeficiente_copropiedad as string } : {}),
           }, inmueble);
 
           if (personasData && Array.isArray(personasData) && onPersonasExtracted) {
