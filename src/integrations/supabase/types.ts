@@ -66,10 +66,21 @@ export type Database = {
         Row: {
           afectacion_vivienda_familiar: boolean
           apoderado_cedula: string | null
+          apoderado_email: string | null
+          apoderado_escritura_poder: string | null
+          apoderado_expedida_en: string | null
+          apoderado_fecha_poder: string | null
           apoderado_nombre: string | null
+          apoderado_notaria_ciudad: string | null
+          apoderado_notaria_poder: string | null
           entidad_bancaria: string | null
+          entidad_domicilio: string | null
+          entidad_nit: string | null
           es_hipoteca: boolean
+          fecha_credito: string | null
           id: string
+          pago_inicial: string | null
+          saldo_financiado: string | null
           tipo_acto: string | null
           tramite_id: string
           valor_compraventa: string | null
@@ -78,10 +89,21 @@ export type Database = {
         Insert: {
           afectacion_vivienda_familiar?: boolean
           apoderado_cedula?: string | null
+          apoderado_email?: string | null
+          apoderado_escritura_poder?: string | null
+          apoderado_expedida_en?: string | null
+          apoderado_fecha_poder?: string | null
           apoderado_nombre?: string | null
+          apoderado_notaria_ciudad?: string | null
+          apoderado_notaria_poder?: string | null
           entidad_bancaria?: string | null
+          entidad_domicilio?: string | null
+          entidad_nit?: string | null
           es_hipoteca?: boolean
+          fecha_credito?: string | null
           id?: string
+          pago_inicial?: string | null
+          saldo_financiado?: string | null
           tipo_acto?: string | null
           tramite_id: string
           valor_compraventa?: string | null
@@ -90,10 +112,21 @@ export type Database = {
         Update: {
           afectacion_vivienda_familiar?: boolean
           apoderado_cedula?: string | null
+          apoderado_email?: string | null
+          apoderado_escritura_poder?: string | null
+          apoderado_expedida_en?: string | null
+          apoderado_fecha_poder?: string | null
           apoderado_nombre?: string | null
+          apoderado_notaria_ciudad?: string | null
+          apoderado_notaria_poder?: string | null
           entidad_bancaria?: string | null
+          entidad_domicilio?: string | null
+          entidad_nit?: string | null
           es_hipoteca?: boolean
+          fecha_credito?: string | null
           id?: string
+          pago_inicial?: string | null
+          saldo_financiado?: string | null
           tipo_acto?: string | null
           tramite_id?: string
           valor_compraventa?: string | null
@@ -273,6 +306,7 @@ export type Database = {
           identificador_predial: string | null
           linderos: string | null
           matricula_inmobiliaria: string | null
+          matricula_matriz: string | null
           municipio: string | null
           reformas_ph: string | null
           tipo_identificador_predial: string | null
@@ -295,6 +329,7 @@ export type Database = {
           identificador_predial?: string | null
           linderos?: string | null
           matricula_inmobiliaria?: string | null
+          matricula_matriz?: string | null
           municipio?: string | null
           reformas_ph?: string | null
           tipo_identificador_predial?: string | null
@@ -317,6 +352,7 @@ export type Database = {
           identificador_predial?: string | null
           linderos?: string | null
           matricula_inmobiliaria?: string | null
+          matricula_matriz?: string | null
           municipio?: string | null
           reformas_ph?: string | null
           tipo_identificador_predial?: string | null

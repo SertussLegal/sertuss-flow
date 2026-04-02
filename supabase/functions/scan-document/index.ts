@@ -152,6 +152,10 @@ const toolsByPredial = [
           avaluo_catastral: confField("Valor del avalúo catastral en pesos colombianos"),
           area: confField("Área del predio en m²"),
           direccion: confField("Dirección del predio"),
+          numero_recibo: confField("Número del recibo de pago del impuesto predial"),
+          anio_gravable: confField("Año gravable del impuesto predial"),
+          valor_pagado: confField("Valor total pagado del impuesto predial en pesos colombianos"),
+          estrato: confField("Estrato socioeconómico del predio (1-6)"),
         },
         required: ["identificador_predial", "avaluo_catastral"],
         additionalProperties: false,
@@ -191,6 +195,12 @@ const toolsByPoderBanco = [
           entidad_bancaria: confField("Nombre de la entidad bancaria"),
           apoderado_nombre: confField("Nombre completo del apoderado del banco"),
           apoderado_cedula: confField("Número de cédula del apoderado del banco"),
+          apoderado_expedida_en: confField("Lugar de expedición de la cédula del apoderado"),
+          escritura_poder_num: confField("Número de la escritura pública del poder"),
+          fecha_poder: confField("Fecha de otorgamiento del poder (DD-MM-AAAA)"),
+          notaria_poder: confField("Nombre o número de la notaría donde se otorgó el poder"),
+          notaria_poder_ciudad: confField("Ciudad de la notaría donde se otorgó el poder"),
+          apoderado_email: confField("Correo electrónico del apoderado, si aparece"),
         },
         required: ["entidad_bancaria", "apoderado_nombre", "apoderado_cedula"],
         additionalProperties: false,
@@ -258,7 +268,7 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores  
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
 
-  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae el identificador predial (CHIP o número predial nacional), avalúo catastral, área y dirección.
+  predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles: identificador predial (CHIP o número predial nacional), avalúo catastral, área, dirección, número de recibo de pago, año gravable, valor pagado y estrato socioeconómico.
 
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
@@ -272,7 +282,7 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": parcialmente legible
 - "baja": difícil de leer o ambiguo`,
 
-  poder_banco: `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el poder otorgado por una entidad bancaria y extrae: nombre de la entidad bancaria, nombre completo del apoderado y su número de cédula.
+  poder_banco: `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el poder otorgado por una entidad bancaria y extrae TODOS los datos disponibles: nombre de la entidad bancaria, nombre completo del apoderado, número de cédula, lugar de expedición de la cédula, número de escritura pública del poder, fecha de otorgamiento, nombre/número de la notaría del poder, ciudad de la notaría, y correo electrónico del apoderado (si aparece).
 
 CONFIANZA: Para cada campo, asigna un nivel de confianza: "alta", "media" o "baja".`,
 

@@ -88,6 +88,10 @@ interface ExtractedDocumento {
   modo_adquisicion?: string; adquirido_de?: string;
 }
 
+interface ExtractedPredial {
+  numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
+}
+
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
@@ -102,6 +106,7 @@ interface DocxPreviewProps {
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
   notariaConfig?: NotariaConfig | null;
   extractedDocumento?: ExtractedDocumento | null;
+  extractedPredial?: ExtractedPredial | null;
 }
 
 const PAGE_WIDTH = 612;
@@ -309,6 +314,7 @@ const DocxPreview = ({
   onSugerenciaAccepted,
   notariaConfig,
   extractedDocumento,
+  extractedPredial,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -405,6 +411,21 @@ const DocxPreview = ({
     const rphData = parseEscrituraString(inmueble.escritura_ph);
     const rphReformas = parseEscrituraString(inmueble.reformas_ph);
 
+    // Parse fecha_poder for apoderado banco date components
+    const poderFechaParsed = parseEscrituraString((actos as any).apoderado_fecha_poder ? `DEL ${(actos as any).apoderado_fecha_poder}` : undefined);
+
+    // Parse fecha_credito for credit date components
+    const fechaCreditoStr = (actos as any).fecha_credito || "";
+    const fechaCreditoParsed = (() => {
+      if (!fechaCreditoStr) return { dia: undefined, mes: undefined, anio: undefined };
+      const parts = fechaCreditoStr.split("-"); // YYYY-MM-DD from input[type=date]
+      if (parts.length === 3) {
+        const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        return { dia: parseInt(parts[2], 10).toString(), mes: meses[parseInt(parts[1], 10) - 1], anio: parts[0] };
+      }
+      return { dia: undefined, mes: undefined, anio: undefined };
+    })();
+
     const replacements: Record<string, string> = {
       // Legacy flat persona fields
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
@@ -457,26 +478,28 @@ const DocxPreview = ({
       "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
-      "actos.entidad_domicilio": "___________",
-      "actos.entidad_nit": "___________",
+      "actos.entidad_domicilio": (actos as any).entidad_domicilio || "___________",
+      "actos.entidad_nit": (actos as any).entidad_nit || "___________",
       "valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
       "actos.fecha_escritura_letras": "___________",
-      "actos.pago_inicial_letras": "___________",
-      "actos.pago_inicial_numero": "___________",
-      "actos.saldo_financiado_letras": "___________",
-      "actos.saldo_financiado_numero": "___________",
-      "actos.credito_dia_letras": "___________",
-      "actos.credito_dia_num": "___________",
-      "actos.credito_mes": "___________",
-      "actos.credito_anio_letras": "___________",
-      "actos.credito_anio_num": "___________",
+      // Pago inicial / saldo financiado
+      "actos.pago_inicial_letras": (actos as any).pago_inicial ? numberToWords((actos as any).pago_inicial) : "___________",
+      "actos.pago_inicial_numero": (actos as any).pago_inicial || "___________",
+      "actos.saldo_financiado_letras": (actos as any).saldo_financiado ? numberToWords((actos as any).saldo_financiado) : "___________",
+      "actos.saldo_financiado_numero": (actos as any).saldo_financiado || "___________",
+      // Fecha crédito parsed
+      "actos.credito_dia_letras": fechaCreditoParsed.dia || "___________",
+      "actos.credito_dia_num": fechaCreditoParsed.dia || "___________",
+      "actos.credito_mes": fechaCreditoParsed.mes || "___________",
+      "actos.credito_anio_letras": fechaCreditoParsed.anio || "___________",
+      "actos.credito_anio_num": fechaCreditoParsed.anio || "___________",
       "actos.redam_resultado": "___________",
-      // Inmueble extended
-      "inmueble.predial_anio": "___________",
-      "inmueble.predial_num": "___________",
-      "inmueble.predial_valor": "___________",
+      // Inmueble extended — predial from metadata
+      "inmueble.predial_anio": extractedPredial?.anio_gravable || "___________",
+      "inmueble.predial_num": extractedPredial?.numero_recibo || "___________",
+      "inmueble.predial_valor": extractedPredial?.valor_pagado || "___________",
       "inmueble.idu_num": "___________",
       "inmueble.idu_fecha": "___________",
       "inmueble.idu_vigencia": "___________",
@@ -494,7 +517,7 @@ const DocxPreview = ({
       "rph.notaria": rphData.notaria || notariaConfig?.nombre_notaria || "___________",
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "rph.notaria_ciudad": notariaConfig?.ciudad || "___________",
-      "rph.matricula_matriz": "___________",
+      "rph.matricula_matriz": inmueble.matricula_matriz || "___________",
       // Antecedentes — from extracted documento (OCR)
       "antecedentes.modo": extractedDocumento?.modo_adquisicion || "___________",
       "antecedentes.modo_adquisicion": extractedDocumento?.modo_adquisicion || "___________",
@@ -511,19 +534,19 @@ const DocxPreview = ({
       "antecedentes.notaria_previa_numero": extractedDocumento?.notaria_origen || "___________",
       "antecedentes.notaria_previa_circulo": "___________",
       "antecedentes.fecha": extractedDocumento?.fecha_documento || "___________",
-      // Apoderado banco
+      // Apoderado banco — from expanded actos
       "apoderado_banco.nombre": actos.apoderado_nombre || "___________",
       "apoderado_banco.cedula": actos.apoderado_cedula || "___________",
-      "apoderado_banco.expedida_en": "___________",
-      "apoderado_banco.escritura_poder_num": "___________",
-      "apoderado_banco.poder_dia_letras": "___________",
-      "apoderado_banco.poder_dia_num": "___________",
-      "apoderado_banco.poder_mes": "___________",
-      "apoderado_banco.poder_anio_letras": "___________",
-      "apoderado_banco.poder_anio_num": "___________",
-      "apoderado_banco.notaria_poder_num": "___________",
-      "apoderado_banco.notaria_poder_ciudad": "___________",
-      "apoderado_banco.email": "___________",
+      "apoderado_banco.expedida_en": (actos as any).apoderado_expedida_en || "___________",
+      "apoderado_banco.escritura_poder_num": (actos as any).apoderado_escritura_poder || "___________",
+      "apoderado_banco.poder_dia_letras": poderFechaParsed.dia || "___________",
+      "apoderado_banco.poder_dia_num": poderFechaParsed.dia || "___________",
+      "apoderado_banco.poder_mes": poderFechaParsed.mes || "___________",
+      "apoderado_banco.poder_anio_letras": poderFechaParsed.anio || "___________",
+      "apoderado_banco.poder_anio_num": poderFechaParsed.anio || "___________",
+      "apoderado_banco.notaria_poder_num": (actos as any).apoderado_notaria_poder || "___________",
+      "apoderado_banco.notaria_poder_ciudad": (actos as any).apoderado_notaria_ciudad || "___________",
+      "apoderado_banco.email": (actos as any).apoderado_email || "___________",
       // Notario — from notaria config
       "notario_nombre": notariaConfig?.nombre_notario || notariaConfig?.notario_titular || "___________",
       "notario_decreto": notariaConfig?.decreto_nombramiento || "___________",
@@ -538,7 +561,7 @@ const DocxPreview = ({
     };
 
     return replacements;
-  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento]);
+  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento, extractedPredial]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {

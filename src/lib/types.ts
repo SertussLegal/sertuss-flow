@@ -74,6 +74,7 @@ export interface Inmueble {
   escritura_ph: string;
   reformas_ph: string;
   es_propiedad_horizontal: boolean;
+  matricula_matriz?: string;
 }
 
 export interface Actos {
@@ -84,6 +85,17 @@ export interface Actos {
   entidad_bancaria: string;
   apoderado_nombre: string;
   apoderado_cedula: string;
+  apoderado_expedida_en?: string;
+  apoderado_escritura_poder?: string;
+  apoderado_fecha_poder?: string;
+  apoderado_notaria_poder?: string;
+  apoderado_notaria_ciudad?: string;
+  apoderado_email?: string;
+  pago_inicial?: string;
+  saldo_financiado?: string;
+  fecha_credito?: string;
+  entidad_nit?: string;
+  entidad_domicilio?: string;
 }
 
 export interface Tramite {
@@ -167,6 +179,17 @@ export const createEmptyActos = (): Actos => ({
   entidad_bancaria: "",
   apoderado_nombre: "",
   apoderado_cedula: "",
+  apoderado_expedida_en: "",
+  apoderado_escritura_poder: "",
+  apoderado_fecha_poder: "",
+  apoderado_notaria_poder: "",
+  apoderado_notaria_ciudad: "",
+  apoderado_email: "",
+  pago_inicial: "",
+  saldo_financiado: "",
+  fecha_credito: "",
+  entidad_nit: "",
+  entidad_domicilio: "",
 });
 
 export interface NotariaStyle {

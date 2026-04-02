@@ -88,6 +88,9 @@ const Validacion = () => {
     notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
     modo_adquisicion?: string; adquirido_de?: string;
   } | null>(null);
+  const [extractedPredial, setExtractedPredial] = useState<{
+    numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
+  } | null>(null);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
@@ -284,6 +287,11 @@ const Validacion = () => {
     // Load extracted_documento from metadata for antecedentes placeholders
     if (meta?.extracted_documento) {
       setExtractedDocumento(meta.extracted_documento);
+    }
+
+    // Load extracted_predial from metadata for predial placeholders
+    if (meta?.extracted_predial) {
+      setExtractedPredial(meta.extracted_predial);
     }
 
     setSyncStatus("saved");
@@ -967,6 +975,7 @@ const Validacion = () => {
             onSugerenciaAccepted={handleSugerenciaAccepted}
             notariaConfig={notariaConfig}
             extractedDocumento={extractedDocumento}
+            extractedPredial={extractedPredial}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
@@ -1120,6 +1129,7 @@ const inmuebleToRow = (i: Inmueble) => ({
   escritura_ph: i.escritura_ph,
   reformas_ph: i.reformas_ph,
   es_propiedad_horizontal: i.es_propiedad_horizontal,
+  matricula_matriz: i.matricula_matriz || "",
 });
 
 const actosToRow = (a: Actos) => ({
@@ -1130,6 +1140,17 @@ const actosToRow = (a: Actos) => ({
   entidad_bancaria: a.entidad_bancaria,
   apoderado_nombre: a.apoderado_nombre,
   apoderado_cedula: a.apoderado_cedula,
+  apoderado_expedida_en: a.apoderado_expedida_en || "",
+  apoderado_escritura_poder: a.apoderado_escritura_poder || "",
+  apoderado_fecha_poder: a.apoderado_fecha_poder || "",
+  apoderado_notaria_poder: a.apoderado_notaria_poder || "",
+  apoderado_notaria_ciudad: a.apoderado_notaria_ciudad || "",
+  apoderado_email: a.apoderado_email || "",
+  pago_inicial: a.pago_inicial || "",
+  saldo_financiado: a.saldo_financiado || "",
+  fecha_credito: a.fecha_credito || "",
+  entidad_nit: a.entidad_nit || "",
+  entidad_domicilio: a.entidad_domicilio || "",
   afectacion_vivienda_familiar: false,
 });
 
