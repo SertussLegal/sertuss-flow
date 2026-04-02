@@ -207,12 +207,31 @@ const toolsByEscritura = [
     type: "function" as const,
     function: {
       name: "extract_escritura_antecedente",
-      description: "Extrae los linderos de una escritura pública antecedente colombiana. Cada campo incluye nivel de confianza.",
+      description: "Extrae datos de una escritura pública antecedente colombiana. Incluye linderos y datos del acto. Cada campo incluye nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
           linderos_especiales: confField("Linderos especiales (particulares) del inmueble, transcribir textualmente cada palabra"),
           linderos_generales: confField("Linderos generales del edificio o conjunto (aplica si es propiedad horizontal), transcribir textualmente"),
+          numero_escritura: confField("Número de la escritura pública"),
+          fecha_escritura: confField("Fecha de la escritura (DD-MM-AAAA)"),
+          notaria: confField("Nombre o número de la notaría donde se otorgó"),
+          ciudad_notaria: confField("Ciudad de la notaría"),
+          tipo_acto: confField("Tipo de acto: Compraventa, Donación, Permuta, etc."),
+          comparecientes: {
+            type: "array",
+            description: "Personas que comparecen en la escritura",
+            items: {
+              type: "object",
+              properties: {
+                nombre: { type: "string", description: "Nombre completo" },
+                cedula: { type: "string", description: "Número de cédula o NIT" },
+                rol: { type: "string", description: "Rol: vendedor, comprador, otorgante, apoderado, etc." },
+              },
+              required: ["nombre"],
+              additionalProperties: false,
+            },
+          },
         },
         required: ["linderos_especiales"],
         additionalProperties: false,
