@@ -616,7 +616,7 @@ const DocxPreview = ({
         } else {
           result = result.replace(
             new RegExp(`\\{${escaped}\\}`, "g"),
-            `<span data-field="${key}" class="var-pending" style="background:#fef3c7;text-decoration:underline;cursor:pointer">___________</span>`
+            `<span data-field="${key}" class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer" title="Haz clic para ir al campo">___________</span>`
           );
         }
       }
