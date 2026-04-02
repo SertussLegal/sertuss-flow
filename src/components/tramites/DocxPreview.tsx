@@ -1,11 +1,81 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X } from "lucide-react";
+import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info } from "lucide-react";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
 import DOMPurify from "dompurify";
+
+// ── Number to words (Spanish) ──────────────────────────────────
+const UNITS = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
+const TEENS = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISÉIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
+const TENS = ["", "DIEZ", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
+const HUNDREDS = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINIENTOS", "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"];
+
+function numberToWords(input: string): string {
+  // Clean: remove $, dots, spaces, commas
+  const cleaned = input.replace(/[$.\s]/g, "").replace(/,/g, "");
+  const num = parseInt(cleaned, 10);
+  if (isNaN(num) || num <= 0) return "";
+  if (num === 100) return "CIEN";
+
+  const convertGroup = (n: number): string => {
+    if (n === 0) return "";
+    if (n === 100) return "CIEN";
+    if (n < 10) return UNITS[n];
+    if (n < 20) return TEENS[n - 10];
+    if (n < 30) return n === 20 ? "VEINTE" : `VEINTI${UNITS[n % 10]}`;
+    if (n < 100) {
+      const t = Math.floor(n / 10), u = n % 10;
+      return u === 0 ? TENS[t] : `${TENS[t]} Y ${UNITS[u]}`;
+    }
+    const h = Math.floor(n / 100), rest = n % 100;
+    if (h === 1 && rest === 0) return "CIEN";
+    return rest === 0 ? HUNDREDS[h] : `${HUNDREDS[h]} ${convertGroup(rest)}`;
+  };
+
+  const groups: [number, string, string][] = [
+    [1_000_000_000, "MIL MILLONES", "MIL MILLONES"],
+    [1_000_000, "MILLÓN", "MILLONES"],
+    [1_000, "MIL", "MIL"],
+    [1, "", ""],
+  ];
+
+  let result = "";
+  let remaining = num;
+  for (const [divisor, singular, plural] of groups) {
+    const q = Math.floor(remaining / divisor);
+    remaining = remaining % divisor;
+    if (q === 0) continue;
+    if (divisor === 1) {
+      result += ` ${convertGroup(q)}`;
+    } else if (q === 1) {
+      result += divisor === 1000 ? ` MIL` : ` UN ${singular}`;
+    } else {
+      result += ` ${convertGroup(q)} ${plural}`;
+    }
+  }
+  return (result.trim() + " PESOS M/CTE").replace(/\s+/g, " ");
+}
+
+// ── Parse structured text like "ESCRITURA 5035 DEL 07-09-2018 NOTARÍA VEINTIOCHO" ──
+function parseEscrituraString(text: string | undefined): {
+  numero?: string; dia?: string; mes?: string; anio?: string; notaria?: string;
+} {
+  if (!text) return {};
+  const numMatch = text.match(/(?:ESCRITURA|ESC\.?)\s*(?:NO?\.?\s*)?(\d+)/i);
+  const dateMatch = text.match(/(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})/);
+  const notariaMatch = text.match(/NOTAR[IÍ]A\s+(.+?)(?:\s+DE\s+|$)/i);
+  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  return {
+    numero: numMatch?.[1],
+    dia: dateMatch?.[1],
+    mes: dateMatch ? meses[parseInt(dateMatch[2], 10) - 1] || dateMatch[2] : undefined,
+    anio: dateMatch?.[3],
+    notaria: notariaMatch?.[1]?.trim(),
+  };
+}
 
 interface NotariaConfig {
   nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
