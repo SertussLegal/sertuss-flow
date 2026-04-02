@@ -88,6 +88,10 @@ interface ExtractedDocumento {
   modo_adquisicion?: string; adquirido_de?: string;
 }
 
+interface ExtractedPredial {
+  numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
+}
+
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
@@ -102,6 +106,7 @@ interface DocxPreviewProps {
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
   notariaConfig?: NotariaConfig | null;
   extractedDocumento?: ExtractedDocumento | null;
+  extractedPredial?: ExtractedPredial | null;
 }
 
 const PAGE_WIDTH = 612;
