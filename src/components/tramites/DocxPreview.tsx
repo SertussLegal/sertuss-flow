@@ -187,7 +187,7 @@ const DocxPreview = ({
       return `${p.nombre_completo || "___________"}, mayor de edad, identificado(a) con cédula de ciudadanía No. ${p.numero_cedula || "___________"}, de estado civil ${p.estado_civil || "___________"}, domiciliado(a) en ${p.municipio_domicilio || "___________"}`;
     };
 
-    return {
+    const replacements: Record<string, string> = {
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
       "comparecientes_comprador": compradores.map(formatPersona).join("; y ") || "___________",
       "matricula_inmobiliaria": inmueble.matricula_inmobiliaria || "___________",
@@ -212,7 +212,31 @@ const DocxPreview = ({
       "avaluo_catastral": inmueble.avaluo_catastral || "___________",
       "codigo_orip": inmueble.codigo_orip || "___________",
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
+      // Campos adicionales del inmueble
+      "nupre": (inmueble as any).nupre || "___________",
+      "inmueble.nupre": (inmueble as any).nupre || "___________",
+      "tipo_predio": inmueble.tipo_predio || "___________",
+      "inmueble.tipo_predio": inmueble.tipo_predio || "___________",
+      "area_construida": inmueble.area_construida || "___________",
+      "inmueble.area_construida": inmueble.area_construida || "___________",
+      "area_privada": inmueble.area_privada || "___________",
+      "inmueble.area_privada": inmueble.area_privada || "___________",
+      "escritura_ph": inmueble.escritura_ph || "___________",
+      "inmueble.escritura_ph": inmueble.escritura_ph || "___________",
+      "reformas_ph": inmueble.reformas_ph || "___________",
+      "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
+      "estrato": inmueble.estrato || "___________",
+      "inmueble.estrato": inmueble.estrato || "___________",
     };
+
+    // DIAGNOSTIC: Log replacement keys and which ones have values
+    const filled = Object.entries(replacements).filter(([, v]) => v !== "___________").map(([k, v]) => `${k}=${v.substring(0, 40)}`);
+    const empty = Object.entries(replacements).filter(([, v]) => v === "___________").map(([k]) => k);
+    console.log("=== DOCX PREVIEW: buildReplacements ===");
+    console.log("Filled:", filled);
+    console.log("Empty:", empty);
+
+    return replacements;
   }, [vendedores, compradores, inmueble, actos]);
 
   // Apply replacements or use textoFinalWord
