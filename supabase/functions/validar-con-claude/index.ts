@@ -143,6 +143,16 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("Error en validar-con-claude:", error);
+    // Log to system_events
+    try {
+      const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      await sbAdmin.from("system_events").insert({
+        evento: "validar-con-claude",
+        resultado: "error",
+        categoria: "edge_function",
+        detalle: { message: error instanceof Error ? error.message : "Unknown" },
+      });
+    } catch { /* never break main flow */ }
     return new Response(
       JSON.stringify({
         estado: "error_sistema",
