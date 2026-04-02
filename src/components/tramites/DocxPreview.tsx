@@ -801,6 +801,15 @@ const DocxPreview = ({
 
   return (
     <div ref={containerRef} className="relative flex flex-col h-full bg-muted">
+      {/* Banner: missing notaria config */}
+      {!notariaConfig?.nombre_notaria && (
+        <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 text-foreground text-xs px-3 py-2 mx-2 mt-2 rounded">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            Configure los datos de su notaría en <strong>Ajustes</strong> para completar automáticamente los campos del notario en el documento.
+          </span>
+        </div>
+      )}
       {/* Coherence banner: notary mismatch */}
       {extractedDocumento?.notaria_origen && notariaConfig?.nombre_notaria &&
         extractedDocumento.notaria_origen.toLowerCase().trim() !== notariaConfig.nombre_notaria.toLowerCase().trim() && (
