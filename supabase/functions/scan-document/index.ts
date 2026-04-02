@@ -79,7 +79,7 @@ const toolsByCertificado = [
     type: "function" as const,
     function: {
       name: "extract_certificado_tradicion",
-      description: "Extrae los datos principales de un certificado de tradición y libertad colombiano, estructurados en tres nodos: documento, inmueble y personas. Cada campo tiene un nivel de confianza.",
+      description: "Extrae los datos principales de un certificado de tradición y libertad colombiano, estructurados en cuatro nodos: documento, inmueble, personas y actos. Cada campo tiene un nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
@@ -131,8 +131,23 @@ const toolsByCertificado = [
               additionalProperties: false,
             },
           },
+          actos: {
+            type: "object",
+            description: "Actos jurídicos registrados en el certificado (sección ACTOS: CUANTÍA)",
+            properties: {
+              tipo_acto_principal: confField("Acto principal: Compraventa, Donación, Permuta, etc."),
+              valor_compraventa: confField("Valor del acto principal en pesos colombianos (solo número, sin $ ni puntos)"),
+              es_hipoteca: confBoolField("true si incluye un acto de hipoteca (abierta o cerrada)"),
+              valor_hipoteca: confField("Valor de la hipoteca en pesos (solo número). Poner '0' si es sin límite de cuantía"),
+              entidad_bancaria: confField("Nombre de la entidad bancaria acreedora (ej: BANCO DE BOGOTA S.A.)"),
+              entidad_nit: confField("NIT de la entidad bancaria con dígito de verificación (ej: 860.002.964-4)"),
+              afectacion_vivienda_familiar: confBoolField("true si hay acto de afectación a vivienda familiar registrado"),
+            },
+            required: ["tipo_acto_principal"],
+            additionalProperties: false,
+          },
         },
-        required: ["documento", "inmueble", "personas"],
+        required: ["documento", "inmueble", "personas", "actos"],
         additionalProperties: false,
       },
     },
