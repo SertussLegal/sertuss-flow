@@ -342,7 +342,7 @@ const Validacion = () => {
     setSyncStatus("saving");
     try {
       let tid = tramiteIdRef.current;
-      const metadata = {
+      const formMetadata = {
         last_saved: new Date().toISOString(),
         custom_variables: customVariables.map(cv => ({ ...cv })),
         progress: calculateProgress(),
@@ -356,9 +356,19 @@ const Validacion = () => {
         setSyncStatus("unsaved");
         return;
       } else {
+        // Read-then-merge: preserve extracted_* keys from OCR
+        const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
+        const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
+        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas"];
+        const merged: Record<string, unknown> = { ...formMetadata };
+        for (const key of preservedKeys) {
+          if (existingMeta[key] && !merged[key]) {
+            merged[key] = existingMeta[key];
+          }
+        }
         await supabase.from("tramites").update({
           updated_at: new Date().toISOString(),
-          metadata: metadata as any,
+          metadata: merged as any,
           tipo: actos.tipo_acto || "Compraventa",
         }).eq("id", tid);
       }
