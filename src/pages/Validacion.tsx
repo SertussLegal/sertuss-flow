@@ -239,14 +239,23 @@ const Validacion = () => {
     if (inm) {
       setInmueble(inm as any);
     } else if (meta?.extracted_inmueble) {
-      // Pre-populate from extraction
+      // Pre-populate from extraction — map ALL OCR fields including extended ones
       const ei = meta.extracted_inmueble;
-      setInmueble(prev => ({
-        ...prev,
-        ...Object.fromEntries(
-          Object.entries(ei).filter(([_, v]) => v != null && v !== "")
-        ),
-      }));
+      const unwrapVal = (v: any): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+        return String(v);
+      };
+      const mapped: Record<string, any> = {};
+      for (const [k, v] of Object.entries(ei)) {
+        const val = unwrapVal(v);
+        if (val) mapped[k] = val;
+      }
+      // Use area_construida as fallback for area if area is empty
+      if (!mapped.area && mapped.area_construida) mapped.area = mapped.area_construida;
+      if (!mapped.area && mapped.area_privada) mapped.area = mapped.area_privada;
+      setInmueble(prev => ({ ...prev, ...mapped }));
     }
     if (act) setActos(act as any);
 
