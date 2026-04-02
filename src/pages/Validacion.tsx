@@ -475,6 +475,19 @@ const Validacion = () => {
     }
   }, []);
 
+  const handlePredialExtracted = useCallback((data: { numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string }) => {
+    setExtractedPredial(data);
+    // Persist to metadata immediately (non-destructive merge)
+    const tid = tramiteIdRef.current;
+    if (tid) {
+      supabase.from("tramites").select("metadata").eq("id", tid).single()
+        .then(({ data: existing }) => {
+          const merged = { ...((existing?.metadata as any) || {}), extracted_predial: data };
+          supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        });
+    }
+  }, []);
+
   const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
     const newVar: CustomVariable = {
       id: crypto.randomUUID(),
