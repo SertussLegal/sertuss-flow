@@ -261,7 +261,8 @@ IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como apar
 
 LÓGICA LEGAL (Compraventa):
 - La matrícula inmobiliaria es OBLIGATORIA
-- El identificador predial (cédula catastral de 30 dígitos) es OBLIGATORIO — busca el campo "Cédula Catastral" o "NUPRE"
+- El identificador predial (cédula catastral de 30 dígitos) es OBLIGATORIO — busca el campo "Cédula Catastral" o "Número Predial Nacional"
+- El CHIP/NUPRE (código alfanumérico que comienza con AAA, exclusivo de Bogotá) es un campo SEPARADO de la cédula catastral. NO los confundas.
 - Los linderos son OBLIGATORIOS — transcripción literal completa
 - Si el inmueble es propiedad horizontal, DEBES buscar y extraer: escritura de constitución PH y reformas PH
 
