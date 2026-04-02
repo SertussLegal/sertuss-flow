@@ -199,7 +199,12 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             onDocumentoExtracted(unwrappedDoc as ExtractedDocumento);
           }
 
-          toast({ title: "Certificado procesado", description: "Datos del inmueble, personas y documento extraídos correctamente." });
+          // Extract and emit actos data from certificado
+          if (d.actos && onActosExtracted) {
+            onActosExtracted(d.actos);
+          }
+
+          toast({ title: "Certificado procesado", description: "Datos del inmueble, personas, documento y actos extraídos correctamente." });
         } else if (type === "predial") {
           // Unwrap confidence for predial
           const unwrapped: Record<string, string> = {};
