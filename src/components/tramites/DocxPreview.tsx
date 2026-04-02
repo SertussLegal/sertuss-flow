@@ -238,6 +238,7 @@ const DocxPreview = ({
   textoFinalWord,
   onSugerenciaAccepted,
   notariaConfig,
+  extractedDocumento,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
