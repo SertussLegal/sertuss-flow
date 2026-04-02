@@ -32,6 +32,7 @@ interface InmuebleFormProps {
   onChange: (inmueble: Inmueble) => void;
   onPersonasExtracted?: (personas: ExtractedPersona[]) => void;
   onDocumentoExtracted?: (documento: ExtractedDocumento) => void;
+  onPredialExtracted?: (data: { numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string }) => void;
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
 }
