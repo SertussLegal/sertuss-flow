@@ -192,6 +192,7 @@ export const createEmptyActos = (): Actos => ({
   apoderado_notaria_poder: "",
   apoderado_notaria_ciudad: "",
   apoderado_email: "",
+  afectacion_vivienda_familiar: false,
   pago_inicial: "",
   saldo_financiado: "",
   fecha_credito: "",
