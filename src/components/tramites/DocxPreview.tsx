@@ -289,31 +289,31 @@ const DocxPreview = ({
     };
 
     const replacements: Record<string, string> = {
+      // Legacy flat persona fields
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
       "comparecientes_comprador": compradores.map(formatPersona).join("; y ") || "___________",
+      // Inmueble core
       "matricula_inmobiliaria": inmueble.matricula_inmobiliaria || "___________",
+      "inmueble.matricula": inmueble.matricula_inmobiliaria || "___________",
       "identificador_predial": inmueble.identificador_predial || "___________",
+      "inmueble.cedula_catastral": inmueble.identificador_predial || "___________",
       "direccion_inmueble": inmueble.direccion || "___________",
       "inmueble.direccion": inmueble.direccion || "___________",
-      "inmueble.matricula": inmueble.matricula_inmobiliaria || "___________",
-      "inmueble.cedula_catastral": inmueble.identificador_predial || "___________",
       "inmueble.linderos_especiales": inmueble.linderos || "___________",
       "inmueble.linderos_generales": inmueble.linderos || "___________",
       "municipio": inmueble.municipio || "___________",
+      "inmueble.municipio": inmueble.municipio || "___________",
       "departamento": inmueble.departamento || "___________",
+      "inmueble.departamento": inmueble.departamento || "___________",
       "area": inmueble.area || "___________",
+      "inmueble.area": inmueble.area || "___________",
       "linderos": inmueble.linderos || "___________",
-      "valor_compraventa_letras": actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
-      "tipo_acto": actos.tipo_acto || "___________",
-      "entidad_bancaria": actos.entidad_bancaria || "___________",
-      "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
-      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
       "avaluo_catastral": inmueble.avaluo_catastral || "___________",
+      "inmueble.avaluo_catastral": inmueble.avaluo_catastral || "___________",
       "codigo_orip": inmueble.codigo_orip || "___________",
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
-      // Campos adicionales del inmueble
+      "inmueble.orip_zona": inmueble.codigo_orip || "___________",
+      // Inmueble extended
       "nupre": (inmueble as any).nupre || "___________",
       "inmueble.nupre": (inmueble as any).nupre || "___________",
       "tipo_predio": inmueble.tipo_predio || "___________",
@@ -328,6 +328,37 @@ const DocxPreview = ({
       "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
       "estrato": (inmueble as any).estrato || "___________",
       "inmueble.estrato": (inmueble as any).estrato || "___________",
+      "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
+      "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
+      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || "___________",
+      // Actos
+      "tipo_acto": actos.tipo_acto || "___________",
+      "valor_compraventa_letras": actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
+      "entidad_bancaria": actos.entidad_bancaria || "___________",
+      "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
+      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
+      "actos.fecha_escritura_letras": "___________",
+      "actos.pago_inicial_letras": "___________",
+      "actos.pago_inicial_numero": "___________",
+      "actos.saldo_financiado_letras": "___________",
+      "actos.saldo_financiado_numero": "___________",
+      // RPH (propiedad horizontal) — user fills manually
+      "rph.escritura": inmueble.escritura_ph || "___________",
+      "rph.notaria": "___________",
+      "rph.matricula_matriz": "___________",
+      // Antecedentes — user fills manually
+      "antecedentes.modo_adquisicion": "___________",
+      "antecedentes.escritura": "___________",
+      "antecedentes.notaria": "___________",
+      "antecedentes.fecha": "___________",
+      // Notario — from notaria config
+      "notario_nombre": "___________",
+      "notario_decreto": "___________",
+      "escritura_numero": "___________",
     };
 
     // DIAGNOSTIC: Log replacement keys and which ones have values
