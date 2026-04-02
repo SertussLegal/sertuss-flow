@@ -171,7 +171,10 @@ function processLoops(
   // Process boolean conditionals: {#key}...{/key} (show if truthy) and {^key}...{/key} (show if falsy)
   const conditionals: Record<string, boolean> = {
     afectacion_vivienda: !!(actos as any).afectacion_vivienda_familiar,
+    "actos.afectacion_vivienda": !!(actos as any).afectacion_vivienda_familiar,
     es_hipoteca: actos.es_hipoteca,
+    tiene_hipoteca: actos.es_hipoteca,
+    "inmueble.es_rph": inmueble.es_propiedad_horizontal,
   };
 
   for (const [key, value] of Object.entries(conditionals)) {
