@@ -443,6 +443,9 @@ const Validacion = () => {
 
   // Bidirectional sync: preview → form data
   const handleFieldEdit = useCallback((field: string, value: string) => {
+    // Track manually edited fields to prevent OCR overwrite
+    manuallyEditedFieldsRef.current.add(field);
+
     if (field.startsWith("__custom__")) {
       const cvId = field.replace("__custom__", "");
       setCustomVariables((prev) =>
@@ -451,11 +454,15 @@ const Validacion = () => {
       return;
     }
     if (FIELD_TO_INMUEBLE[field]) {
-      setInmueble((prev) => ({ ...prev, [FIELD_TO_INMUEBLE[field]]: value }));
+      const inmuebleKey = FIELD_TO_INMUEBLE[field];
+      manuallyEditedFieldsRef.current.add(inmuebleKey);
+      setInmueble((prev) => ({ ...prev, [inmuebleKey]: value }));
       return;
     }
     if (FIELD_TO_ACTOS[field]) {
-      setActos((prev) => ({ ...prev, [FIELD_TO_ACTOS[field]]: value }));
+      const actosKey = FIELD_TO_ACTOS[field];
+      manuallyEditedFieldsRef.current.add(actosKey);
+      setActos((prev) => ({ ...prev, [actosKey]: value }));
       return;
     }
   }, []);
