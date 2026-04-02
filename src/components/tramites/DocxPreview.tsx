@@ -394,6 +394,17 @@ const DocxPreview = ({
       return `${p.nombre_completo || "___________"}, mayor de edad, identificado(a) con cédula de ciudadanía No. ${p.numero_cedula || "___________"}, de estado civil ${p.estado_civil || "___________"}, domiciliado(a) en ${p.municipio_domicilio || "___________"}`;
     };
 
+    // Derived values
+    const areaValue = inmueble.area || inmueble.area_construida || inmueble.area_privada || "";
+    const valorCompraventa = actos.valor_compraventa || "";
+    const valorCompraventaLetras = valorCompraventa ? numberToWords(valorCompraventa) : "";
+    const valorHipoteca = actos.valor_hipoteca || "";
+    const valorHipotecaLetras = valorHipoteca ? numberToWords(valorHipoteca) : "";
+
+    // Parse RPH from escritura_ph / reformas_ph
+    const rphData = parseEscrituraString(inmueble.escritura_ph);
+    const rphReformas = parseEscrituraString(inmueble.reformas_ph);
+
     const replacements: Record<string, string> = {
       // Legacy flat persona fields
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
@@ -411,8 +422,8 @@ const DocxPreview = ({
       "inmueble.municipio": inmueble.municipio || "___________",
       "departamento": inmueble.departamento || "___________",
       "inmueble.departamento": inmueble.departamento || "___________",
-      "area": inmueble.area || "___________",
-      "inmueble.area": inmueble.area || "___________",
+      "area": areaValue || "___________",
+      "inmueble.area": areaValue || "___________",
       "linderos": inmueble.linderos || "___________",
       "avaluo_catastral": inmueble.avaluo_catastral || "___________",
       "inmueble.avaluo_catastral": inmueble.avaluo_catastral || "___________",
@@ -436,20 +447,20 @@ const DocxPreview = ({
       "inmueble.estrato": (inmueble as any).estrato || "___________",
       "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
       "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
-      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || "___________",
-      // Actos
+      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || (inmueble as any).coeficiente || "___________",
+      // Actos — with number→words conversion
       "tipo_acto": actos.tipo_acto || "___________",
-      "valor_compraventa_letras": actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
+      "valor_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
       "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
-      "actos.cuantia_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.cuantia_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_domicilio": "___________",
       "actos.entidad_nit": "___________",
-      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
-      "actos.valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
+      "actos.valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
       "actos.fecha_escritura_letras": "___________",
       "actos.pago_inicial_letras": "___________",
@@ -471,16 +482,16 @@ const DocxPreview = ({
       "inmueble.idu_vigencia": "___________",
       "inmueble.admin_fecha": "___________",
       "inmueble.admin_vigencia": "___________",
-      // RPH (propiedad horizontal)
+      // RPH (propiedad horizontal) — parsed from escritura_ph string
       "rph.escritura": inmueble.escritura_ph || "___________",
-      "rph.escritura_num_letras": "___________",
-      "rph.escritura_num_numero": "___________",
-      "rph.escritura_dia_letras": "___________",
-      "rph.escritura_dia_num": "___________",
-      "rph.escritura_mes": "___________",
-      "rph.escritura_anio_letras": "___________",
-      "rph.escritura_anio_num": "___________",
-      "rph.notaria": notariaConfig?.nombre_notaria || "___________",
+      "rph.escritura_num_letras": rphData.numero ? `(${rphData.numero})` : "___________",
+      "rph.escritura_num_numero": rphData.numero || "___________",
+      "rph.escritura_dia_letras": rphData.dia || "___________",
+      "rph.escritura_dia_num": rphData.dia || "___________",
+      "rph.escritura_mes": rphData.mes || "___________",
+      "rph.escritura_anio_letras": rphData.anio || "___________",
+      "rph.escritura_anio_num": rphData.anio || "___________",
+      "rph.notaria": rphData.notaria || notariaConfig?.nombre_notaria || "___________",
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "rph.notaria_ciudad": notariaConfig?.ciudad || "___________",
       "rph.matricula_matriz": "___________",
@@ -525,13 +536,6 @@ const DocxPreview = ({
       "escritura_numero": "___________",
       "fecha_escritura_corta": "___________",
     };
-
-    // DIAGNOSTIC: Log replacement keys and which ones have values
-    const filled = Object.entries(replacements).filter(([, v]) => v !== "___________").map(([k, v]) => `${k}=${v.substring(0, 40)}`);
-    const empty = Object.entries(replacements).filter(([, v]) => v === "___________").map(([k]) => k);
-    console.log("=== DOCX PREVIEW: buildReplacements ===");
-    console.log("Filled:", filled);
-    console.log("Empty:", empty);
 
     return replacements;
   }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento]);
