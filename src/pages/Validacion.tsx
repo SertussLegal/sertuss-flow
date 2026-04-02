@@ -199,12 +199,30 @@ const Validacion = () => {
         !p.tipo_identificacion || p.tipo_identificacion === "CC" || p.tipo_identificacion === "CE"
       );
       if (naturalPersons.length) {
-        setVendedores(naturalPersons.map((p: any) => ({
-          ...createEmptyPersona(),
-          nombre_completo: p.nombre_completo || "",
-          numero_cedula: p.numero_identificacion || "",
-          municipio_domicilio: p.lugar_expedicion || "",
-        })));
+        const unwrap = (v: any): string => {
+          if (!v) return "";
+          if (typeof v === "string") return v;
+          if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+          return String(v);
+        };
+        const vends = naturalPersons.filter((p: any) => p.rol === "vendedor");
+        const comps = naturalPersons.filter((p: any) => p.rol === "comprador");
+        if (vends.length) {
+          setVendedores(vends.map((p: any) => ({
+            ...createEmptyPersona(),
+            nombre_completo: unwrap(p.nombre_completo),
+            numero_cedula: unwrap(p.numero_identificacion),
+            municipio_domicilio: unwrap(p.lugar_expedicion),
+          })));
+        }
+        if (comps.length) {
+          setCompradores(comps.map((p: any) => ({
+            ...createEmptyPersona(),
+            nombre_completo: unwrap(p.nombre_completo),
+            numero_cedula: unwrap(p.numero_identificacion),
+            municipio_domicilio: unwrap(p.lugar_expedicion),
+          })));
+        }
       }
     }
 

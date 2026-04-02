@@ -245,11 +245,14 @@ const DocumentUploadStep = () => {
     for (const slot of [...vendedorSlots, ...compradorSlots]) {
       if (slot.status !== "done" || !slot.result) continue;
       const d = slot.result;
+      const rawNombre = d.nombre_completo || d.nombre || "";
+      const rawCedula = d.numero_identificacion || d.numero_cedula || "";
+      const rawLugar = d.lugar_expedicion || "";
       extractedPersonas.push({
-        nombre_completo: d.nombre_completo || d.nombre || "",
-        numero_identificacion: d.numero_identificacion || d.numero_cedula || "",
+        nombre_completo: unwrapConfianza(rawNombre).valor,
+        numero_identificacion: unwrapConfianza(rawCedula).valor,
         tipo_identificacion: d.tipo_identificacion || "CC",
-        lugar_expedicion: d.lugar_expedicion || "",
+        lugar_expedicion: unwrapConfianza(rawLugar).valor,
         confianza: d.confianza || "alta",
         rol: slot.rol,
       });
@@ -305,29 +308,8 @@ const DocumentUploadStep = () => {
       }
     }
 
-    // Add empty placeholders for propietarios from certificado that don't have uploaded cédulas
-    if (propietariosCert.length > 0) {
-      const loadedCedulas = new Set(
-        extractedPersonas.map(p => String(p.numero_identificacion ?? "").replace(/\D/g, ""))
-      );
-      for (const prop of propietariosCert) {
-        const normalizedCedula = prop.cedula.replace(/\D/g, "");
-        if (!loadedCedulas.has(normalizedCedula)) {
-          extractedPersonas.push({
-            nombre_completo: prop.nombre,
-            numero_identificacion: normalizedCedula,
-            tipo_identificacion: "CC",
-            lugar_expedicion: "",
-            estado_civil: "",
-            direccion: "",
-            municipio_domicilio: "",
-            confianza: "alta",
-            pendiente: true,
-            rol: "vendedor",
-          });
-        }
-      }
-    }
+    // Propietarios del certificado son solo informacionales.
+    // No se crean vendedores automáticos — solo las cédulas cargadas generan personas.
 
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
