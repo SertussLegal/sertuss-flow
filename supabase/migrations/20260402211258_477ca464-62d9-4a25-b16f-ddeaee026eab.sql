@@ -1,0 +1,1 @@
+ALTER TABLE inmuebles ADD COLUMN IF NOT EXISTS nupre text DEFAULT '';

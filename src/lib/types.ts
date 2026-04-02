@@ -75,6 +75,9 @@ export interface Inmueble {
   reformas_ph: string;
   es_propiedad_horizontal: boolean;
   matricula_matriz?: string;
+  nupre?: string;
+  estrato?: string;
+  valorizacion?: string;
 }
 
 export interface Actos {
