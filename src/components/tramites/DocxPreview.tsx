@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { lookupBank } from "@/lib/bankDirectory";
+import { formatMonedaLegal, formatFechaLegal } from "@/lib/legalFormatters";
 import { Button } from "@/components/ui/button";
 import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info } from "lucide-react";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
@@ -105,6 +106,10 @@ interface NotariaConfig {
 interface ExtractedDocumento {
   notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
   modo_adquisicion?: string; adquirido_de?: string;
+  titulo_antecedente?: {
+    tipo_documento?: string; numero_documento?: string; fecha_documento?: string;
+    notaria_documento?: string; ciudad_documento?: string; adquirido_de?: string;
+  };
 }
 
 interface ExtractedPredial {
@@ -423,9 +428,9 @@ const DocxPreview = ({
     // Derived values
     const areaValue = inmueble.area || inmueble.area_construida || inmueble.area_privada || "";
     const valorCompraventa = actos.valor_compraventa || "";
-    const valorCompraventaLetras = valorCompraventa ? numberToWords(valorCompraventa) : "";
+    const valorCompraventaLetras = valorCompraventa ? formatMonedaLegal(valorCompraventa) : "";
     const valorHipoteca = actos.valor_hipoteca || "";
-    const valorHipotecaLetras = valorHipoteca ? numberToWords(valorHipoteca) : "";
+    const valorHipotecaLetras = valorHipoteca ? formatMonedaLegal(valorHipoteca) : "";
 
     // Parse RPH from escritura_ph / reformas_ph
     const rphData = parseEscrituraString(inmueble.escritura_ph);
@@ -486,9 +491,6 @@ const DocxPreview = ({
       "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
       "estrato": inmueble.estrato || "___________",
       "inmueble.estrato": inmueble.estrato || "___________",
-      "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
-      "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
-      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || (inmueble as any).coeficiente || "___________",
       // Actos — with number→words conversion
       "tipo_acto": actos.tipo_acto || "___________",
       "valor_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
@@ -535,35 +537,40 @@ const DocxPreview = ({
       "inmueble.idu_vigencia": "___________",
       "inmueble.admin_fecha": "___________",
       "inmueble.admin_vigencia": "___________",
-      // RPH (propiedad horizontal) — parsed from escritura_ph string
+      // RPH (propiedad horizontal) — prefer structured OCR fields, fallback to parsed string
       "rph.escritura": inmueble.escritura_ph || "___________",
-      "rph.escritura_num_letras": rphData.numero ? `(${rphData.numero})` : "___________",
-      "rph.escritura_num_numero": rphData.numero || "___________",
-      "rph.escritura_dia_letras": rphData.dia || "___________",
-      "rph.escritura_dia_num": rphData.dia || "___________",
-      "rph.escritura_mes": rphData.mes || "___________",
-      "rph.escritura_anio_letras": rphData.anio || "___________",
-      "rph.escritura_anio_num": rphData.anio || "___________",
-      "rph.notaria": rphData.notaria || notariaConfig?.nombre_notaria || "___________",
+      "rph.escritura_num_letras": (inmueble as any).escritura_ph_numero ? `(${(inmueble as any).escritura_ph_numero})` : rphData.numero ? `(${rphData.numero})` : "___________",
+      "rph.escritura_num_numero": (inmueble as any).escritura_ph_numero || rphData.numero || "___________",
+      "rph.escritura_dia_letras": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })(),
+      "rph.escritura_dia_num": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })(),
+      "rph.escritura_mes": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.mes || "___________"; } return rphData.mes || "___________"; })(),
+      "rph.escritura_anio_letras": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })(),
+      "rph.escritura_anio_num": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })(),
+      "rph.notaria": (inmueble as any).escritura_ph_notaria || rphData.notaria || notariaConfig?.nombre_notaria || "___________",
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
-      "rph.notaria_ciudad": notariaConfig?.ciudad || "___________",
+      "rph.notaria_ciudad": (inmueble as any).escritura_ph_ciudad || notariaConfig?.ciudad || "___________",
       "rph.matricula_matriz": inmueble.matricula_matriz || "___________",
-      // Antecedentes — from extracted documento (OCR)
-      "antecedentes.modo": extractedDocumento?.modo_adquisicion || "___________",
-      "antecedentes.modo_adquisicion": extractedDocumento?.modo_adquisicion || "___________",
-      "antecedentes.adquirido_de": extractedDocumento?.adquirido_de || "___________",
-      "antecedentes.escritura": extractedDocumento?.numero_escritura || "___________",
-      "antecedentes.escritura_num_letras": extractedDocumento?.numero_escritura ? `(${extractedDocumento.numero_escritura})` : "___________",
-      "antecedentes.escritura_num_numero": extractedDocumento?.numero_escritura || "___________",
-      "antecedentes.escritura_dia_letras": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.dia || "___________"; })() : "___________",
-      "antecedentes.escritura_dia_num": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.dia || "___________"; })() : "___________",
-      "antecedentes.escritura_mes": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.mes || "___________"; })() : "___________",
-      "antecedentes.escritura_anio_letras": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.anio || "___________"; })() : "___________",
-      "antecedentes.escritura_anio_num": extractedDocumento?.fecha_documento ? (() => { const p = parseFechaDoc(extractedDocumento.fecha_documento); return p.anio || "___________"; })() : "___________",
-      "antecedentes.notaria": extractedDocumento?.notaria_origen || "___________",
-      "antecedentes.notaria_previa_numero": extractedDocumento?.notaria_origen || "___________",
-      "antecedentes.notaria_previa_circulo": "___________",
-      "antecedentes.fecha": extractedDocumento?.fecha_documento || "___________",
+      "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
+      "inmueble.coeficiente_letras": (inmueble as any).coeficiente_copropiedad || "___________",
+      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_copropiedad || "___________",
+      // Antecedentes — prefer titulo_antecedente (OCR from certificado), fallback to extractedDocumento
+      "antecedentes.titulo_tipo": extractedDocumento?.titulo_antecedente?.tipo_documento || "Escritura Pública",
+      "antecedentes.modo": extractedDocumento?.titulo_antecedente?.tipo_documento || extractedDocumento?.modo_adquisicion || "___________",
+      "antecedentes.modo_adquisicion": extractedDocumento?.titulo_antecedente?.tipo_documento || extractedDocumento?.modo_adquisicion || "___________",
+      "antecedentes.adquirido_de": extractedDocumento?.titulo_antecedente?.adquirido_de || extractedDocumento?.adquirido_de || "___________",
+      "antecedentes.escritura": extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || "___________",
+      "antecedentes.escritura_num_letras": (() => { const n = extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura; return n ? `(${n})` : "___________"; })(),
+      "antecedentes.escritura_num_numero": extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || "___________",
+      "antecedentes.escritura_dia_letras": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.dia || "___________"; })(),
+      "antecedentes.escritura_dia_num": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.dia || "___________"; })(),
+      "antecedentes.escritura_mes": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.mes || "___________"; })(),
+      "antecedentes.escritura_anio_letras": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.anio || "___________"; })(),
+      "antecedentes.escritura_anio_num": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.anio || "___________"; })(),
+      "antecedentes.fecha_legal": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; return f ? formatFechaLegal(f) : "___________"; })(),
+      "antecedentes.notaria": extractedDocumento?.titulo_antecedente?.notaria_documento || extractedDocumento?.notaria_origen || "___________",
+      "antecedentes.notaria_previa_numero": extractedDocumento?.titulo_antecedente?.notaria_documento || extractedDocumento?.notaria_origen || "___________",
+      "antecedentes.notaria_previa_circulo": extractedDocumento?.titulo_antecedente?.ciudad_documento || "___________",
+      "antecedentes.fecha": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; return f ? formatFechaLegal(f) : "___________"; })(),
       // Apoderado banco — from expanded actos
       "apoderado_banco.nombre": actos.apoderado_nombre || "___________",
       "apoderado_banco.cedula": actos.apoderado_cedula || "___________",

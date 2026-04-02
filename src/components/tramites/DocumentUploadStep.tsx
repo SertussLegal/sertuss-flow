@@ -289,6 +289,18 @@ const DocumentUploadStep = () => {
         if (d.actos) {
           (extractedInmueble as any).__extracted_actos = d.actos;
         }
+        // Extract titulo_antecedente from certificado
+        if (d.titulo_antecedente) {
+          const ta: Record<string, string> = {};
+          for (const [key, val] of Object.entries(d.titulo_antecedente)) {
+            if (val && typeof val === "object" && "valor" in (val as any)) {
+              ta[key] = (val as any).valor;
+            } else if (typeof val === "string") {
+              ta[key] = val;
+            }
+          }
+          (extractedInmueble as any).__extracted_titulo_antecedente = ta;
+        }
         // Don't merge persona data from certificado - only cédulas provide full data.
         // Instead, create empty placeholders for propietarios without uploaded cédulas.
         // (handled below after processing all slots)
@@ -323,6 +335,8 @@ const DocumentUploadStep = () => {
     delete (extractedInmueble as any).__extracted_actos;
     const extractedPredialSeparate = (extractedInmueble as any).__predial_data;
     delete (extractedInmueble as any).__predial_data;
+    const extractedTituloAntecedente = (extractedInmueble as any).__extracted_titulo_antecedente;
+    delete (extractedInmueble as any).__extracted_titulo_antecedente;
 
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
@@ -332,6 +346,7 @@ const DocumentUploadStep = () => {
       progress: 0,
       ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
       ...(extractedActosSeparate ? { extracted_actos: extractedActosSeparate } : {}),
+      ...(extractedTituloAntecedente ? { extracted_titulo_antecedente: extractedTituloAntecedente } : {}),
     };
 
     const { data: tramite, error } = await supabase.from("tramites").insert({

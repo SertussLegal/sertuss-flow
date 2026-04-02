@@ -111,6 +111,13 @@ const toolsByCertificado = [
               es_propiedad_horizontal: confBoolField("true si el inmueble tiene reglamento de propiedad horizontal"),
               escritura_constitucion_ph: confField("Número de escritura de constitución de propiedad horizontal, si aplica"),
               reformas_ph: confField("Reformas al reglamento de propiedad horizontal, si aplica"),
+              nombre_conjunto_edificio: confField("Nombre del conjunto, edificio o agrupación de propiedad horizontal (ej: ALTAVISTA EL MIRADOR, TORRES DEL PARQUE)"),
+              escritura_ph_numero: confField("Número de la escritura pública de constitución del régimen PH"),
+              escritura_ph_fecha: confField("Fecha de la escritura de constitución PH (DD-MM-AAAA)"),
+              escritura_ph_notaria: confField("Nombre o número de la notaría donde se otorgó la escritura de PH"),
+              escritura_ph_ciudad: confField("Ciudad/Círculo de la notaría de la escritura PH"),
+              matricula_matriz: confField("Número de matrícula inmobiliaria matriz del conjunto o edificio"),
+              coeficiente_copropiedad: confField("Coeficiente de copropiedad del inmueble (porcentaje o fracción, ej: 2.345%)"),
             },
             required: ["matricula_inmobiliaria", "codigo_orip", "linderos"],
             additionalProperties: false,
@@ -146,8 +153,22 @@ const toolsByCertificado = [
             required: ["tipo_acto_principal"],
             additionalProperties: false,
           },
+          titulo_antecedente: {
+            type: "object",
+            description: "Título antecedente: documento mediante el cual el propietario actual adquirió el bien",
+            properties: {
+              tipo_documento: confField("Tipo de documento: Escritura Pública, Sentencia Judicial, Resolución, etc."),
+              numero_documento: confField("Número del documento (ej: número de escritura pública)"),
+              fecha_documento: confField("Fecha del título antecedente (DD-MM-AAAA)"),
+              notaria_documento: confField("Notaría o juzgado donde se otorgó el título antecedente"),
+              ciudad_documento: confField("Ciudad/Círculo de la notaría del título antecedente"),
+              adquirido_de: confField("Nombre de quien transfirió el bien al propietario actual"),
+            },
+            required: ["tipo_documento"],
+            additionalProperties: false,
+          },
         },
-        required: ["documento", "inmueble", "personas", "actos"],
+        required: ["documento", "inmueble", "personas", "actos", "titulo_antecedente"],
         additionalProperties: false,
       },
     },
@@ -186,12 +207,31 @@ const toolsByEscritura = [
     type: "function" as const,
     function: {
       name: "extract_escritura_antecedente",
-      description: "Extrae los linderos de una escritura pública antecedente colombiana. Cada campo incluye nivel de confianza.",
+      description: "Extrae datos de una escritura pública antecedente colombiana. Incluye linderos y datos del acto. Cada campo incluye nivel de confianza.",
       parameters: {
         type: "object",
         properties: {
           linderos_especiales: confField("Linderos especiales (particulares) del inmueble, transcribir textualmente cada palabra"),
           linderos_generales: confField("Linderos generales del edificio o conjunto (aplica si es propiedad horizontal), transcribir textualmente"),
+          numero_escritura: confField("Número de la escritura pública"),
+          fecha_escritura: confField("Fecha de la escritura (DD-MM-AAAA)"),
+          notaria: confField("Nombre o número de la notaría donde se otorgó"),
+          ciudad_notaria: confField("Ciudad de la notaría"),
+          tipo_acto: confField("Tipo de acto: Compraventa, Donación, Permuta, etc."),
+          comparecientes: {
+            type: "array",
+            description: "Personas que comparecen en la escritura",
+            items: {
+              type: "object",
+              properties: {
+                nombre: { type: "string", description: "Nombre completo" },
+                cedula: { type: "string", description: "Número de cédula o NIT" },
+                rol: { type: "string", description: "Rol: vendedor, comprador, otorgante, apoderado, etc." },
+              },
+              required: ["nombre"],
+              additionalProperties: false,
+            },
+          },
         },
         required: ["linderos_especiales"],
         additionalProperties: false,
@@ -264,19 +304,37 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado`,
 
-  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en CUATRO nodos:
+  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en CINCO nodos:
 
 1. DOCUMENTO: fecha del documento o escritura de origen, notaría de origen, número de escritura pública.
 
 2. INMUEBLE: matrícula inmobiliaria, ORIP, dirección, municipio, departamento, linderos completos (transcribir TEXTUALMENTE cada palabra), NUPRE/CHIP (código que suele comenzar con AAA), áreas (diferencia entre construida CONST y privada PRIV), tipo de predio, y si tiene propiedad horizontal con su escritura de constitución y reformas.
 
+INFERENCIA JURÍDICA PH: Si detectas las palabras "Régimen de Propiedad Horizontal", "P.H.", "PH" o "PROPIEDAD HORIZONTAL" en cualquier anotación:
+- Marca es_propiedad_horizontal: true
+- Busca OBLIGATORIAMENTE: nombre del conjunto/edificio/agrupación, coeficiente de copropiedad, matrícula inmobiliaria matriz, escritura de constitución PH con su número, fecha, notaría y ciudad
+- El nombre del conjunto suele aparecer como "CONJUNTO CERRADO [NOMBRE]" o "EDIFICIO [NOMBRE]" o "AGRUPACIÓN [NOMBRE]"
+
 3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
+
+ROLES SEMÁNTICOS: Asigna roles basados en la estructura del acto:
+- Si una persona aparece después de "DE:" en una compraventa → es el vendedor (quien transfirió)
+- Si aparece después de "A FAVOR DE:" → es el comprador/propietario actual
+- "Sujeto Pasivo" en predial = propietario actual
 
 4. ACTOS: Busca la sección "ACTOS: CUANTÍA" o "ANOTACIONES". Identifica:
    - El acto principal (Compraventa, Donación, Permuta, Cesión, etc.) y su cuantía en pesos
    - Si hay hipoteca (abierta o cerrada), su valor y la entidad bancaria acreedora con su NIT
    - Si hay afectación a vivienda familiar (SI/NO)
    - El acto más reciente y de mayor relevancia es el "principal"
+
+5. TÍTULO ANTECEDENTE: Identifica la anotación que dio origen a la propiedad ACTUAL del vendedor. Busca el acto de compraventa, donación, sentencia o resolución más reciente que transfirió la propiedad al propietario actual. Extrae:
+   - Tipo de documento (Escritura Pública, Sentencia Judicial, Resolución)
+   - Número del documento
+   - Fecha
+   - Notaría o juzgado donde se otorgó
+   - Ciudad
+   - Nombre de quien transfirió el bien (el vendedor anterior)
 
 IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.
 

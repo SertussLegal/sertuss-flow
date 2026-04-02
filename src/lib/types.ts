@@ -78,6 +78,12 @@ export interface Inmueble {
   nupre?: string;
   estrato?: string;
   valorizacion?: string;
+  nombre_edificio_conjunto?: string;
+  escritura_ph_numero?: string;
+  escritura_ph_fecha?: string;
+  escritura_ph_notaria?: string;
+  escritura_ph_ciudad?: string;
+  coeficiente_copropiedad?: string;
 }
 
 export interface Actos {
@@ -176,6 +182,12 @@ export const createEmptyInmueble = (): Inmueble => ({
   nupre: "",
   estrato: "",
   valorizacion: "",
+  nombre_edificio_conjunto: "",
+  escritura_ph_numero: "",
+  escritura_ph_fecha: "",
+  escritura_ph_notaria: "",
+  escritura_ph_ciudad: "",
+  coeficiente_copropiedad: "",
 });
 
 export const createEmptyActos = (): Actos => ({

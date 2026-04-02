@@ -94,6 +94,10 @@ const Validacion = () => {
   const [extractedDocumento, setExtractedDocumento] = useState<{
     notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
     modo_adquisicion?: string; adquirido_de?: string;
+    titulo_antecedente?: {
+      tipo_documento?: string; numero_documento?: string; fecha_documento?: string;
+      notaria_documento?: string; ciudad_documento?: string; adquirido_de?: string;
+    };
   } | null>(null);
   const [extractedPredial, setExtractedPredial] = useState<{
     numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
@@ -331,7 +335,12 @@ const Validacion = () => {
 
     // Load extracted_documento from metadata for antecedentes placeholders
     if (meta?.extracted_documento) {
-      setExtractedDocumento(meta.extracted_documento);
+      const doc = meta.extracted_documento;
+      // Also load titulo_antecedente if stored separately
+      if (meta?.extracted_titulo_antecedente && !doc.titulo_antecedente) {
+        doc.titulo_antecedente = meta.extracted_titulo_antecedente;
+      }
+      setExtractedDocumento(doc);
     }
 
     // Load extracted_predial from metadata for predial placeholders
@@ -559,7 +568,11 @@ const Validacion = () => {
     if (tid) {
       supabase.from("tramites").select("metadata").eq("id", tid).single()
         .then(({ data }) => {
-          const merged = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          const merged: Record<string, any> = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          // Also persist titulo_antecedente separately for easy access
+          if (documento.titulo_antecedente) {
+            merged.extracted_titulo_antecedente = documento.titulo_antecedente;
+          }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }

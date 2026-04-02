@@ -25,6 +25,14 @@ export interface ExtractedDocumento {
   fecha_documento?: string;
   notaria_origen?: string;
   numero_escritura?: string;
+  titulo_antecedente?: {
+    tipo_documento?: string;
+    numero_documento?: string;
+    fecha_documento?: string;
+    notaria_documento?: string;
+    ciudad_documento?: string;
+    adquirido_de?: string;
+  };
 }
 
 interface InmuebleFormProps {
@@ -180,6 +188,13 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             ...(unwrapped.es_propiedad_horizontal != null ? { es_propiedad_horizontal: unwrapped.es_propiedad_horizontal as boolean } : {}),
             ...(unwrapped.escritura_constitucion_ph ? { escritura_ph: unwrapped.escritura_constitucion_ph as string } : {}),
             ...(unwrapped.reformas_ph ? { reformas_ph: unwrapped.reformas_ph as string } : {}),
+            ...(unwrapped.nombre_conjunto_edificio ? { nombre_edificio_conjunto: unwrapped.nombre_conjunto_edificio as string } : {}),
+            ...(unwrapped.escritura_ph_numero ? { escritura_ph_numero: unwrapped.escritura_ph_numero as string } : {}),
+            ...(unwrapped.escritura_ph_fecha ? { escritura_ph_fecha: unwrapped.escritura_ph_fecha as string } : {}),
+            ...(unwrapped.escritura_ph_notaria ? { escritura_ph_notaria: unwrapped.escritura_ph_notaria as string } : {}),
+            ...(unwrapped.escritura_ph_ciudad ? { escritura_ph_ciudad: unwrapped.escritura_ph_ciudad as string } : {}),
+            ...(unwrapped.matricula_matriz ? { matricula_matriz: unwrapped.matricula_matriz as string } : {}),
+            ...(unwrapped.coeficiente_copropiedad ? { coeficiente_copropiedad: unwrapped.coeficiente_copropiedad as string } : {}),
           }, inmueble);
 
           if (personasData && Array.isArray(personasData) && onPersonasExtracted) {
@@ -188,13 +203,25 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
 
           // Unwrap documento confidence
           if (docData && onDocumentoExtracted) {
-            const unwrappedDoc: Record<string, string> = {};
+            const unwrappedDoc: Record<string, any> = {};
             for (const [key, val] of Object.entries(docData)) {
               if (val && typeof val === "object" && "valor" in (val as any)) {
                 unwrappedDoc[key] = (val as any).valor;
               } else if (typeof val === "string") {
                 unwrappedDoc[key] = val;
               }
+            }
+            // Unwrap titulo_antecedente if present
+            if (d.titulo_antecedente) {
+              const ta: Record<string, string> = {};
+              for (const [key, val] of Object.entries(d.titulo_antecedente)) {
+                if (val && typeof val === "object" && "valor" in (val as any)) {
+                  ta[key] = (val as any).valor;
+                } else if (typeof val === "string") {
+                  ta[key] = val;
+                }
+              }
+              unwrappedDoc.titulo_antecedente = ta;
             }
             onDocumentoExtracted(unwrappedDoc as ExtractedDocumento);
           }
