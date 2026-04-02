@@ -246,6 +246,28 @@ const Validacion = () => {
     }
     if (act) setActos(act as any);
 
+    // Load notaria config for document coherence
+    if (t.organization_id) {
+      const [{ data: ns }, { data: cn }] = await Promise.all([
+        supabase.from("notaria_styles").select("*").eq("organization_id", t.organization_id).maybeSingle(),
+        supabase.from("configuracion_notaria").select("*").eq("organization_id", t.organization_id).maybeSingle(),
+      ]);
+      if (ns || cn) {
+        setNotariaConfig({
+          nombre_notaria: ns?.nombre_notaria || "",
+          ciudad: ns?.ciudad || "",
+          notario_titular: ns?.notario_titular || "",
+          estilo_linderos: ns?.estilo_linderos || "",
+          numero_notaria: cn?.numero_notaria ?? null,
+          circulo: cn?.circulo || "",
+          departamento: cn?.departamento || "",
+          tipo_notario: cn?.tipo_notario || "",
+          nombre_notario: cn?.nombre_notario || "",
+          decreto_nombramiento: cn?.decreto_nombramiento || "",
+        });
+      }
+    }
+
     setSyncStatus("saved");
     setIsDirty(false);
   };
