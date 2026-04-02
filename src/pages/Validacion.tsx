@@ -1150,17 +1150,18 @@ const inmuebleToRow = (i: Inmueble) => ({
   codigo_orip: i.codigo_orip,
   tipo_predio: i.tipo_predio,
   direccion: i.direccion,
-  estrato: "",
+  estrato: i.estrato || "",
   area: i.area,
   area_construida: i.area_construida,
   area_privada: i.area_privada,
   linderos: i.linderos,
-  valorizacion: "",
+  valorizacion: i.valorizacion || "",
   avaluo_catastral: i.avaluo_catastral,
   escritura_ph: i.escritura_ph,
   reformas_ph: i.reformas_ph,
   es_propiedad_horizontal: i.es_propiedad_horizontal,
   matricula_matriz: i.matricula_matriz || "",
+  nupre: i.nupre || "",
 });
 
 const actosToRow = (a: Actos) => ({
