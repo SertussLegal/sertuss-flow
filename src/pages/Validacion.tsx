@@ -5,8 +5,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { validarConClaude, tieneErroresCriticos, contarPorNivel } from "@/services/validacionClaude";
+import { toast as sonnerToast } from "sonner";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
 import type { ExtractedPersona, ExtractedDocumento } from "@/components/tramites/InmuebleForm";
@@ -72,6 +78,9 @@ const Validacion = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
+  const [validando, setValidando] = useState(false);
+  const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
+  const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
@@ -587,6 +596,110 @@ const Validacion = () => {
     return true;
   };
 
+  const handlePrevisualizar = async () => {
+    if (!tramiteId || !profile?.organization_id) {
+      setPreviewOpen(true);
+      return;
+    }
+
+    setValidando(true);
+    try {
+      const datosExtraidos = {
+        vendedores: vendedores.map(v => ({
+          nombre_completo: v.nombre_completo,
+          numero_cedula: v.numero_cedula,
+          estado_civil: v.estado_civil,
+          direccion: v.direccion,
+          municipio_domicilio: v.municipio_domicilio,
+          es_persona_juridica: v.es_persona_juridica,
+          razon_social: v.razon_social,
+          nit: v.nit,
+        })),
+        compradores: compradores.map(c => ({
+          nombre_completo: c.nombre_completo,
+          numero_cedula: c.numero_cedula,
+          estado_civil: c.estado_civil,
+          direccion: c.direccion,
+          municipio_domicilio: c.municipio_domicilio,
+          es_persona_juridica: c.es_persona_juridica,
+          razon_social: c.razon_social,
+          nit: c.nit,
+        })),
+        inmueble: {
+          matricula_inmobiliaria: inmueble.matricula_inmobiliaria,
+          identificador_predial: inmueble.identificador_predial,
+          departamento: inmueble.departamento,
+          municipio: inmueble.municipio,
+          direccion: inmueble.direccion,
+          area: inmueble.area,
+          linderos: inmueble.linderos,
+          avaluo_catastral: inmueble.avaluo_catastral,
+          codigo_orip: inmueble.codigo_orip,
+        },
+        actos: {
+          tipo_acto: actos.tipo_acto,
+          valor_compraventa: actos.valor_compraventa,
+          es_hipoteca: actos.es_hipoteca,
+          valor_hipoteca: actos.valor_hipoteca,
+          entidad_bancaria: actos.entidad_bancaria,
+        },
+      };
+
+      const validacionesApp: string[] = [];
+      if (vendedores.length > 0 || compradores.length > 0) {
+        validacionesApp.push("cruce_roles_certificado_completado");
+      }
+      const tienePendientes = [...vendedores, ...compradores].some(
+        (p: any) => p.pendiente === true
+      );
+      if (tienePendientes) {
+        validacionesApp.push("placeholders_pendientes_aplicados");
+      }
+
+      const resultado = await validarConClaude({
+        modo: "documento",
+        tramiteId,
+        organizationId: profile.organization_id,
+        tipoActo: actos.tipo_acto || "compraventa",
+        datosExtraidos,
+        validacionesApp,
+      });
+
+      // Error sistema → no bloquear, abrir preview directamente
+      if (resultado.estado === "error_sistema") {
+        setPreviewOpen(true);
+        return;
+      }
+
+      // Aprobado sin problemas
+      if (resultado.estado === "aprobado" && !tieneErroresCriticos(resultado)) {
+        setPreviewOpen(true);
+        return;
+      }
+
+      // Errores críticos → mostrar dialog
+      if (tieneErroresCriticos(resultado)) {
+        setValidacionResultado(resultado);
+        setValidacionDialogOpen(true);
+        return;
+      }
+
+      // Solo advertencias/sugerencias → toast + abrir preview
+      const conteo = contarPorNivel(resultado);
+      sonnerToast.info(
+        `Validación: ${resultado.puntuacion ?? "—"}/100 — ${conteo.advertencias} advertencia(s), ${conteo.sugerencias} sugerencia(s)`,
+        { description: resultado.retroalimentacion_general, duration: 6000 }
+      );
+      setPreviewOpen(true);
+    } catch (err) {
+      console.error("Error en validación pre-preview:", err);
+      // Fallback: abrir preview sin bloquear
+      setPreviewOpen(true);
+    } finally {
+      setValidando(false);
+    }
+  };
+
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
       toast({ title: "Error", description: "Guarda el trámite primero.", variant: "destructive" });
@@ -759,10 +872,15 @@ const Validacion = () => {
             </Button>
             <Button
               size="sm"
-              onClick={() => setPreviewOpen(true)}
+              onClick={handlePrevisualizar}
+              disabled={validando}
               className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
             >
-              <Eye className="mr-1 h-4 w-4" /> Previsualizar
+              {validando ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando...</>
+              ) : (
+                <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+              )}
             </Button>
           </div>
         </div>
@@ -812,6 +930,89 @@ const Validacion = () => {
         onConfirm={handleConfirmGenerate}
         generating={generating}
       />
+
+      {/* Dialog de validación Claude — errores críticos */}
+      <AlertDialog open={validacionDialogOpen} onOpenChange={setValidacionDialogOpen}>
+        <AlertDialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              Revisión de validación
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {validacionResultado && (
+                  <>
+                    {validacionResultado.puntuacion != null && (
+                      <p className="text-sm font-medium">
+                        Puntuación: <span className="text-foreground">{validacionResultado.puntuacion}/100</span>
+                      </p>
+                    )}
+                    <p className="text-sm">{validacionResultado.retroalimentacion_general}</p>
+
+                    {/* Errores */}
+                    {validacionResultado.validaciones.filter(v => v.nivel === "error").length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-destructive flex items-center gap-1">
+                          <AlertCircle className="h-3.5 w-3.5" /> Errores
+                        </p>
+                        {validacionResultado.validaciones.filter(v => v.nivel === "error").map((v, i) => (
+                          <div key={i} className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                            {v.valor_sugerido && (
+                              <span className="block text-muted-foreground mt-0.5">Sugerido: {v.valor_sugerido}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Advertencias */}
+                    {validacionResultado.validaciones.filter(v => v.nivel === "advertencia").length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-yellow-600 flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" /> Advertencias
+                        </p>
+                        {validacionResultado.validaciones.filter(v => v.nivel === "advertencia").map((v, i) => (
+                          <div key={i} className="rounded border border-yellow-500/30 bg-yellow-500/5 p-2 text-xs">
+                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Sugerencias */}
+                    {validacionResultado.validaciones.filter(v => v.nivel === "sugerencia").length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-blue-600 flex items-center gap-1">
+                          <Info className="h-3.5 w-3.5" /> Sugerencias
+                        </p>
+                        {validacionResultado.validaciones.filter(v => v.nivel === "sugerencia").map((v, i) => (
+                          <div key={i} className="rounded border border-blue-500/30 bg-blue-500/5 p-2 text-xs">
+                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Corregir</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setValidacionDialogOpen(false);
+                setPreviewOpen(true);
+              }}
+              className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
+            >
+              Continuar de todas formas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
