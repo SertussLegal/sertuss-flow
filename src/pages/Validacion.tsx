@@ -442,7 +442,7 @@ const Validacion = () => {
         // Read-then-merge: preserve extracted_* keys from OCR
         const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
         const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
-        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas"];
+        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas", "extracted_actos"];
         const merged: Record<string, unknown> = { ...formMetadata };
         for (const key of preservedKeys) {
           if (existingMeta[key] && !merged[key]) {
