@@ -678,6 +678,45 @@ export type Database = {
         }
         Relationships: []
       }
+      system_events: {
+        Row: {
+          categoria: string
+          created_at: string | null
+          detalle: Json | null
+          evento: string
+          id: string
+          organization_id: string | null
+          resultado: string
+          tiempo_ms: number | null
+          tramite_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          categoria: string
+          created_at?: string | null
+          detalle?: Json | null
+          evento: string
+          id?: string
+          organization_id?: string | null
+          resultado: string
+          tiempo_ms?: number | null
+          tramite_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          categoria?: string
+          created_at?: string | null
+          detalle?: Json | null
+          evento?: string
+          id?: string
+          organization_id?: string | null
+          resultado?: string
+          tiempo_ms?: number | null
+          tramite_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       tramites: {
         Row: {
           created_at: string
