@@ -13,6 +13,11 @@ interface NotariaConfig {
   nombre_notario: string; decreto_nombramiento: string;
 }
 
+interface ExtractedDocumento {
+  notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
+  modo_adquisicion?: string; adquirido_de?: string;
+}
+
 interface DocxPreviewProps {
   vendedores: Persona[];
   compradores: Persona[];
@@ -26,6 +31,7 @@ interface DocxPreviewProps {
   textoFinalWord?: string;
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
   notariaConfig?: NotariaConfig | null;
+  extractedDocumento?: ExtractedDocumento | null;
 }
 
 const PAGE_WIDTH = 612;
