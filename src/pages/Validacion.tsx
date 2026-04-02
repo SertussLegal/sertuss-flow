@@ -1380,7 +1380,7 @@ const actosToRow = (a: Actos) => ({
   fecha_credito: a.fecha_credito || "",
   entidad_nit: a.entidad_nit || "",
   entidad_domicilio: a.entidad_domicilio || "",
-  afectacion_vivienda_familiar: false,
+  afectacion_vivienda_familiar: a.afectacion_vivienda_familiar ?? false,
 });
 
 export default Validacion;
