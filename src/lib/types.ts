@@ -54,6 +54,7 @@ export interface Persona {
   apoderado_persona_nombre: string;
   apoderado_persona_cedula: string;
   apoderado_persona_municipio: string;
+  lugar_expedicion?: string;
 }
 
 export interface Inmueble {
@@ -136,6 +137,7 @@ export const createEmptyPersona = (): Persona => ({
   apoderado_persona_nombre: "",
   apoderado_persona_cedula: "",
   apoderado_persona_municipio: "",
+  lugar_expedicion: "",
 });
 
 export const createEmptyInmueble = (): Inmueble => ({

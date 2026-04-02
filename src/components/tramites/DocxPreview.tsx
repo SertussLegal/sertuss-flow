@@ -90,6 +90,107 @@ function normalizeTemplateTags(html: string): string {
   return result;
 }
 
+/**
+ * Process loop sections like {#vendedores}...{/vendedores} and conditionals like {#afectacion_vivienda}...{/afectacion_vivienda}
+ */
+function processLoops(
+  html: string,
+  vendedores: Persona[],
+  compradores: Persona[],
+  actos: Actos
+): string {
+  let result = html;
+
+  // Helper: expand a person loop
+  const expandPersonLoop = (tag: string, personas: Persona[], src: string): string => {
+    const openTag = `{#${tag}}`;
+    const closeTag = `{/${tag}}`;
+    let output = src;
+    let safety = 0;
+
+    while (output.includes(openTag) && safety < 10) {
+      safety++;
+      const startIdx = output.indexOf(openTag);
+      const endIdx = output.indexOf(closeTag, startIdx);
+      if (endIdx === -1) break;
+
+      const before = output.substring(0, startIdx);
+      const inner = output.substring(startIdx + openTag.length, endIdx);
+      const after = output.substring(endIdx + closeTag.length);
+
+      const expanded = personas.map((p) => {
+        let block = inner;
+        const personaFields: Record<string, string> = {
+          nombre: p.nombre_completo || "___________",
+          nombre_completo: p.nombre_completo || "___________",
+          cedula: p.numero_cedula || "___________",
+          numero_cedula: p.numero_cedula || "___________",
+          numero_identificacion: p.numero_cedula || "___________",
+          expedida_en: p.lugar_expedicion || p.municipio_domicilio || "___________",
+          lugar_expedicion: p.lugar_expedicion || p.municipio_domicilio || "___________",
+          estado_civil: p.estado_civil || "___________",
+          domicilio: p.municipio_domicilio || "___________",
+          municipio_domicilio: p.municipio_domicilio || "___________",
+          direccion: p.direccion || "___________",
+          razon_social: p.razon_social || "___________",
+          nit: p.nit || "___________",
+          representante_legal_nombre: p.representante_legal_nombre || "___________",
+          representante_legal_cedula: p.representante_legal_cedula || "___________",
+        };
+        for (const [key, value] of Object.entries(personaFields)) {
+          block = block.replace(new RegExp(`\\{${key}\\}`, "g"), value);
+        }
+        return block;
+      }).join("");
+
+      output = before + expanded + after;
+    }
+    return output;
+  };
+
+  result = expandPersonLoop("vendedores", vendedores, result);
+  result = expandPersonLoop("compradores", compradores, result);
+
+  // Process boolean conditionals: {#key}...{/key} (show if truthy) and {^key}...{/key} (show if falsy)
+  const conditionals: Record<string, boolean> = {
+    afectacion_vivienda: !!(actos as any).afectacion_vivienda_familiar,
+    es_hipoteca: actos.es_hipoteca,
+  };
+
+  for (const [key, value] of Object.entries(conditionals)) {
+    // Positive conditional {#key}...{/key}
+    const posOpen = `{#${key}}`;
+    const posClose = `{/${key}}`;
+    let s = 0;
+    while (result.includes(posOpen) && s < 10) {
+      s++;
+      const si = result.indexOf(posOpen);
+      const ei = result.indexOf(posClose, si);
+      if (ei === -1) break;
+      const before = result.substring(0, si);
+      const inner = result.substring(si + posOpen.length, ei);
+      const after = result.substring(ei + posClose.length);
+      result = before + (value ? inner : "") + after;
+    }
+
+    // Negative conditional {^key}...{/key}
+    const negOpen = `{^${key}}`;
+    s = 0;
+    while (result.includes(negOpen) && s < 10) {
+      s++;
+      const si = result.indexOf(negOpen);
+      const ei = result.indexOf(posClose, si);
+      if (ei === -1) break;
+      const before = result.substring(0, si);
+      const inner = result.substring(si + negOpen.length, ei);
+      const after = result.substring(ei + posClose.length);
+      result = before + (!value ? inner : "") + after;
+    }
+  }
+
+  return result;
+}
+
 const DocxPreview = ({
   vendedores,
   compradores,
@@ -188,31 +289,31 @@ const DocxPreview = ({
     };
 
     const replacements: Record<string, string> = {
+      // Legacy flat persona fields
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
       "comparecientes_comprador": compradores.map(formatPersona).join("; y ") || "___________",
+      // Inmueble core
       "matricula_inmobiliaria": inmueble.matricula_inmobiliaria || "___________",
+      "inmueble.matricula": inmueble.matricula_inmobiliaria || "___________",
       "identificador_predial": inmueble.identificador_predial || "___________",
+      "inmueble.cedula_catastral": inmueble.identificador_predial || "___________",
       "direccion_inmueble": inmueble.direccion || "___________",
       "inmueble.direccion": inmueble.direccion || "___________",
-      "inmueble.matricula": inmueble.matricula_inmobiliaria || "___________",
-      "inmueble.cedula_catastral": inmueble.identificador_predial || "___________",
       "inmueble.linderos_especiales": inmueble.linderos || "___________",
       "inmueble.linderos_generales": inmueble.linderos || "___________",
       "municipio": inmueble.municipio || "___________",
+      "inmueble.municipio": inmueble.municipio || "___________",
       "departamento": inmueble.departamento || "___________",
+      "inmueble.departamento": inmueble.departamento || "___________",
       "area": inmueble.area || "___________",
+      "inmueble.area": inmueble.area || "___________",
       "linderos": inmueble.linderos || "___________",
-      "valor_compraventa_letras": actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
-      "tipo_acto": actos.tipo_acto || "___________",
-      "entidad_bancaria": actos.entidad_bancaria || "___________",
-      "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
-      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
       "avaluo_catastral": inmueble.avaluo_catastral || "___________",
+      "inmueble.avaluo_catastral": inmueble.avaluo_catastral || "___________",
       "codigo_orip": inmueble.codigo_orip || "___________",
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
-      // Campos adicionales del inmueble
+      "inmueble.orip_zona": inmueble.codigo_orip || "___________",
+      // Inmueble extended
       "nupre": (inmueble as any).nupre || "___________",
       "inmueble.nupre": (inmueble as any).nupre || "___________",
       "tipo_predio": inmueble.tipo_predio || "___________",
@@ -227,6 +328,37 @@ const DocxPreview = ({
       "inmueble.reformas_ph": inmueble.reformas_ph || "___________",
       "estrato": (inmueble as any).estrato || "___________",
       "inmueble.estrato": (inmueble as any).estrato || "___________",
+      "inmueble.nombre_edificio_conjunto": (inmueble as any).nombre_edificio_conjunto || "___________",
+      "inmueble.coeficiente_letras": (inmueble as any).coeficiente_letras || "___________",
+      "inmueble.coeficiente_numero": (inmueble as any).coeficiente_numero || "___________",
+      // Actos
+      "tipo_acto": actos.tipo_acto || "___________",
+      "valor_compraventa_letras": actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_letras": actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
+      "entidad_bancaria": actos.entidad_bancaria || "___________",
+      "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
+      "valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.valor_hipoteca_letras": actos.valor_hipoteca || "___________",
+      "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
+      "actos.fecha_escritura_letras": "___________",
+      "actos.pago_inicial_letras": "___________",
+      "actos.pago_inicial_numero": "___________",
+      "actos.saldo_financiado_letras": "___________",
+      "actos.saldo_financiado_numero": "___________",
+      // RPH (propiedad horizontal) — user fills manually
+      "rph.escritura": inmueble.escritura_ph || "___________",
+      "rph.notaria": "___________",
+      "rph.matricula_matriz": "___________",
+      // Antecedentes — user fills manually
+      "antecedentes.modo_adquisicion": "___________",
+      "antecedentes.escritura": "___________",
+      "antecedentes.notaria": "___________",
+      "antecedentes.fecha": "___________",
+      // Notario — from notaria config
+      "notario_nombre": "___________",
+      "notario_decreto": "___________",
+      "escritura_numero": "___________",
     };
 
     // DIAGNOSTIC: Log replacement keys and which ones have values
@@ -258,7 +390,10 @@ const DocxPreview = ({
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      let result = baseHtml;
+      // Step 1: Process loops (vendedores, compradores, conditionals)
+      let result = processLoops(baseHtml, vendedores, compradores, actos);
+      
+      // Step 2: Apply flat replacements
       const replacements = buildReplacements();
 
       for (const [key, value] of Object.entries(replacements)) {
@@ -276,6 +411,7 @@ const DocxPreview = ({
         }
       }
 
+      // Clean remaining loop markers and unmapped placeholders
       result = result.replace(/\{[#/^][^}]*\}/g, "");
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:#fef3c7;text-decoration:underline">___________</span>');
 
