@@ -264,13 +264,19 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": el dato es parcialmente legible o podría tener variaciones menores
 - "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado`,
 
-  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en tres nodos:
+  certificado_tradicion: `Eres un sistema OCR especializado en certificados de tradición y libertad colombianos. Analiza el documento y extrae los datos estructurados en CUATRO nodos:
 
 1. DOCUMENTO: fecha del documento o escritura de origen, notaría de origen, número de escritura pública.
 
 2. INMUEBLE: matrícula inmobiliaria, ORIP, dirección, municipio, departamento, linderos completos (transcribir TEXTUALMENTE cada palabra), NUPRE/CHIP (código que suele comenzar con AAA), áreas (diferencia entre construida CONST y privada PRIV), tipo de predio, y si tiene propiedad horizontal con su escritura de constitución y reformas.
 
 3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
+
+4. ACTOS: Busca la sección "ACTOS: CUANTÍA" o "ANOTACIONES". Identifica:
+   - El acto principal (Compraventa, Donación, Permuta, Cesión, etc.) y su cuantía en pesos
+   - Si hay hipoteca (abierta o cerrada), su valor y la entidad bancaria acreedora con su NIT
+   - Si hay afectación a vivienda familiar (SI/NO)
+   - El acto más reciente y de mayor relevancia es el "principal"
 
 IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.
 
