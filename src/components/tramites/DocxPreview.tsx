@@ -719,7 +719,7 @@ const DocxPreview = ({
         });
       }
     }
-  }, [onFieldEdit, customVariables, sugerenciasIA]);
+  }, [onFieldEdit, onScrollToField, customVariables, sugerenciasIA]);
 
   // Handle text selection for creating new variables
   const handleMouseUp = useCallback(() => {
