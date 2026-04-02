@@ -411,6 +411,21 @@ const DocxPreview = ({
     const rphData = parseEscrituraString(inmueble.escritura_ph);
     const rphReformas = parseEscrituraString(inmueble.reformas_ph);
 
+    // Parse fecha_poder for apoderado banco date components
+    const poderFechaParsed = parseEscrituraString((actos as any).apoderado_fecha_poder ? `DEL ${(actos as any).apoderado_fecha_poder}` : undefined);
+
+    // Parse fecha_credito for credit date components
+    const fechaCreditoStr = (actos as any).fecha_credito || "";
+    const fechaCreditoParsed = (() => {
+      if (!fechaCreditoStr) return { dia: undefined, mes: undefined, anio: undefined };
+      const parts = fechaCreditoStr.split("-"); // YYYY-MM-DD from input[type=date]
+      if (parts.length === 3) {
+        const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        return { dia: parseInt(parts[2], 10).toString(), mes: meses[parseInt(parts[1], 10) - 1], anio: parts[0] };
+      }
+      return { dia: undefined, mes: undefined, anio: undefined };
+    })();
+
     const replacements: Record<string, string> = {
       // Legacy flat persona fields
       "comparecientes_vendedor": vendedores.map(formatPersona).join("; y ") || "___________",
