@@ -1,86 +1,35 @@
 
 
-## Plan: Corregir la previsualización — los datos SÍ se llenan pero la plantilla usa loops
+## Plan: Cambiar `.single()` → `.maybeSingle()` en consultas que pueden no tener registros
 
-### Diagnóstico de los logs
+### Revisión holística
 
-Los logs muestran que **los datos SÍ están siendo capturados correctamente por el OCR**. El array "Filled" tiene 27 valores con datos reales (vendedor, comprador, matrícula, dirección, linderos, etc.).
+Revisé **todos** los usos de `.single()` en el proyecto (70 coincidencias en 5 archivos). Los clasifico:
 
-El problema es un **desajuste entre la estructura de la plantilla Word y la lógica de reemplazo**:
+**Correctos con `.single()` — NO cambiar:**
+- `tramites.select("*").eq("id", tid).single()` (línea 150): El trámite DEBE existir, si no, hacemos `return`. Correcto.
+- `AuthContext.tsx`: Consultas a `profiles` y `organizations` por ID de usuario autenticado — siempre existe exactamente 1 registro. Correcto.
+- `DocumentUploadStep.tsx` (línea 328): Es un INSERT con `.select().single()` — retorna el registro recién creado. Correcto.
+- `Validacion.tsx` línea 528: INSERT con `.select().single()` — mismo caso. Correcto.
+- `process-expediente/index.ts`: Edge function que procesa un trámite que ya existe con todos sus datos. Correcto (falla intencionalmente si no hay datos).
+- `validar-con-claude/index.ts`: Busca configuración/plantilla que debe existir. Correcto.
 
-**La plantilla Word usa sintaxis de loops (docxtemplater):**
-```text
-{#vendedores}{nombre}{cedula}{expedida_en}{estado_civil}{/vendedores}
-{#compradores}{nombre}{cedula}{expedida_en}{estado_civil}{/compradores}
-```
+**Deben cambiar a `.maybeSingle()` — 2 líneas:**
+- Línea 188: `inmuebles.select("*").eq("tramite_id", tid).single()` — en trámites nuevos, el inmueble aún no se ha guardado en BD. Causa error 406.
+- Línea 189: `actos.select("*").eq("tramite_id", tid).single()` — mismo caso, los actos no existen hasta que el usuario guarde.
 
-**El código actual hace reemplazo plano:**
-```text
-comparecientes_vendedor → "MAYA MONTOYA, mayor de edad..."
-```
+Ambas líneas ya tienen fallback correcto:
+- Línea 230: `if (inm) setInmueble(...)` else usa `extracted_inmueble`
+- Línea 241: `if (act) setActos(...)`
 
-Lo que pasa:
-1. El código reemplaza `{comparecientes_vendedor}` (que NO existe en la plantilla) con datos
-2. Los placeholders reales como `{#vendedores}{nombre}{/vendedores}` NO se procesan
-3. Línea 279 elimina los marcadores de loop `{#vendedores}`, `{/vendedores}`
-4. Los `{nombre}`, `{cedula}` huérfanos se convierten en `___________` por la línea 280
+El cambio es mínimo, quirúrgico y **no rompe ningún otro flujo**. Es exactamente lo que se necesita.
 
-También faltan muchos campos que SÍ existen en la plantilla:
-- `{inmueble.nombre_edificio_conjunto}`, `{inmueble.coeficiente_letras}`, `{inmueble.coeficiente_numero}`, `{inmueble.orip_zona}`
-- `{rph.*}` (datos de registro de propiedad horizontal)
-- `{antecedentes.*}` (datos de tradición anterior)
-- `{notario_nombre}`, `{notario_decreto}`, `{escritura_numero}`
-- `{actos.fecha_escritura_letras}`, `{actos.pago_inicial_*}`, `{actos.saldo_financiado_*}`
-- `{#afectacion_vivienda}...{/}`
+### Cambio
 
-### Sobre los errores 406
+| Archivo | Línea | Cambio |
+|---|---|---|
+| `src/pages/Validacion.tsx` | 188 | `.single()` → `.maybeSingle()` |
+| `src/pages/Validacion.tsx` | 189 | `.single()` → `.maybeSingle()` |
 
-Los dos errores "Failed to load resource: 406" son llamadas al edge function `validar-con-claude` que fallan — probablemente por falta de API key o configuración. No afectan la previsualización.
-
-### Solución
-
-Reemplazar la lógica de sustitución plana por un **procesador de loops** que:
-1. Expanda `{#vendedores}...{/vendedores}` repitiendo el bloque HTML por cada vendedor
-2. Expanda `{#compradores}...{/compradores}` por cada comprador
-3. Dentro de cada repetición, reemplace `{nombre}`, `{cedula}`, `{domicilio}`, `{expedida_en}`, `{estado_civil}` con los datos de esa persona
-4. Maneje condicionales `{#afectacion_vivienda}...{/}` y `{^afectacion_vivienda}...{/}`
-
-Y agregar los campos faltantes al mapa de reemplazos para los campos simples (no-loop).
-
-### Cambios en `src/components/tramites/DocxPreview.tsx`
-
-**1. Agregar función `processLoops`** que:
-- Busca patrones `{#vendedores}...{/vendedores}` en el HTML
-- Repite el contenido interno por cada vendedor, reemplazando `{nombre}` → `p.nombre_completo`, `{cedula}` → `p.numero_cedula`, `{domicilio}` → `p.municipio_domicilio`, `{expedida_en}` → lugar de expedición, `{estado_civil}` → `p.estado_civil`
-- Hace lo mismo para `{#compradores}...{/compradores}`
-- Procesa condicionales `{#afectacion_vivienda}` / `{^afectacion_vivienda}`
-
-**2. Ampliar `buildReplacements`** con los campos faltantes:
-- `inmueble.nombre_edificio_conjunto` (usar `inmueble.direccion` o campo nuevo)
-- `inmueble.coeficiente_letras`, `inmueble.coeficiente_numero`
-- `inmueble.orip_zona`
-- `rph.*` campos (escritura PH, notaría PH, matrícula matriz)
-- `antecedentes.*` campos (modo de adquisición, escritura anterior)
-- `notario_nombre`, `notario_decreto`
-- `escritura_numero`
-- `actos.fecha_escritura_letras`
-- `actos.pago_inicial_*`, `actos.saldo_financiado_*`
-
-Para campos que aún no existen en el modelo de datos (como `rph`, `antecedentes`, `notario`), se dejarán como `___________` — el usuario los llenará manualmente.
-
-**3. Modificar el `useEffect` de aplicación** (líneas 260-280):
-- Primero ejecutar `processLoops(result, vendedores, compradores, actos)` para expandir los loops
-- Luego aplicar los reemplazos simples como ya se hace
-- Eliminar la línea 279 que borra ciegamente los marcadores de loop (ya se procesan)
-
-**4. Actualizar `Persona` type** si es necesario: agregar campo `lugar_expedicion` opcional para mapear `{expedida_en}`.
-
-### Archivos a modificar
-
-| Archivo | Cambio |
-|---|---|
-| `src/components/tramites/DocxPreview.tsx` | Agregar `processLoops`, ampliar `buildReplacements`, modificar flujo de aplicación |
-| `src/lib/types.ts` | Agregar `lugar_expedicion?: string` a `Persona` |
-
-2 archivos.
+2 líneas en 1 archivo. Sin efectos secundarios.
 
