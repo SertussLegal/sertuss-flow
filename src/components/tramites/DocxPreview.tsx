@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import VariableEditPopover from "./VariableEditPopover";
 import SelectionToolbar from "./SelectionToolbar";
 import DOMPurify from "dompurify";
+import mammoth from "mammoth";
 
 // ── Number to words (Spanish) ──────────────────────────────────
 const UNITS = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
@@ -372,7 +373,6 @@ const DocxPreview = ({
           return;
         }
         const buffer = await response.arrayBuffer();
-        const mammoth = await import("mammoth");
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
         const normalized = normalizeTemplateTags(result.value);
         
