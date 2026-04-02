@@ -26,6 +26,7 @@ import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfi
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupBank } from "@/lib/bankDirectory";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
