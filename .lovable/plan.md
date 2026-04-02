@@ -1,65 +1,86 @@
 
-## Análisis exhaustivo: Previsualización no refleja datos de documentos
 
-### Flujo de datos actual
+## Plan: Corregir la previsualización — los datos SÍ se llenan pero la plantilla usa loops
 
+### Diagnóstico de los logs
+
+Los logs muestran que **los datos SÍ están siendo capturados correctamente por el OCR**. El array "Filled" tiene 27 valores con datos reales (vendedor, comprador, matrícula, dirección, linderos, etc.).
+
+El problema es un **desajuste entre la estructura de la plantilla Word y la lógica de reemplazo**:
+
+**La plantilla Word usa sintaxis de loops (docxtemplater):**
 ```text
-Documentos → scan-document (OCR/IA) → DocumentUploadStep → metadata.extracted_inmueble/extracted_personas → Validacion.tsx (loadTramite) → estado local (vendedores, inmueble, etc.) → DocxPreview.buildReplacements → HTML con reemplazos
+{#vendedores}{nombre}{cedula}{expedida_en}{estado_civil}{/vendedores}
+{#compradores}{nombre}{cedula}{expedida_en}{estado_civil}{/compradores}
 ```
 
-### Problemas identificados
+**El código actual hace reemplazo plano:**
+```text
+comparecientes_vendedor → "MAYA MONTOYA, mayor de edad..."
+```
 
-**Problema 1: La plantilla Word tiene placeholders que NO coinciden con `buildReplacements`**
+Lo que pasa:
+1. El código reemplaza `{comparecientes_vendedor}` (que NO existe en la plantilla) con datos
+2. Los placeholders reales como `{#vendedores}{nombre}{/vendedores}` NO se procesan
+3. Línea 279 elimina los marcadores de loop `{#vendedores}`, `{/vendedores}`
+4. Los `{nombre}`, `{cedula}` huérfanos se convierten en `___________` por la línea 280
 
-El componente `DocxPreview` carga `template_venta_hipoteca.docx`, lo convierte a HTML con mammoth, y luego intenta reemplazar placeholders como `{comparecientes_vendedor}`, `{matricula_inmobiliaria}`, etc. Pero **no podemos verificar** qué placeholders tiene realmente la plantilla Word sin inspeccionar su contenido después de la conversión mammoth.
+También faltan muchos campos que SÍ existen en la plantilla:
+- `{inmueble.nombre_edificio_conjunto}`, `{inmueble.coeficiente_letras}`, `{inmueble.coeficiente_numero}`, `{inmueble.orip_zona}`
+- `{rph.*}` (datos de registro de propiedad horizontal)
+- `{antecedentes.*}` (datos de tradición anterior)
+- `{notario_nombre}`, `{notario_decreto}`, `{escritura_numero}`
+- `{actos.fecha_escritura_letras}`, `{actos.pago_inicial_*}`, `{actos.saldo_financiado_*}`
+- `{#afectacion_vivienda}...{/}`
 
-Si la plantilla usa nombres distintos (ej: `{vendedor_nombre}` en vez de `{comparecientes_vendedor}`), los reemplazos nunca se aplican y todo queda como `___________`.
+### Sobre los errores 406
 
-**Acción**: Agregar un `console.log` temporal que imprima los placeholders encontrados en el HTML después de `normalizeTemplateTags`, para verificar que los nombres coincidan con los keys de `buildReplacements`.
+Los dos errores "Failed to load resource: 406" son llamadas al edge function `validar-con-claude` que fallan — probablemente por falta de API key o configuración. No afectan la previsualización.
 
-**Problema 2: La función `normalizeTemplateTags` puede fallar con placeholders anidados en tags complejos**
+### Solución
 
-La regex `\{(?:[^}<]*(?:<[^>]*>[^}<]*)*)\}/g` asume cierta estructura. Si mammoth genera HTML donde `{` y `}` están en distintos párrafos o elementos con nesting profundo, la regex no los captura y los placeholders quedan fragmentados — imposibles de reemplazar.
+Reemplazar la lógica de sustitución plana por un **procesador de loops** que:
+1. Expanda `{#vendedores}...{/vendedores}` repitiendo el bloque HTML por cada vendedor
+2. Expanda `{#compradores}...{/compradores}` por cada comprador
+3. Dentro de cada repetición, reemplace `{nombre}`, `{cedula}`, `{domicilio}`, `{expedida_en}`, `{estado_civil}` con los datos de esa persona
+4. Maneje condicionales `{#afectacion_vivienda}...{/}` y `{^afectacion_vivienda}...{/}`
 
-**Problema 3: Los datos del certificado de tradición SÍ llenan el inmueble, pero hay campos faltantes en el mapa de reemplazos**
+Y agregar los campos faltantes al mapa de reemplazos para los campos simples (no-loop).
 
-El certificado extrae campos como `nupre`, `tipo_predio`, `es_propiedad_horizontal`, `escritura_constitucion_ph`, etc. Estos campos se guardan en `extractedInmueble` y se cargan en el estado `inmueble`, PERO el `buildReplacements` de `DocxPreview` **no tiene mapeo** para ellos. Si la plantilla Word usa esos placeholders, quedan como `{nupre}` → se convierten a `___________` por la línea 219 (catch-all).
+### Cambios en `src/components/tramites/DocxPreview.tsx`
 
-**Problema 4: Los datos del vendedor SÍ están pero hay un desfase de timing**
+**1. Agregar función `processLoops`** que:
+- Busca patrones `{#vendedores}...{/vendedores}` en el HTML
+- Repite el contenido interno por cada vendedor, reemplazando `{nombre}` → `p.nombre_completo`, `{cedula}` → `p.numero_cedula`, `{domicilio}` → `p.municipio_domicilio`, `{expedida_en}` → lugar de expedición, `{estado_civil}` → `p.estado_civil`
+- Hace lo mismo para `{#compradores}...{/compradores}`
+- Procesa condicionales `{#afectacion_vivienda}` / `{^afectacion_vivienda}`
 
-Mirando el screenshot, el vendedor MAYA MONTOYA sí aparece en los campos de la derecha. El `buildReplacements` debería generar `comparecientes_vendedor` con esos datos. Si la previsualización de la izquierda aún muestra blanks, puede ser que:
-- El template no usa `{comparecientes_vendedor}` sino otro nombre
-- El debounce de 500ms no se ha ejecutado todavía
-- El `baseHtml` no tiene ese placeholder porque mammoth lo fragmentó de una forma que `normalizeTemplateTags` no capturó
+**2. Ampliar `buildReplacements`** con los campos faltantes:
+- `inmueble.nombre_edificio_conjunto` (usar `inmueble.direccion` o campo nuevo)
+- `inmueble.coeficiente_letras`, `inmueble.coeficiente_numero`
+- `inmueble.orip_zona`
+- `rph.*` campos (escritura PH, notaría PH, matrícula matriz)
+- `antecedentes.*` campos (modo de adquisición, escritura anterior)
+- `notario_nombre`, `notario_decreto`
+- `escritura_numero`
+- `actos.fecha_escritura_letras`
+- `actos.pago_inicial_*`, `actos.saldo_financiado_*`
 
-### Solución propuesta
+Para campos que aún no existen en el modelo de datos (como `rph`, `antecedentes`, `notario`), se dejarán como `___________` — el usuario los llenará manualmente.
 
-**Paso 1 — Diagnóstico con logging** (en `DocxPreview.tsx`):
-- Después de `normalizeTemplateTags`, hacer `console.log` de TODOS los placeholders `{...}` encontrados en el HTML
-- En `buildReplacements`, hacer `console.log` de las keys y values del mapa
-- Esto revelará exactamente qué nombres usa la plantilla vs qué nombres espera el código
+**3. Modificar el `useEffect` de aplicación** (líneas 260-280):
+- Primero ejecutar `processLoops(result, vendedores, compradores, actos)` para expandir los loops
+- Luego aplicar los reemplazos simples como ya se hace
+- Eliminar la línea 279 que borra ciegamente los marcadores de loop (ya se procesan)
 
-**Paso 2 — Ampliar `buildReplacements`** para cubrir todos los campos extraídos del inmueble que faltan:
-- `nupre`, `tipo_predio`, `area_construida`, `area_privada`, `escritura_ph`, `reformas_ph`
-
-**Paso 3 — Mejorar `normalizeTemplateTags`** con un enfoque más robusto:
-- En vez de una sola regex, trabajar sobre el texto plano: extraer todo el texto sin tags, encontrar `{...}` en el texto plano, y mapear esas posiciones de vuelta al HTML para reconstruir los placeholders como strings continuos
-
-**Paso 4 — Agregar logging temporal al edge function** `scan-document` para verificar que los datos extraídos se envían correctamente al frontend (ya existe en las líneas 358-379, pero necesitamos verlos en los logs)
+**4. Actualizar `Persona` type** si es necesario: agregar campo `lugar_expedicion` opcional para mapear `{expedida_en}`.
 
 ### Archivos a modificar
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocxPreview.tsx` | Agregar console.log de diagnóstico; ampliar `buildReplacements`; mejorar `normalizeTemplateTags` |
+| `src/components/tramites/DocxPreview.tsx` | Agregar `processLoops`, ampliar `buildReplacements`, modificar flujo de aplicación |
+| `src/lib/types.ts` | Agregar `lugar_expedicion?: string` a `Persona` |
 
-1 archivo principal. Los logs de diagnóstico se removerán una vez confirmado el fix.
+2 archivos.
 
-### Recomendación
-
-Antes de implementar cambios a ciegas, necesitamos ver los logs de diagnóstico para confirmar cuál de los 4 problemas es el real. La implementación más segura es:
-1. Agregar logging → probar → ver qué placeholders tiene realmente la plantilla
-2. Ajustar `buildReplacements` o la plantilla según los resultados
-3. Remover logging
-
-¿Apruebas este plan de diagnóstico + corrección?
