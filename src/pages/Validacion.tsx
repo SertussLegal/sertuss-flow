@@ -317,6 +317,46 @@ const Validacion = () => {
     setIsDirty(false);
   };
 
+  // Sync extractedPredial fields into inmueble state (only if fields are genuinely empty)
+  useEffect(() => {
+    if (!extractedPredial || isLoadingRef.current) return;
+    setInmueble(prev => {
+      const updates: Partial<Inmueble> = {};
+      if (extractedPredial.estrato && !prev.estrato) updates.estrato = extractedPredial.estrato;
+      if (extractedPredial.valor_pagado && !prev.avaluo_catastral) updates.avaluo_catastral = extractedPredial.valor_pagado;
+      return Object.keys(updates).length ? { ...prev, ...updates } : prev;
+    });
+  }, [extractedPredial]);
+
+  // Scroll-to-field handler: activates the correct tab and scrolls to the input
+  const onScrollToField = useCallback((field: string) => {
+    const tabsEl = document.querySelector('[role="tablist"]');
+    if (!tabsEl) return;
+
+    let targetTab = "inmueble";
+    if (field.startsWith("actos.") || field.startsWith("apoderado_banco.") || FIELD_TO_ACTOS[field]) {
+      targetTab = "actos";
+    } else if (field.includes("vendedor") || field.includes("compareciente")) {
+      targetTab = "vendedores";
+    } else if (field.includes("comprador")) {
+      targetTab = "compradores";
+    }
+
+    const trigger = tabsEl.querySelector(`[data-value="${targetTab}"]`) as HTMLElement;
+    if (trigger) trigger.click();
+
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-field-input="${field}"]`) as HTMLElement;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.focus();
+        el.style.outline = "2px solid hsl(var(--primary))";
+        el.style.outlineOffset = "2px";
+        setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 2000);
+      }
+    });
+  }, []);
+
   const calculateProgress = () => {
     const personaFields: (keyof Persona)[] = ["nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio"];
     const inmuebleFields: (keyof Inmueble)[] = ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "direccion", "area", "linderos", "avaluo_catastral"];
