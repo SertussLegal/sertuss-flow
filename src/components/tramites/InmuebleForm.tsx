@@ -33,13 +33,14 @@ interface InmuebleFormProps {
   onPersonasExtracted?: (personas: ExtractedPersona[]) => void;
   onDocumentoExtracted?: (documento: ExtractedDocumento) => void;
   onPredialExtracted?: (data: { numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string }) => void;
+  onActosExtracted?: (actos: Record<string, any>) => void;
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
-const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, confianzaFields, onConfianzaChange }: InmuebleFormProps) => {
+const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange }: InmuebleFormProps) => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
@@ -198,7 +199,12 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
             onDocumentoExtracted(unwrappedDoc as ExtractedDocumento);
           }
 
-          toast({ title: "Certificado procesado", description: "Datos del inmueble, personas y documento extraídos correctamente." });
+          // Extract and emit actos data from certificado
+          if (d.actos && onActosExtracted) {
+            onActosExtracted(d.actos);
+          }
+
+          toast({ title: "Certificado procesado", description: "Datos del inmueble, personas, documento y actos extraídos correctamente." });
         } else if (type === "predial") {
           // Unwrap confidence for predial
           const unwrapped: Record<string, string> = {};

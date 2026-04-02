@@ -285,6 +285,10 @@ const DocumentUploadStep = () => {
             }
           }
         }
+        // Extract actos from certificado
+        if (d.actos) {
+          (extractedInmueble as any).__extracted_actos = d.actos;
+        }
         // Don't merge persona data from certificado - only cédulas provide full data.
         // Instead, create empty placeholders for propietarios without uploaded cédulas.
         // (handled below after processing all slots)
@@ -314,7 +318,9 @@ const DocumentUploadStep = () => {
     // Propietarios del certificado son solo informacionales.
     // No se crean vendedores automáticos — solo las cédulas cargadas generan personas.
 
-    // Extract predial data before building metadata
+    // Extract actos and predial data before building metadata
+    const extractedActosSeparate = (extractedInmueble as any).__extracted_actos;
+    delete (extractedInmueble as any).__extracted_actos;
     const extractedPredialSeparate = (extractedInmueble as any).__predial_data;
     delete (extractedInmueble as any).__predial_data;
 
@@ -325,6 +331,7 @@ const DocumentUploadStep = () => {
       confianza_map: confianzaMap,
       progress: 0,
       ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
+      ...(extractedActosSeparate ? { extracted_actos: extractedActosSeparate } : {}),
     };
 
     const { data: tramite, error } = await supabase.from("tramites").insert({

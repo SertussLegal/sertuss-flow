@@ -26,6 +26,7 @@ import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfi
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupBank } from "@/lib/bankDirectory";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -103,6 +104,7 @@ const Validacion = () => {
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
+  const manuallyEditedFieldsRef = useRef<Set<string>>(new Set());
 
   const handleConfianzaChange = useCallback((field: string, confianza: NivelConfianza) => {
     setConfianzaFields(prev => {
@@ -266,7 +268,44 @@ const Validacion = () => {
       if (!mapped.area && mapped.area_privada) mapped.area = mapped.area_privada;
       setInmueble(prev => ({ ...prev, ...mapped }));
     }
-    if (act) setActos(act as any);
+    if (act) {
+      setActos(act as any);
+    } else if (meta?.extracted_actos) {
+      // Pre-populate actos from OCR extraction
+      const ea = meta.extracted_actos;
+      const unwrapVal = (v: any): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+        return String(v);
+      };
+      const unwrapBoolVal = (v: any): boolean => {
+        if (v == null) return false;
+        if (typeof v === "boolean") return v;
+        if (typeof v === "object" && "valor" in v) return !!v.valor;
+        return false;
+      };
+      const cleanCurr = (val: string): string => {
+        if (!val) return "";
+        return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
+      };
+      const tipoActo = unwrapVal(ea.tipo_acto_principal);
+      const esHipoteca = unwrapBoolVal(ea.es_hipoteca);
+      const entidad = unwrapVal(ea.entidad_bancaria);
+      const entidadNit = unwrapVal(ea.entidad_nit);
+      const bankInfo = entidad ? lookupBank(entidad) : null;
+      setActos(prev => ({
+        ...prev,
+        ...(tipoActo ? { tipo_acto: esHipoteca && !tipoActo.toLowerCase().includes("hipoteca") ? `${tipoActo} con Hipoteca` : tipoActo } : {}),
+        ...(unwrapVal(ea.valor_compraventa) ? { valor_compraventa: cleanCurr(unwrapVal(ea.valor_compraventa)) } : {}),
+        ...(esHipoteca ? { es_hipoteca: true } : {}),
+        ...(unwrapVal(ea.valor_hipoteca) ? { valor_hipoteca: cleanCurr(unwrapVal(ea.valor_hipoteca)) } : {}),
+        ...(entidad ? { entidad_bancaria: entidad } : {}),
+        ...(entidadNit ? { entidad_nit: entidadNit } : bankInfo ? { entidad_nit: bankInfo.nit } : {}),
+        ...(bankInfo && !unwrapVal(ea.entidad_domicilio) ? { entidad_domicilio: bankInfo.domicilio } : {}),
+        ...(unwrapBoolVal(ea.afectacion_vivienda_familiar) ? { afectacion_vivienda_familiar: true } : {}),
+      }));
+    }
 
     // Load notaria config for document coherence
     if (t.organization_id) {
@@ -403,7 +442,7 @@ const Validacion = () => {
         // Read-then-merge: preserve extracted_* keys from OCR
         const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
         const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
-        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas"];
+        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas", "extracted_actos"];
         const merged: Record<string, unknown> = { ...formMetadata };
         for (const key of preservedKeys) {
           if (existingMeta[key] && !merged[key]) {
@@ -441,6 +480,9 @@ const Validacion = () => {
 
   // Bidirectional sync: preview → form data
   const handleFieldEdit = useCallback((field: string, value: string) => {
+    // Track manually edited fields to prevent OCR overwrite
+    manuallyEditedFieldsRef.current.add(field);
+
     if (field.startsWith("__custom__")) {
       const cvId = field.replace("__custom__", "");
       setCustomVariables((prev) =>
@@ -449,11 +491,15 @@ const Validacion = () => {
       return;
     }
     if (FIELD_TO_INMUEBLE[field]) {
-      setInmueble((prev) => ({ ...prev, [FIELD_TO_INMUEBLE[field]]: value }));
+      const inmuebleKey = FIELD_TO_INMUEBLE[field];
+      manuallyEditedFieldsRef.current.add(inmuebleKey);
+      setInmueble((prev) => ({ ...prev, [inmuebleKey]: value }));
       return;
     }
     if (FIELD_TO_ACTOS[field]) {
-      setActos((prev) => ({ ...prev, [FIELD_TO_ACTOS[field]]: value }));
+      const actosKey = FIELD_TO_ACTOS[field];
+      manuallyEditedFieldsRef.current.add(actosKey);
+      setActos((prev) => ({ ...prev, [actosKey]: value }));
       return;
     }
   }, []);
@@ -514,6 +560,97 @@ const Validacion = () => {
       supabase.from("tramites").select("metadata").eq("id", tid).single()
         .then(({ data }) => {
           const merged = { ...((data?.metadata as any) || {}), extracted_documento: documento };
+          supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        });
+    }
+  }, []);
+
+  // Currency normalization helper
+  const cleanCurrency = (val: string): string => {
+    if (!val) return "";
+    return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
+  };
+
+  // Handle actos extracted from certificado de tradición OCR
+  const handleActosExtracted = useCallback((extracted: Record<string, any>) => {
+    setActos(prev => {
+      const updates: Partial<Actos> = {};
+      const isDirty = (field: string) => manuallyEditedFieldsRef.current.has(field);
+
+      // Unwrap confidence wrappers
+      const unwrap = (v: any): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+        return String(v);
+      };
+      const unwrapBool = (v: any): boolean => {
+        if (v == null) return false;
+        if (typeof v === "boolean") return v;
+        if (typeof v === "object" && "valor" in v) return !!v.valor;
+        return false;
+      };
+
+      const tipoActo = unwrap(extracted.tipo_acto_principal);
+      if (tipoActo && !isDirty("tipo_acto") && !prev.tipo_acto) {
+        // Compose tipo_acto intelligently
+        const esHipoteca = unwrapBool(extracted.es_hipoteca);
+        if (esHipoteca && !tipoActo.toLowerCase().includes("hipoteca")) {
+          updates.tipo_acto = `${tipoActo} con Hipoteca`;
+        } else {
+          updates.tipo_acto = tipoActo;
+        }
+      }
+
+      const valorCV = cleanCurrency(unwrap(extracted.valor_compraventa));
+      if (valorCV && !isDirty("valor_compraventa") && !prev.valor_compraventa) {
+        updates.valor_compraventa = valorCV;
+      }
+
+      const esHipoteca = unwrapBool(extracted.es_hipoteca);
+      if (esHipoteca && !isDirty("es_hipoteca") && !prev.es_hipoteca) {
+        updates.es_hipoteca = true;
+      }
+
+      const valorHip = cleanCurrency(unwrap(extracted.valor_hipoteca));
+      if (valorHip && !isDirty("valor_hipoteca") && !prev.valor_hipoteca) {
+        updates.valor_hipoteca = valorHip;
+      }
+
+      const entidad = unwrap(extracted.entidad_bancaria);
+      if (entidad && !isDirty("entidad_bancaria") && !prev.entidad_bancaria) {
+        updates.entidad_bancaria = entidad;
+        // Bank directory enrichment
+        const bankInfo = lookupBank(entidad);
+        if (bankInfo) {
+          if (!isDirty("entidad_nit") && !prev.entidad_nit) {
+            updates.entidad_nit = bankInfo.nit;
+          }
+          if (!isDirty("entidad_domicilio") && !prev.entidad_domicilio) {
+            updates.entidad_domicilio = bankInfo.domicilio;
+          }
+        }
+      }
+
+      const entidadNit = unwrap(extracted.entidad_nit);
+      if (entidadNit && !isDirty("entidad_nit") && !prev.entidad_nit && !updates.entidad_nit) {
+        updates.entidad_nit = entidadNit;
+      }
+
+      const afectacion = unwrapBool(extracted.afectacion_vivienda_familiar);
+      if (afectacion && !isDirty("afectacion_vivienda_familiar")) {
+        updates.afectacion_vivienda_familiar = true;
+      }
+
+      return Object.keys(updates).length ? { ...prev, ...updates } : prev;
+    });
+
+    // Persist extracted_actos to metadata
+    const tid = tramiteIdRef.current;
+    if (tid) {
+      supabase.from("tramites").select("metadata").eq("id", tid).single()
+        .then(({ data }) => {
+          const merged = { ...((data?.metadata as any) || {}), extracted_actos: extracted };
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
@@ -1001,10 +1138,11 @@ const Validacion = () => {
       <TabsContent value="inmueble">
         <InmuebleForm
           inmueble={inmueble}
-          onChange={setInmueble}
+          onChange={(v) => { manuallyEditedFieldsRef.current.add("inmueble_manual"); setInmueble(v); }}
           onPersonasExtracted={handlePersonasExtracted}
           onDocumentoExtracted={handleDocumentoExtracted}
           onPredialExtracted={handlePredialExtracted}
+          onActosExtracted={handleActosExtracted}
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
         />
@@ -1242,7 +1380,7 @@ const actosToRow = (a: Actos) => ({
   fecha_credito: a.fecha_credito || "",
   entidad_nit: a.entidad_nit || "",
   entidad_domicilio: a.entidad_domicilio || "",
-  afectacion_vivienda_familiar: false,
+  afectacion_vivienda_familiar: a.afectacion_vivienda_familiar ?? false,
 });
 
 export default Validacion;
