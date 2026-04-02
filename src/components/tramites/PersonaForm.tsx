@@ -257,6 +257,16 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
             </div>
           </div>
 
+          {/* Banner when no cédula data loaded */}
+          {!persona.nombre_completo && !persona.numero_cedula && (
+            <Alert className="border-dashed border-muted-foreground/40 bg-muted/30">
+              <FileWarning className="h-4 w-4 text-muted-foreground" />
+              <AlertDescription className="text-sm text-muted-foreground">
+                No se cargó cédula para esta persona. Puede cargarla aquí o llenar los datos manualmente.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex items-center gap-3">
             <Switch
               checked={persona.es_persona_juridica}
