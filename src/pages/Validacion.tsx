@@ -289,6 +289,11 @@ const Validacion = () => {
       setExtractedDocumento(meta.extracted_documento);
     }
 
+    // Load extracted_predial from metadata for predial placeholders
+    if (meta?.extracted_predial) {
+      setExtractedPredial(meta.extracted_predial);
+    }
+
     setSyncStatus("saved");
     setIsDirty(false);
   };
