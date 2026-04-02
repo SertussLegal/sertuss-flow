@@ -78,6 +78,12 @@ export interface Inmueble {
   nupre?: string;
   estrato?: string;
   valorizacion?: string;
+  nombre_edificio_conjunto?: string;
+  escritura_ph_numero?: string;
+  escritura_ph_fecha?: string;
+  escritura_ph_notaria?: string;
+  escritura_ph_ciudad?: string;
+  coeficiente_copropiedad?: string;
 }
 
 export interface Actos {
