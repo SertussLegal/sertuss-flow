@@ -1138,10 +1138,11 @@ const Validacion = () => {
       <TabsContent value="inmueble">
         <InmuebleForm
           inmueble={inmueble}
-          onChange={setInmueble}
+          onChange={(v) => { manuallyEditedFieldsRef.current.add("inmueble_manual"); setInmueble(v); }}
           onPersonasExtracted={handlePersonasExtracted}
           onDocumentoExtracted={handleDocumentoExtracted}
           onPredialExtracted={handlePredialExtracted}
+          onActosExtracted={handleActosExtracted}
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
         />
