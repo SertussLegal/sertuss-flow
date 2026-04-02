@@ -872,10 +872,15 @@ const Validacion = () => {
             </Button>
             <Button
               size="sm"
-              onClick={() => setPreviewOpen(true)}
+              onClick={handlePrevisualizar}
+              disabled={validando}
               className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
             >
-              <Eye className="mr-1 h-4 w-4" /> Previsualizar
+              {validando ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando...</>
+              ) : (
+                <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+              )}
             </Button>
           </div>
         </div>
