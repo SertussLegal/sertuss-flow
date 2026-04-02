@@ -331,6 +331,7 @@ const DocumentUploadStep = () => {
       confianza_map: confianzaMap,
       progress: 0,
       ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
+      ...(extractedActosSeparate ? { extracted_actos: extractedActosSeparate } : {}),
     };
 
     const { data: tramite, error } = await supabase.from("tramites").insert({
