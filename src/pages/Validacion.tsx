@@ -947,6 +947,7 @@ const Validacion = () => {
           onChange={setInmueble}
           onPersonasExtracted={handlePersonasExtracted}
           onDocumentoExtracted={handleDocumentoExtracted}
+          onPredialExtracted={handlePredialExtracted}
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
         />
