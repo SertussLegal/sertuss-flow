@@ -94,6 +94,7 @@ export interface Actos {
   apoderado_notaria_poder?: string;
   apoderado_notaria_ciudad?: string;
   apoderado_email?: string;
+  afectacion_vivienda_familiar?: boolean;
   pago_inicial?: string;
   saldo_financiado?: string;
   fecha_credito?: string;
