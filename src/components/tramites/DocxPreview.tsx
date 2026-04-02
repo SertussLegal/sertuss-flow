@@ -43,6 +43,22 @@ const purifyConfig = {
 
 const sanitize = (html: string) => DOMPurify.sanitize(html, purifyConfig);
 
+/**
+ * Normaliza placeholders fragmentados por mammoth.
+ * Word divide internamente los "runs" XML, así que `{comparecientes_vendedor}`
+ * puede convertirse en `<span>{comparecientes_</span><span>vendedor}</span>`.
+ * Esta función detecta `{` seguido de texto+tags hasta `}` y lo une en un solo `{variable}`.
+ */
+function normalizeTemplateTags(html: string): string {
+  // Match a `{` that may be followed by a mix of HTML tags and text until `}`
+  return html.replace(/\{(?:[^}<]*(?:<[^>]*>[^}<]*)*)\}/g, (match) => {
+    // Strip all HTML tags, keep only text
+    const text = match.replace(/<[^>]*>/g, "");
+    // Remove any whitespace that Word may have injected
+    return text.replace(/\s+/g, "");
+  });
+}
+
 const DocxPreview = ({
   vendedores,
   compradores,
