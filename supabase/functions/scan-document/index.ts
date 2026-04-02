@@ -220,13 +220,16 @@ const toolsByEscritura = [
           tipo_acto: confField("Tipo de acto: Compraventa, Donación, Permuta, etc."),
           comparecientes: {
             type: "array",
-            description: "Personas que comparecen en la escritura",
+            description: "Personas que comparecen en la escritura, con datos de la sección de COMPARECENCIA",
             items: {
               type: "object",
               properties: {
                 nombre: { type: "string", description: "Nombre completo" },
                 cedula: { type: "string", description: "Número de cédula o NIT" },
                 rol: { type: "string", description: "Rol: vendedor, comprador, otorgante, apoderado, etc." },
+                estado_civil: { type: "string", description: "Estado civil declarado en la comparecencia (soltero, casado, unión libre, divorciado, viudo, etc.)" },
+                direccion: { type: "string", description: "Dirección de residencia declarada en la comparecencia" },
+                municipio_domicilio: { type: "string", description: "Municipio de domicilio declarado en la comparecencia" },
               },
               required: ["nombre"],
               additionalProperties: false,
