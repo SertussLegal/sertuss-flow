@@ -957,6 +957,7 @@ const Validacion = () => {
             textoFinalWord={textoFinalWord}
             onSugerenciaAccepted={handleSugerenciaAccepted}
             notariaConfig={notariaConfig}
+            extractedDocumento={extractedDocumento}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
