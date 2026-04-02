@@ -289,6 +289,18 @@ const DocumentUploadStep = () => {
         if (d.actos) {
           (extractedInmueble as any).__extracted_actos = d.actos;
         }
+        // Extract titulo_antecedente from certificado
+        if (d.titulo_antecedente) {
+          const ta: Record<string, string> = {};
+          for (const [key, val] of Object.entries(d.titulo_antecedente)) {
+            if (val && typeof val === "object" && "valor" in (val as any)) {
+              ta[key] = (val as any).valor;
+            } else if (typeof val === "string") {
+              ta[key] = val;
+            }
+          }
+          (extractedInmueble as any).__extracted_titulo_antecedente = ta;
+        }
         // Don't merge persona data from certificado - only cédulas provide full data.
         // Instead, create empty placeholders for propietarios without uploaded cédulas.
         // (handled below after processing all slots)
