@@ -238,7 +238,7 @@ function processLoops(
         const personaFields: Record<string, string> = {
           nombre: p.nombre_completo || "___________",
           nombre_completo: p.nombre_completo || "___________",
-          cedula: p.numero_cedula || "___________",
+          cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula, p.lugar_expedicion || p.municipio_domicilio) : "___________",
           numero_cedula: p.numero_cedula || "___________",
           numero_identificacion: p.numero_cedula || "___________",
           expedida_en: p.lugar_expedicion || p.municipio_domicilio || "___________",
