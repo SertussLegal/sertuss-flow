@@ -461,16 +461,7 @@ const Validacion = () => {
     setIsDirty(false);
   };
 
-  // Sync extractedPredial fields into inmueble state (only if fields are genuinely empty)
-  useEffect(() => {
-    if (!extractedPredial || isLoadingRef.current) return;
-    setInmueble(prev => {
-      const updates: Partial<Inmueble> = {};
-      if (extractedPredial.estrato && !prev.estrato) updates.estrato = extractedPredial.estrato;
-      if (extractedPredial.valor_pagado && !prev.avaluo_catastral) updates.avaluo_catastral = extractedPredial.valor_pagado;
-      return Object.keys(updates).length ? { ...prev, ...updates } : prev;
-    });
-  }, [extractedPredial]);
+  // (Predial sync is now handled atomically inside loadTramite pipeline)
 
   // Scroll-to-field handler: activates the correct tab and scrolls to the input
   const onScrollToField = useCallback((field: string) => {
