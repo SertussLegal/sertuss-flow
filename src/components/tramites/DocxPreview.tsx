@@ -658,6 +658,28 @@ const DocxPreview = ({
         }
       }
 
+      // FINAL PASS: Unify ALL remaining bare ___________ (from persona loops, resolved spans containing gaps, etc.)
+      // First: fix ___________ inside resolved spans (split into resolved + pending parts)
+      result = result.replace(
+        /<span([^>]*class="var-resolved"[^>]*)>([^<]*___________[^<]*)<\/span>/g,
+        (_, attrs, content) => {
+          // Split the content on ___________ and rebuild with mixed spans
+          const parts = content.split("___________");
+          return parts.map((part: string, i: number) => {
+            const resolved = part ? `<span${attrs}>${part}</span>` : "";
+            const pending = i < parts.length - 1
+              ? '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>'
+              : "";
+            return resolved + pending;
+          }).join("");
+        }
+      );
+      // Then: wrap any remaining bare ___________ not already inside a span
+      result = result.replace(
+        /(?<!<span[^>]*)___________(?![^<]*<\/span>)/g,
+        '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>'
+      );
+
       setHtml(sanitize(result));
     }, 500);
 
