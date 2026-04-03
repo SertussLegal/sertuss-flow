@@ -324,6 +324,10 @@ const DocumentUploadStep = () => {
           extractedInmueble.linderos = linderos;
           confianzaMap["inmueble.linderos"] = le.confianza === "baja" || lg.confianza === "baja" ? "baja" : le.confianza;
         }
+        // Persist comparecientes from escritura for reconciliation
+        if (d.comparecientes && Array.isArray(d.comparecientes)) {
+          (extractedInmueble as any).__extracted_escritura_comparecientes = d.comparecientes;
+        }
       }
     }
 
