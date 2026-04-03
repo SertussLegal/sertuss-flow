@@ -535,6 +535,7 @@ export type Database = {
           es_persona_juridica: boolean
           estado_civil: string | null
           id: string
+          lugar_expedicion: string | null
           municipio_domicilio: string | null
           nit: string | null
           nombre_completo: string
@@ -555,6 +556,7 @@ export type Database = {
           es_persona_juridica?: boolean
           estado_civil?: string | null
           id?: string
+          lugar_expedicion?: string | null
           municipio_domicilio?: string | null
           nit?: string | null
           nombre_completo?: string
@@ -575,6 +577,7 @@ export type Database = {
           es_persona_juridica?: boolean
           estado_civil?: string | null
           id?: string
+          lugar_expedicion?: string | null
           municipio_domicilio?: string | null
           nit?: string | null
           nombre_completo?: string
