@@ -504,6 +504,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         <Label>Linderos {ocr("linderos")} {confBadge("linderos")}</Label>
         {wrapWithSuggestion("linderos",
           <Textarea
+            data-field-input="linderos"
             className={fieldClassName("linderos", "min-h-[200px] resize-y")}
             value={inmueble.linderos}
             onChange={(e) => update("linderos", e.target.value)}
