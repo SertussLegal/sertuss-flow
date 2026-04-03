@@ -193,7 +193,7 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
         <div className="space-y-2">
           <Label>Tipo de Acto</Label>
           <Select value={actos.tipo_acto} onValueChange={handleTipoActoChange}>
-            <SelectTrigger><SelectValue placeholder="Seleccione tipo de acto" /></SelectTrigger>
+            <SelectTrigger data-field-input="tipo_acto"><SelectValue placeholder="Seleccione tipo de acto" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="Compraventa">Compraventa</SelectItem>
               <SelectItem value="Compraventa con Hipoteca">Compraventa con Hipoteca</SelectItem>
@@ -202,7 +202,7 @@ const ActosForm = ({ actos, onChange }: ActosFormProps) => {
         </div>
         <div className="space-y-2">
           <Label>Valor de Compraventa (COP)</Label>
-          <Input value={actos.valor_compraventa} onChange={(e) => update("valor_compraventa", e.target.value)} placeholder="$0" />
+          <Input data-field-input="valor_compraventa" value={actos.valor_compraventa} onChange={(e) => update("valor_compraventa", e.target.value)} placeholder="$0" />
         </div>
       </div>
 
