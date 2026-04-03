@@ -402,14 +402,14 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         <div className="space-y-2">
           <Label>Matrícula Inmobiliaria {ocr("matricula_inmobiliaria")} {confBadge("matricula_inmobiliaria")}</Label>
           {wrapWithSuggestion("matricula_inmobiliaria",
-            <Input className={fieldClassName("matricula_inmobiliaria")} value={inmueble.matricula_inmobiliaria} onChange={(e) => update("matricula_inmobiliaria", e.target.value)} />
+            <Input data-field-input="matricula_inmobiliaria" className={fieldClassName("matricula_inmobiliaria")} value={inmueble.matricula_inmobiliaria} onChange={(e) => update("matricula_inmobiliaria", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Tipo de Identificador Predial *</Label>
           <Select value={inmueble.tipo_identificador_predial} onValueChange={(v) => update("tipo_identificador_predial", v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger data-field-input="tipo_identificador_predial"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="chip">CHIP</SelectItem>
               <SelectItem value="cedula_catastral">Cédula Catastral</SelectItem>
@@ -429,6 +429,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
           </Label>
           {wrapWithSuggestion("identificador_predial",
             <Input
+              data-field-input="identificador_predial"
               className={fieldClassName("identificador_predial")}
               value={inmueble.identificador_predial}
               onChange={(e) => update("identificador_predial", e.target.value)}
@@ -441,28 +442,28 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         <div className="space-y-2">
           <Label>Departamento {ocr("departamento")} {confBadge("departamento")}</Label>
           {wrapWithSuggestion("departamento",
-            <Input className={fieldClassName("departamento")} value={inmueble.departamento} onChange={(e) => update("departamento", e.target.value)} />
+            <Input data-field-input="departamento" className={fieldClassName("departamento")} value={inmueble.departamento} onChange={(e) => update("departamento", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Municipio {ocr("municipio")} {confBadge("municipio")}</Label>
           {wrapWithSuggestion("municipio",
-            <Input className={fieldClassName("municipio")} value={inmueble.municipio} onChange={(e) => update("municipio", e.target.value)} />
+            <Input data-field-input="municipio" className={fieldClassName("municipio")} value={inmueble.municipio} onChange={(e) => update("municipio", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Oficina de Registro (ORIP) {ocr("codigo_orip")} {confBadge("codigo_orip")}</Label>
           {wrapWithSuggestion("codigo_orip",
-            <Input className={fieldClassName("codigo_orip")} value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Ej: Oficina de Registro de Instrumentos Públicos de Bogotá Zona Norte" />
+            <Input data-field-input="codigo_orip" className={fieldClassName("codigo_orip")} value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Ej: Oficina de Registro de Instrumentos Públicos de Bogotá Zona Norte" />
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Tipo de Predio {ocr("tipo_predio")}</Label>
           <Select value={inmueble.tipo_predio} onValueChange={(v) => update("tipo_predio", v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger data-field-input="tipo_predio"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="urbano">Urbano</SelectItem>
               <SelectItem value="rural">Rural</SelectItem>
@@ -473,28 +474,28 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         <div className="space-y-2">
           <Label>Dirección {ocr("direccion")} {confBadge("direccion")}</Label>
           {wrapWithSuggestion("direccion",
-            <Input className={fieldClassName("direccion")} value={inmueble.direccion} onChange={(e) => update("direccion", e.target.value)} />
+            <Input data-field-input="direccion_inmueble" className={fieldClassName("direccion")} value={inmueble.direccion} onChange={(e) => update("direccion", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Área Construida (m²) {ocr("area_construida")} {confBadge("area_construida")}</Label>
           {wrapWithSuggestion("area_construida",
-            <Input className={fieldClassName("area_construida")} value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
+            <Input data-field-input="area_construida" className={fieldClassName("area_construida")} value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Área Privada (m²) {ocr("area_privada")} {confBadge("area_privada")}</Label>
           {wrapWithSuggestion("area_privada",
-            <Input className={fieldClassName("area_privada")} value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
+            <Input data-field-input="area_privada" className={fieldClassName("area_privada")} value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
           )}
         </div>
 
         <div className="space-y-2 sm:col-span-2">
           <Label>Avalúo Catastral (COP) {ocr("avaluo_catastral")} {confBadge("avaluo_catastral")}</Label>
           {wrapWithSuggestion("avaluo_catastral",
-            <Input className={fieldClassName("avaluo_catastral")} value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
+            <Input data-field-input="avaluo_catastral" className={fieldClassName("avaluo_catastral")} value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
           )}
         </div>
       </div>
