@@ -618,7 +618,7 @@ const Validacion = () => {
     });
   }, [toast]);
 
-  const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento) => {
+  const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento & { comparecientes?: any[] }) => {
     setExtractedDocumento(documento);
     // Persist to metadata immediately (non-destructive merge)
     const tid = tramiteIdRef.current;
@@ -630,10 +630,26 @@ const Validacion = () => {
           if (documento.titulo_antecedente) {
             merged.extracted_titulo_antecedente = documento.titulo_antecedente;
           }
+          // Persist escritura comparecientes for reconciliation
+          if (documento.comparecientes && documento.comparecientes.length > 0) {
+            merged.extracted_escritura_comparecientes = documento.comparecientes;
+            // Run reconciliation immediately with new comparecientes
+            const reconV = reconcilePersonas(vendedores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
+            if (reconV.updated.length > 0) {
+              setVendedores(reconV.updated);
+            }
+            const reconC = reconcilePersonas(compradores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
+            if (reconC.updated.length > 0) {
+              setCompradores(reconC.updated);
+            }
+            for (const alert of [...reconV.alerts, ...reconC.alerts]) {
+              sonnerToast.warning(alert.mensaje, { duration: 8000 });
+            }
+          }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
-  }, []);
+  }, [vendedores, compradores]);
 
   // Currency normalization helper
   const cleanCurrency = (val: string): string => {

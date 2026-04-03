@@ -300,7 +300,16 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
           if (linderos) {
             applyOcrResults({ linderos }, inmueble);
           }
-          toast({ title: "Escritura procesada", description: "Linderos extraídos correctamente." });
+
+          // Emit comparecientes with estado_civil, direccion, municipio for reconciliation
+          if (d.comparecientes && Array.isArray(d.comparecientes) && onDocumentoExtracted) {
+            const unwrappedDoc: Record<string, any> = {};
+            // Pass comparecientes through to Validacion for reconciliation
+            unwrappedDoc.comparecientes = d.comparecientes;
+            onDocumentoExtracted(unwrappedDoc as ExtractedDocumento);
+          }
+
+          toast({ title: "Escritura procesada", description: "Linderos y comparecientes extraídos correctamente." });
         }
       }
     } catch (err: any) {

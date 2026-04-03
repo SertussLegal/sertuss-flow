@@ -531,7 +531,7 @@ const DocxPreview = ({
       // Inmueble extended — predial from metadata
       "inmueble.predial_anio": extractedPredial?.anio_gravable || "___________",
       "inmueble.predial_num": extractedPredial?.numero_recibo || "___________",
-      "inmueble.predial_valor": extractedPredial?.valor_pagado || "___________",
+      "inmueble.predial_valor": extractedPredial?.valor_pagado ? formatMonedaLegal(extractedPredial.valor_pagado) : "___________",
       "inmueble.idu_num": "___________",
       "inmueble.idu_fecha": "___________",
       "inmueble.idu_vigencia": "___________",
