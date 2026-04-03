@@ -215,76 +215,136 @@ const Validacion = () => {
     const { data: inm } = await supabase.from("inmuebles").select("*").eq("tramite_id", tid).maybeSingle();
     const { data: act } = await supabase.from("actos").select("*").eq("tramite_id", tid).maybeSingle();
 
+    // ══════════════════════════════════════════════════════════════
+    // ATOMIC HYDRATION PIPELINE — local variables, single setState
+    // ══════════════════════════════════════════════════════════════
+    const unwrap = (v: any): string => {
+      if (!v) return "";
+      if (typeof v === "string") return v;
+      if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+      return String(v);
+    };
+
+    // ── 1. Build localVendedores / localCompradores ──
+    let localVendedores: Persona[] = [createEmptyPersona()];
+    let localCompradores: Persona[] = [createEmptyPersona()];
+
     if (personas && personas.length > 0) {
       const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p } as Persona));
       const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p } as Persona));
-      if (v.length) setVendedores(v);
-      if (c.length) setCompradores(c);
+      if (v.length) localVendedores = v;
+      if (c.length) localCompradores = c;
     } else if (meta?.extracted_personas?.length) {
-      // Auto-fill vendedores from extracted personas
       const naturalPersons = meta.extracted_personas.filter((p: any) =>
         !p.tipo_identificacion || p.tipo_identificacion === "CC" || p.tipo_identificacion === "CE"
       );
       if (naturalPersons.length) {
-        const unwrap = (v: any): string => {
-          if (!v) return "";
-          if (typeof v === "string") return v;
-          if (typeof v === "object" && "valor" in v) return String(v.valor || "");
-          return String(v);
-        };
         const vends = naturalPersons.filter((p: any) => p.rol === "vendedor");
         const comps = naturalPersons.filter((p: any) => p.rol === "comprador");
         if (vends.length) {
-          setVendedores(vends.map((p: any) => ({
+          localVendedores = vends.map((p: any) => ({
             ...createEmptyPersona(),
             nombre_completo: unwrap(p.nombre_completo),
             numero_cedula: unwrap(p.numero_identificacion),
             municipio_domicilio: unwrap(p.lugar_expedicion),
-          })));
+          }));
         }
         if (comps.length) {
-          setCompradores(comps.map((p: any) => ({
+          localCompradores = comps.map((p: any) => ({
             ...createEmptyPersona(),
             nombre_completo: unwrap(p.nombre_completo),
             numero_cedula: unwrap(p.numero_identificacion),
             municipio_domicilio: unwrap(p.lugar_expedicion),
-          })));
+          }));
         }
       }
     }
 
+    // ── 2. Build localInmueble: MERGE DB + extracted_inmueble + extracted_predial ──
+    let localInmueble: Inmueble = createEmptyInmueble();
+
+    // Layer 1: DB row (user edits = highest priority)
     if (inm) {
-      setInmueble(inm as any);
-    } else if (meta?.extracted_inmueble) {
-      // Pre-populate from extraction — map ALL OCR fields including extended ones
-      const ei = meta.extracted_inmueble;
-      const unwrapVal = (v: any): string => {
-        if (!v) return "";
-        if (typeof v === "string") return v;
-        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
-        return String(v);
-      };
-      const mapped: Record<string, any> = {};
-      for (const [k, v] of Object.entries(ei)) {
-        const val = unwrapVal(v);
-        if (val) mapped[k] = val;
-      }
-      // Use area_construida as fallback for area if area is empty
-      if (!mapped.area && mapped.area_construida) mapped.area = mapped.area_construida;
-      if (!mapped.area && mapped.area_privada) mapped.area = mapped.area_privada;
-      setInmueble(prev => ({ ...prev, ...mapped }));
+      localInmueble = { ...localInmueble, ...inm } as Inmueble;
     }
-    if (act) {
-      setActos(act as any);
-    } else if (meta?.extracted_actos) {
-      // Pre-populate actos from OCR extraction
-      const ea = meta.extracted_actos;
-      const unwrapVal = (v: any): string => {
-        if (!v) return "";
-        if (typeof v === "string") return v;
-        if (typeof v === "object" && "valor" in v) return String(v.valor || "");
-        return String(v);
+
+    // Layer 2: metadata.extracted_inmueble fills EMPTY fields
+    if (meta?.extracted_inmueble) {
+      const ei = meta.extracted_inmueble;
+      // OCR field name → DB column name mapping
+      const ocrFieldMap: Record<string, string> = {
+        chip_nupre: "nupre",
+        chip: "nupre",
+        cedula_catastral: "identificador_predial",
+        numero_predial: "identificador_predial",
+        codigo_orip: "codigo_orip",
+        orip_ciudad: "codigo_orip",
+        matricula_inmobiliaria: "matricula_inmobiliaria",
+        matricula: "matricula_inmobiliaria",
+        matricula_matriz: "matricula_matriz",
+        direccion: "direccion",
+        municipio: "municipio",
+        departamento: "departamento",
+        area: "area",
+        area_construida: "area_construida",
+        area_privada: "area_privada",
+        linderos: "linderos",
+        linderos_especiales: "linderos",
+        linderos_generales: "linderos",
+        avaluo_catastral: "avaluo_catastral",
+        estrato: "estrato",
+        nupre: "nupre",
+        valorizacion: "valorizacion",
+        escritura_ph: "escritura_ph",
+        coeficiente: "coeficiente" as any,
+        tipo_predio: "tipo_predio",
+        es_propiedad_horizontal: "es_propiedad_horizontal",
       };
+      for (const [ocrKey, val] of Object.entries(ei)) {
+        const dbKey = ocrFieldMap[ocrKey] || ocrKey;
+        const strVal = unwrap(val);
+        if (strVal && dbKey in localInmueble) {
+          const current = (localInmueble as any)[dbKey];
+          // Only fill if DB field is empty
+          if (!current || current === "" || current === false) {
+            (localInmueble as any)[dbKey] = dbKey === "es_propiedad_horizontal" ? (strVal === "true" || strVal === "1" || /horizontal/i.test(strVal)) : strVal;
+          }
+        }
+      }
+      // Fallback: area_construida/area_privada → area
+      if (!localInmueble.area && localInmueble.area_construida) localInmueble.area = localInmueble.area_construida;
+      if (!localInmueble.area && localInmueble.area_privada) localInmueble.area = localInmueble.area_privada;
+    }
+
+    // Layer 3: metadata.extracted_predial fills remaining empty fields
+    if (meta?.extracted_predial) {
+      const ep = meta.extracted_predial;
+      const predialMap: Record<string, string> = {
+        avaluo_catastral: "avaluo_catastral",
+        estrato: "estrato",
+        area: "area",
+        direccion: "direccion",
+        nupre: "nupre",
+        chip: "nupre",
+        valorizacion: "valorizacion",
+      };
+      for (const [pKey, dbKey] of Object.entries(predialMap)) {
+        const strVal = unwrap(ep[pKey]);
+        if (strVal && dbKey in localInmueble) {
+          const current = (localInmueble as any)[dbKey];
+          if (!current || current === "") {
+            (localInmueble as any)[dbKey] = strVal;
+          }
+        }
+      }
+    }
+
+    // ── 3. Build localActos ──
+    let localActos: Actos = createEmptyActos();
+    if (act) {
+      localActos = act as any;
+    } else if (meta?.extracted_actos) {
+      const ea = meta.extracted_actos;
       const unwrapBoolVal = (v: any): boolean => {
         if (v == null) return false;
         if (typeof v === "boolean") return v;
@@ -295,25 +355,25 @@ const Validacion = () => {
         if (!val) return "";
         return val.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
       };
-      const tipoActo = unwrapVal(ea.tipo_acto_principal);
+      const tipoActo = unwrap(ea.tipo_acto_principal);
       const esHipoteca = unwrapBoolVal(ea.es_hipoteca);
-      const entidad = unwrapVal(ea.entidad_bancaria);
-      const entidadNit = unwrapVal(ea.entidad_nit);
+      const entidad = unwrap(ea.entidad_bancaria);
+      const entidadNit = unwrap(ea.entidad_nit);
       const bankInfo = entidad ? lookupBank(entidad) : null;
-      setActos(prev => ({
-        ...prev,
+      localActos = {
+        ...localActos,
         ...(tipoActo ? { tipo_acto: esHipoteca && !tipoActo.toLowerCase().includes("hipoteca") ? `${tipoActo} con Hipoteca` : tipoActo } : {}),
-        ...(unwrapVal(ea.valor_compraventa) ? { valor_compraventa: cleanCurr(unwrapVal(ea.valor_compraventa)) } : {}),
+        ...(unwrap(ea.valor_compraventa) ? { valor_compraventa: cleanCurr(unwrap(ea.valor_compraventa)) } : {}),
         ...(esHipoteca ? { es_hipoteca: true } : {}),
-        ...(unwrapVal(ea.valor_hipoteca) ? { valor_hipoteca: cleanCurr(unwrapVal(ea.valor_hipoteca)) } : {}),
+        ...(unwrap(ea.valor_hipoteca) ? { valor_hipoteca: cleanCurr(unwrap(ea.valor_hipoteca)) } : {}),
         ...(entidad ? { entidad_bancaria: entidad } : {}),
         ...(entidadNit ? { entidad_nit: entidadNit } : bankInfo ? { entidad_nit: bankInfo.nit } : {}),
-        ...(bankInfo && !unwrapVal(ea.entidad_domicilio) ? { entidad_domicilio: bankInfo.domicilio } : {}),
+        ...(bankInfo && !unwrap(ea.entidad_domicilio) ? { entidad_domicilio: bankInfo.domicilio } : {}),
         ...(unwrapBoolVal(ea.afectacion_vivienda_familiar) ? { afectacion_vivienda_familiar: true } : {}),
-      }));
+      };
     }
 
-    // Load notaria config for document coherence
+    // ── 4. Load notaria config ──
     if (t.organization_id) {
       const [{ data: ns }, { data: cn }] = await Promise.all([
         supabase.from("notaria_styles").select("*").eq("organization_id", t.organization_id).maybeSingle(),
@@ -335,20 +395,19 @@ const Validacion = () => {
       }
     }
 
-    // Load extracted_documento from metadata for antecedentes placeholders
+    // ── 5. Load extracted_documento ──
     if (meta?.extracted_documento) {
       const doc = meta.extracted_documento;
-      // Also load titulo_antecedente if stored separately
       if (meta?.extracted_titulo_antecedente && !doc.titulo_antecedente) {
         doc.titulo_antecedente = meta.extracted_titulo_antecedente;
       }
       setExtractedDocumento(doc);
     }
 
-    // Load extracted_predial from metadata for predial placeholders
-    // Fallback: if extracted_predial doesn't exist, try to read predial fields from extracted_inmueble
+    // ── 6. Load extracted_predial for preview ──
+    let localExtractedPredial: any = null;
     if (meta?.extracted_predial) {
-      setExtractedPredial(meta.extracted_predial);
+      localExtractedPredial = meta.extracted_predial;
     } else if (meta?.extracted_inmueble) {
       const ei = meta.extracted_inmueble;
       const predialFields: Record<string, string> = {};
@@ -359,79 +418,50 @@ const Validacion = () => {
         }
       }
       if (Object.keys(predialFields).length > 0) {
-        setExtractedPredial(predialFields as any);
+        localExtractedPredial = predialFields;
       }
     }
+    setExtractedPredial(localExtractedPredial);
 
-    // ── Multi-document reconciliation ──
-    // Cross-reference personas from cert, cédulas and escritura
+    // ── 7. RECONCILIATION on local variables (no stale state!) ──
     const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
     const escrituraComparecientes = meta?.extracted_escritura_comparecientes || [];
+    const dirtyFields = manuallyEditedFieldsRef.current;
 
-    // Reconcile vendedores
     if (cedulasDetail.length > 0 || escrituraComparecientes.length > 0) {
-      const reconV = reconcilePersonas(
-        vendedores.length > 0 && vendedores[0].nombre_completo ? vendedores : [],
-        cedulasDetail,
-        escrituraComparecientes,
-        manuallyEditedFieldsRef.current
-      );
-      if (reconV.updated.length > 0) {
-        setVendedores(prev => {
-          return prev.map(p => {
-            const match = reconV.updated.find(u => u.id === p.id);
-            return match || p;
-          });
-        });
-      }
+      const hasRealVendedores = localVendedores.length > 0 && localVendedores[0].nombre_completo;
+      const hasRealCompradores = localCompradores.length > 0 && localCompradores[0].nombre_completo;
 
-      // Reconcile compradores
-      const reconC = reconcilePersonas(
-        compradores.length > 0 && compradores[0].nombre_completo ? compradores : [],
-        cedulasDetail,
-        escrituraComparecientes,
-        manuallyEditedFieldsRef.current
-      );
-      if (reconC.updated.length > 0) {
-        setCompradores(prev => {
-          return prev.map(p => {
-            const match = reconC.updated.find(u => u.id === p.id);
-            return match || p;
-          });
-        });
+      if (hasRealVendedores) {
+        const reconV = reconcilePersonas(localVendedores, cedulasDetail, escrituraComparecientes, dirtyFields);
+        localVendedores = reconV.updated;
+        for (const alert of reconV.alerts) {
+          sonnerToast.warning(alert.mensaje, { duration: 8000 });
+        }
       }
-
-      // Show alerts
-      const allAlerts = [...reconV.alerts, ...reconC.alerts];
-      for (const alert of allAlerts) {
-        sonnerToast.warning(alert.mensaje, { duration: 8000 });
+      if (hasRealCompradores) {
+        const reconC = reconcilePersonas(localCompradores, cedulasDetail, escrituraComparecientes, dirtyFields);
+        localCompradores = reconC.updated;
+        for (const alert of reconC.alerts) {
+          sonnerToast.warning(alert.mensaje, { duration: 8000 });
+        }
       }
     }
 
-    // Reconcile inmueble with predial data
-    if (meta?.extracted_predial) {
-      const reconInm = reconcileInmueble(
-        inmueble,
-        meta.extracted_predial,
-        manuallyEditedFieldsRef.current
-      );
-      setInmueble(reconInm);
-    }
+    // Reconcile inmueble with predial
+    localInmueble = reconcileInmueble(localInmueble, meta?.extracted_predial, dirtyFields);
+
+    // ── 8. SINGLE setState — UI renders once with complete data ──
+    setVendedores(localVendedores);
+    setCompradores(localCompradores);
+    setInmueble(localInmueble);
+    setActos(localActos);
 
     setSyncStatus("saved");
     setIsDirty(false);
   };
 
-  // Sync extractedPredial fields into inmueble state (only if fields are genuinely empty)
-  useEffect(() => {
-    if (!extractedPredial || isLoadingRef.current) return;
-    setInmueble(prev => {
-      const updates: Partial<Inmueble> = {};
-      if (extractedPredial.estrato && !prev.estrato) updates.estrato = extractedPredial.estrato;
-      if (extractedPredial.valor_pagado && !prev.avaluo_catastral) updates.avaluo_catastral = extractedPredial.valor_pagado;
-      return Object.keys(updates).length ? { ...prev, ...updates } : prev;
-    });
-  }, [extractedPredial]);
+  // (Predial sync is now handled atomically inside loadTramite pipeline)
 
   // Scroll-to-field handler: activates the correct tab and scrolls to the input
   const onScrollToField = useCallback((field: string) => {

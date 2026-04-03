@@ -282,6 +282,12 @@ function processLoops(
   result = expandPersonLoop("vendedores", vendedores, result);
   result = expandPersonLoop("compradores", compradores, result);
 
+  // Unify bare ___________ from persona loops with consistent red pending style
+  result = result.replace(
+    /(?<!<span[^>]*)___________(?![^<]*<\/span>)/g,
+    '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>'
+  );
+
   // Process boolean conditionals: {#key}...{/key} (show if truthy) and {^key}...{/key} (show if falsy)
   const conditionals: Record<string, boolean> = {
     afectacion_vivienda: !!(actos as any).afectacion_vivienda_familiar,
