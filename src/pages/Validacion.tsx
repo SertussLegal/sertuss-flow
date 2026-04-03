@@ -1452,6 +1452,7 @@ const personaToRow = (p: Persona) => ({
   apoderado_persona_nombre: p.apoderado_persona_nombre,
   apoderado_persona_cedula: p.apoderado_persona_cedula,
   apoderado_persona_municipio: p.apoderado_persona_municipio,
+  lugar_expedicion: p.lugar_expedicion || "",
 });
 
 const inmuebleToRow = (i: Inmueble) => ({
