@@ -341,6 +341,21 @@ const DocumentUploadStep = () => {
     delete (extractedInmueble as any).__predial_data;
     const extractedTituloAntecedente = (extractedInmueble as any).__extracted_titulo_antecedente;
     delete (extractedInmueble as any).__extracted_titulo_antecedente;
+    const extractedEscrituraComparecientes = (extractedInmueble as any).__extracted_escritura_comparecientes;
+    delete (extractedInmueble as any).__extracted_escritura_comparecientes;
+
+    // Build cedulas detail for reconciliation
+    const extractedCedulasDetail = [...vendedorSlots, ...compradorSlots]
+      .filter(s => s.status === "done" && s.result)
+      .map(s => {
+        const d = s.result;
+        return {
+          nombre_completo: unwrapConfianza(d.nombre_completo || d.nombre).valor,
+          numero_identificacion: unwrapConfianza(d.numero_identificacion || d.numero_cedula).valor,
+          lugar_expedicion: unwrapConfianza(d.lugar_expedicion || d.municipio_expedicion).valor,
+          rol: s.rol,
+        };
+      });
 
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
@@ -351,6 +366,8 @@ const DocumentUploadStep = () => {
       ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
       ...(extractedActosSeparate ? { extracted_actos: extractedActosSeparate } : {}),
       ...(extractedTituloAntecedente ? { extracted_titulo_antecedente: extractedTituloAntecedente } : {}),
+      ...(extractedEscrituraComparecientes ? { extracted_escritura_comparecientes: extractedEscrituraComparecientes } : {}),
+      ...(extractedCedulasDetail.length > 0 ? { extracted_cedulas_detail: extractedCedulasDetail } : {}),
     };
 
     const { data: tramite, error } = await supabase.from("tramites").insert({
