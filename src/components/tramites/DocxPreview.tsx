@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { lookupBank } from "@/lib/bankDirectory";
-import { formatMonedaLegal, formatFechaLegal } from "@/lib/legalFormatters";
+import { formatMonedaLegal, formatFechaLegal, formatCedulaLegal } from "@/lib/legalFormatters";
 import { Button } from "@/components/ui/button";
 import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info } from "lucide-react";
 import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
@@ -238,7 +238,7 @@ function processLoops(
         const personaFields: Record<string, string> = {
           nombre: p.nombre_completo || "___________",
           nombre_completo: p.nombre_completo || "___________",
-          cedula: p.numero_cedula || "___________",
+          cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula, p.lugar_expedicion || p.municipio_domicilio) : "___________",
           numero_cedula: p.numero_cedula || "___________",
           numero_identificacion: p.numero_cedula || "___________",
           expedida_en: p.lugar_expedicion || p.municipio_domicilio || "___________",
@@ -471,8 +471,8 @@ const DocxPreview = ({
       "area": areaValue || "___________",
       "inmueble.area": areaValue || "___________",
       "linderos": inmueble.linderos || "___________",
-      "avaluo_catastral": inmueble.avaluo_catastral || "___________",
-      "inmueble.avaluo_catastral": inmueble.avaluo_catastral || "___________",
+      "avaluo_catastral": inmueble.avaluo_catastral ? formatMonedaLegal(inmueble.avaluo_catastral) : "___________",
+      "inmueble.avaluo_catastral": inmueble.avaluo_catastral ? formatMonedaLegal(inmueble.avaluo_catastral) : "___________",
       "codigo_orip": inmueble.codigo_orip || "___________",
       "inmueble.orip_ciudad": inmueble.codigo_orip || "___________",
       "inmueble.orip_zona": inmueble.codigo_orip || "___________",
@@ -531,7 +531,7 @@ const DocxPreview = ({
       // Inmueble extended — predial from metadata
       "inmueble.predial_anio": extractedPredial?.anio_gravable || "___________",
       "inmueble.predial_num": extractedPredial?.numero_recibo || "___________",
-      "inmueble.predial_valor": extractedPredial?.valor_pagado || "___________",
+      "inmueble.predial_valor": extractedPredial?.valor_pagado ? formatMonedaLegal(extractedPredial.valor_pagado) : "___________",
       "inmueble.idu_num": "___________",
       "inmueble.idu_fecha": "___________",
       "inmueble.idu_vigencia": "___________",

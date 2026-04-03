@@ -27,6 +27,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
+import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
+import type { ReconcileAlert } from "@/lib/reconcileData";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -361,6 +363,61 @@ const Validacion = () => {
       }
     }
 
+    // ── Multi-document reconciliation ──
+    // Cross-reference personas from cert, cédulas and escritura
+    const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
+    const escrituraComparecientes = meta?.extracted_escritura_comparecientes || [];
+
+    // Reconcile vendedores
+    if (cedulasDetail.length > 0 || escrituraComparecientes.length > 0) {
+      const reconV = reconcilePersonas(
+        vendedores.length > 0 && vendedores[0].nombre_completo ? vendedores : [],
+        cedulasDetail,
+        escrituraComparecientes,
+        manuallyEditedFieldsRef.current
+      );
+      if (reconV.updated.length > 0) {
+        setVendedores(prev => {
+          return prev.map(p => {
+            const match = reconV.updated.find(u => u.id === p.id);
+            return match || p;
+          });
+        });
+      }
+
+      // Reconcile compradores
+      const reconC = reconcilePersonas(
+        compradores.length > 0 && compradores[0].nombre_completo ? compradores : [],
+        cedulasDetail,
+        escrituraComparecientes,
+        manuallyEditedFieldsRef.current
+      );
+      if (reconC.updated.length > 0) {
+        setCompradores(prev => {
+          return prev.map(p => {
+            const match = reconC.updated.find(u => u.id === p.id);
+            return match || p;
+          });
+        });
+      }
+
+      // Show alerts
+      const allAlerts = [...reconV.alerts, ...reconC.alerts];
+      for (const alert of allAlerts) {
+        sonnerToast.warning(alert.mensaje, { duration: 8000 });
+      }
+    }
+
+    // Reconcile inmueble with predial data
+    if (meta?.extracted_predial) {
+      const reconInm = reconcileInmueble(
+        inmueble,
+        meta.extracted_predial,
+        manuallyEditedFieldsRef.current
+      );
+      setInmueble(reconInm);
+    }
+
     setSyncStatus("saved");
     setIsDirty(false);
   };
@@ -451,7 +508,7 @@ const Validacion = () => {
         // Read-then-merge: preserve extracted_* keys from OCR
         const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
         const existingMeta = (existing?.metadata as Record<string, unknown>) || {};
-        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas", "extracted_actos"];
+        const preservedKeys = ["extracted_inmueble", "extracted_documento", "extracted_predial", "extracted_personas", "extracted_actos", "extracted_titulo_antecedente", "extracted_escritura_comparecientes", "extracted_cedulas_detail"];
         const merged: Record<string, unknown> = { ...formMetadata };
         for (const key of preservedKeys) {
           if (existingMeta[key] && !merged[key]) {
@@ -561,7 +618,7 @@ const Validacion = () => {
     });
   }, [toast]);
 
-  const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento) => {
+  const handleDocumentoExtracted = useCallback((documento: ExtractedDocumento & { comparecientes?: any[] }) => {
     setExtractedDocumento(documento);
     // Persist to metadata immediately (non-destructive merge)
     const tid = tramiteIdRef.current;
@@ -573,10 +630,26 @@ const Validacion = () => {
           if (documento.titulo_antecedente) {
             merged.extracted_titulo_antecedente = documento.titulo_antecedente;
           }
+          // Persist escritura comparecientes for reconciliation
+          if (documento.comparecientes && documento.comparecientes.length > 0) {
+            merged.extracted_escritura_comparecientes = documento.comparecientes;
+            // Run reconciliation immediately with new comparecientes
+            const reconV = reconcilePersonas(vendedores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
+            if (reconV.updated.length > 0) {
+              setVendedores(reconV.updated);
+            }
+            const reconC = reconcilePersonas(compradores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
+            if (reconC.updated.length > 0) {
+              setCompradores(reconC.updated);
+            }
+            for (const alert of [...reconV.alerts, ...reconC.alerts]) {
+              sonnerToast.warning(alert.mensaje, { duration: 8000 });
+            }
+          }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
-  }, []);
+  }, [vendedores, compradores]);
 
   // Currency normalization helper
   const cleanCurrency = (val: string): string => {

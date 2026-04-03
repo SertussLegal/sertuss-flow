@@ -220,13 +220,16 @@ const toolsByEscritura = [
           tipo_acto: confField("Tipo de acto: Compraventa, Donación, Permuta, etc."),
           comparecientes: {
             type: "array",
-            description: "Personas que comparecen en la escritura",
+            description: "Personas que comparecen en la escritura, con datos de la sección de COMPARECENCIA",
             items: {
               type: "object",
               properties: {
                 nombre: { type: "string", description: "Nombre completo" },
                 cedula: { type: "string", description: "Número de cédula o NIT" },
                 rol: { type: "string", description: "Rol: vendedor, comprador, otorgante, apoderado, etc." },
+                estado_civil: { type: "string", description: "Estado civil declarado en la comparecencia (soltero, casado, unión libre, divorciado, viudo, etc.)" },
+                direccion: { type: "string", description: "Dirección de residencia declarada en la comparecencia" },
+                municipio_domicilio: { type: "string", description: "Municipio de domicilio declarado en la comparecencia" },
               },
               required: ["nombre"],
               additionalProperties: false,
@@ -365,6 +368,16 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "baja": difícil de leer o ambiguo`,
 
   escritura_antecedente: `Eres un sistema OCR especializado en escrituras públicas colombianas. Extrae los linderos del inmueble de la escritura antecedente. Diferencia entre linderos especiales (del inmueble particular) y linderos generales (del edificio o conjunto). Transcribe TEXTUALMENTE cada lindero, palabra por palabra.
+
+Además, extrae los COMPARECIENTES de la sección de COMPARECENCIA de la escritura. Para cada compareciente, busca:
+- Nombre completo
+- Número de cédula o NIT
+- Rol (vendedor, comprador, otorgante, apoderado)
+- Estado civil declarado (busca frases como "de estado civil soltero", "casado", "en unión marital de hecho", "divorciado", "viudo")
+- Dirección de residencia (busca "domiciliado en", "residente en", "con domicilio en")
+- Municipio de domicilio (busca "vecino de", "domiciliado en [ciudad]")
+
+La escritura es la FUENTE DE VERDAD para estado civil, dirección y municipio de domicilio. Estos datos NO aparecen en la cédula física colombiana.
 
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
