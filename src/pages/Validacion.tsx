@@ -29,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
+import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal } from "@/lib/legalFormatters";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -1195,22 +1196,151 @@ const Validacion = () => {
       const response = await fetch("/template_venta_hipoteca.docx");
       const content = await response.arrayBuffer();
 
-      // PizZip and Docxtemplater are now static imports at top of file
-
       const zip = new PizZip(content);
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
-        nullGetter: () => undefined,
+        nullGetter: () => "___________",
       });
 
-      const safeData = Object.fromEntries(
-        Object.entries(templateData).filter(([k]) => k !== "texto_final_word" && k !== "sugerencias_ia")
-          .map(([k, v]) => [k, typeof v === "string" ? (v || "__________") : v])
-      );
+      // Helper to parse fecha for template date fields
+      const parseFechaFields = (fecha: string) => {
+        if (!fecha) return { dia_letras: "___________", dia_num: "___________", mes: "___________", anio_letras: "___________", anio_num: "___________" };
+        const match = fecha.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})$/) || fecha.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
+        if (!match) return { dia_letras: "___________", dia_num: "___________", mes: "___________", anio_letras: "___________", anio_num: "___________" };
+        const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        let d: number, m: number, y: number;
+        if (parseInt(match[1]) > 31) { y = parseInt(match[1]); m = parseInt(match[2]); d = parseInt(match[3]); }
+        else { d = parseInt(match[1]); m = parseInt(match[2]); y = parseInt(match[3]); }
+        return { dia_letras: "___________", dia_num: String(d), mes: meses[m-1] || "___________", anio_letras: "___________", anio_num: String(y) };
+      };
 
-      doc.render(safeData);
+      const _ = "___________";
+      const mapPersona = (p: typeof vendedores[0]) => ({
+        nombre: p.nombre_completo || _,
+        cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula) : _,
+        expedida_en: p.lugar_expedicion || _,
+        estado_civil: p.estado_civil || _,
+        domicilio: p.municipio_domicilio || _,
+        direccion_residencia: p.direccion || _,
+        telefono: _,
+        actividad_economica: _,
+        email: _,
+        es_pep: p.es_pep,
+        acepta_notificaciones: true,
+      });
+
+      // Parse titulo antecedente dates
+      const antFecha = parseFechaFields(extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento || "");
+      // Parse RPH dates
+      const rphFecha = parseFechaFields(inmueble.escritura_ph_fecha || "");
+      // Parse credito dates
+      const creditoFecha = parseFechaFields(actos.fecha_credito || "");
+
+      const structuredData = {
+        // Root-level
+        escritura_numero: _,
+        fecha_escritura_corta: new Date().toLocaleDateString("es-CO"),
+        notario_nombre: notariaConfig?.nombre_notario || _,
+        notario_decreto: notariaConfig?.decreto_nombramiento || _,
+
+        // Booleans for conditionals
+        tiene_hipoteca: actos.es_hipoteca,
+        afectacion_vivienda: actos.afectacion_vivienda_familiar || false,
+
+        // Person loops
+        vendedores: vendedores.map(mapPersona),
+        compradores: compradores.map(mapPersona),
+
+        // Inmueble nested
+        inmueble: {
+          matricula: inmueble.matricula_inmobiliaria || _,
+          cedula_catastral: inmueble.identificador_predial || _,
+          direccion: inmueble.direccion || _,
+          nombre_edificio_conjunto: inmueble.nombre_edificio_conjunto || _,
+          linderos_especiales: inmueble.linderos || _,
+          linderos_generales: inmueble.linderos || _,
+          orip_ciudad: inmueble.codigo_orip || _,
+          orip_zona: _,
+          coeficiente_letras: _,
+          coeficiente_numero: inmueble.coeficiente_copropiedad || _,
+          nupre: inmueble.nupre || _,
+          estrato: inmueble.estrato || _,
+          es_rph: inmueble.es_propiedad_horizontal,
+          predial_anio: extractedPredial?.anio_gravable || _,
+          predial_num: extractedPredial?.numero_recibo || _,
+          predial_valor: extractedPredial?.valor_pagado ? formatMonedaLegal(extractedPredial.valor_pagado) : _,
+          idu_num: _, idu_fecha: _, idu_vigencia: _,
+          admin_fecha: _, admin_vigencia: _,
+        },
+
+        // Actos nested
+        actos: {
+          cuantia_compraventa_letras: actos.valor_compraventa ? formatMonedaLegal(actos.valor_compraventa).split("($")[0]?.trim() || _ : _,
+          cuantia_compraventa_numero: actos.valor_compraventa ? formatMonedaLegal(actos.valor_compraventa) : _,
+          cuantia_hipoteca_letras: actos.valor_hipoteca ? formatMonedaLegal(actos.valor_hipoteca).split("($")[0]?.trim() || _ : _,
+          cuantia_hipoteca_numero: actos.valor_hipoteca ? formatMonedaLegal(actos.valor_hipoteca) : _,
+          fecha_escritura_letras: _,
+          entidad_bancaria: actos.entidad_bancaria || _,
+          entidad_nit: actos.entidad_nit || _,
+          entidad_domicilio: actos.entidad_domicilio || _,
+          pago_inicial_letras: actos.pago_inicial ? formatMonedaLegal(actos.pago_inicial).split("($")[0]?.trim() || _ : _,
+          pago_inicial_numero: actos.pago_inicial ? formatMonedaLegal(actos.pago_inicial) : _,
+          saldo_financiado_letras: actos.saldo_financiado ? formatMonedaLegal(actos.saldo_financiado).split("($")[0]?.trim() || _ : _,
+          saldo_financiado_numero: actos.saldo_financiado ? formatMonedaLegal(actos.saldo_financiado) : _,
+          credito_dia_letras: creditoFecha.dia_letras,
+          credito_dia_num: creditoFecha.dia_num,
+          credito_mes: creditoFecha.mes,
+          credito_anio_letras: creditoFecha.anio_letras,
+          credito_anio_num: creditoFecha.anio_num,
+          redam_resultado: _,
+          afectacion_vivienda: actos.afectacion_vivienda_familiar || false,
+        },
+
+        // Antecedentes
+        antecedentes: {
+          modo: extractedDocumento?.modo_adquisicion || _,
+          adquirido_de: extractedDocumento?.adquirido_de || _,
+          escritura_num_letras: _,
+          escritura_num_numero: extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || _,
+          escritura_dia_letras: antFecha.dia_letras,
+          escritura_dia_num: antFecha.dia_num,
+          escritura_mes: antFecha.mes,
+          escritura_anio_letras: antFecha.anio_letras,
+          escritura_anio_num: antFecha.anio_num,
+          notaria_previa_numero: extractedDocumento?.titulo_antecedente?.notaria_documento || extractedDocumento?.notaria_origen || _,
+          notaria_previa_circulo: extractedDocumento?.titulo_antecedente?.ciudad_documento || _,
+        },
+
+        // RPH
+        rph: {
+          escritura_num_letras: _,
+          escritura_num_numero: inmueble.escritura_ph_numero || _,
+          escritura_dia_letras: rphFecha.dia_letras,
+          escritura_dia_num: rphFecha.dia_num,
+          escritura_mes: rphFecha.mes,
+          escritura_anio_letras: rphFecha.anio_letras,
+          escritura_anio_num: rphFecha.anio_num,
+          notaria_numero: inmueble.escritura_ph_notaria || _,
+          notaria_ciudad: inmueble.escritura_ph_ciudad || _,
+          matricula_matriz: inmueble.matricula_matriz || _,
+        },
+
+        // Apoderado banco
+        apoderado_banco: {
+          nombre: actos.apoderado_nombre || _,
+          cedula: actos.apoderado_cedula ? formatCedulaLegal(actos.apoderado_cedula) : _,
+          expedida_en: actos.apoderado_expedida_en || _,
+          escritura_poder_num: actos.apoderado_escritura_poder || _,
+          poder_dia_letras: _, poder_dia_num: _, poder_mes: _, poder_anio_letras: _, poder_anio_num: _,
+          notaria_poder_num: actos.apoderado_notaria_poder || _,
+          notaria_poder_ciudad: actos.apoderado_notaria_ciudad || _,
+          email: actos.apoderado_email || _,
+        },
+      };
+
+      doc.render(structuredData);
 
       let outZip = doc.getZip();
       if (customVariables.length > 0) {
