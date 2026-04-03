@@ -663,23 +663,29 @@ const Validacion = () => {
           // Persist escritura comparecientes for reconciliation
           if (documento.comparecientes && documento.comparecientes.length > 0) {
             merged.extracted_escritura_comparecientes = documento.comparecientes;
-            // Run reconciliation immediately with new comparecientes
-            const reconV = reconcilePersonas(vendedores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
-            if (reconV.updated.length > 0) {
-              setVendedores(reconV.updated);
-            }
-            const reconC = reconcilePersonas(compradores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
-            if (reconC.updated.length > 0) {
-              setCompradores(reconC.updated);
-            }
-            for (const alert of [...reconV.alerts, ...reconC.alerts]) {
-              sonnerToast.warning(alert.mensaje, { duration: 8000 });
-            }
+            // Run reconciliation with FUNCTIONAL UPDATES to avoid stale state
+            const dirtyFields = manuallyEditedFieldsRef.current;
+            // Also gather cedulasDetail from existing metadata
+            const cedulasDetail = (data?.metadata as any)?.extracted_cedulas_detail || (data?.metadata as any)?.extracted_personas || [];
+            setVendedores(prev => {
+              const recon = reconcilePersonas(prev, cedulasDetail, documento.comparecientes!, dirtyFields);
+              for (const alert of recon.alerts) {
+                sonnerToast.warning(alert.mensaje, { duration: 8000 });
+              }
+              return recon.updated;
+            });
+            setCompradores(prev => {
+              const recon = reconcilePersonas(prev, cedulasDetail, documento.comparecientes!, dirtyFields);
+              for (const alert of recon.alerts) {
+                sonnerToast.warning(alert.mensaje, { duration: 8000 });
+              }
+              return recon.updated;
+            });
           }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
-  }, [vendedores, compradores]);
+  }, []);
 
   // Currency normalization helper
   const cleanCurrency = (val: string): string => {
