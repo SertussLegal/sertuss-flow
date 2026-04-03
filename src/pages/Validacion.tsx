@@ -464,31 +464,64 @@ const Validacion = () => {
   // (Predial sync is now handled atomically inside loadTramite pipeline)
 
   // Scroll-to-field handler: activates the correct tab and scrolls to the input
+  // Alias map: preview field name → data-field-input attribute name
+  const FIELD_ALIAS: Record<string, string> = {
+    "inmueble.matricula": "matricula_inmobiliaria",
+    "inmueble.cedula_catastral": "identificador_predial",
+    "inmueble.direccion": "direccion_inmueble",
+    "inmueble.linderos_especiales": "linderos",
+    "inmueble.linderos_generales": "linderos",
+    "inmueble.municipio": "municipio",
+    "inmueble.departamento": "departamento",
+    "inmueble.orip_ciudad": "codigo_orip",
+    "inmueble.orip_zona": "codigo_orip",
+    "inmueble.area": "area",
+    "inmueble.area_construida": "area_construida",
+    "inmueble.area_privada": "area_privada",
+    "inmueble.nupre": "nupre",
+    "inmueble.estrato": "estrato",
+    "inmueble.avaluo_catastral": "avaluo_catastral",
+    "inmueble.tipo_predio": "tipo_predio",
+    "actos.cuantia_compraventa_letras": "valor_compraventa",
+    "actos.cuantia_compraventa_numero": "valor_compraventa",
+    "actos.entidad_bancaria": "entidad_bancaria",
+    "actos.cuantia_hipoteca_letras": "valor_hipoteca",
+    "actos.cuantia_hipoteca_numero": "valor_hipoteca",
+    "apoderado_banco.nombre": "apoderado_nombre",
+    "apoderado_banco.cedula": "apoderado_cedula",
+    "comparecientes_vendedor": "vendedor_0_nombre_completo",
+    "comparecientes_comprador": "comprador_0_nombre_completo",
+  };
+
   const onScrollToField = useCallback((field: string) => {
+    const resolved = FIELD_ALIAS[field] || FIELD_TO_INMUEBLE[field] || FIELD_TO_ACTOS[field] || field;
     const tabsEl = document.querySelector('[role="tablist"]');
     if (!tabsEl) return;
 
     let targetTab = "inmueble";
-    if (field.startsWith("actos.") || field.startsWith("apoderado_banco.") || FIELD_TO_ACTOS[field]) {
+    if (field.startsWith("actos.") || field.startsWith("apoderado_banco.") || FIELD_TO_ACTOS[field] || resolved.startsWith("apoderado_") || resolved === "valor_compraventa" || resolved === "valor_hipoteca" || resolved === "entidad_bancaria" || resolved === "tipo_acto") {
       targetTab = "actos";
-    } else if (field.includes("vendedor") || field.includes("compareciente")) {
+    } else if (field.includes("vendedor") || field.includes("compareciente") || resolved.startsWith("vendedor_")) {
       targetTab = "vendedores";
-    } else if (field.includes("comprador")) {
+    } else if (field.includes("comprador") || resolved.startsWith("comprador_")) {
       targetTab = "compradores";
     }
 
     const trigger = tabsEl.querySelector(`[data-value="${targetTab}"]`) as HTMLElement;
     if (trigger) trigger.click();
 
+    // Wait for tab content to render, then scroll
     requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-field-input="${field}"]`) as HTMLElement;
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.focus();
-        el.style.outline = "2px solid hsl(var(--primary))";
-        el.style.outlineOffset = "2px";
-        setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 2000);
-      }
+      setTimeout(() => {
+        const el = document.querySelector(`[data-field-input="${resolved}"]`) as HTMLElement;
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.focus();
+          el.style.outline = "2px solid hsl(var(--primary))";
+          el.style.outlineOffset = "2px";
+          setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 2000);
+        }
+      }, 100);
     });
   }, []);
 
@@ -663,23 +696,29 @@ const Validacion = () => {
           // Persist escritura comparecientes for reconciliation
           if (documento.comparecientes && documento.comparecientes.length > 0) {
             merged.extracted_escritura_comparecientes = documento.comparecientes;
-            // Run reconciliation immediately with new comparecientes
-            const reconV = reconcilePersonas(vendedores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
-            if (reconV.updated.length > 0) {
-              setVendedores(reconV.updated);
-            }
-            const reconC = reconcilePersonas(compradores, [], documento.comparecientes, manuallyEditedFieldsRef.current);
-            if (reconC.updated.length > 0) {
-              setCompradores(reconC.updated);
-            }
-            for (const alert of [...reconV.alerts, ...reconC.alerts]) {
-              sonnerToast.warning(alert.mensaje, { duration: 8000 });
-            }
+            // Run reconciliation with FUNCTIONAL UPDATES to avoid stale state
+            const dirtyFields = manuallyEditedFieldsRef.current;
+            // Also gather cedulasDetail from existing metadata
+            const cedulasDetail = (data?.metadata as any)?.extracted_cedulas_detail || (data?.metadata as any)?.extracted_personas || [];
+            setVendedores(prev => {
+              const recon = reconcilePersonas(prev, cedulasDetail, documento.comparecientes!, dirtyFields);
+              for (const alert of recon.alerts) {
+                sonnerToast.warning(alert.mensaje, { duration: 8000 });
+              }
+              return recon.updated;
+            });
+            setCompradores(prev => {
+              const recon = reconcilePersonas(prev, cedulasDetail, documento.comparecientes!, dirtyFields);
+              for (const alert of recon.alerts) {
+                sonnerToast.warning(alert.mensaje, { duration: 8000 });
+              }
+              return recon.updated;
+            });
           }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
-  }, [vendedores, compradores]);
+  }, []);
 
   // Currency normalization helper
   const cleanCurrency = (val: string): string => {
@@ -1452,6 +1491,7 @@ const personaToRow = (p: Persona) => ({
   apoderado_persona_nombre: p.apoderado_persona_nombre,
   apoderado_persona_cedula: p.apoderado_persona_cedula,
   apoderado_persona_municipio: p.apoderado_persona_municipio,
+  lugar_expedicion: p.lugar_expedicion || "",
 });
 
 const inmuebleToRow = (i: Inmueble) => ({
