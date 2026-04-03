@@ -363,6 +363,61 @@ const Validacion = () => {
       }
     }
 
+    // ── Multi-document reconciliation ──
+    // Cross-reference personas from cert, cédulas and escritura
+    const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
+    const escrituraComparecientes = meta?.extracted_escritura_comparecientes || [];
+
+    // Reconcile vendedores
+    if (cedulasDetail.length > 0 || escrituraComparecientes.length > 0) {
+      const reconV = reconcilePersonas(
+        vendedores.length > 0 && vendedores[0].nombre_completo ? vendedores : [],
+        cedulasDetail,
+        escrituraComparecientes,
+        manuallyEditedFieldsRef.current
+      );
+      if (reconV.updated.length > 0) {
+        setVendedores(prev => {
+          return prev.map(p => {
+            const match = reconV.updated.find(u => u.id === p.id);
+            return match || p;
+          });
+        });
+      }
+
+      // Reconcile compradores
+      const reconC = reconcilePersonas(
+        compradores.length > 0 && compradores[0].nombre_completo ? compradores : [],
+        cedulasDetail,
+        escrituraComparecientes,
+        manuallyEditedFieldsRef.current
+      );
+      if (reconC.updated.length > 0) {
+        setCompradores(prev => {
+          return prev.map(p => {
+            const match = reconC.updated.find(u => u.id === p.id);
+            return match || p;
+          });
+        });
+      }
+
+      // Show alerts
+      const allAlerts = [...reconV.alerts, ...reconC.alerts];
+      for (const alert of allAlerts) {
+        sonnerToast.warning(alert.mensaje, { duration: 8000 });
+      }
+    }
+
+    // Reconcile inmueble with predial data
+    if (meta?.extracted_predial) {
+      const reconInm = reconcileInmueble(
+        inmueble,
+        meta.extracted_predial,
+        manuallyEditedFieldsRef.current
+      );
+      setInmueble(reconInm);
+    }
+
     setSyncStatus("saved");
     setIsDirty(false);
   };
