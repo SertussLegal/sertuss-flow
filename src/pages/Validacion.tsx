@@ -723,6 +723,42 @@ const Validacion = () => {
               return recon.updated;
             });
           }
+          // ── RE-MERGE INMUEBLE from freshly extracted data ──
+          if (documento.inmueble || merged.extracted_inmueble) {
+            const freshOcr = documento.inmueble || merged.extracted_inmueble || {};
+            const dirtyFs = manuallyEditedFieldsRef.current;
+            setInmueble(prev => {
+              const result = { ...prev };
+              const ocrFieldMap: Record<string, string> = {
+                chip_nupre: "nupre", chip: "nupre",
+                cedula_catastral: "identificador_predial", numero_predial: "identificador_predial",
+                codigo_orip: "codigo_orip", orip_ciudad: "codigo_orip",
+                matricula_inmobiliaria: "matricula_inmobiliaria", matricula: "matricula_inmobiliaria",
+                matricula_matriz: "matricula_matriz", direccion: "direccion",
+                municipio: "municipio", departamento: "departamento",
+                area: "area", area_construida: "area_construida", area_privada: "area_privada",
+                linderos: "linderos", linderos_especiales: "linderos", linderos_generales: "linderos",
+                avaluo_catastral: "avaluo_catastral", estrato: "estrato", nupre: "nupre",
+                valorizacion: "valorizacion", escritura_ph: "escritura_ph",
+                coeficiente: "coeficiente_copropiedad", coeficiente_copropiedad: "coeficiente_copropiedad",
+                nombre_conjunto_edificio: "nombre_edificio_conjunto", nombre_edificio_conjunto: "nombre_edificio_conjunto",
+                escritura_ph_numero: "escritura_ph_numero", escritura_ph_fecha: "escritura_ph_fecha",
+                escritura_ph_notaria: "escritura_ph_notaria", escritura_ph_ciudad: "escritura_ph_ciudad",
+                tipo_predio: "tipo_predio", es_propiedad_horizontal: "es_propiedad_horizontal",
+              };
+              for (const [ocrKey, val] of Object.entries(freshOcr)) {
+                const dbKey = ocrFieldMap[ocrKey] || ocrKey;
+                const strVal = typeof val === "object" && val !== null && "valor" in val ? String((val as any).valor ?? "") : String(val ?? "");
+                if (strVal && dbKey in result && !dirtyFs.has(dbKey)) {
+                  const current = (result as any)[dbKey];
+                  if (!current || current === "" || current === false) {
+                    (result as any)[dbKey] = dbKey === "es_propiedad_horizontal" ? (strVal === "true" || strVal === "1" || /horizontal/i.test(strVal)) : strVal;
+                  }
+                }
+              }
+              return result;
+            });
+          }
           supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
         });
     }
