@@ -675,10 +675,17 @@ const DocxPreview = ({
         }
       );
       // Then: wrap any remaining bare ___________ not already inside a span
-      result = result.replace(
-        /(?<!<span[^>]*)___________(?![^<]*<\/span>)/g,
-        '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>'
-      );
+      // Use split/join instead of lookbehind for Safari compatibility
+      const pendingSpan = '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>';
+      result = result.split("___________").map((segment, i, arr) => {
+        if (i === arr.length - 1) return segment;
+        // Check if this ___________ is already inside a span tag (look back for unclosed <span)
+        const lastOpenSpan = segment.lastIndexOf("<span");
+        const lastCloseSpan = segment.lastIndexOf("</span>");
+        const isInsideSpan = lastOpenSpan > lastCloseSpan && !segment.slice(lastOpenSpan).includes("</span>");
+        if (isInsideSpan) return segment + "___________";
+        return segment + pendingSpan;
+      }).join("");
 
       setHtml(sanitize(result));
     }, 500);
