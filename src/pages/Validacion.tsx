@@ -724,8 +724,8 @@ const Validacion = () => {
             });
           }
           // ── RE-MERGE INMUEBLE from freshly extracted data ──
-          if (documento.inmueble || merged.extracted_inmueble) {
-            const freshOcr = documento.inmueble || merged.extracted_inmueble || {};
+          if (merged.extracted_inmueble) {
+            const freshOcr = merged.extracted_inmueble || {};
             const dirtyFs = manuallyEditedFieldsRef.current;
             setInmueble(prev => {
               const result = { ...prev };
