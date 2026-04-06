@@ -390,9 +390,13 @@ const Validacion = () => {
     }
 
     // ── 4. Load notaria config ──
+    // Priority: notaria_style_id on tramite > first org notaria > configuracion_notaria
     if (t.organization_id) {
+      const notariaStyleId = (t as any).notaria_style_id;
       const [{ data: ns }, { data: cn }] = await Promise.all([
-        supabase.from("notaria_styles").select("*").eq("organization_id", t.organization_id).maybeSingle(),
+        notariaStyleId
+          ? supabase.from("notaria_styles").select("*").eq("id", notariaStyleId).maybeSingle()
+          : supabase.from("notaria_styles").select("*").eq("organization_id", t.organization_id).limit(1).maybeSingle(),
         supabase.from("configuracion_notaria").select("*").eq("organization_id", t.organization_id).maybeSingle(),
       ]);
       if (ns || cn) {

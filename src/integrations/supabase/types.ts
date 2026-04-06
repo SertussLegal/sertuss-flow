@@ -459,10 +459,19 @@ export type Database = {
           clausulas_personalizadas: Json | null
           created_at: string
           estilo_linderos: string
+          formato_fecha: string
           id: string
+          linderos_formato: string
+          line_height_pt: number
+          lineas_por_pagina: number
+          margin_bottom_mm: number
+          margin_left_mm: number
+          margin_right_mm: number
+          margin_top_mm: number
           nombre_notaria: string
           notario_titular: string
           organization_id: string
+          precios_mayusculas: boolean
           updated_at: string
         }
         Insert: {
@@ -470,10 +479,19 @@ export type Database = {
           clausulas_personalizadas?: Json | null
           created_at?: string
           estilo_linderos?: string
+          formato_fecha?: string
           id?: string
+          linderos_formato?: string
+          line_height_pt?: number
+          lineas_por_pagina?: number
+          margin_bottom_mm?: number
+          margin_left_mm?: number
+          margin_right_mm?: number
+          margin_top_mm?: number
           nombre_notaria?: string
           notario_titular?: string
           organization_id: string
+          precios_mayusculas?: boolean
           updated_at?: string
         }
         Update: {
@@ -481,17 +499,26 @@ export type Database = {
           clausulas_personalizadas?: Json | null
           created_at?: string
           estilo_linderos?: string
+          formato_fecha?: string
           id?: string
+          linderos_formato?: string
+          line_height_pt?: number
+          lineas_por_pagina?: number
+          margin_bottom_mm?: number
+          margin_left_mm?: number
+          margin_right_mm?: number
+          margin_top_mm?: number
           nombre_notaria?: string
           notario_titular?: string
           organization_id?: string
+          precios_mayusculas?: boolean
           updated_at?: string
         }
         Relationships: [
           {
             foreignKeyName: "notaria_styles_organization_id_fkey"
             columns: ["organization_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -767,6 +794,7 @@ export type Database = {
           id: string
           is_unlocked: boolean
           metadata: Json | null
+          notaria_style_id: string | null
           organization_id: string
           radicado: string | null
           status: Database["public"]["Enums"]["tramite_status"]
@@ -780,6 +808,7 @@ export type Database = {
           id?: string
           is_unlocked?: boolean
           metadata?: Json | null
+          notaria_style_id?: string | null
           organization_id: string
           radicado?: string | null
           status?: Database["public"]["Enums"]["tramite_status"]
@@ -793,6 +822,7 @@ export type Database = {
           id?: string
           is_unlocked?: boolean
           metadata?: Json | null
+          notaria_style_id?: string | null
           organization_id?: string
           radicado?: string | null
           status?: Database["public"]["Enums"]["tramite_status"]
@@ -805,6 +835,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tramites_notaria_style_id_fkey"
+            columns: ["notaria_style_id"]
+            isOneToOne: false
+            referencedRelation: "notaria_styles"
             referencedColumns: ["id"]
           },
           {

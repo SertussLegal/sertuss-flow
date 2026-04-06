@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -13,7 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import {
-  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft, CreditCard, UserCheck,
+  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft, CreditCard, UserCheck, Building2,
 } from "lucide-react";
 import type { NivelConfianza } from "@/lib/types";
 import { unwrapConfianza, unwrapConfianzaBool } from "@/lib/types";
@@ -63,6 +64,20 @@ const DocumentUploadStep = () => {
   const [vendedorSlots, setVendedorSlots] = useState<PersonaSlot[]>([makePersonaSlot("vendedor", 0)]);
   const [compradorSlots, setCompradorSlots] = useState<PersonaSlot[]>([makePersonaSlot("comprador", 0)]);
   const [propSlots, setPropSlots] = useState<DocSlot[]>(propertySlots.map(s => ({ ...s })));
+
+  // Notaría selector
+  const [notariasList, setNotariasList] = useState<{ id: string; nombre_notaria: string; ciudad: string; notario_titular: string }[]>([]);
+  const [selectedNotariaId, setSelectedNotariaId] = useState<string | "">("");
+  const [showNewNotaria, setShowNewNotaria] = useState(false);
+  const [newNotaria, setNewNotaria] = useState({ nombre_notaria: "", ciudad: "", notario_titular: "" });
+
+  useEffect(() => {
+    if (!profile?.organization_id) return;
+    supabase.from("notaria_styles").select("id, nombre_notaria, ciudad, notario_titular")
+      .eq("organization_id", profile.organization_id)
+      .order("created_at")
+      .then(({ data }) => { if (data) setNotariasList(data); });
+  }, [profile?.organization_id]);
 
   // Dynamic toggles for optional documents
   const [tieneCredito, setTieneCredito] = useState(false);
@@ -410,13 +425,26 @@ const DocumentUploadStep = () => {
       ...(extractedCedulasDetail.length > 0 ? { extracted_cedulas_detail: extractedCedulasDetail } : {}),
     };
 
+    // If new notaría was created inline, insert it first
+    let finalNotariaId: string | null = selectedNotariaId || null;
+    if (showNewNotaria && newNotaria.nombre_notaria.trim()) {
+      const { data: createdNotaria } = await supabase.from("notaria_styles").insert({
+        organization_id: profile.organization_id,
+        nombre_notaria: newNotaria.nombre_notaria.trim(),
+        ciudad: newNotaria.ciudad.trim(),
+        notario_titular: newNotaria.notario_titular.trim(),
+      }).select("id").single();
+      if (createdNotaria) finalNotariaId = createdNotaria.id;
+    }
+
     const { data: tramite, error } = await supabase.from("tramites").insert({
       tipo: "Compraventa",
       organization_id: profile.organization_id,
       created_by: profile.id,
       status: "pendiente" as any,
       metadata: metadata as any,
-    }).select().single();
+      ...(finalNotariaId ? { notaria_style_id: finalNotariaId } : {}),
+    } as any).select().single();
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -542,6 +570,50 @@ const DocumentUploadStep = () => {
             <p className="text-muted-foreground mt-1">
               La IA extraerá automáticamente los datos relevantes. Los campos con baja confianza se resaltarán en ámbar para tu verificación.
             </p>
+          </div>
+
+          {/* Notaría Selector */}
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">¿En qué notaría se otorgará?</h2>
+            </div>
+            {notariasList.length > 0 && !showNewNotaria ? (
+              <div className="space-y-2">
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedNotariaId}
+                  onChange={e => {
+                    if (e.target.value === "__new__") {
+                      setShowNewNotaria(true);
+                      setSelectedNotariaId("");
+                    } else {
+                      setSelectedNotariaId(e.target.value);
+                    }
+                  }}
+                >
+                  <option value="">Selecciona una notaría (opcional)</option>
+                  {notariasList.map(n => (
+                    <option key={n.id} value={n.id}>{n.nombre_notaria} — {n.ciudad}</option>
+                  ))}
+                  <option value="__new__">+ Nueva notaría</option>
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notariasList.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => { setShowNewNotaria(false); }}>
+                    <ArrowLeft className="mr-1 h-3 w-3" /> Volver a la lista
+                  </Button>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Input placeholder="Nombre de la Notaría" value={newNotaria.nombre_notaria} onChange={e => setNewNotaria(p => ({ ...p, nombre_notaria: e.target.value }))} />
+                  <Input placeholder="Ciudad" value={newNotaria.ciudad} onChange={e => setNewNotaria(p => ({ ...p, ciudad: e.target.value }))} />
+                  <Input placeholder="Notario Titular" value={newNotaria.notario_titular} onChange={e => setNewNotaria(p => ({ ...p, notario_titular: e.target.value }))} />
+                </div>
+                <p className="text-xs text-muted-foreground">Se guardará automáticamente en tu directorio al continuar.</p>
+              </div>
+            )}
           </div>
 
           <Progress value={(completedCount / totalCount) * 100} className="h-2" />

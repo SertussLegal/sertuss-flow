@@ -34,8 +34,11 @@ serve(async (req) => {
 
     // 2. Fetch notaria_styles + config_tramites in parallel
     const tipoActo = tramite.tipo || "Compraventa";
+    const notariaStyleId = tramite.notaria_style_id;
     const [estiloRes, configRes] = await Promise.all([
-      sb.from("notaria_styles").select("*").eq("organization_id", tramite.organization_id).single(),
+      notariaStyleId
+        ? sb.from("notaria_styles").select("*").eq("id", notariaStyleId).single()
+        : sb.from("notaria_styles").select("*").eq("organization_id", tramite.organization_id).limit(1).maybeSingle(),
       sb.from("config_tramites").select("campos_obligatorios").eq("tipo_acto", tipoActo).single(),
     ]);
 

@@ -142,7 +142,7 @@ const Dashboard = () => {
             )}
             {(profile?.role === "owner" || profile?.role === "admin") && (
               <Button variant="ghost-dark" size="sm" onClick={() => navigate("/notaria")}>
-                <Settings className="mr-1 h-4 w-4" /> Notaría
+                <Settings className="mr-1 h-4 w-4" /> Notarías
               </Button>
             )}
             <Button variant="ghost-dark" size="sm" onClick={handleLogout}>
