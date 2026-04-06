@@ -104,7 +104,8 @@ const Validacion = () => {
   } | null>(null);
   const [extractedPredial, setExtractedPredial] = useState<{
     numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
-  } | null>(null);
+   } | null>(null);
+  const [slotsPendientes, setSlotsPendientes] = useState<string[]>([]);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
