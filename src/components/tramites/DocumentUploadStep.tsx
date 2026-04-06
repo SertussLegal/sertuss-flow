@@ -571,6 +571,50 @@ const DocumentUploadStep = () => {
             </p>
           </div>
 
+          {/* Notaría Selector */}
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">¿En qué notaría se otorgará?</h2>
+            </div>
+            {notariasList.length > 0 && !showNewNotaria ? (
+              <div className="space-y-2">
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedNotariaId}
+                  onChange={e => {
+                    if (e.target.value === "__new__") {
+                      setShowNewNotaria(true);
+                      setSelectedNotariaId("");
+                    } else {
+                      setSelectedNotariaId(e.target.value);
+                    }
+                  }}
+                >
+                  <option value="">Selecciona una notaría (opcional)</option>
+                  {notariasList.map(n => (
+                    <option key={n.id} value={n.id}>{n.nombre_notaria} — {n.ciudad}</option>
+                  ))}
+                  <option value="__new__">+ Nueva notaría</option>
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notariasList.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => { setShowNewNotaria(false); }}>
+                    <ArrowLeft className="mr-1 h-3 w-3" /> Volver a la lista
+                  </Button>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Input placeholder="Nombre de la Notaría" value={newNotaria.nombre_notaria} onChange={e => setNewNotaria(p => ({ ...p, nombre_notaria: e.target.value }))} />
+                  <Input placeholder="Ciudad" value={newNotaria.ciudad} onChange={e => setNewNotaria(p => ({ ...p, ciudad: e.target.value }))} />
+                  <Input placeholder="Notario Titular" value={newNotaria.notario_titular} onChange={e => setNewNotaria(p => ({ ...p, notario_titular: e.target.value }))} />
+                </div>
+                <p className="text-xs text-muted-foreground">Se guardará automáticamente en tu directorio al continuar.</p>
+              </div>
+            )}
+          </div>
+
           <Progress value={(completedCount / totalCount) * 100} className="h-2" />
 
           {/* Cédulas de Vendedores */}
