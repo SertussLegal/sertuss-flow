@@ -388,12 +388,21 @@ const DocumentUploadStep = () => {
         };
       });
 
+    // Build slots_pendientes for optional toggles without uploaded files
+    const slotsPendientes: string[] = [];
+    if (tieneCredito && creditoSlot.status !== "done") slotsPendientes.push("carta_credito");
+    if (tieneApoderado && poderSlot.status !== "done") slotsPendientes.push("poder_notarial");
+
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
       extracted_personas: extractedPersonas,
       extracted_documento: extractedDocumento,
       confianza_map: confianzaMap,
       progress: 0,
+      toggles: { tieneCredito, tieneApoderado },
+      ...(slotsPendientes.length > 0 ? { slots_pendientes: slotsPendientes } : {}),
+      ...(creditoSlot.status === "done" && creditoSlot.result ? { extracted_carta_credito: creditoSlot.result } : {}),
+      ...(poderSlot.status === "done" && poderSlot.result ? { extracted_poder_notarial: poderSlot.result } : {}),
       ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
       ...(extractedActosSeparate ? { extracted_actos: extractedActosSeparate } : {}),
       ...(extractedTituloAntecedente ? { extracted_titulo_antecedente: extractedTituloAntecedente } : {}),
@@ -595,6 +604,84 @@ const DocumentUploadStep = () => {
                 () => removePropFile(i),
               )
             )}
+          </div>
+
+          {/* Documentos Opcionales — Toggles Dinámicos */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Documentos Opcionales</h2>
+            </div>
+
+            {/* Toggle: Crédito Hipotecario */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CreditCard className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <Label htmlFor="toggle-credito" className="text-sm font-medium cursor-pointer">
+                      ¿El comprador tiene crédito hipotecario?
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Activa para subir la carta de aprobación de crédito</p>
+                  </div>
+                </div>
+                <Switch
+                  id="toggle-credito"
+                  checked={tieneCredito}
+                  onCheckedChange={setTieneCredito}
+                />
+              </div>
+              {tieneCredito && (
+                <div className="pl-8">
+                  {renderSlotCard(
+                    creditoSlot,
+                    "carta-credito",
+                    (file) => handleOptionalFile("carta_credito", file),
+                    () => setCreditoSlot(prev => ({ ...prev, file: null, status: "idle", result: null, error: null })),
+                  )}
+                  {creditoSlot.status === "idle" && (
+                    <p className="text-xs text-muted-foreground mt-1 italic">
+                      Opcional — puedes continuar sin este documento. Los campos de hipoteca se podrán completar manualmente.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            {/* Toggle: Apoderado */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <UserCheck className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <Label htmlFor="toggle-apoderado" className="text-sm font-medium cursor-pointer">
+                      ¿Hay apoderado en este trámite?
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Activa para subir el poder notarial</p>
+                  </div>
+                </div>
+                <Switch
+                  id="toggle-apoderado"
+                  checked={tieneApoderado}
+                  onCheckedChange={setTieneApoderado}
+                />
+              </div>
+              {tieneApoderado && (
+                <div className="pl-8">
+                  {renderSlotCard(
+                    poderSlot,
+                    "poder-notarial",
+                    (file) => handleOptionalFile("poder_notarial", file),
+                    () => setPoderSlot(prev => ({ ...prev, file: null, status: "idle", result: null, error: null })),
+                  )}
+                  {poderSlot.status === "idle" && (
+                    <p className="text-xs text-muted-foreground mt-1 italic">
+                      Opcional — puedes continuar sin este documento. Los campos del apoderado se podrán completar manualmente.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* Missing cédulas alert */}
