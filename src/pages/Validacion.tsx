@@ -992,7 +992,7 @@ const Validacion = () => {
     }
   }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
 
-
+  const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
     const newVar: CustomVariable = {
       id: crypto.randomUUID(),
       originalText,
