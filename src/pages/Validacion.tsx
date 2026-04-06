@@ -1556,37 +1556,45 @@ const Validacion = () => {
         </div>
       </header>
 
-      {/* Desktop: split view */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0 hidden lg:flex">
-        <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
-          <DocxPreview
-            vendedores={vendedores}
-            compradores={compradores}
-            inmueble={inmueble}
-            actos={actos}
-            customVariables={customVariables}
-            onFieldEdit={handleFieldEdit}
-            onCreateCustomVariable={handleCreateCustomVariable}
-            sugerenciasIA={sugerenciasIA}
-            generating={generatingWord}
-            textoFinalWord={textoFinalWord}
-            onSugerenciaAccepted={handleSugerenciaAccepted}
-            notariaConfig={notariaConfig}
-            extractedDocumento={extractedDocumento}
-            extractedPredial={extractedPredial}
-            slotsPendientes={slotsPendientes}
-            onScrollToField={onScrollToField}
-          />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
-          <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
-            <div className="container max-w-2xl py-6">
-              {renderTabs()}
-            </div>
-          </ScrollArea>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      {/* Desktop: split view with sidebar */}
+      <div className="flex-1 min-h-0 hidden lg:flex">
+        {/* Expediente Sidebar */}
+        {expedienteDocs.length > 0 && (
+          <div className="w-56 shrink-0 min-h-0 overflow-hidden">
+            <ExpedienteSidebar documentos={expedienteDocs} />
+          </div>
+        )}
+        <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
+          <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
+            <DocxPreview
+              vendedores={vendedores}
+              compradores={compradores}
+              inmueble={inmueble}
+              actos={actos}
+              customVariables={customVariables}
+              onFieldEdit={handleFieldEdit}
+              onCreateCustomVariable={handleCreateCustomVariable}
+              sugerenciasIA={sugerenciasIA}
+              generating={generatingWord}
+              textoFinalWord={textoFinalWord}
+              onSugerenciaAccepted={handleSugerenciaAccepted}
+              notariaConfig={notariaConfig}
+              extractedDocumento={extractedDocumento}
+              extractedPredial={extractedPredial}
+              slotsPendientes={slotsPendientes}
+              onScrollToField={onScrollToField}
+            />
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
+            <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
+              <div className="container max-w-2xl py-6">
+                {renderTabs()}
+              </div>
+            </ScrollArea>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
 
       {/* Mobile: stacked column */}
       <div className="flex-1 flex flex-col lg:hidden">
