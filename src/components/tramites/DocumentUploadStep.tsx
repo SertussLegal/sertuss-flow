@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import {
-  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft,
+  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft, CreditCard, UserCheck,
 } from "lucide-react";
 import type { NivelConfianza } from "@/lib/types";
 import { unwrapConfianza, unwrapConfianzaBool } from "@/lib/types";
@@ -61,6 +63,18 @@ const DocumentUploadStep = () => {
   const [vendedorSlots, setVendedorSlots] = useState<PersonaSlot[]>([makePersonaSlot("vendedor", 0)]);
   const [compradorSlots, setCompradorSlots] = useState<PersonaSlot[]>([makePersonaSlot("comprador", 0)]);
   const [propSlots, setPropSlots] = useState<DocSlot[]>(propertySlots.map(s => ({ ...s })));
+
+  // Dynamic toggles for optional documents
+  const [tieneCredito, setTieneCredito] = useState(false);
+  const [tieneApoderado, setTieneApoderado] = useState(false);
+  const [creditoSlot, setCreditoSlot] = useState<DocSlot>({
+    label: "Carta de Aprobación de Crédito", type: "carta_credito",
+    file: null, status: "idle", result: null, error: null,
+  });
+  const [poderSlot, setPoderSlot] = useState<DocSlot>({
+    label: "Poder Notarial", type: "poder_notarial",
+    file: null, status: "idle", result: null, error: null,
+  });
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
