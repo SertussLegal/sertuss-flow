@@ -108,6 +108,7 @@ const Validacion = () => {
     numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
    } | null>(null);
   const [slotsPendientes, setSlotsPendientes] = useState<string[]>([]);
+  const [expedienteDocs, setExpedienteDocs] = useState<ExpedienteDoc[]>([]);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
