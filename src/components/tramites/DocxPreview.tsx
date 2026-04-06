@@ -677,34 +677,41 @@ const DocxPreview = ({
         }
       }
 
-      // FINAL PASS: Unify ALL remaining bare ___________ (from persona loops, resolved spans containing gaps, etc.)
-      // First: fix ___________ inside resolved spans (split into resolved + pending parts)
+      // FINAL PASS: Unify ALL remaining bare ___________ with consistent styling
+      // Step 1: Fix ___________ inside ANY span (resolved, pending, or other)
       result = result.replace(
-        /<span([^>]*class="var-resolved"[^>]*)>([^<]*___________[^<]*)<\/span>/g,
-        (_, attrs, content) => {
-          // Split the content on ___________ and rebuild with mixed spans
+        /<span([^>]*)>([^<]*___________[^<]*)<\/span>/g,
+        (match, attrs, content) => {
+          // If this is already a var-pending span with only ___________, leave it
+          if (attrs.includes("var-pending") && content.trim() === "___________") return match;
           const parts = content.split("___________");
           return parts.map((part: string, i: number) => {
-            const resolved = part ? `<span${attrs}>${part}</span>` : "";
+            const kept = part ? `<span${attrs}>${part}</span>` : "";
             const pending = i < parts.length - 1
               ? '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>'
               : "";
-            return resolved + pending;
+            return kept + pending;
           }).join("");
         }
       );
-      // Then: wrap any remaining bare ___________ not already inside a span
-      // Use split/join instead of lookbehind for Safari compatibility
+      // Step 2: Wrap ALL remaining bare ___________ that are NOT inside a tag attribute or an existing span
       const pendingSpan = '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer">___________</span>';
-      result = result.split("___________").map((segment, i, arr) => {
-        if (i === arr.length - 1) return segment;
-        // Check if this ___________ is already inside a span tag (look back for unclosed <span)
-        const lastOpenSpan = segment.lastIndexOf("<span");
-        const lastCloseSpan = segment.lastIndexOf("</span>");
-        const isInsideSpan = lastOpenSpan > lastCloseSpan && !segment.slice(lastOpenSpan).includes("</span>");
-        if (isInsideSpan) return segment + "___________";
-        return segment + pendingSpan;
-      }).join("");
+      const segments = result.split("___________");
+      if (segments.length > 1) {
+        result = segments.map((segment, i, arr) => {
+          if (i === arr.length - 1) return segment;
+          // Check: is the ___________ inside an HTML attribute (e.g. style="..." or title="...")?
+          const lastQuoteOpen = Math.max(segment.lastIndexOf('="'), segment.lastIndexOf("='"));
+          const lastQuoteClose = Math.max(segment.lastIndexOf('"'), segment.lastIndexOf("'"));
+          if (lastQuoteOpen >= 0 && lastQuoteOpen > lastQuoteClose) return segment + "___________";
+          // Check: is it already wrapped in a var-pending span?
+          const lastOpenSpan = segment.lastIndexOf("<span");
+          const lastCloseSpan = segment.lastIndexOf("</span>");
+          const isInsideSpan = lastOpenSpan > lastCloseSpan && !segment.slice(lastOpenSpan).includes(">");
+          if (isInsideSpan) return segment + "___________";
+          return segment + pendingSpan;
+        }).join("");
+      }
 
       setHtml(sanitize(result));
     }, 500);

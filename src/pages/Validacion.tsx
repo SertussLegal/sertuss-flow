@@ -442,6 +442,11 @@ const Validacion = () => {
       setSlotsPendientes([]);
     }
 
+    // ── 6b2. Restore toggle state → sync with actos.es_hipoteca ──
+    if (meta?.toggles?.tieneCredito && !localActos.es_hipoteca) {
+      localActos = { ...localActos, es_hipoteca: true };
+    }
+
     // ── 6c. Build expediente docs list from metadata ──
     const docs: ExpedienteDoc[] = [
       { tipo: "certificado_tradicion", label: "Certificado de Tradición", status: meta?.extracted_inmueble ? "procesado" : "pendiente" },
@@ -1561,7 +1566,7 @@ const Validacion = () => {
         {/* Expediente Sidebar */}
         {expedienteDocs.length > 0 && (
           <div className="w-56 shrink-0 min-h-0 overflow-hidden">
-            <ExpedienteSidebar documentos={expedienteDocs} />
+            <ExpedienteSidebar documentos={expedienteDocs} onUploadDocument={handleSidebarUpload} uploading={sidebarUploading} />
           </div>
         )}
         <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
