@@ -21,9 +21,10 @@ interface PersonaFormProps {
   onChange: (personas: Persona[]) => void;
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
+  hasEscrituraProcessed?: boolean;
 }
 
-const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange }: PersonaFormProps) => {
+const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
   const [scanningIndex, setScanningIndex] = useState<number | null>(null);
