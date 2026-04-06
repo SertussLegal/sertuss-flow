@@ -134,6 +134,23 @@ const DocumentUploadStep = () => {
     }
   }, [profile, processFile, propSlots, toast]);
 
+  const handleOptionalFile = useCallback(async (
+    slotType: "carta_credito" | "poder_notarial",
+    file: File,
+  ) => {
+    if (!profile?.organization_id) return;
+    const setter = slotType === "carta_credito" ? setCreditoSlot : setPoderSlot;
+    setter(prev => ({ ...prev, file, status: "uploading", error: null }));
+    try {
+      const result = await processFile(file, slotType);
+      setter(prev => ({ ...prev, status: "done", result }));
+      toast({ title: `${slotType === "carta_credito" ? "Carta de crédito" : "Poder notarial"} procesado`, description: "Datos extraídos correctamente." });
+    } catch (err: any) {
+      setter(prev => ({ ...prev, status: "error", error: err.message }));
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  }, [profile, processFile, toast]);
+
   const removePersonaSlot = (rol: "vendedor" | "comprador", index: number) => {
     const setter = rol === "vendedor" ? setVendedorSlots : setCompradorSlots;
     setter(prev => {
