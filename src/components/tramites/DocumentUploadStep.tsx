@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -63,6 +63,20 @@ const DocumentUploadStep = () => {
   const [vendedorSlots, setVendedorSlots] = useState<PersonaSlot[]>([makePersonaSlot("vendedor", 0)]);
   const [compradorSlots, setCompradorSlots] = useState<PersonaSlot[]>([makePersonaSlot("comprador", 0)]);
   const [propSlots, setPropSlots] = useState<DocSlot[]>(propertySlots.map(s => ({ ...s })));
+
+  // Notaría selector
+  const [notariasList, setNotariasList] = useState<{ id: string; nombre_notaria: string; ciudad: string; notario_titular: string }[]>([]);
+  const [selectedNotariaId, setSelectedNotariaId] = useState<string | "">("");
+  const [showNewNotaria, setShowNewNotaria] = useState(false);
+  const [newNotaria, setNewNotaria] = useState({ nombre_notaria: "", ciudad: "", notario_titular: "" });
+
+  useEffect(() => {
+    if (!profile?.organization_id) return;
+    supabase.from("notaria_styles").select("id, nombre_notaria, ciudad, notario_titular")
+      .eq("organization_id", profile.organization_id)
+      .order("created_at")
+      .then(({ data }) => { if (data) setNotariasList(data); });
+  }, [profile?.organization_id]);
 
   // Dynamic toggles for optional documents
   const [tieneCredito, setTieneCredito] = useState(false);
@@ -410,13 +424,26 @@ const DocumentUploadStep = () => {
       ...(extractedCedulasDetail.length > 0 ? { extracted_cedulas_detail: extractedCedulasDetail } : {}),
     };
 
+    // If new notaría was created inline, insert it first
+    let finalNotariaId: string | null = selectedNotariaId || null;
+    if (showNewNotaria && newNotaria.nombre_notaria.trim()) {
+      const { data: createdNotaria } = await supabase.from("notaria_styles").insert({
+        organization_id: profile.organization_id,
+        nombre_notaria: newNotaria.nombre_notaria.trim(),
+        ciudad: newNotaria.ciudad.trim(),
+        notario_titular: newNotaria.notario_titular.trim(),
+      }).select("id").single();
+      if (createdNotaria) finalNotariaId = createdNotaria.id;
+    }
+
     const { data: tramite, error } = await supabase.from("tramites").insert({
       tipo: "Compraventa",
       organization_id: profile.organization_id,
       created_by: profile.id,
       status: "pendiente" as any,
       metadata: metadata as any,
-    }).select().single();
+      ...(finalNotariaId ? { notaria_style_id: finalNotariaId } : {}),
+    } as any).select().single();
 
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
