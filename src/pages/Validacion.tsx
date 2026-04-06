@@ -432,6 +432,13 @@ const Validacion = () => {
     }
     setExtractedPredial(localExtractedPredial);
 
+    // ── 6b. Load slots_pendientes from metadata toggles ──
+    if (meta?.slots_pendientes && Array.isArray(meta.slots_pendientes)) {
+      setSlotsPendientes(meta.slots_pendientes);
+    } else {
+      setSlotsPendientes([]);
+    }
+
     // ── 7. RECONCILIATION on local variables (no stale state!) ──
     const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
     const escrituraComparecientes = meta?.extracted_escritura_comparecientes || [];
