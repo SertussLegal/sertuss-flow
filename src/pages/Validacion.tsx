@@ -917,7 +917,82 @@ const Validacion = () => {
     }
   }, []);
 
-  const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
+  // Handle sidebar document upload: invoke scan-document and re-hydrate
+  const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
+    if (!profile?.organization_id) return;
+    setSidebarUploading(tipo);
+    try {
+      const reader = new FileReader();
+      const base64: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Map sidebar tipo to scan-document type
+      const scanType = tipo === "carta_credito" ? "certificado_tradicion"
+        : tipo === "poder_notarial" ? "escritura_antecedente"
+        : tipo as any;
+
+      const { data, error } = await supabase.functions.invoke("scan-document", {
+        body: { image: base64, type: scanType },
+      });
+      if (error) throw new Error(error.message);
+
+      if (data?.data) {
+        const d = data.data;
+        const tid = tramiteIdRef.current;
+
+        if (scanType === "certificado_tradicion" && d.inmueble) {
+          // Re-hydrate inmueble from fresh OCR
+          const unwrapVal = (v: any): string => {
+            if (!v) return "";
+            if (typeof v === "object" && "valor" in v) return String(v.valor || "");
+            return String(v);
+          };
+          setInmueble(prev => {
+            const result = { ...prev };
+            for (const [key, val] of Object.entries(d.inmueble || d)) {
+              const strVal = unwrapVal(val);
+              if (strVal && key in result && !manuallyEditedFieldsRef.current.has(key)) {
+                const current = (result as any)[key];
+                if (!current || current === "") (result as any)[key] = strVal;
+              }
+            }
+            return result;
+          });
+        }
+
+        if (d.personas && Array.isArray(d.personas)) {
+          handlePersonasExtracted(d.personas);
+        }
+
+        if (d.documento) {
+          handleDocumentoExtracted(d.documento);
+        }
+
+        // Update expediente doc status
+        setExpedienteDocs(prev => prev.map(doc =>
+          doc.tipo === tipo ? { ...doc, status: "procesado" as const, nombre: file.name } : doc
+        ));
+
+        // Persist to metadata
+        if (tid) {
+          const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
+          const merged = { ...((existing?.metadata as any) || {}), [`extracted_${tipo}`]: d };
+          await supabase.from("tramites").update({ metadata: merged as any }).eq("id", tid);
+        }
+
+        toast({ title: "Documento procesado", description: `${file.name} escaneado y datos actualizados.` });
+      }
+    } catch (err: any) {
+      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
+    } finally {
+      setSidebarUploading(null);
+    }
+  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
+
+
     const newVar: CustomVariable = {
       id: crypto.randomUUID(),
       originalText,
