@@ -442,7 +442,39 @@ const Validacion = () => {
       setSlotsPendientes([]);
     }
 
-    // ── 7. RECONCILIATION on local variables (no stale state!) ──
+    // ── 6c. Build expediente docs list from metadata ──
+    const docs: ExpedienteDoc[] = [
+      { tipo: "certificado_tradicion", label: "Certificado de Tradición", status: meta?.extracted_inmueble ? "procesado" : "pendiente" },
+      { tipo: "predial", label: "Cédula Catastral / Predial", status: meta?.extracted_predial ? "procesado" : "pendiente" },
+      { tipo: "escritura_antecedente", label: "Escritura Antecedente", status: meta?.extracted_escritura_comparecientes?.length > 0 || meta?.extracted_documento ? "procesado" : "pendiente" },
+    ];
+    // Add persona docs
+    const cedulasLoaded = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
+    for (const ced of cedulasLoaded) {
+      docs.push({
+        tipo: `cedula_${ced.numero_identificacion || ced.numero_cedula || "unknown"}`,
+        label: `Cédula — ${ced.nombre_completo || "Persona"}`,
+        status: "procesado",
+        nombre: ced.numero_identificacion || ced.numero_cedula,
+      });
+    }
+    // Add optional pending slots
+    if (meta?.toggles?.tieneCredito) {
+      docs.push({
+        tipo: "carta_credito",
+        label: "Carta de Aprobación de Crédito",
+        status: meta?.extracted_carta_credito ? "procesado" : "pendiente",
+      });
+    }
+    if (meta?.toggles?.tieneApoderado) {
+      docs.push({
+        tipo: "poder_notarial",
+        label: "Poder Notarial",
+        status: meta?.extracted_poder_notarial ? "procesado" : "pendiente",
+      });
+    }
+    setExpedienteDocs(docs);
+
     const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
     const escrituraComparecientes = meta?.extracted_escritura_comparecientes || [];
     const dirtyFields = manuallyEditedFieldsRef.current;
