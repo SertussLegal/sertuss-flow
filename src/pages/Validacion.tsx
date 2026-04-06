@@ -30,6 +30,8 @@ import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
 import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal } from "@/lib/legalFormatters";
+import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
+import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
