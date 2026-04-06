@@ -21,9 +21,10 @@ interface PersonaFormProps {
   onChange: (personas: Persona[]) => void;
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
+  hasEscrituraProcessed?: boolean;
 }
 
-const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange }: PersonaFormProps) => {
+const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
   const [scanningIndex, setScanningIndex] = useState<number | null>(null);
@@ -217,6 +218,15 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
           Agregar
         </Button>
       </div>
+
+      {!hasEscrituraProcessed && personas.some(p => p.nombre_completo && (!p.estado_civil || !p.direccion)) && (
+        <Alert className="border-dashed border-amber-400/60 bg-amber-50/50 dark:bg-amber-950/20">
+          <Info className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-sm text-amber-800 dark:text-amber-300">
+            Para completar <strong>estado civil</strong> y <strong>dirección</strong>, sube la <strong>Escritura Antecedente</strong> en la pestaña Inmueble.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {personas.map((persona, index) => (
         <div key={persona.id} className="space-y-4 rounded-lg border bg-card p-4">

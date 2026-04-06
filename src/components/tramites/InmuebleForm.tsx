@@ -5,8 +5,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Loader2, AlertTriangle } from "lucide-react";
+import { Upload, Loader2, AlertTriangle, CheckCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import type { Inmueble, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,11 +45,12 @@ interface InmuebleFormProps {
   onActosExtracted?: (actos: Record<string, any>) => void;
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
+  metadata?: Record<string, any> | null;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
-const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange }: InmuebleFormProps) => {
+const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange, metadata }: InmuebleFormProps) => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
@@ -392,9 +394,21 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-semibold">Inmueble</h3>
         <div className="flex flex-wrap gap-2">
-          {renderUploadButton("Cargar Certificado", "certificado_tradicion", certInputRef, "Procesando...")}
-          {renderUploadButton("Cargar Predial", "predial", predialInputRef, "Procesando...")}
-          {renderUploadButton("Cargar Escritura", "escritura_antecedente", escrituraInputRef, "Procesando...")}
+          {metadata?.extracted_inmueble ? (
+            <Badge variant="outline" className="text-xs border-green-500/40 text-green-700 bg-green-50 dark:bg-green-950/20">
+              <CheckCircle className="mr-1 h-3 w-3" /> Certificado procesado
+            </Badge>
+          ) : renderUploadButton("Cargar Certificado", "certificado_tradicion", certInputRef, "Procesando...")}
+          {metadata?.extracted_predial ? (
+            <Badge variant="outline" className="text-xs border-green-500/40 text-green-700 bg-green-50 dark:bg-green-950/20">
+              <CheckCircle className="mr-1 h-3 w-3" /> Predial procesado
+            </Badge>
+          ) : renderUploadButton("Cargar Predial", "predial", predialInputRef, "Procesando...")}
+          {metadata?.extracted_escritura_comparecientes?.length > 0 || metadata?.extracted_documento ? (
+            <Badge variant="outline" className="text-xs border-green-500/40 text-green-700 bg-green-50 dark:bg-green-950/20">
+              <CheckCircle className="mr-1 h-3 w-3" /> Escritura procesada
+            </Badge>
+          ) : renderUploadButton("Cargar Escritura", "escritura_antecedente", escrituraInputRef, "Procesando...")}
         </div>
       </div>
 
