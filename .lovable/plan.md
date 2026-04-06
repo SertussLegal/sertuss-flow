@@ -1,67 +1,55 @@
 
 
-## Auditoría Técnica: Validación de Flujo Reactivo y Opcionalidad — Fase 2
+## Auditoría UX/DX — Mejoras de Carga Dinámica y Visualización
 
-### Estado actual del código
+### Hallazgos principales
 
-`DocumentUploadStep.tsx` tiene 3 grupos de slots estáticos (vendedores, compradores, propiedades). No hay toggles dinámicos ni slots opcionales. El botón "Continuar" solo requiere `hasAny` (al menos 1 documento procesado). La metadata se construye en `handleContinue` y se persiste en un solo `insert`.
+Tras revisar los 6 archivos core del pipeline (DocumentUploadStep, Validacion, DocxPreview, PersonaForm, InmuebleForm, ExpedienteSidebar), identifico **7 problemas concretos** que degradan la experiencia:
 
-`Validacion.tsx` ya tiene hidratación atómica con `loadTramite`, merge 3 capas, reconciliación con `isDirty`, y re-merge en vivo con `handleDocumentoExtracted`.
+### Problema 1: Duplicación de carga de documentos
+El paso 1 (`DocumentUploadStep`) carga documentos y extrae datos. El paso 2 (`Validacion`) tiene **otro set de botones de carga** dentro de `InmuebleForm` (líneas ~50+). El usuario debe volver a cargar documentos que ya subió. Los datos del paso 1 se persisten en `metadata` pero los botones del paso 2 no los reconocen como "ya procesados".
 
-### Respuestas a las 4 inconsistencias técnicas
+**Corrección**: En `InmuebleForm`, detectar si `metadata` ya tiene datos extraídos y ocultar los botones de carga redundantes, mostrando en su lugar badges de "Ya procesado" con el nombre del archivo.
 
-**1. Opcionalidad No-Bloqueante**
+### Problema 2: Inconsistencia visual de campos vacíos
+Dos estilos compiten: el post-procesador de `DocxPreview` genera `<span class="var-pending">___________</span>` con fondo rojo, pero los `___________` dentro de loops de personas se generan como texto plano antes del post-procesador y a veces no se capturan. El resultado: unos campos vacíos tienen cuadro rojo y otros solo líneas.
 
-Los slots dinámicos (Crédito, Poder) tendrán `isRequired: false`. El botón "Continuar" seguirá usando `hasAny` — no validará slots opcionales vacíos. En metadata se persistirá `toggles: { tieneCredito: true, tieneApoderado: false }` y si el toggle está activo pero sin archivo: `slots_pendientes: ["carta_credito"]`. Esto permite que `DocxPreview` muestre esos campos como "pendiente" (naranja) en vez de "error" (rojo).
+**Corrección**: El "FINAL PASS" (líneas 680-707 de DocxPreview) ya intenta unificar, pero falla en 2 casos: (a) `___________` dentro de atributos `style` o `title`, (b) `___________` que están justo antes de `</span>` sin espacio. Refactorizar el regex para capturar todos los casos restantes.
 
-**2. Sincronización del Clip (Fase 3 — no se implementa ahora)**
+### Problema 3: ExpedienteSidebar sin funcionalidad de carga
+El sidebar muestra documentos pero el botón "Subir documento" no está conectado a ningún handler real. `onUploadDocument` no se pasa desde `Validacion.tsx` (línea 1564: `<ExpedienteSidebar documentos={expedienteDocs} />`).
 
-Se documenta la estrategia pero NO se ejecuta hasta confirmar Fase 2. La lógica será: el clip invoca `scan-document` con un parámetro `target_field` que indica qué campo específico se quiere llenar. El resultado se aplica con `setInmueble(prev => ...)` respetando `manuallyEditedFieldsRef` (`isDirty`). Solo el campo objetivo se actualiza si no está dirty.
+**Corrección**: Pasar `onUploadDocument` al sidebar e implementar el handler que invoque `scan-document`, actualice metadata, y re-hidrate los campos correspondientes.
 
-**3. Persistencia del Sidebar (Fase 3 — no se implementa ahora)**
+### Problema 4: Mobile sin previsualización ni sidebar
+En mobile (líneas 1600-1604), solo se renderizan los tabs de formulario sin preview ni sidebar. El usuario no puede ver cómo queda el documento.
 
-El sidebar se alimentará de `metadata.documentos_procesados` (array en JSONB). Cada upload actualiza este array con `{ tipo, nombre, status, timestamp }`. No se necesita suscripción realtime — un callback `onDocumentProcessed` actualizará el estado local.
+**Corrección**: Agregar un botón flotante o un toggle para mostrar el preview en un sheet/drawer en mobile.
 
-**4. Toggles persistentes inmediatamente**
+### Problema 5: Formularios sin indicadores de origen de datos
+Cuando un campo se llena por OCR, no hay indicación visual de que el dato vino de IA vs. manual. Solo `OcrBadge` existe en `PersonaForm` pero está atado al escaneo local, no al OCR del paso 1.
 
-Los toggles se guardarán en `metadata.toggles` del trámite con un `debounce` de 500ms al cambiar. No esperan al botón "Continuar". En `loadTramite`, se leen estos toggles para restaurar el estado si el usuario recarga.
+**Corrección**: En `loadTramite`, construir un set de campos llenados por OCR (`ocrFilledFields`) y pasarlo a los formularios para que muestren un badge sutil (ej: "IA" en azul claro) al lado del campo.
 
-### Plan de implementación — Solo Fase 2
+### Problema 6: Campos del paso 1 no llegan a los forms del paso 2
+`estado_civil` y `direccion` solo se llenan si hay `extracted_escritura_comparecientes` en metadata Y la reconciliación encuentra match por CC. Pero si el usuario no cargó la escritura en el paso 1, estos campos quedan vacíos sin explicación.
 
-**Archivo: `src/components/tramites/DocumentUploadStep.tsx`**
+**Corrección**: Agregar un banner contextual en `PersonaForm` que diga "Para completar estado civil y dirección, sube la Escritura Antecedente" cuando estos campos estén vacíos y no haya escritura procesada.
 
-Cambios concretos:
+### Problema 7: Toggles opcionales no se restauran al recargar
+Si el usuario activa "Crédito hipotecario" y luego recarga la página de validación, los toggles no se restauran porque `Validacion.tsx` lee `meta.toggles` (línea 439-443) pero no los expone a ningún UI element.
 
-1. Agregar estados `tieneCredito` y `tieneApoderado` (boolean, default `false`)
-2. Agregar dos `Switch` toggles debajo de la sección "Documentos del Inmueble":
-   - "¿El comprador tiene crédito hipotecario?" → despliega slot "Carta de Aprobación de Crédito" (tipo `carta_credito`)
-   - "¿Hay apoderado en este trámite?" → despliega slot "Poder Notarial" (tipo `poder_notarial`)
-3. Los slots dinámicos usan el mismo `renderSlotCard` existente
-4. En `handleContinue`:
-   - Agregar `toggles: { tieneCredito, tieneApoderado }` a metadata
-   - Si toggle activo pero slot vacío: agregar `slots_pendientes: ["carta_credito"]` a metadata
-   - Los slots opcionales vacíos NO bloquean la navegación
-5. Persistencia inmediata de toggles: NO aplicable en paso 1 porque el trámite aún no existe (se crea en `handleContinue`). Los toggles se persistirán como parte del `insert` inicial.
+**Corrección**: Leer `meta.toggles` y reflejar el estado en `actos.es_hipoteca` si `tieneCredito` estaba activo, asegurando coherencia entre el toggle del paso 1 y el checkbox del paso 2.
 
-**Archivo: `src/pages/Validacion.tsx`**
-
-Cambios:
-- En `loadTramite`: leer `metadata.toggles` y `metadata.slots_pendientes`
-- Pasar `slotsPendientes` a `DocxPreview` para diferenciar campos "pendiente opcional" (naranja) de "faltante crítico" (rojo)
-
-**Archivo: `src/components/tramites/DocxPreview.tsx`**
-
-Cambios:
-- Recibir prop `slotsPendientes?: string[]`
-- En el post-procesado de `___________`: si el campo vacío corresponde a un slot pendiente, usar estilo naranja (`background: hsl(38 92% 95%); color: hsl(38 92% 40%)`) en vez de rojo
-
-### Resumen
+### Plan de implementación (5 archivos)
 
 | Archivo | Cambio |
 |---|---|
-| `DocumentUploadStep.tsx` | Toggles dinámicos + slots opcionales + metadata con toggles/pendientes |
-| `Validacion.tsx` | Leer toggles/pendientes de metadata, pasar a preview |
-| `DocxPreview.tsx` | Estilo naranja para campos de slots opcionales pendientes |
+| `src/pages/Validacion.tsx` | Conectar `onUploadDocument` al sidebar, preview mobile (sheet), banner de campos pendientes |
+| `src/components/tramites/DocxPreview.tsx` | Unificar FINAL PASS para capturar 100% de `___________` sueltos |
+| `src/components/tramites/InmuebleForm.tsx` | Ocultar botones de carga si `metadata` ya tiene datos, mostrar badges |
+| `src/components/tramites/PersonaForm.tsx` | Banner contextual "Sube Escritura para completar estado civil" |
+| `src/components/tramites/ExpedienteSidebar.tsx` | Recibir y ejecutar `onUploadDocument` con invocación de `scan-document` |
 
-3 archivos. Sin migraciones DB. Sin Fase 3 (Sidebar/Clips) — eso se aborda después de confirmar que los toggles funcionan correctamente.
+5 archivos. Sin migraciones DB. Sin componentes nuevos.
 
