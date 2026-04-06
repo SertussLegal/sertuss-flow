@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2 } from "lucide-react";
@@ -1678,10 +1679,41 @@ const Validacion = () => {
       </div>
 
       {/* Mobile: stacked column */}
-      <div className="flex-1 flex flex-col lg:hidden">
-        <div className="container max-w-2xl py-6">
+      <div className="flex-1 flex flex-col lg:hidden overflow-auto">
+        <div className="container max-w-2xl py-6 pb-20">
           {renderTabs()}
         </div>
+        {/* Floating preview button for mobile */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              className="fixed bottom-4 right-4 lg:hidden z-50 rounded-full shadow-lg bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 h-14 w-14"
+              size="icon"
+            >
+              <Eye className="h-6 w-6" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[80vh] p-0">
+            <DocxPreview
+              vendedores={vendedores}
+              compradores={compradores}
+              inmueble={inmueble}
+              actos={actos}
+              customVariables={customVariables}
+              onFieldEdit={handleFieldEdit}
+              onCreateCustomVariable={handleCreateCustomVariable}
+              sugerenciasIA={sugerenciasIA}
+              generating={generatingWord}
+              textoFinalWord={textoFinalWord}
+              onSugerenciaAccepted={handleSugerenciaAccepted}
+              notariaConfig={notariaConfig}
+              extractedDocumento={extractedDocumento}
+              extractedPredial={extractedPredial}
+              slotsPendientes={slotsPendientes}
+              onScrollToField={onScrollToField}
+            />
+          </SheetContent>
+        </Sheet>
       </div>
 
       <PreviewModal
