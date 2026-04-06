@@ -344,6 +344,7 @@ const DocxPreview = ({
   notariaConfig,
   extractedDocumento,
   extractedPredial,
+  slotsPendientes = [],
   onScrollToField,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
