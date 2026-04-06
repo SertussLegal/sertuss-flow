@@ -131,6 +131,7 @@ interface DocxPreviewProps {
   notariaConfig?: NotariaConfig | null;
   extractedDocumento?: ExtractedDocumento | null;
   extractedPredial?: ExtractedPredial | null;
+  slotsPendientes?: string[];
   onScrollToField?: (field: string) => void;
 }
 
