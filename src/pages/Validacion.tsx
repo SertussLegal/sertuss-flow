@@ -112,6 +112,7 @@ const Validacion = () => {
   const [expedienteDocs, setExpedienteDocs] = useState<ExpedienteDoc[]>([]);
   const [validando, setValidando] = useState(false);
   const [sidebarUploading, setSidebarUploading] = useState<string | null>(null);
+  const [tramiteMetadata, setTramiteMetadata] = useState<Record<string, any> | null>(null);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
   const isLoadingRef = useRef(false);
