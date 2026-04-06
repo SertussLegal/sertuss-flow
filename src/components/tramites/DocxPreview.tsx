@@ -131,6 +131,7 @@ interface DocxPreviewProps {
   notariaConfig?: NotariaConfig | null;
   extractedDocumento?: ExtractedDocumento | null;
   extractedPredial?: ExtractedPredial | null;
+  slotsPendientes?: string[];
   onScrollToField?: (field: string) => void;
 }
 
@@ -343,6 +344,7 @@ const DocxPreview = ({
   notariaConfig,
   extractedDocumento,
   extractedPredial,
+  slotsPendientes = [],
   onScrollToField,
 }: DocxPreviewProps) => {
   const [html, setHtml] = useState<string>("");
@@ -622,6 +624,21 @@ const DocxPreview = ({
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
+      // Fields that belong to optional pending slots
+      const pendingSlotFields: Record<string, string[]> = {
+        carta_credito: ["valor_hipoteca", "valor_hipoteca_letras", "entidad_bancaria", "entidad_nit", "entidad_domicilio", "fecha_credito", "pago_inicial", "saldo_financiado", "actos.entidad_bancaria", "actos.cuantia_hipoteca"],
+        poder_notarial: ["apoderado_nombre", "apoderado_cedula", "apoderado_expedida_en", "apoderado_escritura_poder", "apoderado_fecha_poder", "apoderado_notaria_poder", "apoderado_notaria_ciudad", "apoderado_email"],
+      };
+      const optionalPendingFields = new Set<string>();
+      for (const slot of slotsPendientes) {
+        for (const field of (pendingSlotFields[slot] || [])) {
+          optionalPendingFields.add(field);
+        }
+      }
+
+      const pendingRedStyle = 'background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer';
+      const pendingOrangeStyle = 'background:hsl(38 92% 95%);color:hsl(38 80% 40%);text-decoration:underline;cursor:pointer';
+
       // Step 1: Process loops (vendedores, compradores, conditionals)
       let result = processLoops(baseHtml, vendedores, compradores, inmueble, actos);
       
@@ -636,16 +653,18 @@ const DocxPreview = ({
             `<span data-field="${key}" class="var-resolved" style="color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46">${value}</span>`
           );
         } else {
+          const style = optionalPendingFields.has(key) ? pendingOrangeStyle : pendingRedStyle;
+          const title = optionalPendingFields.has(key) ? "Pendiente — documento opcional no cargado" : "Haz clic para ir al campo";
           result = result.replace(
             new RegExp(`\\{${escaped}\\}`, "g"),
-            `<span data-field="${key}" class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer" title="Haz clic para ir al campo">___________</span>`
+            `<span data-field="${key}" class="var-pending" style="${style}" title="${title}">___________</span>`
           );
         }
       }
 
       // Clean remaining loop markers and unmapped placeholders
       result = result.replace(/\{[#/^][^}]*\}/g, "");
-      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, '<span class="var-pending" style="background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline">___________</span>');
+      result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, `<span class="var-pending" style="${pendingRedStyle}">___________</span>`);
 
       // Apply custom variables
       for (const cv of customVariables) {
@@ -693,7 +712,7 @@ const DocxPreview = ({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA]);
+  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA, slotsPendientes]);
 
   // Measure content and compute pages
   useEffect(() => {

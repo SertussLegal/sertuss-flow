@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import {
-  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft,
+  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft, CreditCard, UserCheck,
 } from "lucide-react";
 import type { NivelConfianza } from "@/lib/types";
 import { unwrapConfianza, unwrapConfianzaBool } from "@/lib/types";
@@ -61,6 +63,18 @@ const DocumentUploadStep = () => {
   const [vendedorSlots, setVendedorSlots] = useState<PersonaSlot[]>([makePersonaSlot("vendedor", 0)]);
   const [compradorSlots, setCompradorSlots] = useState<PersonaSlot[]>([makePersonaSlot("comprador", 0)]);
   const [propSlots, setPropSlots] = useState<DocSlot[]>(propertySlots.map(s => ({ ...s })));
+
+  // Dynamic toggles for optional documents
+  const [tieneCredito, setTieneCredito] = useState(false);
+  const [tieneApoderado, setTieneApoderado] = useState(false);
+  const [creditoSlot, setCreditoSlot] = useState<DocSlot>({
+    label: "Carta de Aprobación de Crédito", type: "carta_credito",
+    file: null, status: "idle", result: null, error: null,
+  });
+  const [poderSlot, setPoderSlot] = useState<DocSlot>({
+    label: "Poder Notarial", type: "poder_notarial",
+    file: null, status: "idle", result: null, error: null,
+  });
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -119,6 +133,23 @@ const DocumentUploadStep = () => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
   }, [profile, processFile, propSlots, toast]);
+
+  const handleOptionalFile = useCallback(async (
+    slotType: "carta_credito" | "poder_notarial",
+    file: File,
+  ) => {
+    if (!profile?.organization_id) return;
+    const setter = slotType === "carta_credito" ? setCreditoSlot : setPoderSlot;
+    setter(prev => ({ ...prev, file, status: "uploading", error: null }));
+    try {
+      const result = await processFile(file, slotType);
+      setter(prev => ({ ...prev, status: "done", result }));
+      toast({ title: `${slotType === "carta_credito" ? "Carta de crédito" : "Poder notarial"} procesado`, description: "Datos extraídos correctamente." });
+    } catch (err: any) {
+      setter(prev => ({ ...prev, status: "error", error: err.message }));
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  }, [profile, processFile, toast]);
 
   const removePersonaSlot = (rol: "vendedor" | "comprador", index: number) => {
     const setter = rol === "vendedor" ? setVendedorSlots : setCompradorSlots;
@@ -357,12 +388,21 @@ const DocumentUploadStep = () => {
         };
       });
 
+    // Build slots_pendientes for optional toggles without uploaded files
+    const slotsPendientes: string[] = [];
+    if (tieneCredito && creditoSlot.status !== "done") slotsPendientes.push("carta_credito");
+    if (tieneApoderado && poderSlot.status !== "done") slotsPendientes.push("poder_notarial");
+
     const metadata: Record<string, any> = {
       extracted_inmueble: extractedInmueble,
       extracted_personas: extractedPersonas,
       extracted_documento: extractedDocumento,
       confianza_map: confianzaMap,
       progress: 0,
+      toggles: { tieneCredito, tieneApoderado },
+      ...(slotsPendientes.length > 0 ? { slots_pendientes: slotsPendientes } : {}),
+      ...(creditoSlot.status === "done" && creditoSlot.result ? { extracted_carta_credito: creditoSlot.result } : {}),
+      ...(poderSlot.status === "done" && poderSlot.result ? { extracted_poder_notarial: poderSlot.result } : {}),
       ...(extractedPredialSeparate ? { extracted_predial: extractedPredialSeparate } : {}),
       ...(extractedActosSeparate ? { extracted_actos: extractedActosSeparate } : {}),
       ...(extractedTituloAntecedente ? { extracted_titulo_antecedente: extractedTituloAntecedente } : {}),
@@ -564,6 +604,84 @@ const DocumentUploadStep = () => {
                 () => removePropFile(i),
               )
             )}
+          </div>
+
+          {/* Documentos Opcionales — Toggles Dinámicos */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Documentos Opcionales</h2>
+            </div>
+
+            {/* Toggle: Crédito Hipotecario */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CreditCard className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <Label htmlFor="toggle-credito" className="text-sm font-medium cursor-pointer">
+                      ¿El comprador tiene crédito hipotecario?
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Activa para subir la carta de aprobación de crédito</p>
+                  </div>
+                </div>
+                <Switch
+                  id="toggle-credito"
+                  checked={tieneCredito}
+                  onCheckedChange={setTieneCredito}
+                />
+              </div>
+              {tieneCredito && (
+                <div className="pl-8">
+                  {renderSlotCard(
+                    creditoSlot,
+                    "carta-credito",
+                    (file) => handleOptionalFile("carta_credito", file),
+                    () => setCreditoSlot(prev => ({ ...prev, file: null, status: "idle", result: null, error: null })),
+                  )}
+                  {creditoSlot.status === "idle" && (
+                    <p className="text-xs text-muted-foreground mt-1 italic">
+                      Opcional — puedes continuar sin este documento. Los campos de hipoteca se podrán completar manualmente.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            {/* Toggle: Apoderado */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <UserCheck className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <Label htmlFor="toggle-apoderado" className="text-sm font-medium cursor-pointer">
+                      ¿Hay apoderado en este trámite?
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Activa para subir el poder notarial</p>
+                  </div>
+                </div>
+                <Switch
+                  id="toggle-apoderado"
+                  checked={tieneApoderado}
+                  onCheckedChange={setTieneApoderado}
+                />
+              </div>
+              {tieneApoderado && (
+                <div className="pl-8">
+                  {renderSlotCard(
+                    poderSlot,
+                    "poder-notarial",
+                    (file) => handleOptionalFile("poder_notarial", file),
+                    () => setPoderSlot(prev => ({ ...prev, file: null, status: "idle", result: null, error: null })),
+                  )}
+                  {poderSlot.status === "idle" && (
+                    <p className="text-xs text-muted-foreground mt-1 italic">
+                      Opcional — puedes continuar sin este documento. Los campos del apoderado se podrán completar manualmente.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* Missing cédulas alert */}

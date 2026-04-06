@@ -104,7 +104,8 @@ const Validacion = () => {
   } | null>(null);
   const [extractedPredial, setExtractedPredial] = useState<{
     numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
-  } | null>(null);
+   } | null>(null);
+  const [slotsPendientes, setSlotsPendientes] = useState<string[]>([]);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
@@ -430,6 +431,13 @@ const Validacion = () => {
       }
     }
     setExtractedPredial(localExtractedPredial);
+
+    // ── 6b. Load slots_pendientes from metadata toggles ──
+    if (meta?.slots_pendientes && Array.isArray(meta.slots_pendientes)) {
+      setSlotsPendientes(meta.slots_pendientes);
+    } else {
+      setSlotsPendientes([]);
+    }
 
     // ── 7. RECONCILIATION on local variables (no stale state!) ──
     const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
@@ -1531,6 +1539,7 @@ const Validacion = () => {
             notariaConfig={notariaConfig}
             extractedDocumento={extractedDocumento}
             extractedPredial={extractedPredial}
+            slotsPendientes={slotsPendientes}
             onScrollToField={onScrollToField}
           />
         </ResizablePanel>
