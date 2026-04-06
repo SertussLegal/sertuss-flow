@@ -1,106 +1,67 @@
 
 
-## Auditoría Crítica del Pipeline OCR → UI → DOCX
+## Auditoría Técnica: Validación de Flujo Reactivo y Opcionalidad — Fase 2
 
-### 1. Análisis de Puntos de Falla en el Merge
+### Estado actual del código
 
-**Estado actual: CORRECTO con 2 brechas menores.**
+`DocumentUploadStep.tsx` tiene 3 grupos de slots estáticos (vendedores, compradores, propiedades). No hay toggles dinámicos ni slots opcionales. El botón "Continuar" solo requiere `hasAny` (al menos 1 documento procesado). La metadata se construye en `handleContinue` y se persiste en un solo `insert`.
 
-`loadTramite` (líneas 264-341) implementa correctamente el merge de 3 capas:
-- Layer 1: DB row (mayor prioridad)
-- Layer 2: `metadata.extracted_inmueble` con `ocrFieldMap` (llena campos vacíos)
-- Layer 3: `metadata.extracted_predial` con `predialMap` (llena campos restantes)
+`Validacion.tsx` ya tiene hidratación atómica con `loadTramite`, merge 3 capas, reconciliación con `isDirty`, y re-merge en vivo con `handleDocumentoExtracted`.
 
-La lógica `if (!current || current === "" || current === false)` es correcta: solo llena vacíos.
+### Respuestas a las 4 inconsistencias técnicas
 
-**Brecha 1**: El `ocrFieldMap` (líneas 276-303) NO mapea estos campos PH que el OCR sí extrae:
-- `nombre_edificio_conjunto` → falta en el map
-- `escritura_ph_numero`, `escritura_ph_fecha`, `escritura_ph_notaria`, `escritura_ph_ciudad` → faltan
-- `coeficiente_copropiedad` → el map tiene `coeficiente` → `"coeficiente" as any` (cast forzado, funciona pero frágil)
+**1. Opcionalidad No-Bloqueante**
 
-**Brecha 2**: En carga en vivo (paso 2), `handleDocumentoExtracted` (línea 685) actualiza personas y persiste metadata, pero **NO re-mergea el inmueble**. Si el certificado trae matrícula/ORIP/linderos nuevos, el inmueble NO se actualiza hasta recargar la página.
+Los slots dinámicos (Crédito, Poder) tendrán `isRequired: false`. El botón "Continuar" seguirá usando `hasAny` — no validará slots opcionales vacíos. En metadata se persistirá `toggles: { tieneCredito: true, tieneApoderado: false }` y si el toggle está activo pero sin archivo: `slots_pendientes: ["carta_credito"]`. Esto permite que `DocxPreview` muestre esos campos como "pendiente" (naranja) en vez de "error" (rojo).
 
-**Corrección necesaria**: 
-1. Agregar campos PH faltantes al `ocrFieldMap`
-2. En `handleDocumentoExtracted`, si el OCR devolvió datos de inmueble, ejecutar merge sobre el inmueble actual
+**2. Sincronización del Clip (Fase 3 — no se implementa ahora)**
 
----
+Se documenta la estrategia pero NO se ejecuta hasta confirmar Fase 2. La lógica será: el clip invoca `scan-document` con un parámetro `target_field` que indica qué campo específico se quiere llenar. El resultado se aplica con `setInmueble(prev => ...)` respetando `manuallyEditedFieldsRef` (`isDirty`). Solo el campo objetivo se actualiza si no está dirty.
 
-### 2. Validación de la Lógica de Cruce (Cross-Reference)
+**3. Persistencia del Sidebar (Fase 3 — no se implementa ahora)**
 
-**Normalización de CC: IMPLEMENTADO CORRECTAMENTE.**
+El sidebar se alimentará de `metadata.documentos_procesados` (array en JSONB). Cada upload actualiza este array con `{ tipo, nombre, status, timestamp }`. No se necesita suscripción realtime — un callback `onDocumentProcessed` actualizará el estado local.
 
-`reconcileData.ts` línea 21: `normalizeCC` elimina puntos, guiones, espacios y apóstrofes con `/[\.\s\-\']/g`. El cruce en `reconcilePersonas` (línea 68) compara estrictamente `normalizeCC(persona.numero_cedula) === normalizeCC(c.numero_identificacion)`. Esto maneja `79681841` vs `79.681.841` correctamente.
+**4. Toggles persistentes inmediatamente**
 
-**Estado civil desde Escritura: IMPLEMENTADO CORRECTAMENTE.**
+Los toggles se guardarán en `metadata.toggles` del trámite con un `debounce` de 500ms al cambiar. No esperan al botón "Continuar". En `loadTramite`, se leen estos toggles para restaurar el estado si el usuario recarga.
 
-`reconcilePersonas` (líneas 91-103) cruza contra `escrituraComparecientes` por CC normalizada y extrae `estado_civil`, `direccion`, `municipio_domicilio`. La Escritura tiene prioridad como fuente de verdad para estos campos (solo llena vacíos).
+### Plan de implementación — Solo Fase 2
 
-**Brecha**: La extracción de comparecientes desde la Escritura depende de que `scan-document` devuelva un array `comparecientes` estructurado. Si el OCR no lo extrae (texto libre sin tool calling para comparecientes), este array llega vacío y la reconciliación no tiene datos.
+**Archivo: `src/components/tramites/DocumentUploadStep.tsx`**
 
-**Verificación necesaria**: Confirmar que `scan-document/index.ts` tiene un tool `extract_escritura` que incluya un campo `comparecientes` con `nombre`, `cedula`, `estado_civil`, `direccion`.
+Cambios concretos:
 
----
+1. Agregar estados `tieneCredito` y `tieneApoderado` (boolean, default `false`)
+2. Agregar dos `Switch` toggles debajo de la sección "Documentos del Inmueble":
+   - "¿El comprador tiene crédito hipotecario?" → despliega slot "Carta de Aprobación de Crédito" (tipo `carta_credito`)
+   - "¿Hay apoderado en este trámite?" → despliega slot "Poder Notarial" (tipo `poder_notarial`)
+3. Los slots dinámicos usan el mismo `renderSlotCard` existente
+4. En `handleContinue`:
+   - Agregar `toggles: { tieneCredito, tieneApoderado }` a metadata
+   - Si toggle activo pero slot vacío: agregar `slots_pendientes: ["carta_credito"]` a metadata
+   - Los slots opcionales vacíos NO bloquean la navegación
+5. Persistencia inmediata de toggles: NO aplicable en paso 1 porque el trámite aún no existe (se crea en `handleContinue`). Los toggles se persistirán como parte del `insert` inicial.
 
-### 3. Solución a la Asincronía de React
+**Archivo: `src/pages/Validacion.tsx`**
 
-**Estado actual: CORRECTAMENTE IMPLEMENTADO con patrón de variables locales.**
+Cambios:
+- En `loadTramite`: leer `metadata.toggles` y `metadata.slots_pendientes`
+- Pasar `slotsPendientes` a `DocxPreview` para diferenciar campos "pendiente opcional" (naranja) de "faltante crítico" (rojo)
 
-`loadTramite` (líneas 220-462) usa exactamente el patrón correcto:
-```text
-let localVendedores, localCompradores, localInmueble, localActos
-→ Merge 3 capas sobre variables locales
-→ Reconciliación sobre variables locales (líneas 427-453)
-→ setState UNA VEZ al final (líneas 456-459)
-```
+**Archivo: `src/components/tramites/DocxPreview.tsx`**
 
-Esto elimina el stale state durante la carga inicial.
+Cambios:
+- Recibir prop `slotsPendientes?: string[]`
+- En el post-procesado de `___________`: si el campo vacío corresponde a un slot pendiente, usar estilo naranja (`background: hsl(38 92% 95%); color: hsl(38 92% 40%)`) en vez de rojo
 
-**Para carga en vivo** (post-scan en paso 2): `handleDocumentoExtracted` (líneas 700-717) usa `setVendedores(prev => reconcilePersonas(prev, ...))` — correcto, usa functional update para acceder al estado más reciente.
+### Resumen
 
-**Sin problemas pendientes en este punto.**
+| Archivo | Cambio |
+|---|---|
+| `DocumentUploadStep.tsx` | Toggles dinámicos + slots opcionales + metadata con toggles/pendientes |
+| `Validacion.tsx` | Leer toggles/pendientes de metadata, pasar a preview |
+| `DocxPreview.tsx` | Estilo naranja para campos de slots opcionales pendientes |
 
----
-
-### 4. QA de Previsualización — Estilos Consistentes
-
-**Estado actual: CORRECTAMENTE IMPLEMENTADO con 1 brecha residual.**
-
-`DocxPreview.tsx` tiene un pipeline de 4 pasos:
-1. `processLoops` expande `{#vendedores}` con datos o `___________`
-2. `buildReplacements` reemplaza `{campo}` → span verde (con dato) o span rojo (sin dato)
-3. Limpieza de tags no resueltos `{campo}` → span rojo (línea 648)
-4. **FINAL PASS** (líneas 661-681): 
-   - Split de spans verdes que contienen `___________` internos → parte verde + parte roja
-   - Wrap de `___________` bare no envueltos → span rojo
-
-**Esto funciona**: cuando `reconcileData` llena un campo (ej. `estado_civil`), `buildReplacements` genera un span verde porque `p.estado_civil` ya tiene valor. El rojo desaparece automáticamente.
-
-**Brecha residual**: El regex de la línea 679 usa lookbehind negativo `(?<!<span[^>]*)` que puede no funcionar correctamente en todos los browsers (Safari < 16.4 no soporta lookbehind variable-length). Un regex más robusto sería buscar `___________` que no esté dentro de ningún `<span>` mediante split.
-
----
-
-### Resumen de Correcciones Necesarias
-
-| # | Archivo | Problema | Severidad |
-|---|---------|----------|-----------|
-| 1 | `Validacion.tsx` | `ocrFieldMap` no incluye campos PH extendidos | Media |
-| 2 | `Validacion.tsx` | `handleDocumentoExtracted` no re-mergea inmueble en vivo | Alta |
-| 3 | `scan-document/index.ts` | Verificar que extrae comparecientes de escritura con estado_civil | Alta |
-| 4 | `DocxPreview.tsx` | Regex lookbehind puede fallar en Safari antiguo | Baja |
-
-### Plan de Corrección (3 archivos)
-
-**Archivo 1: `src/pages/Validacion.tsx`**
-- Agregar al `ocrFieldMap`: `nombre_edificio_conjunto`, `escritura_ph_numero`, `escritura_ph_fecha`, `escritura_ph_notaria`, `escritura_ph_ciudad`, `coeficiente_copropiedad`
-- Extraer lógica de merge inmueble en función reutilizable `mergeInmuebleFromOcr(current, ocrData, dirtyFields) → Inmueble`
-- En `handleDocumentoExtracted`: si la metadata del scan incluye datos de inmueble, llamar `setInmueble(prev => mergeInmuebleFromOcr(prev, newOcrData, dirtyFields))`
-
-**Archivo 2: `src/components/tramites/DocxPreview.tsx`**
-- Reemplazar regex lookbehind (línea 679) con un enfoque más compatible: primero verificar que el `___________` no esté ya dentro de un span con un split/join
-
-**Archivo 3: `supabase/functions/scan-document/index.ts`**
-- Verificar y expandir el tool de extracción de escritura para incluir `comparecientes[]` con campos `nombre`, `cedula`, `estado_civil`, `direccion`, `municipio_domicilio`
-
-3 archivos. Sin migraciones DB. Las bases del pipeline (hidratación atómica, normalizeCC, isDirty, structuredData para DOCX) están correctamente implementadas.
+3 archivos. Sin migraciones DB. Sin Fase 3 (Sidebar/Clips) — eso se aborda después de confirmar que los toggles funcionan correctamente.
 
