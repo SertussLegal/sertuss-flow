@@ -712,7 +712,7 @@ const DocxPreview = ({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA]);
+  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA, slotsPendientes]);
 
   // Measure content and compute pages
   useEffect(() => {
