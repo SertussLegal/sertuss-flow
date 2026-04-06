@@ -30,6 +30,8 @@ import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
 import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal } from "@/lib/legalFormatters";
+import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
+import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -106,6 +108,7 @@ const Validacion = () => {
     numero_recibo?: string; anio_gravable?: string; valor_pagado?: string; estrato?: string;
    } | null>(null);
   const [slotsPendientes, setSlotsPendientes] = useState<string[]>([]);
+  const [expedienteDocs, setExpedienteDocs] = useState<ExpedienteDoc[]>([]);
   const [validando, setValidando] = useState(false);
   const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
   const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
@@ -439,7 +442,39 @@ const Validacion = () => {
       setSlotsPendientes([]);
     }
 
-    // ── 7. RECONCILIATION on local variables (no stale state!) ──
+    // ── 6c. Build expediente docs list from metadata ──
+    const docs: ExpedienteDoc[] = [
+      { tipo: "certificado_tradicion", label: "Certificado de Tradición", status: meta?.extracted_inmueble ? "procesado" : "pendiente" },
+      { tipo: "predial", label: "Cédula Catastral / Predial", status: meta?.extracted_predial ? "procesado" : "pendiente" },
+      { tipo: "escritura_antecedente", label: "Escritura Antecedente", status: meta?.extracted_escritura_comparecientes?.length > 0 || meta?.extracted_documento ? "procesado" : "pendiente" },
+    ];
+    // Add persona docs
+    const cedulasLoaded = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
+    for (const ced of cedulasLoaded) {
+      docs.push({
+        tipo: `cedula_${ced.numero_identificacion || ced.numero_cedula || "unknown"}`,
+        label: `Cédula — ${ced.nombre_completo || "Persona"}`,
+        status: "procesado",
+        nombre: ced.numero_identificacion || ced.numero_cedula,
+      });
+    }
+    // Add optional pending slots
+    if (meta?.toggles?.tieneCredito) {
+      docs.push({
+        tipo: "carta_credito",
+        label: "Carta de Aprobación de Crédito",
+        status: meta?.extracted_carta_credito ? "procesado" : "pendiente",
+      });
+    }
+    if (meta?.toggles?.tieneApoderado) {
+      docs.push({
+        tipo: "poder_notarial",
+        label: "Poder Notarial",
+        status: meta?.extracted_poder_notarial ? "procesado" : "pendiente",
+      });
+    }
+    setExpedienteDocs(docs);
+
     const cedulasDetail = meta?.extracted_cedulas_detail || meta?.extracted_personas || [];
     const escrituraComparecientes = meta?.extracted_escritura_comparecientes || [];
     const dirtyFields = manuallyEditedFieldsRef.current;
@@ -1521,37 +1556,45 @@ const Validacion = () => {
         </div>
       </header>
 
-      {/* Desktop: split view */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0 hidden lg:flex">
-        <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
-          <DocxPreview
-            vendedores={vendedores}
-            compradores={compradores}
-            inmueble={inmueble}
-            actos={actos}
-            customVariables={customVariables}
-            onFieldEdit={handleFieldEdit}
-            onCreateCustomVariable={handleCreateCustomVariable}
-            sugerenciasIA={sugerenciasIA}
-            generating={generatingWord}
-            textoFinalWord={textoFinalWord}
-            onSugerenciaAccepted={handleSugerenciaAccepted}
-            notariaConfig={notariaConfig}
-            extractedDocumento={extractedDocumento}
-            extractedPredial={extractedPredial}
-            slotsPendientes={slotsPendientes}
-            onScrollToField={onScrollToField}
-          />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
-          <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
-            <div className="container max-w-2xl py-6">
-              {renderTabs()}
-            </div>
-          </ScrollArea>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      {/* Desktop: split view with sidebar */}
+      <div className="flex-1 min-h-0 hidden lg:flex">
+        {/* Expediente Sidebar */}
+        {expedienteDocs.length > 0 && (
+          <div className="w-56 shrink-0 min-h-0 overflow-hidden">
+            <ExpedienteSidebar documentos={expedienteDocs} />
+          </div>
+        )}
+        <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
+          <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
+            <DocxPreview
+              vendedores={vendedores}
+              compradores={compradores}
+              inmueble={inmueble}
+              actos={actos}
+              customVariables={customVariables}
+              onFieldEdit={handleFieldEdit}
+              onCreateCustomVariable={handleCreateCustomVariable}
+              sugerenciasIA={sugerenciasIA}
+              generating={generatingWord}
+              textoFinalWord={textoFinalWord}
+              onSugerenciaAccepted={handleSugerenciaAccepted}
+              notariaConfig={notariaConfig}
+              extractedDocumento={extractedDocumento}
+              extractedPredial={extractedPredial}
+              slotsPendientes={slotsPendientes}
+              onScrollToField={onScrollToField}
+            />
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
+            <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
+              <div className="container max-w-2xl py-6">
+                {renderTabs()}
+              </div>
+            </ScrollArea>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
 
       {/* Mobile: stacked column */}
       <div className="flex-1 flex flex-col lg:hidden">
