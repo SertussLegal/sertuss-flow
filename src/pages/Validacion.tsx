@@ -188,6 +188,7 @@ const Validacion = () => {
     setIsUnlocked(!!(t as any).is_unlocked);
 
     const meta = (t as any).metadata;
+    setTramiteMetadata(meta || null);
     if (meta?.custom_variables) {
       setCustomVariables(meta.custom_variables);
     }
@@ -1599,6 +1600,7 @@ const Validacion = () => {
           onActosExtracted={handleActosExtracted}
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
+          metadata={tramiteMetadata}
         />
       </TabsContent>
       <TabsContent value="actos">
