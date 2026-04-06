@@ -1539,6 +1539,7 @@ const Validacion = () => {
             notariaConfig={notariaConfig}
             extractedDocumento={extractedDocumento}
             extractedPredial={extractedPredial}
+            slotsPendientes={slotsPendientes}
             onScrollToField={onScrollToField}
           />
         </ResizablePanel>
