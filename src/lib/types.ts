@@ -224,6 +224,17 @@ export interface NotariaStyle {
   updated_at: string;
 }
 
+export interface TextOverride {
+  id: string;
+  originalText: string;
+  newText: string;
+  contextBefore: string;
+  contextAfter: string;
+  replaceAll: boolean;
+  createdAt: string;
+}
+
+/** @deprecated Use TextOverride instead — kept for migration compatibility */
 export interface CustomVariable {
   id: string;
   originalText: string;
