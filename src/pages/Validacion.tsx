@@ -23,7 +23,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
+import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -83,7 +83,7 @@ const Validacion = () => {
   const [compradores, setCompradores] = useState<Persona[]>([createEmptyPersona()]);
   const [inmueble, setInmueble] = useState<Inmueble>(createEmptyInmueble());
   const [actos, setActos] = useState<Actos>(createEmptyActos());
-  const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
+  const [overrides, setOverrides] = useState<TextOverride[]>([]);
   const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
   const [textoFinalWord, setTextoFinalWord] = useState<string>("");
   const [generatingWord, setGeneratingWord] = useState(false);
@@ -190,8 +190,20 @@ const Validacion = () => {
 
     const meta = (t as any).metadata;
     setTramiteMetadata(meta || null);
-    if (meta?.custom_variables) {
-      setCustomVariables(meta.custom_variables);
+    // Restore overrides (with legacy migration from custom_variables)
+    if (meta?.overrides) {
+      setOverrides(meta.overrides);
+    } else if (meta?.custom_variables) {
+      // Migrate legacy custom variables to TextOverride format
+      setOverrides((meta.custom_variables as CustomVariable[]).map((cv: CustomVariable) => ({
+        id: cv.id,
+        originalText: cv.originalText,
+        newText: cv.value || "",
+        contextBefore: "",
+        contextAfter: "",
+        replaceAll: true,
+        createdAt: new Date().toISOString(),
+      })));
     }
     if (meta?.sugerencias_ia) {
       setSugerenciasIA(meta.sugerencias_ia);
@@ -621,7 +633,7 @@ const Validacion = () => {
       let tid = tramiteIdRef.current;
       const formMetadata = {
         last_saved: new Date().toISOString(),
-        custom_variables: customVariables.map(cv => ({ ...cv })),
+        overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
@@ -677,10 +689,10 @@ const Validacion = () => {
     // Track manually edited fields to prevent OCR overwrite
     manuallyEditedFieldsRef.current.add(field);
 
-    if (field.startsWith("__custom__")) {
-      const cvId = field.replace("__custom__", "");
-      setCustomVariables((prev) =>
-        prev.map((cv) => (cv.id === cvId ? { ...cv, value } : cv))
+    if (field.startsWith("__override__")) {
+      const ovId = field.replace("__override__", "");
+      setOverrides((prev) =>
+        prev.map((ov) => (ov.id === ovId ? { ...ov, newText: value } : ov))
       );
       return;
     }
@@ -1035,18 +1047,29 @@ const Validacion = () => {
     }
   }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
 
-  const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
-    const newVar: CustomVariable = {
+  const handleCreateOverride = useCallback((
+    originalText: string, newText: string, replaceAll: boolean,
+    contextBefore: string, contextAfter: string
+  ) => {
+    const override: TextOverride = {
       id: crypto.randomUUID(),
       originalText,
-      variableName,
-      value: "",
+      newText,
+      contextBefore,
+      contextAfter,
+      replaceAll,
+      createdAt: new Date().toISOString(),
     };
-    setCustomVariables((prev) => [...prev, newVar]);
+    setOverrides((prev) => [...prev, override]);
     toast({
-      title: "Variable creada",
-      description: `"${originalText.slice(0, 30)}${originalText.length > 30 ? "…" : ""}" → {${variableName}}`,
+      title: "Cambio aplicado",
+      description: `"${originalText.slice(0, 30)}…" → "${newText.slice(0, 30)}…"`,
     });
+  }, [toast]);
+
+  const handleRemoveOverride = useCallback((id: string) => {
+    setOverrides((prev) => prev.filter((o) => o.id !== id));
+    toast({ title: "Cambio deshecho" });
   }, [toast]);
 
   // Reverse sync: accept AI suggestion → update form + force save
