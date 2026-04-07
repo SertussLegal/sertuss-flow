@@ -150,7 +150,7 @@ const Validacion = () => {
       setIsDirty(true);
       setSyncStatus("unsaved");
     }
-  }, [vendedores, compradores, inmueble, actos, customVariables]);
+  }, [vendedores, compradores, inmueble, actos, overrides]);
 
   // Auto-save debounce: 15 seconds
   useEffect(() => {
@@ -159,7 +159,7 @@ const Validacion = () => {
       handleAutoSave();
     }, 15000);
     return () => clearTimeout(timer);
-  }, [isDirty, vendedores, compradores, inmueble, actos, customVariables, profile?.organization_id]);
+  }, [isDirty, vendedores, compradores, inmueble, actos, overrides, profile?.organization_id]);
 
   // beforeunload: force save before leaving
   useEffect(() => {
@@ -1177,7 +1177,7 @@ const Validacion = () => {
 
       const metadata = {
         last_saved: new Date().toISOString(),
-        custom_variables: customVariables.map(cv => ({ ...cv })),
+        overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
@@ -1576,15 +1576,12 @@ const Validacion = () => {
       doc.render(structuredData);
 
       let outZip = doc.getZip();
-      if (customVariables.length > 0) {
+      // Apply text overrides to DOCX XML using robust virtualization
+      if (overrides.length > 0) {
         const docXml = outZip.file("word/document.xml");
         if (docXml) {
           let xmlContent = docXml.asText();
-          for (const cv of customVariables) {
-            if (cv.value && cv.originalText) {
-              xmlContent = xmlContent.split(cv.originalText).join(cv.value);
-            }
-          }
+          xmlContent = applyOverridesToDocx(xmlContent, overrides);
           outZip.file("word/document.xml", xmlContent);
         }
       }
@@ -1731,9 +1728,10 @@ const Validacion = () => {
               compradores={compradores}
               inmueble={inmueble}
               actos={actos}
-              customVariables={customVariables}
+              overrides={overrides}
               onFieldEdit={handleFieldEdit}
-              onCreateCustomVariable={handleCreateCustomVariable}
+              onCreateOverride={handleCreateOverride}
+              onRemoveOverride={handleRemoveOverride}
               sugerenciasIA={sugerenciasIA}
               generating={generatingWord}
               textoFinalWord={textoFinalWord}
@@ -1777,9 +1775,10 @@ const Validacion = () => {
               compradores={compradores}
               inmueble={inmueble}
               actos={actos}
-              customVariables={customVariables}
+              overrides={overrides}
               onFieldEdit={handleFieldEdit}
-              onCreateCustomVariable={handleCreateCustomVariable}
+              onCreateOverride={handleCreateOverride}
+              onRemoveOverride={handleRemoveOverride}
               sugerenciasIA={sugerenciasIA}
               generating={generatingWord}
               textoFinalWord={textoFinalWord}
