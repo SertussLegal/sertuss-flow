@@ -1985,6 +1985,11 @@ const Validacion = () => {
           <ExpedienteSidebar
             documentos={expedienteDocs}
             onUploadDocument={handleSidebarUpload}
+            onReplaceDocument={handleSidebarReplace}
+            onDeleteDocument={handleSidebarDelete}
+            onAddCedula={handleSidebarAddCedula}
+            onToggleChange={handleToggleChange}
+            toggles={docToggles}
             uploading={sidebarUploading}
           />
         </SheetContent>
