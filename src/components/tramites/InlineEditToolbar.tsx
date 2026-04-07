@@ -141,22 +141,38 @@ const InlineEditToolbar = ({
     onNavigate?.(clamped);
   }, [occurrenceCount, onNavigate]);
 
-  // Smart suggestion chips
+  // Smart suggestion chips with type-aware matching
   const chips = useMemo(() => {
+    // Early return for decorative text
+    if (!/[a-zA-Z0-9]/.test(selectedText)) return [];
+
     const result: { label: string; value: string; type: "official" | "override" | "format" }[] = [];
     const seen = new Set<string>();
-    const lowerSelected = selectedText.toLowerCase();
+    const lowerSelected = selectedText.toLowerCase().trim();
+    const isNumeric = /^\d[\d.,]*$/.test(selectedText.trim());
 
-    // 1. Exact/partial match from replacements (official data)
+    // Helper: calculate overlap ratio between two strings
+    const overlapRatio = (a: string, b: string): number => {
+      const shorter = a.length <= b.length ? a : b;
+      const longer = a.length > b.length ? a : b;
+      if (longer.includes(shorter)) return shorter.length / longer.length;
+      return 0;
+    };
+
+    // 1. Official data from replacements (type-aware)
     if (lowerSelected.length >= 3) {
       for (const [, val] of Object.entries(replacements)) {
-        if (val === "___________" || !val) continue;
+        if (!val || /^[_.\-\s]+$/.test(val)) continue;
         const lowerVal = val.toLowerCase();
-        if (lowerVal.includes(lowerSelected) || lowerSelected.includes(lowerVal)) {
-          if (!seen.has(val) && val !== newText) {
-            seen.add(val);
-            result.push({ label: val.length > 30 ? val.slice(0, 28) + "…" : val, value: val, type: "official" });
-          }
+        const valIsNumeric = /^\d[\d.,]*$/.test(val.trim());
+
+        // Type mismatch: skip numeric values for text selections and vice versa
+        if (isNumeric !== valIsNumeric) continue;
+
+        const ratio = overlapRatio(lowerSelected, lowerVal);
+        if (ratio >= 0.4 && !seen.has(val) && val !== newText) {
+          seen.add(val);
+          result.push({ label: val.length > 30 ? val.slice(0, 28) + "…" : val, value: val, type: "official" });
         }
         if (result.length >= 3) break;
       }
@@ -166,7 +182,8 @@ const InlineEditToolbar = ({
     for (const ov of existingOverrides) {
       if (result.length >= 4) break;
       const lowerOv = ov.originalText.toLowerCase();
-      if ((lowerOv.includes(lowerSelected) || lowerSelected.includes(lowerOv)) && ov.originalText.length >= 3) {
+      const ratio = overlapRatio(lowerSelected, lowerOv);
+      if (ratio >= 0.4 && ov.originalText.length >= 3) {
         if (!seen.has(ov.newText) && ov.newText !== newText) {
           seen.add(ov.newText);
           result.push({ label: ov.newText.length > 30 ? ov.newText.slice(0, 28) + "…" : ov.newText, value: ov.newText, type: "override" });
@@ -174,7 +191,7 @@ const InlineEditToolbar = ({
       }
     }
 
-    // 3. Smart case formatting
+    // 3. Smart case formatting (only when user has typed something)
     if (newText.trim().length > 0) {
       const upper = newText.trim().toUpperCase();
       const title = toTitleCase(newText.trim().toLowerCase());
@@ -305,32 +322,34 @@ const InlineEditToolbar = ({
 
       {/* Action buttons */}
       {isAuditMode ? (
-        <div className="flex gap-1.5">
+        <div className="space-y-1.5">
+          {newText.trim() && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => handleApply(false)}
+              >
+                Cambiar esta
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs"
+                onClick={() => handleApply(true)}
+              >
+                <Replace className="h-3 w-3 mr-1" /> Cambiar todas ({occurrenceCount})
+              </Button>
+            </div>
+          )}
           <Button
             size="sm"
-            variant="outline"
-            className="h-7 text-xs flex-1"
-            onClick={() => handleApply(false)}
-            disabled={!newText.trim()}
-          >
-            <Check className="h-3 w-3 mr-1" /> Solo esta
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 text-xs flex-1"
-            onClick={() => handleApply(true)}
-            disabled={!newText.trim()}
-          >
-            <Replace className="h-3 w-3 mr-1" /> Todas ({occurrenceCount})
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 text-xs flex-1"
+            className="h-7 text-xs w-full"
             onClick={handleAcceptAndNext}
             disabled={!newText.trim()}
           >
-            Aceptar <ArrowRight className="h-3 w-3 ml-1" />
+            Aplicar y Siguiente <ArrowRight className="h-3 w-3 ml-1" />
           </Button>
         </div>
       ) : (

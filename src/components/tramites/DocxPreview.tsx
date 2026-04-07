@@ -911,6 +911,8 @@ const DocxPreview = ({
 
       const text = selection.toString().trim();
       if (text.length < 2 || text.length > 300) return;
+      // Block purely decorative selections (only underscores, dots, dashes, spaces)
+      if (!/[a-zA-Z0-9áéíóúñÁÉÍÓÚÑ]/.test(text)) return;
 
       // Reject if selection contains template variables
       if (/\{[^}]+\}/.test(text)) return;
