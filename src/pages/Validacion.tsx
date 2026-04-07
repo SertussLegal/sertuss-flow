@@ -928,6 +928,14 @@ const Validacion = () => {
   // Handle sidebar document upload: invoke scan-document and re-hydrate
   const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
     if (!profile?.organization_id) return;
+
+    // Consume credit before OCR
+    const { data: hasCredit } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
+    if (!hasCredit) {
+      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
+      return;
+    }
+
     setSidebarUploading(tipo);
     try {
       const reader = new FileReader();
@@ -937,9 +945,9 @@ const Validacion = () => {
         reader.readAsDataURL(file);
       });
 
-      // Map sidebar tipo to scan-document type
-      const scanType = tipo === "carta_credito" ? "certificado_tradicion"
-        : tipo === "poder_notarial" ? "escritura_antecedente"
+      // Map sidebar tipo to scan-document type (corrected mapping)
+      const scanType = tipo === "carta_credito" ? "carta_credito"
+        : tipo === "poder_notarial" ? "poder_banco"
         : tipo as any;
 
       const { data, error } = await supabase.functions.invoke("scan-document", {
@@ -952,7 +960,6 @@ const Validacion = () => {
         const tid = tramiteIdRef.current;
 
         if (scanType === "certificado_tradicion" && d.inmueble) {
-          // Re-hydrate inmueble from fresh OCR
           const unwrapVal = (v: any): string => {
             if (!v) return "";
             if (typeof v === "object" && "valor" in v) return String(v.valor || "");
@@ -979,6 +986,31 @@ const Validacion = () => {
           handleDocumentoExtracted(d.documento);
         }
 
+        // Hydrate actos from poder_banco OCR
+        if (tipo === "poder_notarial" && d) {
+          setActos(prev => ({
+            ...prev,
+            entidad_bancaria: d.entidad_bancaria || prev.entidad_bancaria,
+            apoderado_nombre: d.apoderado_nombre || prev.apoderado_nombre,
+            apoderado_cedula: d.apoderado_cedula || prev.apoderado_cedula,
+            apoderado_expedida_en: d.apoderado_expedida_en || prev.apoderado_expedida_en,
+            apoderado_escritura_poder: d.escritura_poder_num || prev.apoderado_escritura_poder,
+            apoderado_fecha_poder: d.fecha_poder || prev.apoderado_fecha_poder,
+            apoderado_notaria_poder: d.notaria_poder || prev.apoderado_notaria_poder,
+            apoderado_notaria_ciudad: d.notaria_poder_ciudad || prev.apoderado_notaria_ciudad,
+            apoderado_email: d.apoderado_email || prev.apoderado_email,
+          }));
+        }
+
+        // Hydrate actos from carta_credito OCR
+        if (tipo === "carta_credito" && d) {
+          setActos(prev => ({
+            ...prev,
+            valor_hipoteca: d.valor_credito || prev.valor_hipoteca,
+            entidad_bancaria: d.entidad_bancaria || prev.entidad_bancaria,
+          }));
+        }
+
         // Update expediente doc status
         setExpedienteDocs(prev => prev.map(doc =>
           doc.tipo === tipo ? { ...doc, status: "procesado" as const, nombre: file.name } : doc
@@ -993,7 +1025,10 @@ const Validacion = () => {
 
         toast({ title: "Documento procesado", description: `${file.name} escaneado y datos actualizados.` });
       }
+      await refreshCredits();
     } catch (err: any) {
+      await supabase.rpc("restore_credit", { org_id: profile.organization_id });
+      await refreshCredits();
       toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
     } finally {
       setSidebarUploading(null);
