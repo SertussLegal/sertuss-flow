@@ -669,14 +669,30 @@ const DocxPreview = ({
       result = result.replace(/\{[#/^][^}]*\}/g, "");
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, `<span class="var-pending" style="${pendingRedStyle}">___________</span>`);
 
-      // Apply custom variables
-      for (const cv of customVariables) {
-        if (cv.originalText) {
-          const escapedText = cv.originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const replacement = cv.value
-            ? `<span data-custom-var="${cv.id}" class="var-resolved" style="color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46">${cv.value}</span>`
-            : `<span data-custom-var="${cv.id}" class="var-pending" style="background:#fef3c7;text-decoration:underline;cursor:pointer">${cv.originalText}</span>`;
-          result = result.replace(new RegExp(escapedText, "g"), replacement);
+      // Apply text overrides (replaces legacy custom variables)
+      for (const ov of overrides) {
+        if (ov.originalText && ov.newText) {
+          const escapedText = ov.originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const overrideSpan = `<span data-override="${ov.id}" style="color:#4c1d95;font-weight:bold;cursor:pointer;border-bottom:2px dashed #7c3aed">${ov.newText}</span>`;
+          if (ov.replaceAll) {
+            result = result.replace(new RegExp(escapedText, "g"), overrideSpan);
+          } else {
+            // Context-aware single replacement
+            if (ov.contextBefore || ov.contextAfter) {
+              const ctxBefore = ov.contextBefore.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+              const ctxAfter = ov.contextAfter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+              const ctxRegex = new RegExp(`(${ctxBefore})(${escapedText})(${ctxAfter})`);
+              const ctxMatch = result.match(ctxRegex);
+              if (ctxMatch) {
+                result = result.replace(ctxRegex, `$1${overrideSpan}$3`);
+              } else {
+                // Fallback: first occurrence
+                result = result.replace(new RegExp(escapedText), overrideSpan);
+              }
+            } else {
+              result = result.replace(new RegExp(escapedText), overrideSpan);
+            }
+          }
         }
       }
 
@@ -722,7 +738,7 @@ const DocxPreview = ({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA, slotsPendientes]);
+  }, [baseHtml, buildReplacements, overrides, textoFinalWord, sugerenciasIA, slotsPendientes]);
 
   // Measure content and compute pages
   useEffect(() => {
