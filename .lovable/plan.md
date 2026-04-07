@@ -1,130 +1,114 @@
 
 
-## Plan: Paginación Real con CSS Multi-Column (Sin Corte de Texto)
+## Plan: Expediente Sidebar Interactivo — Implementación Completa
 
-### Problema
+### Paso 1: `src/components/tramites/ExpedienteSidebar.tsx` — Reescritura completa
 
-El visor actual usa un div continuo con `translateY(-${page * CONTENT_HEIGHT}px)` y `overflow: hidden`. Esto corta líneas a la mitad en los bordes de página porque el corte es por píxeles arbitrarios, no por líneas completas.
-
-### Solución: CSS Multi-Column
-
-En vez de un div vertical con translate, usamos **CSS `columns`** nativo del navegador. El browser se encarga de distribuir el contenido en columnas de altura fija, respetando los saltos de línea naturales. Cada "columna" = una "página".
-
-```text
-Antes (translateY):
-┌─────────┐
-│ línea 1  │
-│ línea 2  │
-│ lin---   │ ← CORTADA
-└─────────┘
-
-Después (CSS columns):
-┌─────────┐  ┌─────────┐
-│ línea 1  │  │ línea 4  │
-│ línea 2  │  │ línea 5  │
-│ línea 3  │  │ línea 6  │
-│          │  │          │
-└─────────┘  └─────────┘
-  Página 1     Página 2
-```
-
-### Cambios en `DocxPreview.tsx`
-
-**1. Contenedor de contenido (líneas 1114-1128):**
-
-Reemplazar el div con `translateY` por un contenedor con CSS columns + `translateX`:
-
+**Nuevas props e imports:**
 ```typescript
-// El contenedor externo sigue con overflow: hidden y altura fija
-<div style={{ height: `${CONTENT_HEIGHT}px`, overflow: "hidden" }}>
-  <div
-    ref={contentRef}
-    className="prose prose-sm max-w-none"
-    style={{
-      fontFamily: "'Times New Roman', serif",
-      fontSize: "13px",
-      lineHeight: "1.8",
-      color: "#1a1a1a",
-      // CSS columns: cada columna = una página
-      columnWidth: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
-      columnGap: "0px",
-      columnFill: "auto",
-      height: `${CONTENT_HEIGHT}px`,
-      // Navegar horizontalmente entre páginas
-      transform: `translateX(-${currentPage * (PAGE_WIDTH - PAGE_PADDING_X * 2)}px)`,
-    }}
-    dangerouslySetInnerHTML={{ __html: html }}
-    onClick={handleContentClick}
-    onMouseUp={handleMouseUp}
-  />
-</div>
-```
-
-El browser distribuye el texto en columnas de `CONTENT_HEIGHT` de alto. Cada columna tiene exactamente el ancho del área de contenido. Nunca corta una línea a la mitad — si no cabe, la empuja a la siguiente columna.
-
-**2. Medición de páginas (líneas 750-761):**
-
-Cambiar el cálculo de `pageCount`. Con columns, el `scrollWidth` del contenedor indica cuántas columnas se generaron:
-
-```typescript
-useEffect(() => {
-  if (!html || !contentRef.current) return;
-  const frame = requestAnimationFrame(() => {
-    if (contentRef.current) {
-      const contentWidth = PAGE_WIDTH - PAGE_PADDING_X * 2; // 468px
-      const totalWidth = contentRef.current.scrollWidth;
-      const newPageCount = Math.max(1, Math.round(totalWidth / contentWidth));
-      setPageCount(newPageCount);
-      setCurrentPage((prev) => Math.min(prev, newPageCount - 1));
-    }
-  });
-  return () => cancelAnimationFrame(frame);
-}, [html]);
-```
-
-**3. Medición oculta (líneas 1072-1090):**
-
-Actualizar `measureRef` para usar el mismo layout de columns, así la medición es consistente. O eliminar el `measureRef` por completo ya que ahora medimos con `scrollWidth` directamente del `contentRef`.
-
-**4. Scroll a ocurrencia (líneas 798-804):**
-
-Cambiar el cálculo de página de una ocurrencia. Con columns, la posición horizontal del elemento indica la página:
-
-```typescript
-const parentEl = targetNode.parentElement;
-const rect = parentEl.getBoundingClientRect();
-const containerRect = container.getBoundingClientRect();
-const contentWidth = PAGE_WIDTH - PAGE_PADDING_X * 2;
-// Con columns, la posición X relativa indica la columna/página
-const relativeLeft = rect.left - containerRect.left + (currentPage * contentWidth);
-const targetPage = Math.floor(relativeLeft / contentWidth);
-setCurrentPage(Math.max(0, Math.min(pageCount - 1, targetPage)));
-```
-
-**5. CSS adicional para evitar cortes dentro de párrafos:**
-
-Añadir en el estilo del contenedor de columns:
-
-```css
-break-inside: avoid; /* en los hijos directos (p, div, table) */
-```
-
-Esto se puede aplicar con una clase CSS global o inline. Añadir en `index.css`:
-
-```css
-.docx-columns-page > p,
-.docx-columns-page > div,
-.docx-columns-page > table {
-  break-inside: avoid;
+interface ExpedienteSidebarProps {
+  documentos: ExpedienteDoc[];
+  onUploadDocument?: (tipo: string, file: File) => void;
+  onReplaceDocument?: (tipo: string, file: File) => void;
+  onDeleteDocument?: (tipo: string) => void;
+  onAddCedula?: (file: File) => void;
+  onToggleChange?: (toggle: string, value: boolean) => void;
+  toggles?: { tieneCredito: boolean; tieneApoderado: boolean };
+  uploading?: string | null;
 }
 ```
+
+Imports: `RefreshCw`, `Trash2`, `Plus` de Lucide + `Switch` de ui + `AlertDialog` components + `Separator`.
+
+**Layout en 3 secciones:**
+
+1. **Documentos Obligatorios** — filtrar docs con tipo `certificado_tradicion`, `predial`, `escritura_antecedente`
+2. **Cédulas de Identidad** — filtrar docs con tipo que empieza con `cedula_` + botón `[+ Agregar Cédula]`
+3. **Documentos Opcionales** — 2 `Switch` toggles controlados por prop `toggles`
+
+**Cada doc procesado** muestra fila de acciones:
+- `RefreshCw` (ghost, sm) → file input oculto → `onReplaceDocument(tipo, file)`
+- `Trash2` (ghost, sm, text-destructive) → abre AlertDialog → `onDeleteDocument(tipo)`
+
+**AlertDialog** con estado local `deleteTarget: string | null`:
+- Título: "¿Eliminar documento?"
+- Descripción: "Se borrarán los datos extraídos de este documento en el formulario y el documento final."
+- Acciones: "Cancelar" / "Eliminar" (destructive)
+
+**Sección Opcionales:**
+- Switch "¿Tiene Crédito Hipotecario?" → `onToggleChange("tieneCredito", value)`
+- Switch "¿Tiene Apoderado?" → `onToggleChange("tieneApoderado", value)`
+- Al activar, el slot correspondiente ya aparece en `documentos` (gestionado por Validacion.tsx)
+
+**Botón "+ Agregar Cédula":**
+- File input oculto → `onAddCedula(file)`
+- Estilo: `variant="outline"`, `dashed border`, icono `Plus`
+
+---
+
+### Paso 2: `src/pages/Validacion.tsx` — Estado + Handlers
+
+**2a. Estado de toggles** (~línea 244):
+```typescript
+const [docToggles, setDocToggles] = useState({ tieneCredito: false, tieneApoderado: false });
+```
+Inicializar en `loadTramite` desde `meta?.toggles` (ya existe parcialmente en línea 598-601), expandir para setear `docToggles`.
+
+**2b. `handleSidebarDelete(tipo: string)`:**
+
+Limpieza profunda por tipo:
+- `certificado_tradicion` → `setInmueble(createEmptyInmueble())`, borrar `extracted_inmueble` de metadata
+- `predial` → `setExtractedPredial(null)`, borrar `extracted_predial`
+- `escritura_antecedente` → `setExtractedDocumento(null)`, borrar `extracted_documento`, `extracted_escritura_comparecientes`, `extracted_titulo_antecedente`
+- `cedula_*` → filtrar persona del array vendedores/compradores por cédula, borrar de `extracted_cedulas_detail`
+- `carta_credito` → limpiar campos hipoteca en actos (`valor_hipoteca`, `entidad_bancaria` si vienen de carta), desactivar toggle, borrar `extracted_carta_credito`
+- `poder_notarial` → limpiar campos apoderado en actos, desactivar toggle, borrar `extracted_poder_notarial`
+
+Actualizar `expedienteDocs`: cambiar status a `"pendiente"` (o eliminar si es cédula extra).
+Persistir metadata limpia en DB con read-then-merge.
+
+**2c. `handleSidebarReplace(tipo: string, file: File)`:**
+
+1. Ejecutar la misma limpieza que `handleSidebarDelete` (el usuario ve campos volver a `___________`)
+2. Luego llamar `handleSidebarUpload(tipo, file)` para re-procesar
+
+**2d. `handleToggleChange(toggle: string, value: boolean)`:**
+
+1. `setDocToggles(prev => ({ ...prev, [toggle]: value }))`
+2. Si activado: agregar slot pendiente a `expedienteDocs`
+3. Si desactivado: eliminar slot + llamar limpieza de datos correspondiente
+4. Si `tieneCredito`: sincronizar `setActos(prev => ({ ...prev, es_hipoteca: value }))`
+5. Persistir `toggles` en metadata
+
+**2e. `handleSidebarAddCedula(file: File)`:**
+
+1. Consumir crédito
+2. Llamar `handleSidebarUpload("cedula", file)` — el scan-document procesa como cédula
+3. El handler existente ya agrega la persona via `handlePersonasExtracted`
+4. Agregar entrada nueva a `expedienteDocs` con nombre extraído
+
+**2f. Pasar nuevas props al Sheet** (líneas 1846-1850):
+```tsx
+<ExpedienteSidebar
+  documentos={expedienteDocs}
+  onUploadDocument={handleSidebarUpload}
+  onReplaceDocument={handleSidebarReplace}
+  onDeleteDocument={handleSidebarDelete}
+  onAddCedula={handleSidebarAddCedula}
+  onToggleChange={handleToggleChange}
+  toggles={docToggles}
+  uploading={sidebarUploading}
+/>
+```
+
+---
 
 ### Archivos afectados
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocxPreview.tsx` | translateY → CSS columns + translateX, medición con scrollWidth |
-| `src/index.css` | Regla `break-inside: avoid` para párrafos |
+| `src/components/tramites/ExpedienteSidebar.tsx` | 3 secciones, acciones Reemplazar/Eliminar, AlertDialog, toggles, + Agregar Cédula |
+| `src/pages/Validacion.tsx` | Estado toggles, handlers replace/delete/toggle/addCedula, pasar props |
 
-2 archivos. Sin migraciones. Sin dependencias nuevas. El resultado es idéntico a Word: el texto nunca se corta a mitad de línea.
+2 archivos. Sin migraciones. Sin dependencias nuevas.
 
