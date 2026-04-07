@@ -119,6 +119,19 @@
   }
 }
 
+/* CSS columns pagination — prevent content from splitting mid-element */
+.docx-columns-page > p,
+.docx-columns-page > div,
+.docx-columns-page > table,
+.docx-columns-page > ul,
+.docx-columns-page > ol,
+.docx-columns-page > h1,
+.docx-columns-page > h2,
+.docx-columns-page > h3,
+.docx-columns-page > h4 {
+  break-inside: avoid;
+}
+
 @keyframes audit-glow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
   50% { box-shadow: 0 0 8px 4px rgba(124, 58, 237, 0.4); }
