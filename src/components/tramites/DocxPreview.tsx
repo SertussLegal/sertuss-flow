@@ -385,6 +385,9 @@ const DocxPreview = ({
     position: { top: number; left: number };
   } | null>(null);
 
+  // Scroll-to-occurrence state for audit navigation
+  const [scrollToOccurrence, setScrollToOccurrence] = useState<{ text: string; index: number } | null>(null);
+
   // Observe container size for responsive scaling
   useEffect(() => {
     const el = containerRef.current;
@@ -1141,7 +1144,27 @@ const DocxPreview = ({
           position={selectionToolbar.position}
           occurrenceCount={selectionToolbar.occurrenceCount}
           onApply={handleApplyOverride}
-          onClose={() => setSelectionToolbar(null)}
+          onClose={() => {
+            setSelectionToolbar(null);
+            setScrollToOccurrence(null);
+          }}
+          replacements={buildReplacements()}
+          existingOverrides={overrides}
+          onNavigate={(index) => {
+            setScrollToOccurrence(
+              selectionToolbar ? { text: selectionToolbar.text, index } : null
+            );
+          }}
+          onApplyAtIndex={(newText, index) => {
+            if (!onCreateOverride) return;
+            onCreateOverride(
+              selectionToolbar.text,
+              newText,
+              false,
+              selectionToolbar.contextBefore || "",
+              selectionToolbar.contextAfter || ""
+            );
+          }}
         />
       )}
 
