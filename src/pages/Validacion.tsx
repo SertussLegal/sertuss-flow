@@ -23,7 +23,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
+import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -71,6 +71,138 @@ const FIELD_TO_ACTOS: Record<string, keyof Actos> = {
 
 type SyncStatus = "saved" | "saving" | "unsaved" | "idle";
 
+/** Robust DOCX XML override algorithm with text virtualization and node consolidation */
+function applyOverridesToDocx(xml: string, overrides: TextOverride[]): string {
+  const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
+
+  // Extract all <w:t> nodes with positions
+  const wtRegex = /<w:t([^>]*)>([^<]*)<\/w:t>/g;
+  interface WtNode { fullMatch: string; attrs: string; text: string; start: number; end: number; }
+  const nodes: WtNode[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = wtRegex.exec(xml)) !== null) {
+    nodes.push({ fullMatch: m[0], attrs: m[1], text: m[2], start: m.index, end: m.index + m[0].length });
+  }
+
+  if (nodes.length === 0) return xml;
+
+  // Build virtual plaintext with position map
+  const virtualText = nodes.map(n => n.text).join("");
+  // charToNode[i] = which node index contains virtual char i
+  const charToNode: number[] = [];
+  nodes.forEach((n, idx) => {
+    for (let i = 0; i < n.text.length; i++) charToNode.push(idx);
+  });
+
+  // Collect all replacements as { virtualStart, virtualEnd, newText }
+  const replacements: { virtualStart: number; virtualEnd: number; newText: string }[] = [];
+  const normalizedVirtual = normalizeWs(virtualText);
+
+  for (const ov of overrides) {
+    if (!ov.originalText || !ov.newText) continue;
+    const normalizedOriginal = normalizeWs(ov.originalText);
+
+    if (ov.replaceAll) {
+      let searchStart = 0;
+      while (true) {
+        const idx = normalizedVirtual.indexOf(normalizedOriginal, searchStart);
+        if (idx === -1) break;
+        // Map back to virtualText position (approximate — works when normalization only collapses spaces)
+        const vtIdx = virtualText.toLowerCase().indexOf(ov.originalText.toLowerCase(), searchStart);
+        if (vtIdx !== -1) {
+          replacements.push({ virtualStart: vtIdx, virtualEnd: vtIdx + ov.originalText.length, newText: ov.newText });
+          searchStart = vtIdx + ov.originalText.length;
+        } else {
+          break;
+        }
+      }
+    } else {
+      // Context-aware single match
+      const searchStr = ov.contextBefore
+        ? normalizeWs(ov.contextBefore + ov.originalText + ov.contextAfter)
+        : normalizedOriginal;
+      const ctxIdx = normalizedVirtual.indexOf(searchStr);
+      if (ctxIdx !== -1) {
+        const offset = ov.contextBefore ? normalizeWs(ov.contextBefore).length : 0;
+        const vtIdx = virtualText.indexOf(ov.originalText, Math.max(0, ctxIdx + offset - 5));
+        if (vtIdx !== -1) {
+          replacements.push({ virtualStart: vtIdx, virtualEnd: vtIdx + ov.originalText.length, newText: ov.newText });
+        }
+      } else {
+        // Fallback: first occurrence
+        const vtIdx = virtualText.indexOf(ov.originalText);
+        if (vtIdx !== -1) {
+          replacements.push({ virtualStart: vtIdx, virtualEnd: vtIdx + ov.originalText.length, newText: ov.newText });
+        }
+      }
+    }
+  }
+
+  if (replacements.length === 0) return xml;
+
+  // Sort by position descending to apply from end to start (avoids offset shifting)
+  replacements.sort((a, b) => b.virtualStart - a.virtualStart);
+
+  // Apply replacements to XML by modifying node texts
+  let result = xml;
+  for (const rep of replacements) {
+    if (rep.virtualStart >= charToNode.length) continue;
+    const startNode = charToNode[rep.virtualStart];
+    const endNode = charToNode[Math.min(rep.virtualEnd - 1, charToNode.length - 1)];
+
+    // Calculate offsets within nodes
+    let charsBefore = 0;
+    for (let i = 0; i < startNode; i++) charsBefore += nodes[i].text.length;
+    const startOffset = rep.virtualStart - charsBefore;
+
+    let charsBeforeEnd = 0;
+    for (let i = 0; i <= endNode; i++) charsBeforeEnd += nodes[i].text.length;
+    const endOffset = rep.virtualEnd - (charsBeforeEnd - nodes[endNode].text.length);
+
+    if (startNode === endNode) {
+      // Same node — simple replace
+      const node = nodes[startNode];
+      const newNodeText = node.text.slice(0, startOffset) + escapeXml(rep.newText) + node.text.slice(endOffset);
+      const newTag = `<w:t${node.attrs}>${newNodeText}</w:t>`;
+      result = result.slice(0, node.start) + newTag + result.slice(node.end);
+      // Update node end for subsequent replacements
+      const delta = newTag.length - (node.end - node.start);
+      for (let i = startNode + 1; i < nodes.length; i++) {
+        nodes[i].start += delta;
+        nodes[i].end += delta;
+      }
+      nodes[startNode] = { ...node, fullMatch: newTag, text: newNodeText, end: node.start + newTag.length };
+    } else {
+      // Multi-node: consolidate into first node, empty the rest
+      // Process from last to first to avoid offset issues
+      for (let i = endNode; i >= startNode; i--) {
+        const node = nodes[i];
+        let newNodeText: string;
+        if (i === startNode) {
+          newNodeText = node.text.slice(0, startOffset) + escapeXml(rep.newText);
+        } else if (i === endNode) {
+          newNodeText = node.text.slice(endOffset);
+        } else {
+          newNodeText = "";
+        }
+        const preserveSpace = newNodeText.length > 0 && (newNodeText.startsWith(" ") || newNodeText.endsWith(" "))
+          ? ' xml:space="preserve"' : node.attrs;
+        const newTag = `<w:t${preserveSpace}>${newNodeText}</w:t>`;
+        result = result.slice(0, node.start) + newTag + result.slice(node.end);
+        const delta = newTag.length - (node.end - node.start);
+        for (let j = i + 1; j < nodes.length; j++) {
+          nodes[j].start += delta;
+          nodes[j].end += delta;
+        }
+        nodes[i] = { ...node, fullMatch: newTag, text: newNodeText, end: node.start + newTag.length };
+      }
+    }
+  }
+
+  return result;
+}
+
 const Validacion = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -83,7 +215,7 @@ const Validacion = () => {
   const [compradores, setCompradores] = useState<Persona[]>([createEmptyPersona()]);
   const [inmueble, setInmueble] = useState<Inmueble>(createEmptyInmueble());
   const [actos, setActos] = useState<Actos>(createEmptyActos());
-  const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
+  const [overrides, setOverrides] = useState<TextOverride[]>([]);
   const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
   const [textoFinalWord, setTextoFinalWord] = useState<string>("");
   const [generatingWord, setGeneratingWord] = useState(false);
@@ -150,7 +282,7 @@ const Validacion = () => {
       setIsDirty(true);
       setSyncStatus("unsaved");
     }
-  }, [vendedores, compradores, inmueble, actos, customVariables]);
+  }, [vendedores, compradores, inmueble, actos, overrides]);
 
   // Auto-save debounce: 15 seconds
   useEffect(() => {
@@ -159,7 +291,7 @@ const Validacion = () => {
       handleAutoSave();
     }, 15000);
     return () => clearTimeout(timer);
-  }, [isDirty, vendedores, compradores, inmueble, actos, customVariables, profile?.organization_id]);
+  }, [isDirty, vendedores, compradores, inmueble, actos, overrides, profile?.organization_id]);
 
   // beforeunload: force save before leaving
   useEffect(() => {
@@ -190,8 +322,20 @@ const Validacion = () => {
 
     const meta = (t as any).metadata;
     setTramiteMetadata(meta || null);
-    if (meta?.custom_variables) {
-      setCustomVariables(meta.custom_variables);
+    // Restore overrides (with legacy migration from custom_variables)
+    if (meta?.overrides) {
+      setOverrides(meta.overrides);
+    } else if (meta?.custom_variables) {
+      // Migrate legacy custom variables to TextOverride format
+      setOverrides((meta.custom_variables as CustomVariable[]).map((cv: CustomVariable) => ({
+        id: cv.id,
+        originalText: cv.originalText,
+        newText: cv.value || "",
+        contextBefore: "",
+        contextAfter: "",
+        replaceAll: true,
+        createdAt: new Date().toISOString(),
+      })));
     }
     if (meta?.sugerencias_ia) {
       setSugerenciasIA(meta.sugerencias_ia);
@@ -621,7 +765,7 @@ const Validacion = () => {
       let tid = tramiteIdRef.current;
       const formMetadata = {
         last_saved: new Date().toISOString(),
-        custom_variables: customVariables.map(cv => ({ ...cv })),
+        overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
@@ -677,10 +821,10 @@ const Validacion = () => {
     // Track manually edited fields to prevent OCR overwrite
     manuallyEditedFieldsRef.current.add(field);
 
-    if (field.startsWith("__custom__")) {
-      const cvId = field.replace("__custom__", "");
-      setCustomVariables((prev) =>
-        prev.map((cv) => (cv.id === cvId ? { ...cv, value } : cv))
+    if (field.startsWith("__override__")) {
+      const ovId = field.replace("__override__", "");
+      setOverrides((prev) =>
+        prev.map((ov) => (ov.id === ovId ? { ...ov, newText: value } : ov))
       );
       return;
     }
@@ -1035,18 +1179,29 @@ const Validacion = () => {
     }
   }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
 
-  const handleCreateCustomVariable = useCallback((originalText: string, variableName: string) => {
-    const newVar: CustomVariable = {
+  const handleCreateOverride = useCallback((
+    originalText: string, newText: string, replaceAll: boolean,
+    contextBefore: string, contextAfter: string
+  ) => {
+    const override: TextOverride = {
       id: crypto.randomUUID(),
       originalText,
-      variableName,
-      value: "",
+      newText,
+      contextBefore,
+      contextAfter,
+      replaceAll,
+      createdAt: new Date().toISOString(),
     };
-    setCustomVariables((prev) => [...prev, newVar]);
+    setOverrides((prev) => [...prev, override]);
     toast({
-      title: "Variable creada",
-      description: `"${originalText.slice(0, 30)}${originalText.length > 30 ? "…" : ""}" → {${variableName}}`,
+      title: "Cambio aplicado",
+      description: `"${originalText.slice(0, 30)}…" → "${newText.slice(0, 30)}…"`,
     });
+  }, [toast]);
+
+  const handleRemoveOverride = useCallback((id: string) => {
+    setOverrides((prev) => prev.filter((o) => o.id !== id));
+    toast({ title: "Cambio deshecho" });
   }, [toast]);
 
   // Reverse sync: accept AI suggestion → update form + force save
@@ -1154,7 +1309,7 @@ const Validacion = () => {
 
       const metadata = {
         last_saved: new Date().toISOString(),
-        custom_variables: customVariables.map(cv => ({ ...cv })),
+        overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
@@ -1553,15 +1708,12 @@ const Validacion = () => {
       doc.render(structuredData);
 
       let outZip = doc.getZip();
-      if (customVariables.length > 0) {
+      // Apply text overrides to DOCX XML using robust virtualization
+      if (overrides.length > 0) {
         const docXml = outZip.file("word/document.xml");
         if (docXml) {
           let xmlContent = docXml.asText();
-          for (const cv of customVariables) {
-            if (cv.value && cv.originalText) {
-              xmlContent = xmlContent.split(cv.originalText).join(cv.value);
-            }
-          }
+          xmlContent = applyOverridesToDocx(xmlContent, overrides);
           outZip.file("word/document.xml", xmlContent);
         }
       }
@@ -1708,9 +1860,10 @@ const Validacion = () => {
               compradores={compradores}
               inmueble={inmueble}
               actos={actos}
-              customVariables={customVariables}
+              overrides={overrides}
               onFieldEdit={handleFieldEdit}
-              onCreateCustomVariable={handleCreateCustomVariable}
+              onCreateOverride={handleCreateOverride}
+              onRemoveOverride={handleRemoveOverride}
               sugerenciasIA={sugerenciasIA}
               generating={generatingWord}
               textoFinalWord={textoFinalWord}
@@ -1754,9 +1907,10 @@ const Validacion = () => {
               compradores={compradores}
               inmueble={inmueble}
               actos={actos}
-              customVariables={customVariables}
+              overrides={overrides}
               onFieldEdit={handleFieldEdit}
-              onCreateCustomVariable={handleCreateCustomVariable}
+              onCreateOverride={handleCreateOverride}
+              onRemoveOverride={handleRemoveOverride}
               sugerenciasIA={sugerenciasIA}
               generating={generatingWord}
               textoFinalWord={textoFinalWord}

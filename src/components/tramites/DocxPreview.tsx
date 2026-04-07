@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { lookupBank } from "@/lib/bankDirectory";
 import { formatMonedaLegal, formatFechaLegal, formatCedulaLegal } from "@/lib/legalFormatters";
 import { Button } from "@/components/ui/button";
-import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info } from "lucide-react";
-import type { Persona, Inmueble, Actos, CustomVariable, SugerenciaIA } from "@/lib/types";
+import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info, Pencil, Undo2 } from "lucide-react";
+import type { Persona, Inmueble, Actos, TextOverride, SugerenciaIA } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import VariableEditPopover from "./VariableEditPopover";
-import SelectionToolbar from "./SelectionToolbar";
+import InlineEditToolbar from "./InlineEditToolbar";
 import DOMPurify from "dompurify";
 import mammoth from "mammoth";
 
@@ -121,9 +122,10 @@ interface DocxPreviewProps {
   compradores: Persona[];
   inmueble: Inmueble;
   actos: Actos;
-  customVariables?: CustomVariable[];
+  overrides?: TextOverride[];
   onFieldEdit?: (field: string, value: string) => void;
-  onCreateCustomVariable?: (originalText: string, variableName: string) => void;
+  onCreateOverride?: (originalText: string, newText: string, replaceAll: boolean, contextBefore: string, contextAfter: string) => void;
+  onRemoveOverride?: (id: string) => void;
   sugerenciasIA?: SugerenciaIA[];
   generating?: boolean;
   textoFinalWord?: string;
@@ -150,7 +152,7 @@ const purifyConfig = {
     "table", "tr", "td", "th", "thead", "tbody", "div", "a", "sup", "sub",
   ],
   ALLOWED_ATTR: [
-    "class", "style", "data-field", "data-custom-var", "data-sugerencia-idx",
+    "class", "style", "data-field", "data-override", "data-sugerencia-idx",
     "href", "target",
   ],
 };
@@ -334,9 +336,10 @@ const DocxPreview = ({
   compradores,
   inmueble,
   actos,
-  customVariables = [],
+  overrides = [],
   onFieldEdit,
-  onCreateCustomVariable,
+  onCreateOverride,
+  onRemoveOverride,
   sugerenciasIA = [],
   generating = false,
   textoFinalWord,
@@ -366,10 +369,13 @@ const DocxPreview = ({
     position: { top: number; left: number };
   } | null>(null);
 
-  // Selection toolbar state
+  // Selection toolbar state (inline edit)
   const [selectionToolbar, setSelectionToolbar] = useState<{
     text: string;
     position: { top: number; left: number };
+    contextBefore: string;
+    contextAfter: string;
+    occurrenceCount: number;
   } | null>(null);
 
   // Sugerencia popover state
@@ -666,14 +672,30 @@ const DocxPreview = ({
       result = result.replace(/\{[#/^][^}]*\}/g, "");
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, `<span class="var-pending" style="${pendingRedStyle}">___________</span>`);
 
-      // Apply custom variables
-      for (const cv of customVariables) {
-        if (cv.originalText) {
-          const escapedText = cv.originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const replacement = cv.value
-            ? `<span data-custom-var="${cv.id}" class="var-resolved" style="color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46">${cv.value}</span>`
-            : `<span data-custom-var="${cv.id}" class="var-pending" style="background:#fef3c7;text-decoration:underline;cursor:pointer">${cv.originalText}</span>`;
-          result = result.replace(new RegExp(escapedText, "g"), replacement);
+      // Apply text overrides (replaces legacy custom variables)
+      for (const ov of overrides) {
+        if (ov.originalText && ov.newText) {
+          const escapedText = ov.originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const overrideSpan = `<span data-override="${ov.id}" style="color:#4c1d95;font-weight:bold;cursor:pointer;border-bottom:2px dashed #7c3aed">${ov.newText}</span>`;
+          if (ov.replaceAll) {
+            result = result.replace(new RegExp(escapedText, "g"), overrideSpan);
+          } else {
+            // Context-aware single replacement
+            if (ov.contextBefore || ov.contextAfter) {
+              const ctxBefore = ov.contextBefore.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+              const ctxAfter = ov.contextAfter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+              const ctxRegex = new RegExp(`(${ctxBefore})(${escapedText})(${ctxAfter})`);
+              const ctxMatch = result.match(ctxRegex);
+              if (ctxMatch) {
+                result = result.replace(ctxRegex, `$1${overrideSpan}$3`);
+              } else {
+                // Fallback: first occurrence
+                result = result.replace(new RegExp(escapedText), overrideSpan);
+              }
+            } else {
+              result = result.replace(new RegExp(escapedText), overrideSpan);
+            }
+          }
         }
       }
 
@@ -719,7 +741,7 @@ const DocxPreview = ({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [baseHtml, buildReplacements, customVariables, textoFinalWord, sugerenciasIA, slotsPendientes]);
+  }, [baseHtml, buildReplacements, overrides, textoFinalWord, sugerenciasIA, slotsPendientes]);
 
   // Measure content and compute pages
   useEffect(() => {
@@ -780,26 +802,26 @@ const DocxPreview = ({
       return;
     }
 
-    // Check for custom variable click
-    const customVarId = target.getAttribute("data-custom-var");
-    if (customVarId && onFieldEdit) {
-      const cv = customVariables.find((v) => v.id === customVarId);
-      if (cv) {
+    // Check for override click
+    const overrideId = target.getAttribute("data-override");
+    if (overrideId && onFieldEdit) {
+      const ov = overrides.find((o) => o.id === overrideId);
+      if (ov) {
         const rect = target.getBoundingClientRect();
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
         setEditPopover({
-          field: `__custom__${cv.id}`,
-          value: cv.value || cv.originalText,
+          field: `__override__${ov.id}`,
+          value: ov.newText,
           position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
         });
       }
     }
-  }, [onFieldEdit, onScrollToField, customVariables, sugerenciasIA]);
+  }, [onFieldEdit, onScrollToField, overrides, sugerenciasIA]);
 
-  // Handle text selection for creating new variables
+  // Handle text selection for inline editing
   const handleMouseUp = useCallback(() => {
-    if (!onCreateCustomVariable) return;
+    if (!onCreateOverride) return;
 
     setTimeout(() => {
       const selection = window.getSelection();
@@ -809,22 +831,39 @@ const DocxPreview = ({
       if (!contentRef.current || !anchorNode || !contentRef.current.contains(anchorNode)) return;
 
       const anchorEl = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as HTMLElement);
-      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-custom-var") || anchorEl?.hasAttribute("data-sugerencia-idx")) return;
+      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-override") || anchorEl?.hasAttribute("data-sugerencia-idx")) return;
 
       const text = selection.toString().trim();
-      if (text.length < 2 || text.length > 200) return;
+      if (text.length < 2 || text.length > 300) return;
+
+      // Reject if selection contains template variables
+      if (/\{[^}]+\}/.test(text)) return;
 
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
+
+      // Extract context (40 chars before/after)
+      const container = contentRef.current;
+      const fullText = container.textContent || "";
+      const selStart = fullText.indexOf(text);
+      const ctxBefore = selStart > 0 ? fullText.slice(Math.max(0, selStart - 40), selStart) : "";
+      const ctxAfter = fullText.slice(selStart + text.length, selStart + text.length + 40);
+
+      // Count occurrences
+      const escapedForCount = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const occurrences = (fullText.match(new RegExp(escapedForCount, "g")) || []).length;
 
       setEditPopover(null);
       setSugerenciaPopover(null);
       setSelectionToolbar({
         text,
         position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+        contextBefore: ctxBefore,
+        contextAfter: ctxAfter,
+        occurrenceCount: occurrences,
       });
     }, 10);
-  }, [onCreateCustomVariable]);
+  }, [onCreateOverride]);
 
   const handleFieldApply = useCallback((value: string) => {
     if (!editPopover || !onFieldEdit) return;
@@ -832,12 +871,18 @@ const DocxPreview = ({
     setEditPopover(null);
   }, [editPopover, onFieldEdit]);
 
-  const handleCreateVariable = useCallback((variableName: string) => {
-    if (!selectionToolbar || !onCreateCustomVariable) return;
-    onCreateCustomVariable(selectionToolbar.text, variableName);
+  const handleApplyOverride = useCallback((newText: string, replaceAll: boolean) => {
+    if (!selectionToolbar || !onCreateOverride) return;
+    onCreateOverride(
+      selectionToolbar.text,
+      newText,
+      replaceAll,
+      (selectionToolbar as any).contextBefore || "",
+      (selectionToolbar as any).contextAfter || ""
+    );
     setSelectionToolbar(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionToolbar, onCreateCustomVariable]);
+  }, [selectionToolbar, onCreateOverride]);
 
   const handleAcceptSugerencia = useCallback(() => {
     if (!sugerenciaPopover || !onSugerenciaAccepted) return;
@@ -1021,6 +1066,40 @@ const DocxPreview = ({
             {sugerenciasIA.filter(s => s.tipo === "estilo").length} estilos
           </span>
         )}
+        {overrides.length > 0 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                <Pencil className="h-3 w-3" />
+                Cambios ({overrides.length})
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-2" side="top">
+              <p className="text-xs font-semibold text-muted-foreground mb-2">Ediciones manuales</p>
+              <div className="max-h-48 overflow-y-auto space-y-1.5">
+                {overrides.map((ov) => (
+                  <div key={ov.id} className="flex items-start justify-between gap-2 text-xs rounded-md p-1.5 bg-muted/50">
+                    <div className="min-w-0 flex-1">
+                      <span className="line-through text-muted-foreground">"{ov.originalText.slice(0, 25)}{ov.originalText.length > 25 ? "…" : ""}"</span>
+                      <span className="mx-1 text-muted-foreground">→</span>
+                      <span className="font-medium" style={{ color: "#4c1d95" }}>"{ov.newText.slice(0, 25)}{ov.newText.length > 25 ? "…" : ""}"</span>
+                    </div>
+                    {onRemoveOverride && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 shrink-0"
+                        onClick={() => onRemoveOverride(ov.id)}
+                      >
+                        <Undo2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
         <Button
           variant="outline"
           size="icon"
@@ -1055,16 +1134,13 @@ const DocxPreview = ({
         />
       )}
 
-      {/* Selection toolbar */}
+      {/* Inline edit toolbar */}
       {selectionToolbar && (
-        <SelectionToolbar
+        <InlineEditToolbar
           selectedText={selectionToolbar.text}
           position={selectionToolbar.position}
-          existingVariables={[
-            ...Object.keys(buildReplacements()),
-            ...customVariables.map((cv) => cv.variableName),
-          ]}
-          onCreateVariable={handleCreateVariable}
+          occurrenceCount={selectionToolbar.occurrenceCount}
+          onApply={handleApplyOverride}
           onClose={() => setSelectionToolbar(null)}
         />
       )}
