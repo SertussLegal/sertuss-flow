@@ -243,6 +243,7 @@ const Validacion = () => {
    } | null>(null);
   const [slotsPendientes, setSlotsPendientes] = useState<string[]>([]);
   const [expedienteDocs, setExpedienteDocs] = useState<ExpedienteDoc[]>([]);
+  const [docToggles, setDocToggles] = useState<{ tieneCredito: boolean; tieneApoderado: boolean }>({ tieneCredito: false, tieneApoderado: false });
   const [validando, setValidando] = useState(false);
   const [sidebarUploading, setSidebarUploading] = useState<string | null>(null);
   const [tramiteMetadata, setTramiteMetadata] = useState<Record<string, any> | null>(null);
@@ -596,7 +597,12 @@ const Validacion = () => {
     }
 
     // ── 6b2. Restore toggle state → sync with actos.es_hipoteca ──
-    if (meta?.toggles?.tieneCredito && !localActos.es_hipoteca) {
+    const restoredToggles = {
+      tieneCredito: !!meta?.toggles?.tieneCredito,
+      tieneApoderado: !!meta?.toggles?.tieneApoderado,
+    };
+    setDocToggles(restoredToggles);
+    if (restoredToggles.tieneCredito && !localActos.es_hipoteca) {
       localActos = { ...localActos, es_hipoteca: true };
     }
 
@@ -1178,6 +1184,139 @@ const Validacion = () => {
       setSidebarUploading(null);
     }
   }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
+
+  // ── Deep-clean state linked to a document type ──
+  const cleanStateForDocType = useCallback((tipo: string) => {
+    if (tipo === "certificado_tradicion") {
+      setInmueble(createEmptyInmueble());
+    } else if (tipo === "predial") {
+      setExtractedPredial(null);
+    } else if (tipo === "escritura_antecedente") {
+      setExtractedDocumento(null);
+    } else if (tipo.startsWith("cedula_")) {
+      const cedNum = tipo.replace("cedula_", "");
+      setVendedores(prev => prev.filter(v => v.numero_cedula !== cedNum));
+      setCompradores(prev => prev.filter(c => c.numero_cedula !== cedNum));
+    } else if (tipo === "carta_credito") {
+      setActos(prev => ({ ...prev, valor_hipoteca: "", entidad_bancaria: "", es_hipoteca: false }));
+    } else if (tipo === "poder_notarial") {
+      setActos(prev => ({
+        ...prev,
+        apoderado_nombre: "", apoderado_cedula: "", apoderado_expedida_en: "",
+        apoderado_escritura_poder: "", apoderado_fecha_poder: "",
+        apoderado_notaria_poder: "", apoderado_notaria_ciudad: "", apoderado_email: "",
+      }));
+    }
+  }, []);
+
+  // ── Persist metadata key removal ──
+  const removeMetadataKey = useCallback(async (tipo: string) => {
+    const tid = tramiteIdRef.current;
+    if (!tid) return;
+    const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
+    const meta = { ...((existing?.metadata as any) || {}) };
+    const keyMap: Record<string, string[]> = {
+      certificado_tradicion: ["extracted_inmueble"],
+      predial: ["extracted_predial"],
+      escritura_antecedente: ["extracted_documento", "extracted_escritura_comparecientes", "extracted_titulo_antecedente"],
+      carta_credito: ["extracted_carta_credito"],
+      poder_notarial: ["extracted_poder_notarial", "extracted_poder_banco"],
+    };
+    const keys = keyMap[tipo] || [`extracted_${tipo}`];
+    for (const k of keys) delete meta[k];
+    // Also clean cedula from extracted_cedulas_detail
+    if (tipo.startsWith("cedula_")) {
+      const cedNum = tipo.replace("cedula_", "");
+      if (meta.extracted_cedulas_detail) {
+        meta.extracted_cedulas_detail = (meta.extracted_cedulas_detail as any[]).filter(
+          (c: any) => (c.numero_identificacion || c.numero_cedula) !== cedNum
+        );
+      }
+    }
+    await supabase.from("tramites").update({ metadata: meta as any }).eq("id", tid);
+  }, []);
+
+  // ── handleSidebarDelete ──
+  const handleSidebarDelete = useCallback(async (tipo: string) => {
+    cleanStateForDocType(tipo);
+    await removeMetadataKey(tipo);
+    setExpedienteDocs(prev => {
+      if (tipo.startsWith("cedula_")) {
+        return prev.filter(d => d.tipo !== tipo);
+      }
+      return prev.map(d => d.tipo === tipo ? { ...d, status: "pendiente" as const, nombre: undefined } : d);
+    });
+    // Deactivate toggle if optional doc deleted
+    if (tipo === "carta_credito") {
+      setDocToggles(prev => ({ ...prev, tieneCredito: false }));
+      setExpedienteDocs(prev => prev.filter(d => d.tipo !== "carta_credito"));
+      persistToggles({ tieneCredito: false, tieneApoderado: docToggles.tieneApoderado });
+    }
+    if (tipo === "poder_notarial") {
+      setDocToggles(prev => ({ ...prev, tieneApoderado: false }));
+      setExpedienteDocs(prev => prev.filter(d => d.tipo !== "poder_notarial"));
+      persistToggles({ tieneCredito: docToggles.tieneCredito, tieneApoderado: false });
+    }
+    toast({ title: "Documento eliminado", description: "Los datos vinculados han sido limpiados." });
+  }, [cleanStateForDocType, removeMetadataKey, toast, docToggles]);
+
+  // ── handleSidebarReplace ──
+  const handleSidebarReplace = useCallback(async (tipo: string, file: File) => {
+    cleanStateForDocType(tipo);
+    await removeMetadataKey(tipo);
+    setExpedienteDocs(prev => prev.map(d => d.tipo === tipo ? { ...d, status: "pendiente" as const, nombre: undefined } : d));
+    // Re-process with OCR
+    handleSidebarUpload(tipo, file);
+  }, [cleanStateForDocType, removeMetadataKey, handleSidebarUpload]);
+
+  // ── Persist toggles helper ──
+  const persistToggles = useCallback(async (togglesState: { tieneCredito: boolean; tieneApoderado: boolean }) => {
+    const tid = tramiteIdRef.current;
+    if (!tid) return;
+    const { data: existing } = await supabase.from("tramites").select("metadata").eq("id", tid).single();
+    const meta = { ...((existing?.metadata as any) || {}), toggles: togglesState };
+    await supabase.from("tramites").update({ metadata: meta as any }).eq("id", tid);
+  }, []);
+
+  // ── handleToggleChange ──
+  const handleToggleChange = useCallback(async (toggle: string, value: boolean) => {
+    const newToggles = { ...docToggles, [toggle]: value };
+    setDocToggles(newToggles);
+
+    if (toggle === "tieneCredito") {
+      setActos(prev => ({ ...prev, es_hipoteca: value }));
+      if (value) {
+        setExpedienteDocs(prev => {
+          if (prev.some(d => d.tipo === "carta_credito")) return prev;
+          return [...prev, { tipo: "carta_credito", label: "Carta de Aprobación de Crédito", status: "pendiente" }];
+        });
+      } else {
+        cleanStateForDocType("carta_credito");
+        await removeMetadataKey("carta_credito");
+        setExpedienteDocs(prev => prev.filter(d => d.tipo !== "carta_credito"));
+      }
+    }
+
+    if (toggle === "tieneApoderado") {
+      if (value) {
+        setExpedienteDocs(prev => {
+          if (prev.some(d => d.tipo === "poder_notarial")) return prev;
+          return [...prev, { tipo: "poder_notarial", label: "Poder Notarial", status: "pendiente" }];
+        });
+      } else {
+        cleanStateForDocType("poder_notarial");
+        await removeMetadataKey("poder_notarial");
+        setExpedienteDocs(prev => prev.filter(d => d.tipo !== "poder_notarial"));
+      }
+    }
+
+    await persistToggles(newToggles);
+  }, [docToggles, cleanStateForDocType, removeMetadataKey, persistToggles]);
+
+  // ── handleSidebarAddCedula ──
+  const handleSidebarAddCedula = useCallback(async (file: File) => {
+    handleSidebarUpload("cedula", file);
+  }, [handleSidebarUpload]);
 
   const handleCreateOverride = useCallback((
     originalText: string, newText: string, replaceAll: boolean,
@@ -1846,6 +1985,11 @@ const Validacion = () => {
           <ExpedienteSidebar
             documentos={expedienteDocs}
             onUploadDocument={handleSidebarUpload}
+            onReplaceDocument={handleSidebarReplace}
+            onDeleteDocument={handleSidebarDelete}
+            onAddCedula={handleSidebarAddCedula}
+            onToggleChange={handleToggleChange}
+            toggles={docToggles}
             uploading={sidebarUploading}
           />
         </SheetContent>
