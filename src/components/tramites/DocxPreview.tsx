@@ -122,9 +122,10 @@ interface DocxPreviewProps {
   compradores: Persona[];
   inmueble: Inmueble;
   actos: Actos;
-  customVariables?: CustomVariable[];
+  overrides?: TextOverride[];
   onFieldEdit?: (field: string, value: string) => void;
-  onCreateCustomVariable?: (originalText: string, variableName: string) => void;
+  onCreateOverride?: (originalText: string, newText: string, replaceAll: boolean, contextBefore: string, contextAfter: string) => void;
+  onRemoveOverride?: (id: string) => void;
   sugerenciasIA?: SugerenciaIA[];
   generating?: boolean;
   textoFinalWord?: string;
@@ -151,7 +152,7 @@ const purifyConfig = {
     "table", "tr", "td", "th", "thead", "tbody", "div", "a", "sup", "sub",
   ],
   ALLOWED_ATTR: [
-    "class", "style", "data-field", "data-custom-var", "data-sugerencia-idx",
+    "class", "style", "data-field", "data-override", "data-sugerencia-idx",
     "href", "target",
   ],
 };
