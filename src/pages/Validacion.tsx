@@ -243,6 +243,7 @@ const Validacion = () => {
    } | null>(null);
   const [slotsPendientes, setSlotsPendientes] = useState<string[]>([]);
   const [expedienteDocs, setExpedienteDocs] = useState<ExpedienteDoc[]>([]);
+  const [docToggles, setDocToggles] = useState<{ tieneCredito: boolean; tieneApoderado: boolean }>({ tieneCredito: false, tieneApoderado: false });
   const [validando, setValidando] = useState(false);
   const [sidebarUploading, setSidebarUploading] = useState<string | null>(null);
   const [tramiteMetadata, setTramiteMetadata] = useState<Record<string, any> | null>(null);
