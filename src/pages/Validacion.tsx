@@ -1978,10 +1978,7 @@ const Validacion = () => {
 
       {/* Documents Panel (Sheet) */}
       <Sheet open={showDocPanel} onOpenChange={setShowDocPanel}>
-        <SheetContent side="right" className="w-[400px] sm:w-[400px] p-0">
-          <SheetHeader className="p-4 border-b">
-            <SheetTitle>Documentos Cargados</SheetTitle>
-          </SheetHeader>
+        <SheetContent side="right" className="w-[400px] sm:w-[400px] p-0 flex flex-col h-full [&>button]:z-50">
           <ExpedienteSidebar
             documentos={expedienteDocs}
             onUploadDocument={handleSidebarUpload}
