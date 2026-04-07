@@ -358,7 +358,7 @@ const DocxPreview = ({
   const [currentPage, setCurrentPage] = useState(0);
   const [scale, setScale] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const measureRef = useRef<HTMLDivElement>(null);
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
