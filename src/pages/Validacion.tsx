@@ -1318,7 +1318,7 @@ const Validacion = () => {
     handleSidebarUpload("cedula", file);
   }, [handleSidebarUpload]);
 
-
+  const handleCreateOverride = useCallback((
     originalText: string, newText: string, replaceAll: boolean,
     contextBefore: string, contextAfter: string
   ) => {
