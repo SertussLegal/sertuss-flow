@@ -799,26 +799,26 @@ const DocxPreview = ({
       return;
     }
 
-    // Check for custom variable click
-    const customVarId = target.getAttribute("data-custom-var");
-    if (customVarId && onFieldEdit) {
-      const cv = customVariables.find((v) => v.id === customVarId);
-      if (cv) {
+    // Check for override click
+    const overrideId = target.getAttribute("data-override");
+    if (overrideId && onFieldEdit) {
+      const ov = overrides.find((o) => o.id === overrideId);
+      if (ov) {
         const rect = target.getBoundingClientRect();
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
         setEditPopover({
-          field: `__custom__${cv.id}`,
-          value: cv.value || cv.originalText,
+          field: `__override__${ov.id}`,
+          value: ov.newText,
           position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
         });
       }
     }
-  }, [onFieldEdit, onScrollToField, customVariables, sugerenciasIA]);
+  }, [onFieldEdit, onScrollToField, overrides, sugerenciasIA]);
 
-  // Handle text selection for creating new variables
+  // Handle text selection for inline editing
   const handleMouseUp = useCallback(() => {
-    if (!onCreateCustomVariable) return;
+    if (!onCreateOverride) return;
 
     setTimeout(() => {
       const selection = window.getSelection();
@@ -828,22 +828,39 @@ const DocxPreview = ({
       if (!contentRef.current || !anchorNode || !contentRef.current.contains(anchorNode)) return;
 
       const anchorEl = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : (anchorNode as HTMLElement);
-      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-custom-var") || anchorEl?.hasAttribute("data-sugerencia-idx")) return;
+      if (anchorEl?.hasAttribute("data-field") || anchorEl?.hasAttribute("data-override") || anchorEl?.hasAttribute("data-sugerencia-idx")) return;
 
       const text = selection.toString().trim();
-      if (text.length < 2 || text.length > 200) return;
+      if (text.length < 2 || text.length > 300) return;
+
+      // Reject if selection contains template variables
+      if (/\{[^}]+\}/.test(text)) return;
 
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
+
+      // Extract context (40 chars before/after)
+      const container = contentRef.current;
+      const fullText = container.textContent || "";
+      const selStart = fullText.indexOf(text);
+      const ctxBefore = selStart > 0 ? fullText.slice(Math.max(0, selStart - 40), selStart) : "";
+      const ctxAfter = fullText.slice(selStart + text.length, selStart + text.length + 40);
+
+      // Count occurrences
+      const escapedForCount = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const occurrences = (fullText.match(new RegExp(escapedForCount, "g")) || []).length;
 
       setEditPopover(null);
       setSugerenciaPopover(null);
       setSelectionToolbar({
         text,
         position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+        contextBefore: ctxBefore,
+        contextAfter: ctxAfter,
+        occurrenceCount: occurrences,
       });
     }, 10);
-  }, [onCreateCustomVariable]);
+  }, [onCreateOverride]);
 
   const handleFieldApply = useCallback((value: string) => {
     if (!editPopover || !onFieldEdit) return;
@@ -851,12 +868,18 @@ const DocxPreview = ({
     setEditPopover(null);
   }, [editPopover, onFieldEdit]);
 
-  const handleCreateVariable = useCallback((variableName: string) => {
-    if (!selectionToolbar || !onCreateCustomVariable) return;
-    onCreateCustomVariable(selectionToolbar.text, variableName);
+  const handleApplyOverride = useCallback((newText: string, replaceAll: boolean) => {
+    if (!selectionToolbar || !onCreateOverride) return;
+    onCreateOverride(
+      selectionToolbar.text,
+      newText,
+      replaceAll,
+      (selectionToolbar as any).contextBefore || "",
+      (selectionToolbar as any).contextAfter || ""
+    );
     setSelectionToolbar(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionToolbar, onCreateCustomVariable]);
+  }, [selectionToolbar, onCreateOverride]);
 
   const handleAcceptSugerencia = useCallback(() => {
     if (!sugerenciaPopover || !onSugerenciaAccepted) return;
