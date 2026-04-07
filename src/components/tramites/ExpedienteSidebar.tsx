@@ -1,9 +1,9 @@
 import { FileText, CheckCircle, Clock, AlertTriangle, Upload, RefreshCw, Trash2, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
@@ -28,12 +28,6 @@ interface ExpedienteSidebarProps {
   toggles?: { tieneCredito: boolean; tieneApoderado: boolean };
   uploading?: string | null;
 }
-
-const statusConfig = {
-  procesado: { icon: CheckCircle, color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/20", badge: "default" as const, label: "Procesado" },
-  pendiente: { icon: Clock, color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/20", badge: "secondary" as const, label: "Pendiente" },
-  error: { icon: AlertTriangle, color: "text-destructive", bg: "bg-red-50 dark:bg-red-950/20", badge: "destructive" as const, label: "Error" },
-};
 
 const OBLIGATORIOS = ["certificado_tradicion", "predial", "escritura_antecedente"];
 const OPCIONALES = ["carta_credito", "poder_notarial"];
@@ -71,64 +65,70 @@ const ExpedienteSidebar = ({
 
   const procesados = documentos.filter(d => d.status === "procesado").length;
   const total = documentos.length;
+  const progressPct = total > 0 ? Math.round((procesados / total) * 100) : 0;
 
   const deleteDoc = documentos.find(d => d.tipo === deleteTarget);
 
+  const statusBorder = (status: string) => {
+    if (status === "procesado") return "border-l-[3px] border-l-notarial-green";
+    if (status === "pendiente") return "border-l-[3px] border-l-notarial-gold";
+    return "border-l-[3px] border-l-destructive";
+  };
+
+  const StatusIcon = ({ status }: { status: string }) => {
+    if (status === "procesado") return <CheckCircle className="h-3.5 w-3.5 text-notarial-green shrink-0" />;
+    if (status === "pendiente") return <Clock className="h-3.5 w-3.5 text-notarial-gold shrink-0" />;
+    return <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />;
+  };
+
   const renderDocCard = (doc: ExpedienteDoc) => {
-    const config = statusConfig[doc.status];
-    const Icon = config.icon;
     const isUploading = uploading === doc.tipo;
 
     return (
-      <div key={doc.tipo} className={`rounded-lg border p-3 ${config.bg} transition-colors`}>
-        <div className="flex items-start gap-2">
-          <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${config.color}`} />
+      <div key={doc.tipo} className={`rounded-md bg-card p-2.5 ${statusBorder(doc.status)} transition-colors`}>
+        <div className="flex items-center gap-2">
+          <StatusIcon status={doc.status} />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium leading-tight">{doc.label}</p>
+            <p className="text-xs font-medium leading-tight truncate">{doc.label}</p>
             {doc.nombre && (
-              <p className="text-[10px] text-muted-foreground truncate mt-0.5">{doc.nombre}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{doc.nombre}</p>
             )}
           </div>
-          <Badge variant={config.badge} className="text-[10px] px-1.5 py-0 h-4 shrink-0">
-            {config.label}
-          </Badge>
-        </div>
 
-        {/* Actions for processed docs */}
-        {doc.status === "procesado" && (onReplaceDocument || onDeleteDocument) && (
-          <div className="mt-2 flex gap-1.5">
-            {onReplaceDocument && (
-              <>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  className="hidden"
-                  ref={(el) => { replaceRefs.current[doc.tipo] = el; }}
-                  onChange={(e) => handleReplaceChange(doc.tipo, e)}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs flex-1 gap-1"
-                  disabled={isUploading}
-                  onClick={() => replaceRefs.current[doc.tipo]?.click()}
+          {/* Inline actions for processed docs */}
+          {doc.status === "procesado" && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              {onReplaceDocument && (
+                <>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    ref={(el) => { replaceRefs.current[doc.tipo] = el; }}
+                    onChange={(e) => handleReplaceChange(doc.tipo, e)}
+                  />
+                  <button
+                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    disabled={isUploading}
+                    onClick={() => replaceRefs.current[doc.tipo]?.click()}
+                    title="Reemplazar"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+              {onDeleteDocument && (
+                <button
+                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                  onClick={() => setDeleteTarget(doc.tipo)}
+                  title="Eliminar"
                 >
-                  <RefreshCw className="h-3 w-3" /> Reemplazar
-                </Button>
-              </>
-            )}
-            {onDeleteDocument && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-destructive hover:text-destructive gap-1"
-                onClick={() => setDeleteTarget(doc.tipo)}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        )}
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Upload button for pending docs */}
         {doc.status === "pendiente" && onUploadDocument && (
@@ -143,14 +143,14 @@ const ExpedienteSidebar = ({
             <Button
               variant="outline"
               size="sm"
-              className="w-full h-7 text-xs"
+              className="w-full h-7 text-xs border-dashed border-notarial-gold/50 text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold"
               disabled={isUploading}
               onClick={() => fileRefs.current[doc.tipo]?.click()}
             >
               {isUploading ? (
-                <><Clock className="mr-1 h-3 w-3 animate-spin" /> Procesando...</>
+                <><Clock className="mr-1.5 h-3 w-3 animate-spin" /> Procesando...</>
               ) : (
-                <><Upload className="mr-1 h-3 w-3" /> Subir documento</>
+                <><Upload className="mr-1.5 h-3 w-3" /> Subir documento</>
               )}
             </Button>
           </div>
@@ -160,26 +160,27 @@ const ExpedienteSidebar = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-muted/30">
-      {/* Header */}
-      <div className="p-4 border-b">
+    <div className="h-full flex flex-col">
+      {/* Header — notarial dark */}
+      <div className="shrink-0 p-4 pb-3 bg-[hsl(var(--notarial-dark))] text-white">
         <h3 className="text-sm font-semibold flex items-center gap-2">
-          <FileText className="h-4 w-4" />
-          Expediente del Trámite
+          <FileText className="h-4 w-4 text-notarial-gold" />
+          Documentos Cargados
         </h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          {procesados}/{total} documentos procesados
-        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <Progress value={progressPct} className="h-1.5 flex-1 bg-white/20 [&>div]:bg-notarial-gold" />
+          <span className="text-[10px] text-white/70 shrink-0">{procesados}/{total}</span>
+        </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-3 space-y-4">
           {/* Section 1: Documentos Obligatorios */}
           <div>
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Documentos Obligatorios
             </p>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {obligatorios.map(renderDocCard)}
             </div>
           </div>
@@ -191,7 +192,7 @@ const ExpedienteSidebar = ({
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Cédulas de Identidad
             </p>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {cedulas.map(renderDocCard)}
               {cedulas.length === 0 && (
                 <p className="text-xs text-muted-foreground italic">Sin cédulas cargadas</p>
@@ -209,7 +210,7 @@ const ExpedienteSidebar = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full h-8 text-xs border-dashed gap-1"
+                  className="w-full h-8 text-xs border-dashed border-notarial-gold/50 text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold gap-1"
                   onClick={() => addCedulaRef.current?.click()}
                   disabled={!!uploading}
                 >
@@ -228,30 +229,32 @@ const ExpedienteSidebar = ({
             </p>
             <div className="space-y-3">
               {/* Toggle: Crédito Hipotecario */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium cursor-pointer" htmlFor="toggle-credito">
+                  <label className="text-sm font-medium cursor-pointer" htmlFor="toggle-credito">
                     ¿Tiene Crédito Hipotecario?
                   </label>
                   <Switch
                     id="toggle-credito"
                     checked={toggles?.tieneCredito ?? false}
                     onCheckedChange={(v) => onToggleChange?.("tieneCredito", v)}
+                    className="data-[state=checked]:bg-notarial-green"
                   />
                 </div>
                 {toggles?.tieneCredito && opcionales.filter(d => d.tipo === "carta_credito").map(renderDocCard)}
               </div>
 
               {/* Toggle: Apoderado */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium cursor-pointer" htmlFor="toggle-apoderado">
+                  <label className="text-sm font-medium cursor-pointer" htmlFor="toggle-apoderado">
                     ¿Tiene Apoderado?
                   </label>
                   <Switch
                     id="toggle-apoderado"
                     checked={toggles?.tieneApoderado ?? false}
                     onCheckedChange={(v) => onToggleChange?.("tieneApoderado", v)}
+                    className="data-[state=checked]:bg-notarial-green"
                   />
                 </div>
                 {toggles?.tieneApoderado && opcionales.filter(d => d.tipo === "poder_notarial").map(renderDocCard)}
