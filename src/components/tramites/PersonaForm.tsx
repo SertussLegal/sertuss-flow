@@ -9,9 +9,6 @@ import { Plus, Trash2, Info, AlertTriangle, FileWarning } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Persona, NivelConfianza } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
 
@@ -25,8 +22,6 @@ interface PersonaFormProps {
 }
 
 const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
-  const { profile, credits, refreshCredits } = useAuth();
-  const { toast } = useToast();
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
 
@@ -297,12 +292,5 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
   );
 };
 
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 
 export default PersonaForm;
