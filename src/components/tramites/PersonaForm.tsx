@@ -27,10 +27,8 @@ interface PersonaFormProps {
 const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
   const { profile, credits, refreshCredits } = useAuth();
   const { toast } = useToast();
-  const [scanningIndex, setScanningIndex] = useState<number | null>(null);
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
-  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const suggestionKey = (index: number, field: string) => `${index}:${field}`;
 
@@ -235,30 +233,6 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
               {title.slice(0, -2).replace(/e$/, "")}or {index + 1}
             </span>
             <div className="flex items-center gap-2">
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                ref={(el) => { fileInputRefs.current[index] = el; }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleScanCedula(index, file);
-                  e.target.value = "";
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={scanningIndex !== null || credits === 0}
-                onClick={() => fileInputRefs.current[index]?.click()}
-              >
-                {scanningIndex === index ? (
-                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
-                ) : (
-                  <><Upload className="mr-1 h-4 w-4" /> Cargar Cédula</>
-                )}
-              </Button>
               {personas.length > 1 && (
                 <Button type="button" variant="ghost" size="icon" onClick={() => removePersona(index)}>
                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -272,7 +246,7 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
             <Alert className="border-dashed border-muted-foreground/40 bg-muted/30">
               <FileWarning className="h-4 w-4 text-muted-foreground" />
               <AlertDescription className="text-sm text-muted-foreground">
-                No se cargó cédula para esta persona. Puede cargarla aquí o llenar los datos manualmente.
+                Sin cédula. Súbela en <strong>📄 Documentos Cargados</strong> o completa manualmente.
               </AlertDescription>
             </Alert>
           )}
