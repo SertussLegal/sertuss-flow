@@ -369,10 +369,13 @@ const DocxPreview = ({
     position: { top: number; left: number };
   } | null>(null);
 
-  // Selection toolbar state
+  // Selection toolbar state (inline edit)
   const [selectionToolbar, setSelectionToolbar] = useState<{
     text: string;
     position: { top: number; left: number };
+    contextBefore: string;
+    contextAfter: string;
+    occurrenceCount: number;
   } | null>(null);
 
   // Sugerencia popover state
@@ -1097,16 +1100,13 @@ const DocxPreview = ({
         />
       )}
 
-      {/* Selection toolbar */}
+      {/* Inline edit toolbar */}
       {selectionToolbar && (
-        <SelectionToolbar
+        <InlineEditToolbar
           selectedText={selectionToolbar.text}
           position={selectionToolbar.position}
-          existingVariables={[
-            ...Object.keys(buildReplacements()),
-            ...customVariables.map((cv) => cv.variableName),
-          ]}
-          onCreateVariable={handleCreateVariable}
+          occurrenceCount={selectionToolbar.occurrenceCount}
+          onApply={handleApplyOverride}
           onClose={() => setSelectionToolbar(null)}
         />
       )}
