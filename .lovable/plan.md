@@ -1,111 +1,128 @@
 
 
-## Auditoría del Plan: 3 Problemas Críticos Detectados
+## Plan: Edición Semántica por Anclaje — Con Mapa de Conflictos de Variables
 
-### Problema 1: Mapeo de tipos INCORRECTO (BUG ACTIVO)
-
-En `Validacion.tsx` líneas 941-943, `handleSidebarUpload` mapea los tipos de forma errónea:
+### Contexto: Los 3 sistemas de variables actuales
 
 ```text
-carta_credito  → certificado_tradicion  ❌ (debería ser "carta_credito")
-poder_notarial → escritura_antecedente   ❌ (debería ser "poder_banco")
+Sistema 1: Template Variables {llaves}
+  - Origen: plantilla DOCX con {nombre_variable}
+  - Pipeline: buildReplacements() → 60+ campos → regex {key} → <span data-field>
+  - Edición: click → VariableEditPopover → handleFieldEdit → actualiza estado React
+  - DOCX: Docxtemplater resuelve antes de que overrides actúen
+  - PRIORIDAD: 1 (máxima)
+
+Sistema 2: Custom Variables (SE ELIMINA)
+  - Origen: usuario selecciona texto libre → nombra variable
+  - Pipeline: regex global sobre originalText → <span data-custom-var>
+  - Edición: click → VariableEditPopover vía __custom__${id}
+  - DOCX: split().join() sobre XML crudo (frágil)
+  - Persistencia: metadata.custom_variables
+
+Sistema 3: Sugerencias IA
+  - Origen: SERTUSS-EDITOR-PRO genera SugerenciaIA[]
+  - Pipeline: resaltado naranja <mark data-sugerencia-idx>
+  - Acción: Aceptar → handleSugerenciaAccepted → actualiza campo + textoFinalWord
+  - NO persisten como overrides — se eliminan al aceptar
 ```
 
-Esto significa que si alguien sube una carta de crédito desde el panel, el OCR la procesa como si fuera un certificado de tradición — extrayendo datos completamente incorrectos.
+### Conflictos identificados y resoluciones
 
-**Fix**: Corregir el mapeo a los tipos reales que `scan-document` espera.
+| Conflicto | Detalle | Resolución |
+|---|---|---|
+| Override sobre template var | Usuario selecciona texto que es un `{vendedor_nombre}` ya resuelto | `handleMouseUp` detecta `data-field` en el elemento padre → no abre InlineEditToolbar, abre VariableEditPopover |
+| Override sobre sugerencia IA | Usuario selecciona texto resaltado naranja | `handleMouseUp` detecta `data-sugerencia-idx` → no abre InlineEditToolbar |
+| Override sobre otro override | Usuario selecciona texto ya overrideado (púrpura) | `handleMouseUp` detecta `data-override` → abre VariableEditPopover para editar el override existente (no crear uno nuevo) |
+| `handleFieldEdit` routing | Hoy usa `__custom__` prefix para custom vars | Cambiar a `__override__` prefix; misma lógica pero actualiza `overrides` array |
+| Orden de aplicación HTML | Custom vars se aplican después de template vars (línea 669) | Overrides se aplican en la misma posición — después de template vars, antes de sugerencias IA |
+| DOCX `split().join()` | Operación frágil que no respeta nodos XML | Reemplazar con algoritmo de virtualización de `<w:t>` nodes |
+| Persistencia key | `metadata.custom_variables` en 3 sitios (líneas 193, 624, 1157) | Cambiar las 3 a `metadata.overrides` + fallback migración en loadTramite |
+| `buildReplacements` timing | Template vars se resuelven primero (línea 648) | Sin cambio — overrides operan sobre texto libre que queda DESPUÉS de que las template vars se resuelven |
+| `DOMPurify` bloquea atributos | `data-override` no está en `ALLOWED_ATTR` (línea 152) | Añadir `"data-override"` al array |
+
+### Paso 1: `src/lib/types.ts`
+
+- Eliminar `CustomVariable` interface
+- Añadir `TextOverride` con `id`, `originalText`, `newText`, `contextBefore`, `contextAfter`, `replaceAll`, `createdAt`
+
+### Paso 2: `src/components/tramites/InlineEditToolbar.tsx` (nuevo)
+
+- Input directo: texto seleccionado + campo reemplazo + Enter
+- Validación: rechaza si contiene `{` y `}` (toast redirige a formulario)
+- Validación: rechaza si >300 chars (toast)
+- Si ocurrencias >1: botones "Solo esta" / "Todas (N)"
+- Props: `selectedText`, `position`, `occurrenceCount`, `onApply(newText, replaceAll)`, `onClose`
+
+### Paso 3: `src/components/tramites/DocxPreview.tsx`
+
+**Props**: reemplazar `customVariables/onCreateCustomVariable` → `overrides/onCreateOverride/onRemoveOverride`
+
+**DOMPurify**: añadir `"data-override"` a `ALLOWED_ATTR`
+
+**Pipeline** (líneas 669-678): Reemplazar bloque de custom variables:
+- `replaceAll: true` → regex global, wrap en `<span data-override="id">` con estilo púrpura (distinto del verde de template vars)
+- `replaceAll: false` → buscar con contexto normalizado; fallback a primera ocurrencia
+- **Pipeline puro**: todo el bloque 626-716 se mueve a `useMemo` con deps `[baseHtml, vendedores, compradores, inmueble, actos, overrides, sugerenciasIA, slotsPendientes]` → elimina el debounce manual
+
+**`handleContentClick`** (línea 784): `data-custom-var` → `data-override`, buscar en `overrides`, field prefix `__override__`
+
+**`handleMouseUp`** (línea 801):
+- Extraer `contextBefore`/`contextAfter` (40 chars) del Range
+- Guardia: si `anchorEl` tiene `data-field` OR `data-override` OR `data-sugerencia-idx` → no abrir toolbar
+- Contar ocurrencias del texto en el textContent del contenedor
+- Abrir `InlineEditToolbar` en vez de `SelectionToolbar`
+
+**Panel "Cambios"** en barra de navegación: botón `Cambios (N)` con Popover listando overrides + botón Deshacer
+
+### Paso 4: `src/pages/Validacion.tsx`
+
+**Estado** (línea 86): `customVariables` → `overrides: TextOverride[]`
+
+**`loadTramite`** (línea 193): leer `meta.overrides` con fallback de migración:
+```
+if meta.overrides → setOverrides
+else if meta.custom_variables → convertir cada CV a TextOverride con replaceAll:true, contexto vacío
+```
+
+**`handleCreateOverride`** (reemplaza línea 1038): crea TextOverride y añade al array
+
+**`handleRemoveOverride`**: filtra por id, toast "Cambio deshecho"
+
+**`handleFieldEdit`** (línea 680): `__custom__` → `__override__`, actualiza `overrides` array
+
+**Persistencia** (líneas 624, 1157): `custom_variables` → `overrides`
+
+**`handleDownloadWord`** (líneas 1556-1567) — Algoritmo robusto:
+1. Extraer nodos `<w:t>` con regex, construir texto plano virtualizado con mapa de posiciones
+2. Para cada override: buscar en texto plano (con normalización whitespace)
+3. Mapear posición encontrada a nodos `<w:t>` afectados
+4. Consolidar: poner `newText` (XML-escaped) en primer nodo, vaciar contenido de los demás
+5. Reconstruir XML
+
+**Props JSX**: actualizar todas las refs a `customVariables` → `overrides` y callbacks correspondientes
+
+### Paso 5: Eliminar `src/components/tramites/SelectionToolbar.tsx`
 
 ---
 
-### Problema 2: Sin hidratación de `actos` post-OCR
+### Diferenciación visual (UX)
 
-Cuando `ActosForm` manejaba la carga internamente, `handleScanHipoteca` (líneas 111-130) aplicaba los resultados OCR directamente al estado `actos`:
-- `poder_banco` → 9 campos (entidad_bancaria, apoderado_nombre, apoderado_cedula, etc.)
-- `carta_credito` → 2 campos (valor_hipoteca, entidad_bancaria)
-
-`handleSidebarUpload` **no tiene esta lógica**. Solo hidrata `inmueble`, `personas` y `documento`. Al mover los botones al panel, los datos del poder y la carta **nunca llegarán a los campos de Actos**.
-
-**Fix**: Añadir bloques de hidratación de `actos` en `handleSidebarUpload` para `poder_notarial` y `carta_credito`.
-
----
-
-### Problema 3: Sin consumo de créditos
-
-`ActosForm.handleScanHipoteca` llama `consume_credit` antes del OCR y `restore_credit` en caso de error (líneas 94-98, 134-135). `handleSidebarUpload` **no consume créditos**. Esto significa que cada escaneo desde el panel es gratuito — un bug de facturación.
-
-**Fix**: Añadir `consume_credit` al inicio y `restore_credit` en el catch de `handleSidebarUpload`.
-
----
-
-### Problema 4 (menor): Botones de ActosForm aún presentes
-
-El plan anterior no incluía `ActosForm.tsx` en los archivos a modificar. Los botones "Cargar Poder" y "Cargar Carta" (líneas 213-216) siguen ahí, duplicando la funcionalidad del panel.
-
----
-
-## Plan Corregido
-
-### Paso 1: `src/pages/Validacion.tsx` — Corregir `handleSidebarUpload`
-
-**1a. Consumo de créditos** — Añadir al inicio:
-```typescript
-const { data: hasCredit } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-if (!hasCredit) {
-  toast({ title: "Sin créditos", variant: "destructive" });
-  setSidebarUploading(null);
-  return;
-}
-```
-Y en el catch: `await supabase.rpc("restore_credit", { org_id: profile.organization_id });`
-Añadir `await refreshCredits();` en el finally.
-
-**1b. Mapeo correcto de tipos** (líneas 941-943):
-```typescript
-const scanType = tipo === "carta_credito" ? "carta_credito"
-  : tipo === "poder_notarial" ? "poder_banco"
-  : tipo as any;
+```text
+Template var resuelta:  verde #065f46, borde dashed verde, data-field
+Template var pendiente: fondo rojo/naranja, subrayado, data-field
+Override del usuario:   púrpura #4c1d95, borde dashed #7c3aed, data-override
+Sugerencia IA:          naranja <mark>, data-sugerencia-idx
 ```
 
-**1c. Hidratación de `actos`** — Después de la hidratación de `inmueble`/`personas`/`documento`, añadir:
-```typescript
-if (tipo === "poder_notarial" && d) {
-  setActos(prev => ({
-    ...prev,
-    entidad_bancaria: d.entidad_bancaria || prev.entidad_bancaria,
-    apoderado_nombre: d.apoderado_nombre || prev.apoderado_nombre,
-    apoderado_cedula: d.apoderado_cedula || prev.apoderado_cedula,
-    apoderado_expedida_en: d.apoderado_expedida_en || prev.apoderado_expedida_en,
-    apoderado_escritura_poder: d.escritura_poder_num || prev.apoderado_escritura_poder,
-    apoderado_fecha_poder: d.fecha_poder || prev.apoderado_fecha_poder,
-    apoderado_notaria_poder: d.notaria_poder || prev.apoderado_notaria_poder,
-    apoderado_notaria_ciudad: d.notaria_poder_ciudad || prev.apoderado_notaria_ciudad,
-    apoderado_email: d.apoderado_email || prev.apoderado_email,
-  }));
-}
-if (tipo === "carta_credito" && d) {
-  setActos(prev => ({
-    ...prev,
-    valor_hipoteca: d.valor_credito || prev.valor_hipoteca,
-    entidad_bancaria: d.entidad_bancaria || prev.entidad_bancaria,
-  }));
-}
-```
-
-**1d. Actualizar dependencias del useCallback** — Añadir `refreshCredits`, `setActos`, `credits`.
-
-### Paso 2: `src/components/tramites/ActosForm.tsx` — Limpiar
-
-- Eliminar: `poderInputRef`, `cartaInputRef`, `scanning`, `handleScanHipoteca`, `renderUploadButton`, `fileToBase64`, imports de `Upload`, `Loader2`, `supabase`, `useAuth`, `useToast`, type `HipotecaScanType`
-- Eliminar el bloque de botones (líneas 213-216)
-- Mantener: `ocrFields`, `suggestions`, `applyOcrResults`, `update`, `ocr()`, `wrapWithSuggestion` — estos podrían usarse si en el futuro se inyectan sugerencias desde el padre
-- El header de hipoteca queda: solo `<h4>Datos de Hipoteca</h4>` sin botones
-
-### Resumen
+### Archivos afectados
 
 | Archivo | Cambio |
 |---|---|
-| `Validacion.tsx` | Créditos + mapeo correcto + hidratación actos |
-| `ActosForm.tsx` | Eliminar botones, refs, handlers de carga |
+| `src/lib/types.ts` | Eliminar `CustomVariable`, añadir `TextOverride` |
+| `src/components/tramites/InlineEditToolbar.tsx` | Nuevo componente |
+| `src/components/tramites/SelectionToolbar.tsx` | Eliminar |
+| `src/components/tramites/DocxPreview.tsx` | Props, override pipeline con useMemo, panel cambios |
+| `src/pages/Validacion.tsx` | Estado, handlers, persistencia, algoritmo DOCX robusto |
 
-2 archivos. Sin migraciones. 3 bugs críticos corregidos.
+5 archivos. Sin migraciones DB. Sin edge functions.
 
