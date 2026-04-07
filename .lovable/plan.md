@@ -1,66 +1,27 @@
 
 
-## Plan: Directorio de Notarías Multitenant con Geometría de Página
+## Auditoría: Flujo OCR → Datos de Notaría — Estado Actual
 
-### Contexto
+### Resultado: El pipeline ya funciona correctamente sin el selector de notaría
 
-Actualmente `notaria_styles` es 1:1 con organización (un solo registro). El usuario es un abogado que trabaja con múltiples notarías, cada una con identidad física, márgenes de papel sellado y preferencias de redacción distintas. El refactor convierte esto en un directorio 1:N.
+La extracción OCR de datos notariales es **independiente** del selector de notaría en la UI. Son dos flujos separados:
 
-### Fase 1: Directorio + Geometría de Página
+### Flujo 1: OCR (extracción de datos — siempre activo)
+- `scan-document` extrae de **cada documento** los datos de notaría:
+  - **Certificado de Tradición**: `notaria_origen`, `numero_escritura`, `fecha_documento`
+  - **Escritura Antecedente**: `notaria`, `ciudad_notaria`, `comparecientes[]` (con estado civil, dirección, municipio)
+  - **Título Antecedente**: `notaria_documento`, `ciudad_documento`
+- Estos datos se guardan en `metadata.extracted_documento` y `metadata.extracted_escritura_comparecientes`
+- Se usan directamente en el template DOCX: `notaria_previa_numero`, `notaria_previa_circulo`, etc.
 
-**Migración DB**
-- Quitar constraint unique de `notaria_styles.organization_id`
-- Agregar columnas de geometría: `margin_top_mm` (default 30), `margin_bottom_mm` (default 25), `margin_left_mm` (default 35), `margin_right_mm` (default 25), `line_height_pt` (default 18), `lineas_por_pagina` (default 30)
-- Agregar columnas de preferencias de redacción: `precios_mayusculas` (boolean, default true), `formato_fecha` (text, default 'notarial'), `linderos_formato` (text, default 'bloque')
-- Agregar `tramites.notaria_style_id uuid` (nullable, FK a `notaria_styles.id`)
+### Flujo 2: Selector de Notaría (preferencias de estilo — opcional)
+- Solo afecta **formato de redacción**: estilo de linderos, márgenes, cláusulas personalizadas
+- Si no hay notaría configurada, `process-expediente` funciona sin ella (línea 45: `estiloNotaria` puede ser `null`)
+- El prompt SERTUSS-EDITOR-PRO aplica estilo genérico si no hay config
 
-**`NotariaSettings.tsx` → Directorio**
-- Vista de lista con cards de todas las notarías de la organización
-- Cada card muestra: nombre, ciudad, notario titular, badge con conteo de trámites asociados
-- Botón "Agregar Notaría" abre un Dialog con el formulario completo:
-  - Sección 1: Identidad (nombre, ciudad, notario)
-  - Sección 2: Geometría de Página (márgenes en mm, interlineado, líneas por página) con presets: "Estándar 30 líneas", "Compacto 35 líneas", "Personalizado"
-  - Sección 3: Preferencias de Redacción (estilo linderos, precios en mayúsculas, formato fecha)
-  - Sección 4: Cláusulas personalizadas (existente)
-- Editar y eliminar por notaría
+### Conclusión: No se requieren cambios
 
-**`DocumentUploadStep.tsx` → Selector de Notaría**
-- Al inicio del paso 1, antes de los documentos: combo/autocomplete "¿En qué notaría se otorgará?"
-- Lista las notarías guardadas de la organización
-- Opción "+ Nueva notaría" abre modal de Configuración Rápida (solo nombre, ciudad, notario + preset de márgenes)
-- Al continuar, persiste `notaria_style_id` en el trámite
+Los datos legales (notaría de origen, título antecedente, comparecientes) se extraen del OCR y fluyen al template independientemente del selector. El selector de notaría solo controla preferencias estéticas de redacción. **Ocultar el selector no afecta la extracción ni la redacción legal.**
 
-**`Validacion.tsx`**
-- `loadTramite` carga la notaría vía `notaria_style_id` del trámite
-- Pasa datos de geometría y preferencias a `DocxPreview`
-- Alerta de discrepancia: si la escritura antecedente menciona una notaría diferente a la seleccionada, muestra banner amarillo: "El título viene de la Notaría X, pero estás redactando para la Notaría Y"
-
-**`DocxPreview.tsx`**
-- Recibe props de geometría (`margins`, `lineHeight`) y aplica estilos CSS inline al contenedor del preview
-- Respeta `precios_mayusculas` al renderizar montos
-- Respeta `formato_fecha` al renderizar fechas
-- Respeta `linderos_formato` al renderizar linderos
-
-**`process-expediente/index.ts`**
-- Busca `notaria_styles` por `notaria_style_id` del trámite (fallback: primera de la org)
-
-### Fase 2: Redacción Dinámica (posterior, no se implementa ahora)
-
-- Jerarquía de estilos: Estilo de Notaría (base) + Override del Abogado (por trámite)
-- Templates de redacción por tipo de acto vinculados a notaría
-- Historial de preferencias por notaría (aprendizaje)
-
-### Resumen de archivos
-
-| Archivo | Cambio |
-|---|---|
-| Migración DB | Geometría + preferencias + `notaria_style_id` en tramites |
-| `NotariaSettings.tsx` | Directorio CRUD con cards + formulario con geometría |
-| `DocumentUploadStep.tsx` | Selector/autocomplete de notaría destino |
-| `Validacion.tsx` | Cargar notaría por trámite, alerta de discrepancia |
-| `DocxPreview.tsx` | Aplicar márgenes y preferencias de redacción dinámicamente |
-| `process-expediente/index.ts` | Buscar notaría por `notaria_style_id` |
-| `Dashboard.tsx` | Renombrar "Notaría" → "Notarías" |
-
-7 archivos + 1 migración DB. Fase 1 solamente.
+No hay archivos que modificar.
 
