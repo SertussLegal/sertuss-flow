@@ -1,114 +1,115 @@
 
 
-## Plan: Expediente Sidebar Interactivo — Implementación Completa
+## Plan: Rediseño UX del Expediente Sidebar — Scroll, Jerarquía y Paleta Notarial
 
-### Paso 1: `src/components/tramites/ExpedienteSidebar.tsx` — Reescritura completa
+### Problemas detectados
 
-**Nuevas props e imports:**
-```typescript
-interface ExpedienteSidebarProps {
-  documentos: ExpedienteDoc[];
-  onUploadDocument?: (tipo: string, file: File) => void;
-  onReplaceDocument?: (tipo: string, file: File) => void;
-  onDeleteDocument?: (tipo: string) => void;
-  onAddCedula?: (file: File) => void;
-  onToggleChange?: (toggle: string, value: boolean) => void;
-  toggles?: { tieneCredito: boolean; tieneApoderado: boolean };
-  uploading?: string | null;
-}
+1. **Scroll cortado**: `SheetContent` tiene un `SheetHeader` fijo ("Documentos Cargados") + el sidebar tiene su propio header ("Expediente del Trámite") = doble cabecera que roba ~100px. El `ScrollArea` con `flex-1` sin `min-h-0` no calcula correctamente la altura restante.
+
+2. **Header duplicado**: El Sheet dice "Documentos Cargados" y el sidebar repite "Expediente del Trámite".
+
+3. **Colores fuera de paleta**: Usa `bg-green-50`, `bg-amber-50`, `bg-red-50` genéricos en vez de la paleta notarial (`notarial-dark`, `notarial-gold`, `notarial-green`, `notarial-blue`).
+
+4. **Badges redundantes**: Icono verde + fondo verde + badge "Procesado" = triple señal para lo mismo.
+
+5. **Botones "Reemplazar" y "Eliminar" demasiado prominentes**: Ocupan una fila completa por cada documento, desperdiciando espacio vertical.
+
+### Solución
+
+#### Archivo 1: `src/pages/Validacion.tsx` — Eliminar SheetHeader redundante
+
+Quitar el `<SheetHeader>` con `<SheetTitle>` del Sheet (líneas 1982-1984). El sidebar absorbe el título. El `SheetContent` queda solo con el sidebar, maximizando espacio vertical.
+
+```text
+Antes:                          Después:
+┌─ SheetContent ──────┐        ┌─ SheetContent ──────┐
+│ SheetHeader          │        │                     │
+│  "Documentos Cargados"│       │ ExpedienteSidebar   │
+│ ExpedienteSidebar    │        │  (con header propio) │
+│  Header propio       │        │                     │
+│  ScrollArea (cortado)│        │  ScrollArea (full)   │
+└─────────────────────┘        └─────────────────────┘
 ```
 
-Imports: `RefreshCw`, `Trash2`, `Plus` de Lucide + `Switch` de ui + `AlertDialog` components + `Separator`.
+#### Archivo 2: `src/components/tramites/ExpedienteSidebar.tsx` — Rediseño completo
 
-**Layout en 3 secciones:**
+**A. Header unificado con paleta notarial:**
+- Fondo `bg-notarial-dark text-white` (igual que el header principal de la página)
+- Título: "Documentos Cargados" (absorbe el título del Sheet)
+- Subtítulo con contador: "3/5 procesados"
+- Barra de progreso sutil con `bg-notarial-gold`
 
-1. **Documentos Obligatorios** — filtrar docs con tipo `certificado_tradicion`, `predial`, `escritura_antecedente`
-2. **Cédulas de Identidad** — filtrar docs con tipo que empieza con `cedula_` + botón `[+ Agregar Cédula]`
-3. **Documentos Opcionales** — 2 `Switch` toggles controlados por prop `toggles`
+**B. Cards de documentos — diseño limpio y compacto:**
+- Eliminar fondos de colores genéricos (`bg-green-50`, etc.)
+- Usar fondo neutro `bg-card` con borde izquierdo de 3px como indicador de estado:
+  - Procesado: `border-l-notarial-green`
+  - Pendiente: `border-l-notarial-gold`
+  - Error: `border-l-destructive`
+- Eliminar badges "Procesado"/"Pendiente" — el borde de color + icono ya comunican el estado
+- Icono de estado: `CheckCircle` (14px, notarial-green), `Clock` (14px, notarial-gold)
 
-**Cada doc procesado** muestra fila de acciones:
-- `RefreshCw` (ghost, sm) → file input oculto → `onReplaceDocument(tipo, file)`
-- `Trash2` (ghost, sm, text-destructive) → abre AlertDialog → `onDeleteDocument(tipo)`
+**C. Acciones compactas en línea (no en fila separada):**
+- Mover `RefreshCw` y `Trash2` al extremo derecho de la primera fila del card (junto al icono de estado)
+- Tamaño: 14px, color `muted-foreground`, hover con opacidad
+- Eliminar la fila separada de botones "Reemplazar" con texto — solo iconos
+- Esto ahorra ~28px por documento procesado
 
-**AlertDialog** con estado local `deleteTarget: string | null`:
-- Título: "¿Eliminar documento?"
-- Descripción: "Se borrarán los datos extraídos de este documento en el formulario y el documento final."
-- Acciones: "Cancelar" / "Eliminar" (destructive)
+**D. Botón "Subir documento" para pendientes:**
+- Estilo: `border-dashed border-notarial-gold/50 text-notarial-gold hover:bg-notarial-gold/10`
+- Consistente con el botón "+ Agregar Cédula"
 
-**Sección Opcionales:**
-- Switch "¿Tiene Crédito Hipotecario?" → `onToggleChange("tieneCredito", value)`
-- Switch "¿Tiene Apoderado?" → `onToggleChange("tieneApoderado", value)`
-- Al activar, el slot correspondiente ya aparece en `documentos` (gestionado por Validacion.tsx)
+**E. Sección "+ Agregar Cédula":**
+- Estilo: `border-dashed border-notarial-gold/50 text-notarial-gold`
 
-**Botón "+ Agregar Cédula":**
-- File input oculto → `onAddCedula(file)`
-- Estilo: `variant="outline"`, `dashed border`, icono `Plus`
+**F. Toggles opcionales:**
+- Labels con `text-sm` (no `text-xs`) para mejor legibilidad
+- Switch con color `data-[state=checked]:bg-notarial-green`
 
----
+**G. Scroll fix:**
+- Root: `h-full flex flex-col`
+- Header: `shrink-0`
+- ScrollArea: `flex-1 min-h-0` — el `min-h-0` es la clave para que flexbox calcule correctamente
 
-### Paso 2: `src/pages/Validacion.tsx` — Estado + Handlers
+### Resultado visual esperado
 
-**2a. Estado de toggles** (~línea 244):
-```typescript
-const [docToggles, setDocToggles] = useState({ tieneCredito: false, tieneApoderado: false });
+```text
+┌─────────────────────────────┐
+│ ██ Documentos Cargados      │  ← bg-notarial-dark
+│    3/5 procesados [===--]   │  ← barra dorada
+├─────────────────────────────┤
+│ DOCUMENTOS OBLIGATORIOS     │
+│                             │
+│ ▎✓ Cert. Tradición    ↻ 🗑  │  ← borde verde, iconos sutiles
+│ ▎  cert_tradicion.pdf       │
+│                             │
+│ ▎✓ Predial            ↻ 🗑  │
+│ ▎  predial.jpg              │
+│                             │
+│ ▎⏳ Escritura Antecedente   │  ← borde dorado
+│ ▎  [--- Subir documento ---]│  ← dashed dorado
+│                             │
+│ ─────────────────────────── │
+│ CÉDULAS DE IDENTIDAD        │
+│                             │
+│ ▎✓ JOHN MIGUEL MAYA   ↻ 🗑  │
+│ ▎  CC 79681841              │
+│                             │
+│ [--- + Agregar Cédula ---]  │
+│                             │
+│ ─────────────────────────── │
+│ DOCUMENTOS OPCIONALES       │
+│                             │
+│ ¿Crédito Hipotecario?  [○] │
+│ ¿Tiene Apoderado?      [○] │
+└─────────────────────────────┘
 ```
-Inicializar en `loadTramite` desde `meta?.toggles` (ya existe parcialmente en línea 598-601), expandir para setear `docToggles`.
-
-**2b. `handleSidebarDelete(tipo: string)`:**
-
-Limpieza profunda por tipo:
-- `certificado_tradicion` → `setInmueble(createEmptyInmueble())`, borrar `extracted_inmueble` de metadata
-- `predial` → `setExtractedPredial(null)`, borrar `extracted_predial`
-- `escritura_antecedente` → `setExtractedDocumento(null)`, borrar `extracted_documento`, `extracted_escritura_comparecientes`, `extracted_titulo_antecedente`
-- `cedula_*` → filtrar persona del array vendedores/compradores por cédula, borrar de `extracted_cedulas_detail`
-- `carta_credito` → limpiar campos hipoteca en actos (`valor_hipoteca`, `entidad_bancaria` si vienen de carta), desactivar toggle, borrar `extracted_carta_credito`
-- `poder_notarial` → limpiar campos apoderado en actos, desactivar toggle, borrar `extracted_poder_notarial`
-
-Actualizar `expedienteDocs`: cambiar status a `"pendiente"` (o eliminar si es cédula extra).
-Persistir metadata limpia en DB con read-then-merge.
-
-**2c. `handleSidebarReplace(tipo: string, file: File)`:**
-
-1. Ejecutar la misma limpieza que `handleSidebarDelete` (el usuario ve campos volver a `___________`)
-2. Luego llamar `handleSidebarUpload(tipo, file)` para re-procesar
-
-**2d. `handleToggleChange(toggle: string, value: boolean)`:**
-
-1. `setDocToggles(prev => ({ ...prev, [toggle]: value }))`
-2. Si activado: agregar slot pendiente a `expedienteDocs`
-3. Si desactivado: eliminar slot + llamar limpieza de datos correspondiente
-4. Si `tieneCredito`: sincronizar `setActos(prev => ({ ...prev, es_hipoteca: value }))`
-5. Persistir `toggles` en metadata
-
-**2e. `handleSidebarAddCedula(file: File)`:**
-
-1. Consumir crédito
-2. Llamar `handleSidebarUpload("cedula", file)` — el scan-document procesa como cédula
-3. El handler existente ya agrega la persona via `handlePersonasExtracted`
-4. Agregar entrada nueva a `expedienteDocs` con nombre extraído
-
-**2f. Pasar nuevas props al Sheet** (líneas 1846-1850):
-```tsx
-<ExpedienteSidebar
-  documentos={expedienteDocs}
-  onUploadDocument={handleSidebarUpload}
-  onReplaceDocument={handleSidebarReplace}
-  onDeleteDocument={handleSidebarDelete}
-  onAddCedula={handleSidebarAddCedula}
-  onToggleChange={handleToggleChange}
-  toggles={docToggles}
-  uploading={sidebarUploading}
-/>
-```
-
----
 
 ### Archivos afectados
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/ExpedienteSidebar.tsx` | 3 secciones, acciones Reemplazar/Eliminar, AlertDialog, toggles, + Agregar Cédula |
-| `src/pages/Validacion.tsx` | Estado toggles, handlers replace/delete/toggle/addCedula, pasar props |
+| `src/components/tramites/ExpedienteSidebar.tsx` | Rediseño visual completo: paleta notarial, cards con borde lateral, acciones inline, scroll fix |
+| `src/pages/Validacion.tsx` | Eliminar SheetHeader redundante (3 líneas) |
 
 2 archivos. Sin migraciones. Sin dependencias nuevas.
 
