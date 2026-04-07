@@ -385,6 +385,9 @@ const DocxPreview = ({
     position: { top: number; left: number };
   } | null>(null);
 
+  // Scroll-to-occurrence state for audit navigation
+  const [scrollToOccurrence, setScrollToOccurrence] = useState<{ text: string; index: number } | null>(null);
+
   // Observe container size for responsive scaling
   useEffect(() => {
     const el = containerRef.current;
@@ -757,7 +760,80 @@ const DocxPreview = ({
     return () => cancelAnimationFrame(frame);
   }, [html]);
 
-  // Handle click on variable spans and sugerencia marks
+  // Scroll to specific occurrence for audit navigation
+  useEffect(() => {
+    if (!scrollToOccurrence || !contentRef.current) return;
+    const { text, index } = scrollToOccurrence;
+    const container = contentRef.current;
+
+    // Use TreeWalker to find nth occurrence across text nodes
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const lowerText = text.toLowerCase();
+    let matchCount = 0;
+    let targetNode: Text | null = null;
+    let targetOffset = 0;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      const content = node.textContent || "";
+      const lowerContent = content.toLowerCase();
+      let searchFrom = 0;
+
+      while (searchFrom < lowerContent.length) {
+        const pos = lowerContent.indexOf(lowerText, searchFrom);
+        if (pos === -1) break;
+        if (matchCount === index) {
+          targetNode = node;
+          targetOffset = pos;
+          break;
+        }
+        matchCount++;
+        searchFrom = pos + 1;
+      }
+      if (targetNode) break;
+    }
+
+    if (!targetNode || !targetNode.parentElement) return;
+
+    // Calculate which page this occurrence is on
+    const parentEl = targetNode.parentElement;
+    const rect = parentEl.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const relativeTop = rect.top - containerRect.top + container.scrollTop;
+    const targetPage = Math.floor(relativeTop / CONTENT_HEIGHT);
+    setCurrentPage(Math.max(0, Math.min(pageCount - 1, targetPage)));
+
+    // Create temporary glow span
+    setTimeout(() => {
+      if (!targetNode) return;
+      try {
+        const range = document.createRange();
+        range.setStart(targetNode, targetOffset);
+        range.setEnd(targetNode, Math.min(targetOffset + text.length, (targetNode.textContent || "").length));
+
+        const glowSpan = document.createElement("span");
+        glowSpan.className = "audit-glow";
+        range.surroundContents(glowSpan);
+
+        glowSpan.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        setTimeout(() => {
+          if (glowSpan.parentNode) {
+            const parent = glowSpan.parentNode;
+            while (glowSpan.firstChild) {
+              parent.insertBefore(glowSpan.firstChild, glowSpan);
+            }
+            parent.removeChild(glowSpan);
+          }
+        }, 3000);
+      } catch {
+        // If surroundContents fails (cross-node), just scroll to the parent
+        parentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 50);
+  }, [scrollToOccurrence, pageCount]);
+
+
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
 
@@ -1141,7 +1217,27 @@ const DocxPreview = ({
           position={selectionToolbar.position}
           occurrenceCount={selectionToolbar.occurrenceCount}
           onApply={handleApplyOverride}
-          onClose={() => setSelectionToolbar(null)}
+          onClose={() => {
+            setSelectionToolbar(null);
+            setScrollToOccurrence(null);
+          }}
+          replacements={buildReplacements()}
+          existingOverrides={overrides}
+          onNavigate={(index) => {
+            setScrollToOccurrence(
+              selectionToolbar ? { text: selectionToolbar.text, index } : null
+            );
+          }}
+          onApplyAtIndex={(newText, index) => {
+            if (!onCreateOverride) return;
+            onCreateOverride(
+              selectionToolbar.text,
+              newText,
+              false,
+              selectionToolbar.contextBefore || "",
+              selectionToolbar.contextAfter || ""
+            );
+          }}
         />
       )}
 

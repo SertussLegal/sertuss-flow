@@ -118,3 +118,13 @@
     background: linear-gradient(90deg, #020617 0%, rgba(2, 6, 23, 0.85) 55.77%, #2D5B8C 100%);
   }
 }
+
+@keyframes audit-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+  50% { box-shadow: 0 0 8px 4px rgba(124, 58, 237, 0.4); }
+}
+.audit-glow {
+  animation: audit-glow 1.5s ease-in-out 2;
+  border-radius: 2px;
+  display: inline;
+}
