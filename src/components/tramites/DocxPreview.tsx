@@ -746,13 +746,14 @@ const DocxPreview = ({
     };
   }, [baseHtml, buildReplacements, overrides, textoFinalWord, sugerenciasIA, slotsPendientes]);
 
-  // Measure content and compute pages
+  // Measure content and compute pages using scrollWidth from CSS columns
   useEffect(() => {
-    if (!html || !measureRef.current) return;
+    if (!html || !contentRef.current) return;
     const frame = requestAnimationFrame(() => {
-      if (measureRef.current) {
-        const totalHeight = measureRef.current.scrollHeight;
-        const newPageCount = Math.max(1, Math.ceil(totalHeight / CONTENT_HEIGHT));
+      if (contentRef.current) {
+        const contentWidth = PAGE_WIDTH - PAGE_PADDING_X * 2;
+        const totalWidth = contentRef.current.scrollWidth;
+        const newPageCount = Math.max(1, Math.round(totalWidth / contentWidth));
         setPageCount(newPageCount);
         setCurrentPage((prev) => Math.min(prev, newPageCount - 1));
       }
@@ -795,12 +796,13 @@ const DocxPreview = ({
 
     if (!targetNode || !targetNode.parentElement) return;
 
-    // Calculate which page this occurrence is on
+    // Calculate which page this occurrence is on (horizontal columns)
     const parentEl = targetNode.parentElement;
     const rect = parentEl.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    const relativeTop = rect.top - containerRect.top + container.scrollTop;
-    const targetPage = Math.floor(relativeTop / CONTENT_HEIGHT);
+    const contentWidth = PAGE_WIDTH - PAGE_PADDING_X * 2;
+    const relativeLeft = rect.left - containerRect.left + (currentPage * contentWidth);
+    const targetPage = Math.floor(relativeLeft / contentWidth);
     setCurrentPage(Math.max(0, Math.min(pageCount - 1, targetPage)));
 
     // Create temporary glow span
@@ -1069,25 +1071,7 @@ const DocxPreview = ({
           </span>
         </div>
       )}
-      {/* Hidden measuring container */}
-      <div
-        aria-hidden="true"
-        className="absolute overflow-hidden"
-        style={{ width: 0, height: 0, top: 0, left: 0 }}
-      >
-        <div
-          ref={measureRef}
-          className="prose prose-sm max-w-none pointer-events-none"
-          style={{
-            width: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
-            fontFamily: "'Times New Roman', serif",
-            fontSize: "13px",
-            lineHeight: "1.8",
-            color: "#1a1a1a",
-          }}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      </div>
+      {/* measureRef removed — page count now derived from contentRef.scrollWidth */}
 
       {/* Single page view */}
       <div className="flex-1 min-h-0 overflow-auto p-4 flex justify-center items-start" style={{ overscrollBehavior: 'contain' }}>
@@ -1114,13 +1098,17 @@ const DocxPreview = ({
             <div style={{ height: `${CONTENT_HEIGHT}px`, overflow: "hidden" }}>
               <div
                 ref={contentRef}
-                className="prose prose-sm max-w-none"
+                className="prose prose-sm max-w-none docx-columns-page"
                 style={{
                   fontFamily: "'Times New Roman', serif",
                   fontSize: "13px",
                   lineHeight: "1.8",
                   color: "#1a1a1a",
-                  transform: `translateY(-${currentPage * CONTENT_HEIGHT}px)`,
+                  columnWidth: `${PAGE_WIDTH - PAGE_PADDING_X * 2}px`,
+                  columnGap: "0px",
+                  columnFill: "auto" as any,
+                  height: `${CONTENT_HEIGHT}px`,
+                  transform: `translateX(-${currentPage * (PAGE_WIDTH - PAGE_PADDING_X * 2)}px)`,
                 }}
                 dangerouslySetInnerHTML={{ __html: html }}
                 onClick={handleContentClick}
