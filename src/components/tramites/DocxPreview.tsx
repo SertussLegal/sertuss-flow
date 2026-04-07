@@ -1066,6 +1066,40 @@ const DocxPreview = ({
             {sugerenciasIA.filter(s => s.tipo === "estilo").length} estilos
           </span>
         )}
+        {overrides.length > 0 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                <Pencil className="h-3 w-3" />
+                Cambios ({overrides.length})
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-2" side="top">
+              <p className="text-xs font-semibold text-muted-foreground mb-2">Ediciones manuales</p>
+              <div className="max-h-48 overflow-y-auto space-y-1.5">
+                {overrides.map((ov) => (
+                  <div key={ov.id} className="flex items-start justify-between gap-2 text-xs rounded-md p-1.5 bg-muted/50">
+                    <div className="min-w-0 flex-1">
+                      <span className="line-through text-muted-foreground">"{ov.originalText.slice(0, 25)}{ov.originalText.length > 25 ? "…" : ""}"</span>
+                      <span className="mx-1 text-muted-foreground">→</span>
+                      <span className="font-medium" style={{ color: "#4c1d95" }}>"{ov.newText.slice(0, 25)}{ov.newText.length > 25 ? "…" : ""}"</span>
+                    </div>
+                    {onRemoveOverride && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 shrink-0"
+                        onClick={() => onRemoveOverride(ov.id)}
+                      >
+                        <Undo2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
         <Button
           variant="outline"
           size="icon"
