@@ -3,10 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
@@ -91,6 +91,7 @@ const Validacion = () => {
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
+  const [showDocPanel, setShowDocPanel] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
   const [notariaConfig, setNotariaConfig] = useState<{
     nombre_notaria: string; ciudad: string; notario_titular: string; estilo_linderos: string;
@@ -1622,6 +1623,10 @@ const Validacion = () => {
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
           <div className="ml-auto flex items-center gap-3">
+            <Button variant="ghost-dark" size="sm" onClick={() => setShowDocPanel(true)} className="border border-white/30">
+              <FileText className="mr-1 h-4 w-4" />
+              Documentos ({expedienteDocs.filter(d => d.status === "procesado").length}/{expedienteDocs.length})
+            </Button>
             <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
               <Coins className="mr-1 h-3 w-3" /> {credits} créditos
             </Badge>
@@ -1645,14 +1650,22 @@ const Validacion = () => {
         </div>
       </header>
 
-      {/* Desktop: split view with sidebar */}
+      {/* Documents Panel (Sheet) */}
+      <Sheet open={showDocPanel} onOpenChange={setShowDocPanel}>
+        <SheetContent side="right" className="w-[400px] sm:w-[400px] p-0">
+          <SheetHeader className="p-4 border-b">
+            <SheetTitle>Documentos Cargados</SheetTitle>
+          </SheetHeader>
+          <ExpedienteSidebar
+            documentos={expedienteDocs}
+            onUploadDocument={handleSidebarUpload}
+            uploading={sidebarUploading}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Desktop: split view */}
       <div className="flex-1 min-h-0 hidden lg:flex">
-        {/* Expediente Sidebar */}
-        {expedienteDocs.length > 0 && (
-          <div className="w-56 shrink-0 min-h-0 overflow-hidden">
-            <ExpedienteSidebar documentos={expedienteDocs} onUploadDocument={handleSidebarUpload} uploading={sidebarUploading} />
-          </div>
-        )}
         <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
           <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
             <DocxPreview

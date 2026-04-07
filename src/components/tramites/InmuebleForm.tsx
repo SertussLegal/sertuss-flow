@@ -1,13 +1,12 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Loader2, AlertTriangle, CheckCircle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Badge } from "@/components/ui/badge";
 import type { Inmueble, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -56,9 +55,6 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
   const [scanning, setScanning] = useState<ScanType | null>(null);
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
-  const certInputRef = useRef<HTMLInputElement | null>(null);
-  const predialInputRef = useRef<HTMLInputElement | null>(null);
-  const escrituraInputRef = useRef<HTMLInputElement | null>(null);
 
   const update = (field: keyof Inmueble, value: string | boolean) => {
     setOcrFields(prev => {
@@ -321,39 +317,6 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
     }
   };
 
-  const renderUploadButton = (
-    label: string,
-    type: ScanType,
-    ref: React.RefObject<HTMLInputElement | null>,
-    processingLabel: string
-  ) => (
-    <>
-      <input
-        type="file"
-        accept="image/*,application/pdf"
-        className="hidden"
-        ref={ref}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleScanDocument(file, type);
-          e.target.value = "";
-        }}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={scanning !== null}
-        onClick={() => ref.current?.click()}
-      >
-        {scanning === type ? (
-          <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> {processingLabel}</>
-        ) : (
-          <><Upload className="mr-1 h-4 w-4" /> {label}</>
-        )}
-      </Button>
-    </>
-  );
 
   const ocr = (field: string) => ocrFields.has(field) ? <OcrBadge /> : null;
 
@@ -391,26 +354,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-lg font-semibold">Inmueble</h3>
-        <div className="flex flex-wrap gap-2">
-          {metadata?.extracted_inmueble ? (
-            <Badge variant="outline" className="text-xs border-green-500/40 text-green-700 bg-green-50 dark:bg-green-950/20">
-              <CheckCircle className="mr-1 h-3 w-3" /> Certificado procesado
-            </Badge>
-          ) : renderUploadButton("Cargar Certificado", "certificado_tradicion", certInputRef, "Procesando...")}
-          {metadata?.extracted_predial ? (
-            <Badge variant="outline" className="text-xs border-green-500/40 text-green-700 bg-green-50 dark:bg-green-950/20">
-              <CheckCircle className="mr-1 h-3 w-3" /> Predial procesado
-            </Badge>
-          ) : renderUploadButton("Cargar Predial", "predial", predialInputRef, "Procesando...")}
-          {metadata?.extracted_escritura_comparecientes?.length > 0 || metadata?.extracted_documento ? (
-            <Badge variant="outline" className="text-xs border-green-500/40 text-green-700 bg-green-50 dark:bg-green-950/20">
-              <CheckCircle className="mr-1 h-3 w-3" /> Escritura procesada
-            </Badge>
-          ) : renderUploadButton("Cargar Escritura", "escritura_antecedente", escrituraInputRef, "Procesando...")}
-        </div>
-      </div>
+      <h3 className="text-lg font-semibold">Inmueble</h3>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">

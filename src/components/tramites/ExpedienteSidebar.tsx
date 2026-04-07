@@ -40,7 +40,7 @@ const ExpedienteSidebar = ({ documentos, onUploadDocument, uploading }: Expedien
   const total = documentos.length;
 
   return (
-    <div className="h-full flex flex-col border-r bg-muted/30">
+    <div className="h-full flex flex-col bg-muted/30">
       <div className="p-4 border-b">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <FileText className="h-4 w-4" />

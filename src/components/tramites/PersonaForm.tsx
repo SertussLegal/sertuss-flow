@@ -1,17 +1,14 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, Info, Upload, Loader2, AlertTriangle, FileWarning } from "lucide-react";
+import { Plus, Trash2, Info, AlertTriangle, FileWarning } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Persona, NivelConfianza } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
 
@@ -25,12 +22,8 @@ interface PersonaFormProps {
 }
 
 const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
-  const { profile, credits, refreshCredits } = useAuth();
-  const { toast } = useToast();
-  const [scanningIndex, setScanningIndex] = useState<number | null>(null);
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
-  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const suggestionKey = (index: number, field: string) => `${index}:${field}`;
 
@@ -98,79 +91,6 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
     setSuggestions(prev => { const n = new Map(prev); n.delete(sk); return n; });
   };
 
-  const handleScanCedula = async (index: number, file: File) => {
-    if (!profile?.organization_id) return;
-
-    const { data: success } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-    if (!success) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
-      return;
-    }
-
-    setScanningIndex(index);
-    try {
-      const base64 = await fileToBase64(file);
-      const { data, error } = await supabase.functions.invoke("scan-document", {
-        body: { image: base64, type: "cedula" },
-      });
-
-      if (error) throw new Error(error.message);
-      if (data?.data) {
-        const extracted = data.data;
-        const updated = [...personas];
-        const filled: string[] = [];
-        const newSuggestions = new Map(suggestions);
-
-        const tryApply = (ocrField: string, personaField: keyof Persona, ocrRaw: any) => {
-          // Unwrap confidence wrapper
-          let ocrValue: string | undefined;
-          if (ocrRaw && typeof ocrRaw === "object" && "valor" in ocrRaw) {
-            ocrValue = ocrRaw.valor;
-            if (ocrRaw.confianza && onConfianzaChange) {
-              onConfianzaChange(`persona.${index}.${personaField}`, ocrRaw.confianza);
-            }
-          } else if (typeof ocrRaw === "string") {
-            ocrValue = ocrRaw;
-          }
-          if (!ocrValue) return;
-          
-          const current = updated[index][personaField];
-          const hasValue = typeof current === "string" && current.length > 0;
-          if (hasValue) {
-            newSuggestions.set(suggestionKey(index, personaField), ocrValue);
-          } else {
-            updated[index] = { ...updated[index], [personaField]: ocrValue };
-            filled.push(personaField);
-          }
-        };
-
-        tryApply("nombre_completo", "nombre_completo", extracted.nombre_completo);
-        tryApply("numero_cedula", "numero_cedula", extracted.numero_cedula);
-        tryApply("municipio_domicilio", "municipio_domicilio", extracted.municipio_expedicion);
-
-        setSuggestions(newSuggestions);
-        onChange(updated);
-
-        if (filled.length > 0) {
-          setOcrFields(prev => {
-            const next = new Map(prev);
-            const existing = next.get(index) || new Set<string>();
-            filled.forEach(f => existing.add(f));
-            next.set(index, existing);
-            return next;
-          });
-        }
-        toast({ title: "Cédula procesada", description: "Datos extraídos correctamente." });
-      }
-      await refreshCredits();
-    } catch (err: any) {
-      await supabase.rpc("restore_credit", { org_id: profile.organization_id });
-      await refreshCredits();
-      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
-    } finally {
-      setScanningIndex(null);
-    }
-  };
 
   const ocr = (index: number, field: string) =>
     ocrFields.get(index)?.has(field) ? <OcrBadge /> : null;
@@ -235,30 +155,6 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
               {title.slice(0, -2).replace(/e$/, "")}or {index + 1}
             </span>
             <div className="flex items-center gap-2">
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                ref={(el) => { fileInputRefs.current[index] = el; }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleScanCedula(index, file);
-                  e.target.value = "";
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={scanningIndex !== null || credits === 0}
-                onClick={() => fileInputRefs.current[index]?.click()}
-              >
-                {scanningIndex === index ? (
-                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando documento...</>
-                ) : (
-                  <><Upload className="mr-1 h-4 w-4" /> Cargar Cédula</>
-                )}
-              </Button>
               {personas.length > 1 && (
                 <Button type="button" variant="ghost" size="icon" onClick={() => removePersona(index)}>
                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -272,7 +168,7 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
             <Alert className="border-dashed border-muted-foreground/40 bg-muted/30">
               <FileWarning className="h-4 w-4 text-muted-foreground" />
               <AlertDescription className="text-sm text-muted-foreground">
-                No se cargó cédula para esta persona. Puede cargarla aquí o llenar los datos manualmente.
+                Sin cédula. Súbela en <strong>📄 Documentos Cargados</strong> o completa manualmente.
               </AlertDescription>
             </Alert>
           )}
@@ -396,12 +292,5 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
   );
 };
 
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 
 export default PersonaForm;
