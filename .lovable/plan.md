@@ -1,26 +1,32 @@
 
 
-## Plan: Limpiar imports no usados en Validacion.tsx
+## Plan: Insertar 7 nuevas reglas de validación
 
-### Validación
+Insertar 7 reglas nuevas en `reglas_validacion` sin tocar las existentes. Como es una operación de datos (INSERT), uso la herramienta de migración de datos de Supabase.
 
-`SheetHeader` y `SheetTitle` aparecen **solo** en la línea de import (línea 6). No se usan en ningún lugar del JSX del archivo — fueron eliminados del template cuando se rediseñó el sidebar para que el `ExpedienteSidebar` maneje su propio header.
+### Reglas a insertar
 
-Eliminarlos no afecta nada. Es limpieza pura de código muerto.
+| Código | Categoría | Severidad | Momento |
+|---|---|---|---|
+| `COH_TEMPLATE_VS_ESCRITURA_PREVIA` | coherencia | advertencia | campos |
+| `COH_CADENA_TRADICION` | coherencia | advertencia | campos |
+| `COH_INMUEBLE_ENTRE_DOCS` | coherencia | error | campos |
+| `COH_VENDEDOR_ES_PROPIETARIO` | coherencia | advertencia | campos |
+| `COH_ENTIDAD_BANCARIA_DOCS` | coherencia | error | campos |
+| `CTX_DATOS_FALTANTES_POST_CARGA` | negocio | sugerencia | campos |
+| `CTX_TEMPLATE_NOTARIA_INFO` | negocio | sugerencia | campos |
 
-### Cambio
+### Validaciones previas
 
-**`src/pages/Validacion.tsx` (línea 6)**:
+- El trigger `validate_reglas_validacion` exige `categoria` ∈ {formato, coherencia, legal, negocio} y `nivel_severidad` ∈ {error, advertencia, sugerencia}. Las 7 reglas cumplen.
+- `activa` queda en `true` por defecto, así que las edge functions (`validar-con-claude`) las leerán automáticamente en la próxima invocación.
+- No requiere cambios de código — la edge function ya construye el prompt dinámico desde esta tabla.
 
-Antes:
-```typescript
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-```
+### Operación
 
-Después:
-```typescript
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-```
+Ejecutar el `INSERT` con los 7 registros vía la herramienta de inserción de datos de Supabase.
 
-1 archivo. 1 línea. Riesgo: cero.
+### Riesgos
+
+Cero. Es solo agregar filas. Si algo sale mal en una regla nueva, basta con marcar `activa = false` en esa fila.
 
