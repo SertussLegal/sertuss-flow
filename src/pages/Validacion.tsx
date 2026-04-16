@@ -1964,14 +1964,108 @@ const Validacion = () => {
     }
   };
 
-  const renderTabs = () => (
+  const renderTabs = () => {
+    // Helper: pick highest-severity validation for a tab
+    const getTabSeverity = (tabKey: string) => {
+      if (!validacionCampos?.validaciones?.length) return null;
+      const matches = validacionCampos.validaciones.filter(v =>
+        v.campo?.startsWith(`${tabKey}.`) || v.campo === tabKey ||
+        v.campos_relacionados?.some(c => c.startsWith(`${tabKey}.`))
+      );
+      if (!matches.length) return null;
+      const order = { error: 3, advertencia: 2, sugerencia: 1 } as const;
+      const top = matches.reduce((a, b) =>
+        (order[b.nivel as keyof typeof order] || 0) > (order[a.nivel as keyof typeof order] || 0) ? b : a
+      );
+      return { nivel: top.nivel, explicacion: top.explicacion, count: matches.length };
+    };
+
+    const renderTabIcon = (tabKey: string) => {
+      const sev = getTabSeverity(tabKey);
+      if (!sev) return null;
+      const Icon = sev.nivel === "error" ? AlertCircle : sev.nivel === "advertencia" ? AlertTriangle : Info;
+      const colorCls = sev.nivel === "error" ? "text-destructive" : sev.nivel === "advertencia" ? "text-accent" : "text-primary";
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Icon className={`h-3.5 w-3.5 ml-1.5 ${colorCls}`} />
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <p className="text-xs">{sev.explicacion}</p>
+              {sev.count > 1 && <p className="text-[10px] opacity-70 mt-1">+{sev.count - 1} más</p>}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    };
+
+    const conteo = validacionCampos ? contarPorNivel(validacionCampos) : null;
+    const totalHallazgos = conteo ? conteo.errores + conteo.advertencias + conteo.sugerencias : 0;
+
+    return (
     <Tabs defaultValue="vendedores" className="w-full">
-      <TabsList className="mb-6 w-full">
-        <TabsTrigger value="vendedores" className="flex-1">Vendedores</TabsTrigger>
-        <TabsTrigger value="compradores" className="flex-1">Compradores</TabsTrigger>
-        <TabsTrigger value="inmueble" className="flex-1">Inmueble</TabsTrigger>
-        <TabsTrigger value="actos" className="flex-1">Actos</TabsTrigger>
+      <TabsList className="mb-3 w-full">
+        <TabsTrigger value="vendedores" className="flex-1">Vendedores{renderTabIcon("vendedores")}</TabsTrigger>
+        <TabsTrigger value="compradores" className="flex-1">Compradores{renderTabIcon("compradores")}</TabsTrigger>
+        <TabsTrigger value="inmueble" className="flex-1">Inmueble{renderTabIcon("inmueble")}</TabsTrigger>
+        <TabsTrigger value="actos" className="flex-1">Actos{renderTabIcon("actos")}</TabsTrigger>
       </TabsList>
+
+      {validandoCampos && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Validando coherencia con asistente IA...
+        </div>
+      )}
+
+      {validacionCampos && totalHallazgos > 0 && (
+        <div className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setBannerExpanded(v => !v)}
+              className="flex items-center gap-2 text-xs text-foreground hover:text-primary transition-colors flex-1 text-left"
+            >
+              <Info className="h-3.5 w-3.5 text-primary" />
+              <span>
+                {conteo!.errores > 0 && <span className="text-destructive font-medium">{conteo!.errores} error{conteo!.errores !== 1 ? "es" : ""}</span>}
+                {conteo!.errores > 0 && (conteo!.advertencias > 0 || conteo!.sugerencias > 0) && <span>, </span>}
+                {conteo!.advertencias > 0 && <span className="text-accent font-medium">{conteo!.advertencias} advertencia{conteo!.advertencias !== 1 ? "s" : ""}</span>}
+                {conteo!.advertencias > 0 && conteo!.sugerencias > 0 && <span>, </span>}
+                {conteo!.sugerencias > 0 && <span>{conteo!.sugerencias} sugerencia{conteo!.sugerencias !== 1 ? "s" : ""}</span>}
+                <span className="text-muted-foreground"> tras la última carga</span>
+              </span>
+              {bannerExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setValidacionCampos(null)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Descartar"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {bannerExpanded && (
+            <ul className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
+              {validacionCampos.validaciones.map((v, idx) => {
+                const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
+                const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
+                return (
+                  <li key={idx} className="flex items-start gap-2 text-xs">
+                    <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
+                    <div className="flex-1">
+                      <span className="font-medium text-foreground">{v.campo}</span>
+                      <span className="text-muted-foreground"> · {v.explicacion}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
       <TabsContent value="vendedores">
         <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} />
       </TabsContent>
@@ -1995,7 +2089,8 @@ const Validacion = () => {
         <ActosForm actos={actos} onChange={setActos} />
       </TabsContent>
     </Tabs>
-  );
+    );
+  };
 
   return (
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
