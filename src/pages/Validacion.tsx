@@ -1080,6 +1080,42 @@ const Validacion = () => {
     }
   }, []);
 
+  // Background validation with Claude after each document upload (Momento 1: campos)
+  // Fire-and-forget — never blocks UI, silent on failure.
+  const validarDespuesDeCarga = useCallback((
+    tipoDoc: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial",
+    datosDocumento: any,
+    tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos"
+  ) => {
+    if (!tramiteIdRef.current || !profile?.organization_id) return;
+    setValidandoCampos(true);
+    (async () => {
+      try {
+        const resultado = await validarConClaude({
+          modo: "campos",
+          tramiteId: tramiteIdRef.current!,
+          organizationId: profile.organization_id!,
+          tipoActo: actos.tipo_acto || "compraventa",
+          tabOrigen,
+          datosExtraidos: {
+            documento_cargado: { tipo: tipoDoc, datos: datosDocumento },
+            vendedores, compradores, inmueble, actos,
+          },
+          validacionesApp: [
+            ...(vendedores.length || compradores.length ? ["cruce_roles_certificado_completado"] : []),
+          ],
+        });
+        if (resultado.estado !== "error_sistema") {
+          setValidacionCampos(resultado);
+        }
+      } catch {
+        /* silencio total */
+      } finally {
+        setValidandoCampos(false);
+      }
+    })();
+  }, [profile?.organization_id, vendedores, compradores, inmueble, actos]);
+
   // Handle sidebar document upload: invoke scan-document and re-hydrate
   const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
     if (!profile?.organization_id) return;
@@ -1179,6 +1215,22 @@ const Validacion = () => {
         }
 
         toast({ title: "Documento procesado", description: `${file.name} escaneado y datos actualizados.` });
+
+        // Disparar validación Claude en background (Momento 1: campos)
+        const tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos" =
+          scanType === "certificado_tradicion" || scanType === "predial" ? "inmueble"
+          : tipo === "carta_credito" || tipo === "poder_notarial" ? "actos"
+          : scanType === "escritura_antecedente" ? "vendedores"
+          : tipo.startsWith("cedula_") ? "vendedores"
+          : "vendedores";
+        const tipoDocMapped: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial" =
+          scanType === "certificado_tradicion" ? "certificado"
+          : scanType === "predial" ? "predial"
+          : scanType === "escritura_antecedente" ? "escritura_previa"
+          : tipo === "carta_credito" ? "carta_credito"
+          : tipo === "poder_notarial" ? "poder_notarial"
+          : "cedula";
+        validarDespuesDeCarga(tipoDocMapped, d, tabOrigen);
       }
       await refreshCredits();
     } catch (err: any) {
@@ -1188,7 +1240,7 @@ const Validacion = () => {
     } finally {
       setSidebarUploading(null);
     }
-  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
+  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted, validarDespuesDeCarga]);
 
   // ── Deep-clean state linked to a document type ──
   const cleanStateForDocType = useCallback((tipo: string) => {
