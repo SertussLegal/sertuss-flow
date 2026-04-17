@@ -1,67 +1,62 @@
 
 
-## Plan: Detección genérica de personas jurídicas (sin nombres hardcodeados)
+## Plan: Radicado híbrido (auto + editable) por organización
 
-### Enfoque
+### Formato
+`YYYY-NNNN` por organización. Ej: `2026-0001`, `2026-0002`. El consecutivo reinicia cada año.
 
-Reemplazar el filtro por nombre con **3 criterios genéricos acumulativos** en `DocumentUploadStep.tsx`. Una persona es jurídica (y se excluye de la alerta) si cumple **cualquiera**:
+### Cambios en BD (migración)
 
-**Criterio 1 — Tipo de identificación explícito**
-Si el campo `tipo_id` / `tipo_identificacion` del propietario es `NIT` (no `CC`, `CE`, `TI`, `PA`), es jurídica.
-
-**Criterio 2 — Sufijos societarios genéricos**
-Regex limpia con SOLO sufijos legales (no nombres comerciales):
-```ts
-const LEGAL_SUFFIX = /\b(S\.?A\.?S?\.?|LTDA\.?|E\.?S\.?P\.?|E\.?I\.?C\.?E\.?|S\.?C\.?A\.?|S\.?\s*EN\s*C\.?|&\s*C[IÍ]A|Y\s+C[IÍ]A|S\.?A\.?\s*ESP|EU|SAS|S\s+A\s+S|CORP|INC|GMBH|N\.?V\.?)\b/i;
+**1. Tabla contador por organización + año**
+```sql
+CREATE TABLE radicado_counters (
+  organization_id uuid NOT NULL,
+  year int NOT NULL,
+  last_number int NOT NULL DEFAULT 0,
+  PRIMARY KEY (organization_id, year)
+);
+ALTER TABLE radicado_counters ENABLE ROW LEVEL SECURITY;
+-- Sin policies: solo accesible vía SECURITY DEFINER function.
 ```
 
-**Criterio 3 — Formato de número NIT**
-Heurística: número de identificación con **9-10 dígitos** que **empieza por 8 o 9** (rango asignado a personas jurídicas en Colombia por la DIAN). Ejemplo: `8600073361` → empieza con `8`, 10 dígitos → NIT. Cédulas de personas naturales colombianas no empiezan por 8 o 9 con 10 dígitos (excepción extranjeros con CE — pero CE no se confunde con CC en el flujo).
-
-```ts
-const NIT_NUMBER_PATTERN = /^[89]\d{8,9}$/;
+**2. Función SECURITY DEFINER con bloqueo (evita duplicados en concurrencia)**
+```sql
+CREATE FUNCTION next_radicado(p_org_id uuid) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  current_year int := EXTRACT(YEAR FROM now());
+  next_num int;
+BEGIN
+  INSERT INTO radicado_counters (organization_id, year, last_number)
+  VALUES (p_org_id, current_year, 1)
+  ON CONFLICT (organization_id, year)
+  DO UPDATE SET last_number = radicado_counters.last_number + 1
+  RETURNING last_number INTO next_num;
+  RETURN current_year || '-' || LPAD(next_num::text, 4, '0');
+END; $$;
 ```
 
-### Lógica combinada
+**3. Trigger `BEFORE INSERT` en `tramites`**
+Asigna `radicado` solo si viene NULL/vacío (permite override manual al crear).
 
-```ts
-function isPersonaJuridica(prop: { nombre?: string; tipo_id?: string; numero_id?: string }): boolean {
-  // 1. Tipo explícito
-  if (prop.tipo_id?.toUpperCase().trim() === 'NIT') return true;
-  // 2. Sufijo societario en el nombre
-  if (prop.nombre && LEGAL_SUFFIX.test(prop.nombre)) return true;
-  // 3. Formato del número
-  const num = (prop.numero_id || '').replace(/\D/g, '');
-  if (NIT_NUMBER_PATTERN.test(num)) return true;
-  return false;
-}
-```
+### Cambios en UI
 
-Aplicar en el filtro existente (línea ~190) reemplazando la regex `ENTITY_PATTERNS`. COLSUBSIDIO con `8600073361` se excluye por **Criterio 3** (empieza con 8, 10 dígitos) sin necesitar su nombre. BANCOLOMBIA S.A. se excluye por **Criterio 2** (sufijo `S.A.`). Cualquier propietario con `tipo_id: "NIT"` se excluye por **Criterio 1**.
+**Dashboard.tsx (línea ~245)**
+La columna ya muestra `t.radicado ?? "—"`. Tras la migración mostrará automáticamente `2026-0001`, etc.
 
-### Mejora de copy de la alerta (líneas ~759-770)
+**Validacion.tsx (detalle del trámite)**
+Agregar input editable "Radicado" en el header del detalle, con botón guardar. UPDATE directo a `tramites.radicado` (RLS ya lo permite).
 
-Reemplazar "Cédulas faltantes" por mensaje no bloqueante:
-
-> **Personas naturales identificadas en el certificado sin cédula cargada:**
-> [lista]
-> 
-> Si alguna es vendedor, sube su cédula. Si son acreedores u otros terceros, puedes continuar — esos datos se completarán en la notaría.
+### Backfill
+Asignar radicado a trámites existentes que tengan `radicado IS NULL`, ordenados por `created_at` agrupados por organización + año de creación.
 
 ### Archivos modificados
 
 | Archivo | Cambio |
 |---|---|
-| `src/components/tramites/DocumentUploadStep.tsx` | Eliminar `ENTITY_PATTERNS` con nombres → reemplazar por helper `isPersonaJuridica()` con los 3 criterios genéricos. Reescribir copy de alerta. |
-
-### Verificación
-
-- COLSUBSIDIO (NIT 8600073361) → excluida por criterio 3
-- BANCOLOMBIA S.A. → excluida por criterio 2
-- Cualquier `tipo_id: NIT` → excluida por criterio 1
-- Persona natural con CC `1020304050` (empieza con 1) → SÍ aparece en alerta (correcto)
+| Migración SQL nueva | Tabla `radicado_counters`, función `next_radicado`, trigger, backfill |
+| `src/pages/Validacion.tsx` | Input editable de radicado en header |
 
 ### Riesgos
-
-Mínimos. Los tres criterios son ortogonales y conservadores. Falso positivo posible: una cédula muy antigua que empiece con 8 o 9 — extremadamente raro en Colombia (rango DIAN reservado a jurídicas desde décadas).
+Mínimos. La función con `ON CONFLICT ... DO UPDATE ... RETURNING` es atómica y a prueba de concurrencia. El trigger respeta valores manuales.
 
