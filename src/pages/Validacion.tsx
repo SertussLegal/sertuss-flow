@@ -363,6 +363,13 @@ const Validacion = () => {
       setConfianzaFields(map);
     }
 
+    // Restore notaria_tramite (datos de notaría POR TRÁMITE — sin pre-llenado desde org)
+    if (meta?.notaria_tramite && typeof meta.notaria_tramite === "object") {
+      setNotariaTramite({ ...createEmptyNotariaTramite(), ...meta.notaria_tramite });
+    } else {
+      setNotariaTramite(createEmptyNotariaTramite());
+    }
+
     // Restore AI snapshot from logs_extraccion for correction tracking
     const { data: logData } = await supabase
       .from("logs_extraccion")
