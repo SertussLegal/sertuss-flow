@@ -1,62 +1,54 @@
 
 
-## Plan revisado: Datos de notaría siempre vacíos + sugerencias one-click vía Claude
+## Plan: Inyectar contexto `notaria_tramite` en prompts de Gemini
 
-### Componente reutilizable encontrado
+Completar el último paso pendiente del plan de notaría: pasar los datos de `notaria_tramite` desde el cliente hasta los prompts de las dos edge functions de generación, con instrucción explícita de usar líneas en blanco si están vacíos.
 
-Sí, ya existe — y de hecho hay **dos** componentes complementarios que encajan perfectamente:
+### Cambios
 
-**1. `src/components/tramites/VariableEditPopover.tsx`** — Popover flotante posicionado (`fixed`, top/left calculados) que se ancla sobre cualquier texto/campo. Muestra label del campo + input editable + botones Aceptar (✓) / Cancelar (✗). Cierra con click-outside o Escape. Ya lo usa el flujo de edición inline del preview.
+**1. `supabase/functions/process-expediente/index.ts`**
+- Aceptar `notaria_tramite` en el body del request (junto a los datos del expediente que ya recibe).
+- Inyectar al `systemPrompt` (o `userPrompt`) un bloque:
+  ```
+  DATOS DE LA NOTARÍA PARA ESTE TRÁMITE:
+  Número: {numero_notaria} ({numero_notaria_letras})
+  Ordinal: {numero_ordinal}
+  Círculo: {circulo}
+  Departamento: {departamento}
+  Notario: {nombre_notario}
+  Tipo: {tipo_notario}
+  Decreto: {decreto_nombramiento}
+  Género: {genero_notario}
 
-**2. `src/components/tramites/OcrSuggestion.tsx`** — Popover sobre un trigger (`<children>`), muestra el valor sugerido con dos acciones: **Confirmar** / **Ignorar**. Hoy se usa para sugerencias OCR, pero su contrato (`value`, `onConfirm`, `onIgnore`, `children`) es exactamente lo que necesitamos para sugerencias de Claude.
+  REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría
+  en el documento. Si algún campo está vacío, usa líneas en blanco
+  (___________) en su lugar. NUNCA uses datos de una notaría específica
+  que no fueron proporcionados.
+  ```
+- Si `notaria_tramite` es `undefined` o todos sus campos están vacíos, igual incluir el bloque con `___________` en cada campo (refuerza el comportamiento).
 
-**Decisión**: usar **`OcrSuggestion`** (one-click confirmar/ignorar) como UX principal para las sugerencias de Claude sobre datos de notaría, y **`VariableEditPopover`** como fallback "Editar manualmente" si el usuario quiere escribir un valor distinto al sugerido.
+**2. `supabase/functions/generate-document/index.ts`**
+- Idem: aceptar `notaria_tramite` en el body, inyectar el mismo bloque al `systemPrompt`.
+- Agregar al schema del tool `fill_template` los campos de notaría (`notaria_numero_letras`, `notaria_ordinal`, `notaria_circulo`, `notario_nombre`, `notario_tipo`, etc.) para que la IA pueda devolverlos estructurados — con instrucción explícita de devolver `___________` si no hay dato.
 
-### Cambios al plan original
-
-**A) Pre-llenado eliminado**
-- En `Validacion.tsx`, el state `notariaTramite` arranca con TODOS los campos en `""` (vacíos).
-- NO se hidrata desde `notariaConfig`, `configuracion_notaria`, `notaria_styles`, ni `profile.organization`.
-- Solo se hidrata desde `tramites.metadata.notaria_tramite` si el usuario ya editó algo en ese trámite específico (persistencia, no pre-llenado).
-
-**B) Preview siempre con líneas en blanco por defecto**
-- En `DocxPreview.tsx`, el mapa de placeholders devuelve `___________` para cada campo de notaría vacío. Sin fallback a `notariaConfig`.
-- El template `.docx` igualmente se parametriza (4 ubicaciones: encabezado calificación, intro, cierre minuta, pie de página) — el `nullGetter` de Docxtemplater rellena con `___________` si el campo está vacío en `templateData`.
-
-**C) Sugerencias de Claude (Momento 1) → one-click**
-- La edge function `validar-con-claude` ya soporta `auto_corregible: true` con `valor_sugerido`. Las reglas `COH_TEMPLATE_VS_ESCRITURA_PREVIA` y `CTX_TEMPLATE_NOTARIA_INFO` ya están activas y pueden detectar datos de notaría en documentos cargados.
-- Filtrar las validaciones devueltas por `campo` que empiece con `notaria_tramite.` o `notaria.` y `auto_corregible === true`.
-- Renderizar cada una en el panel "Datos de la Notaría" como un `<OcrSuggestion>` envolviendo el input correspondiente:
-  - **Confirmar** → `setNotariaTramite({ ...prev, [campo]: valor_sugerido })` + persistir en metadata + remover esa sugerencia del state local.
-  - **Ignorar** → solo remover esa sugerencia del state local (no toca el input).
-  - Botón secundario "Editar" → abre `VariableEditPopover` para escribir un valor custom.
-
-**D) Banner de resumen**
-- En el banner colapsable existente (Momento 1), agregar una sección "Sugerencias de notaría detectadas (N)" con botón "Aplicar todas" que itera y aplica los `valor_sugerido` de todas las validaciones `auto_corregible` con `campo` de notaría.
-
-**E) Reglas de Claude — refuerzo en el prompt**
-- En `validar-con-claude/index.ts`, agregar al `systemPrompt` una instrucción explícita: *"Cuando detectes datos de notaría (número, círculo, nombre del notario, decreto, tipo) en los documentos cargados, repórtalos como sugerencias `auto_corregible: true` con `campo` = `notaria_tramite.<nombre>` y `valor_sugerido` = valor extraído. NO los reportes como errores — el usuario puede no querer usar esa notaría. Son solo sugerencias."*
-
-### Archivos a modificar
-
-| Archivo | Cambio |
-|---|---|
-| `public/template_venta_hipoteca.docx` | 4 reemplazos de texto hardcodeado → placeholders |
-| `src/pages/Validacion.tsx` | State `notariaTramite` siempre vacío, panel UI con `OcrSuggestion` por campo, persistencia en metadata, paso a `DocxPreview` |
-| `src/components/tramites/DocxPreview.tsx` | Mapa de placeholders extendido, helpers `deriveFemenino` y `toProperCase`, fallback `___________` sin recurrir a `notariaConfig` |
-| `supabase/functions/validar-con-claude/index.ts` | Instrucción adicional en `systemPrompt` para sugerencias de notaría auto-corregibles |
-| `supabase/functions/process-expediente/index.ts` | Inyectar `notaria_tramite` al prompt de Gemini con instrucción "líneas en blanco si vacío" |
-| `supabase/functions/generate-document/index.ts` | Idem |
+**3. `src/pages/Validacion.tsx`** (cliente)
+- En las llamadas a `supabase.functions.invoke("process-expediente", ...)` y `"generate-document"`, agregar `notaria_tramite: notariaTramite` al payload.
 
 ### Reglas críticas
 
-- **Cero pre-llenado**: campos vacíos hasta que el usuario actúe.
-- **Cero datos de Notaría Quinta** en el preview por defecto — solo `___________`.
-- **One-click para aceptar**: `OcrSuggestion` ya da exactamente esa UX.
-- **Edición manual disponible**: `VariableEditPopover` como fallback.
-- **Persistencia por trámite**: `tramites.metadata.notaria_tramite`, no global.
+- Si los campos están vacíos → la IA debe devolver `___________`, NO inventar datos ni usar los de Notaría Quinta.
+- El cliente siempre envía el objeto (aunque tenga campos vacíos), para que el prompt no tenga que adivinar.
+- No se modifica nada del flujo de extracción OCR ni de la validación con Claude — solo el contexto de generación.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `supabase/functions/process-expediente/index.ts` | Aceptar `notaria_tramite`, inyectar bloque al prompt |
+| `supabase/functions/generate-document/index.ts` | Aceptar `notaria_tramite`, inyectar bloque al prompt, extender schema del tool |
+| `src/pages/Validacion.tsx` | Pasar `notariaTramite` en los `invoke()` de ambas edge functions |
 
 ### Riesgos
 
-Bajo. Los dos componentes (`OcrSuggestion`, `VariableEditPopover`) ya están en producción y probados. Si Claude no devuelve sugerencias, los campos simplemente quedan vacíos y el preview muestra `___________` — estado seguro.
+Bajo. Es aditivo. Si `notaria_tramite` no llega, el prompt usa `___________` por defecto, que es el comportamiento seguro.
 
