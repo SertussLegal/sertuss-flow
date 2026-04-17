@@ -172,6 +172,7 @@ interface DocxPreviewProps {
   textoFinalWord?: string;
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
   notariaConfig?: NotariaConfig | null;
+  notariaTramite?: NotariaTramite | null;
   extractedDocumento?: ExtractedDocumento | null;
   extractedPredial?: ExtractedPredial | null;
   slotsPendientes?: string[];
