@@ -293,7 +293,7 @@ const Validacion = () => {
       setIsDirty(true);
       setSyncStatus("unsaved");
     }
-  }, [vendedores, compradores, inmueble, actos, overrides]);
+  }, [vendedores, compradores, inmueble, actos, overrides, notariaTramite]);
 
   // Auto-save debounce: 15 seconds
   useEffect(() => {
@@ -302,7 +302,7 @@ const Validacion = () => {
       handleAutoSave();
     }, 15000);
     return () => clearTimeout(timer);
-  }, [isDirty, vendedores, compradores, inmueble, actos, overrides, profile?.organization_id]);
+  }, [isDirty, vendedores, compradores, inmueble, actos, overrides, notariaTramite, profile?.organization_id]);
 
   // beforeunload: force save before leaving
   useEffect(() => {
@@ -791,6 +791,7 @@ const Validacion = () => {
         overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
+        notaria_tramite: notariaTramite,
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
@@ -1520,6 +1521,7 @@ const Validacion = () => {
         overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
+        notaria_tramite: notariaTramite,
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
