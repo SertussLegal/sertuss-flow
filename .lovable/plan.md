@@ -1,54 +1,67 @@
 
 
-## Plan: Inyectar contexto `notaria_tramite` en prompts de Gemini
+## Plan: Detección genérica de personas jurídicas (sin nombres hardcodeados)
 
-Completar el último paso pendiente del plan de notaría: pasar los datos de `notaria_tramite` desde el cliente hasta los prompts de las dos edge functions de generación, con instrucción explícita de usar líneas en blanco si están vacíos.
+### Enfoque
 
-### Cambios
+Reemplazar el filtro por nombre con **3 criterios genéricos acumulativos** en `DocumentUploadStep.tsx`. Una persona es jurídica (y se excluye de la alerta) si cumple **cualquiera**:
 
-**1. `supabase/functions/process-expediente/index.ts`**
-- Aceptar `notaria_tramite` en el body del request (junto a los datos del expediente que ya recibe).
-- Inyectar al `systemPrompt` (o `userPrompt`) un bloque:
-  ```
-  DATOS DE LA NOTARÍA PARA ESTE TRÁMITE:
-  Número: {numero_notaria} ({numero_notaria_letras})
-  Ordinal: {numero_ordinal}
-  Círculo: {circulo}
-  Departamento: {departamento}
-  Notario: {nombre_notario}
-  Tipo: {tipo_notario}
-  Decreto: {decreto_nombramiento}
-  Género: {genero_notario}
+**Criterio 1 — Tipo de identificación explícito**
+Si el campo `tipo_id` / `tipo_identificacion` del propietario es `NIT` (no `CC`, `CE`, `TI`, `PA`), es jurídica.
 
-  REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría
-  en el documento. Si algún campo está vacío, usa líneas en blanco
-  (___________) en su lugar. NUNCA uses datos de una notaría específica
-  que no fueron proporcionados.
-  ```
-- Si `notaria_tramite` es `undefined` o todos sus campos están vacíos, igual incluir el bloque con `___________` en cada campo (refuerza el comportamiento).
+**Criterio 2 — Sufijos societarios genéricos**
+Regex limpia con SOLO sufijos legales (no nombres comerciales):
+```ts
+const LEGAL_SUFFIX = /\b(S\.?A\.?S?\.?|LTDA\.?|E\.?S\.?P\.?|E\.?I\.?C\.?E\.?|S\.?C\.?A\.?|S\.?\s*EN\s*C\.?|&\s*C[IÍ]A|Y\s+C[IÍ]A|S\.?A\.?\s*ESP|EU|SAS|S\s+A\s+S|CORP|INC|GMBH|N\.?V\.?)\b/i;
+```
 
-**2. `supabase/functions/generate-document/index.ts`**
-- Idem: aceptar `notaria_tramite` en el body, inyectar el mismo bloque al `systemPrompt`.
-- Agregar al schema del tool `fill_template` los campos de notaría (`notaria_numero_letras`, `notaria_ordinal`, `notaria_circulo`, `notario_nombre`, `notario_tipo`, etc.) para que la IA pueda devolverlos estructurados — con instrucción explícita de devolver `___________` si no hay dato.
+**Criterio 3 — Formato de número NIT**
+Heurística: número de identificación con **9-10 dígitos** que **empieza por 8 o 9** (rango asignado a personas jurídicas en Colombia por la DIAN). Ejemplo: `8600073361` → empieza con `8`, 10 dígitos → NIT. Cédulas de personas naturales colombianas no empiezan por 8 o 9 con 10 dígitos (excepción extranjeros con CE — pero CE no se confunde con CC en el flujo).
 
-**3. `src/pages/Validacion.tsx`** (cliente)
-- En las llamadas a `supabase.functions.invoke("process-expediente", ...)` y `"generate-document"`, agregar `notaria_tramite: notariaTramite` al payload.
+```ts
+const NIT_NUMBER_PATTERN = /^[89]\d{8,9}$/;
+```
 
-### Reglas críticas
+### Lógica combinada
 
-- Si los campos están vacíos → la IA debe devolver `___________`, NO inventar datos ni usar los de Notaría Quinta.
-- El cliente siempre envía el objeto (aunque tenga campos vacíos), para que el prompt no tenga que adivinar.
-- No se modifica nada del flujo de extracción OCR ni de la validación con Claude — solo el contexto de generación.
+```ts
+function isPersonaJuridica(prop: { nombre?: string; tipo_id?: string; numero_id?: string }): boolean {
+  // 1. Tipo explícito
+  if (prop.tipo_id?.toUpperCase().trim() === 'NIT') return true;
+  // 2. Sufijo societario en el nombre
+  if (prop.nombre && LEGAL_SUFFIX.test(prop.nombre)) return true;
+  // 3. Formato del número
+  const num = (prop.numero_id || '').replace(/\D/g, '');
+  if (NIT_NUMBER_PATTERN.test(num)) return true;
+  return false;
+}
+```
+
+Aplicar en el filtro existente (línea ~190) reemplazando la regex `ENTITY_PATTERNS`. COLSUBSIDIO con `8600073361` se excluye por **Criterio 3** (empieza con 8, 10 dígitos) sin necesitar su nombre. BANCOLOMBIA S.A. se excluye por **Criterio 2** (sufijo `S.A.`). Cualquier propietario con `tipo_id: "NIT"` se excluye por **Criterio 1**.
+
+### Mejora de copy de la alerta (líneas ~759-770)
+
+Reemplazar "Cédulas faltantes" por mensaje no bloqueante:
+
+> **Personas naturales identificadas en el certificado sin cédula cargada:**
+> [lista]
+> 
+> Si alguna es vendedor, sube su cédula. Si son acreedores u otros terceros, puedes continuar — esos datos se completarán en la notaría.
 
 ### Archivos modificados
 
 | Archivo | Cambio |
 |---|---|
-| `supabase/functions/process-expediente/index.ts` | Aceptar `notaria_tramite`, inyectar bloque al prompt |
-| `supabase/functions/generate-document/index.ts` | Aceptar `notaria_tramite`, inyectar bloque al prompt, extender schema del tool |
-| `src/pages/Validacion.tsx` | Pasar `notariaTramite` en los `invoke()` de ambas edge functions |
+| `src/components/tramites/DocumentUploadStep.tsx` | Eliminar `ENTITY_PATTERNS` con nombres → reemplazar por helper `isPersonaJuridica()` con los 3 criterios genéricos. Reescribir copy de alerta. |
+
+### Verificación
+
+- COLSUBSIDIO (NIT 8600073361) → excluida por criterio 3
+- BANCOLOMBIA S.A. → excluida por criterio 2
+- Cualquier `tipo_id: NIT` → excluida por criterio 1
+- Persona natural con CC `1020304050` (empieza con 1) → SÍ aparece en alerta (correcto)
 
 ### Riesgos
 
-Bajo. Es aditivo. Si `notaria_tramite` no llega, el prompt usa `___________` por defecto, que es el comportamiento seguro.
+Mínimos. Los tres criterios son ortogonales y conservadores. Falso positivo posible: una cédula muy antigua que empiece con 8 o 9 — extremadamente raro en Colombia (rango DIAN reservado a jurídicas desde décadas).
 
