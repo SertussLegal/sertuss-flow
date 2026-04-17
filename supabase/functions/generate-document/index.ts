@@ -13,7 +13,25 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const { vendedores, compradores, inmueble, actos } = await req.json();
+    const { vendedores, compradores, inmueble, actos, notaria_tramite } = await req.json();
+
+    const BLANK = "___________";
+    const ntVal = (key: string) => {
+      const raw = notaria_tramite && typeof notaria_tramite === "object" ? notaria_tramite[key] : "";
+      const s = (raw ?? "").toString().trim();
+      return s.length > 0 ? s : BLANK;
+    };
+    const notariaBlock = `DATOS DE LA NOTARÍA PARA ESTE TRÁMITE:
+Número: ${ntVal("numero_notaria")} (${ntVal("numero_notaria_letras")})
+Ordinal: ${ntVal("numero_ordinal")}
+Círculo: ${ntVal("circulo")}
+Departamento: ${ntVal("departamento")}
+Notario: ${ntVal("nombre_notario")}
+Tipo: ${ntVal("tipo_notario")}
+Decreto: ${ntVal("decreto_nombramiento")}
+Género: ${ntVal("genero_notario")}
+
+REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría. Si algún campo aparece como "___________" arriba, debes devolver "___________" en los campos correspondientes del tool (notaria_numero_letras, notaria_ordinal, notaria_circulo, notario_nombre, notario_tipo, etc.). NUNCA inventes datos de notaría ni uses los de la "Notaría Quinta de Bogotá" o cualquier otra notaría real no proporcionada. Es preferible una línea en blanco a un dato inventado.`;
 
     const systemPrompt = `Eres un asistente jurídico experto en derecho notarial colombiano (Ley 1579 de 2012, Decreto 960 de 1970).
 Tu tarea es generar el contenido legal estructurado para una escritura pública de compraventa (y posible hipoteca) a partir de los datos proporcionados.

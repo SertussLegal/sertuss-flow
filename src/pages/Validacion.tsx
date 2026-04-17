@@ -1752,6 +1752,7 @@ const Validacion = () => {
       // Call process-expediente (orchestrator)
       const { data: result, error: fnError } = await monitored.invoke("process-expediente", {
         tramite_id: tramiteId,
+        notaria_tramite: notariaTramite,
       }, { tramiteId });
       if (fnError) throw new Error("Error en el pipeline de IA: " + fnError.message);
       if (result?.error) throw new Error(result.error);

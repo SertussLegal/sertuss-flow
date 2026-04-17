@@ -18,7 +18,7 @@ serve(async (req) => {
 
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-    const { tramite_id } = await req.json();
+    const { tramite_id, notaria_tramite } = await req.json();
     if (!tramite_id) throw new Error("tramite_id requerido");
 
     // 1. Fetch tramite + related data in parallel
@@ -85,7 +85,8 @@ serve(async (req) => {
 
     // 6. Call SERTUSS-EDITOR-PRO via AI gateway
     const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria, camposObligatorios);
-    const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
+    const notariaBlock = buildNotariaBlock(notaria_tramite);
+    const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
 
     const tools = [
       {
@@ -270,4 +271,24 @@ Si alguno de estos campos está vacío o falta, genera una sugerencia de tipo "d
   }
 
   return base;
+}
+
+function buildNotariaBlock(nt: any): string {
+  const BLANK = "___________";
+  const v = (key: string) => {
+    const raw = nt && typeof nt === "object" ? nt[key] : "";
+    const s = (raw ?? "").toString().trim();
+    return s.length > 0 ? s : BLANK;
+  };
+  return `DATOS DE LA NOTARÍA PARA ESTE TRÁMITE:
+Número: ${v("numero_notaria")} (${v("numero_notaria_letras")})
+Ordinal: ${v("numero_ordinal")}
+Círculo: ${v("circulo")}
+Departamento: ${v("departamento")}
+Notario: ${v("nombre_notario")}
+Tipo: ${v("tipo_notario")}
+Decreto: ${v("decreto_nombramiento")}
+Género: ${v("genero_notario")}
+
+REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría en el documento (encabezado, calificación, intro, cierre, pie de página). Si algún campo está vacío arriba aparece como "___________" — en ese caso debes dejar líneas en blanco (___________) en el documento. NUNCA inventes ni uses datos de una notaría específica que no fueron proporcionados (por ejemplo, NO uses "Notaría Quinta de Bogotá" ni ninguna otra notaría real). Es preferible una línea en blanco a un dato inventado.`;
 }
