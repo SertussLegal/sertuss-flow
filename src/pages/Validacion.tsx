@@ -2241,6 +2241,7 @@ const Validacion = () => {
               textoFinalWord={textoFinalWord}
               onSugerenciaAccepted={handleSugerenciaAccepted}
               notariaConfig={notariaConfig}
+              notariaTramite={notariaTramite}
               extractedDocumento={extractedDocumento}
               extractedPredial={extractedPredial}
               slotsPendientes={slotsPendientes}
