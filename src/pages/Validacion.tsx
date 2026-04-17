@@ -1817,8 +1817,25 @@ const Validacion = () => {
         // Root-level
         escritura_numero: _,
         fecha_escritura_corta: new Date().toLocaleDateString("es-CO"),
-        notario_nombre: notariaConfig?.nombre_notario || _,
-        notario_decreto: notariaConfig?.decreto_nombramiento || _,
+        notario_nombre: notariaTramite.nombre_notario || _,
+        notario_decreto: notariaTramite.decreto_nombramiento || _,
+        notario_tipo: notariaTramite.tipo_notario || "",
+        notaria_numero: notariaTramite.numero_notaria || _,
+        notaria_numero_letras: notariaTramite.numero_notaria_letras || _,
+        notaria_numero_letras_lower: notariaTramite.numero_notaria_letras
+          ? notariaTramite.numero_notaria_letras.toLowerCase()
+          : _,
+        notaria_numero_letras_femenino: notariaTramite.numero_notaria_letras
+          ? (notariaTramite.numero_notaria_letras.toUpperCase().endsWith("O")
+              ? notariaTramite.numero_notaria_letras.toUpperCase().slice(0, -1) + "A"
+              : notariaTramite.numero_notaria_letras.toUpperCase())
+          : _,
+        notaria_ordinal: notariaTramite.numero_ordinal || _,
+        notaria_circulo: notariaTramite.circulo || _,
+        notaria_circulo_proper: notariaTramite.circulo
+          ? notariaTramite.circulo.toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase())
+          : _,
+        notaria_departamento: notariaTramite.departamento || _,
 
         // Booleans for conditionals
         tiene_hipoteca: actos.es_hipoteca,
