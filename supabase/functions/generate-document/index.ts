@@ -60,6 +60,8 @@ ${JSON.stringify(inmueble, null, 2)}
 ACTOS:
 ${JSON.stringify(actos, null, 2)}
 
+${notariaBlock}
+
 Genera el contenido legal estructurado para llenar la plantilla de escritura pública.`;
 
     const tools = [
@@ -93,6 +95,14 @@ Genera el contenido legal estructurado para llenar la plantilla de escritura pú
               valor_compraventa_letras: { type: "string", description: "Valor de compraventa en letras y números" },
               valor_hipoteca_letras: { type: "string", description: "Valor de hipoteca en letras y números (vacío si no aplica)" },
               entidad_bancaria: { type: "string", description: "Nombre de la entidad bancaria (vacío si no aplica)" },
+              notaria_numero: { type: "string", description: "Número de la notaría destino. Devuelve '___________' si no fue proporcionado." },
+              notaria_numero_letras: { type: "string", description: "Número de la notaría en letras (ej: QUINTA, VEINTIUNA). Devuelve '___________' si no fue proporcionado." },
+              notaria_ordinal: { type: "string", description: "Ordinal del notario (ej: QUINTO, VEINTIUNO). Devuelve '___________' si no fue proporcionado." },
+              notaria_circulo: { type: "string", description: "Círculo notarial (ej: BOGOTÁ D.C.). Devuelve '___________' si no fue proporcionado." },
+              notaria_departamento: { type: "string", description: "Departamento de la notaría. Devuelve '___________' si no fue proporcionado." },
+              notario_nombre: { type: "string", description: "Nombre completo del notario titular/encargado. Devuelve '___________' si no fue proporcionado." },
+              notario_tipo: { type: "string", description: "Tipo de notario (titular, encargado, interino). Devuelve '___________' si no fue proporcionado." },
+              notario_decreto: { type: "string", description: "Decreto de nombramiento del notario. Devuelve '___________' si no fue proporcionado." },
             },
             required: [
               "fecha_escritura", "comparecientes_vendedor", "comparecientes_comprador",
