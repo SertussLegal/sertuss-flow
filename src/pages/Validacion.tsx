@@ -333,6 +333,9 @@ const Validacion = () => {
     if (!t) return;
 
     setIsUnlocked(!!(t as any).is_unlocked);
+    const rad = (t as any).radicado ?? "";
+    setRadicado(rad);
+    setRadicadoDraft(rad);
 
     const meta = (t as any).metadata;
     setTramiteMetadata(meta || null);
