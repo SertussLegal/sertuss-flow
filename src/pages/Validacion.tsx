@@ -2260,6 +2260,33 @@ const Validacion = () => {
             <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
           </Button>
           <span className="text-sm font-medium">Validación de Escritura</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] uppercase tracking-wide text-white/60">Radicado</span>
+            <Input
+              value={radicadoDraft}
+              onChange={(e) => setRadicadoDraft(e.target.value)}
+              onBlur={async () => {
+                const trimmed = radicadoDraft.trim();
+                if (trimmed === radicado || !tramiteId) return;
+                setSavingRadicado(true);
+                const { error } = await supabase
+                  .from("tramites")
+                  .update({ radicado: trimmed || null })
+                  .eq("id", tramiteId);
+                setSavingRadicado(false);
+                if (error) {
+                  toast({ title: "No se pudo guardar el radicado", description: error.message, variant: "destructive" });
+                  setRadicadoDraft(radicado);
+                } else {
+                  setRadicado(trimmed);
+                  toast({ title: "Radicado actualizado" });
+                }
+              }}
+              placeholder="2026-0001"
+              disabled={savingRadicado}
+              className="h-7 w-32 bg-white/10 border-white/30 text-white placeholder:text-white/40 text-xs px-2"
+            />
+          </div>
           <div className="ml-auto flex items-center gap-3">
             <Button variant="ghost-dark" size="sm" onClick={() => setShowDocPanel(true)} className="border border-white/30">
               <FileText className="mr-1 h-4 w-4" />
