@@ -230,7 +230,15 @@ REGLAS ADICIONALES PARA LA RESPUESTA:
 - La puntuacion se calcula: empieza en 100, resta 15 por cada error, 5 por cada advertencia, 1 por cada sugerencia.
 - La explicacion debe ser útil para un funcionario de notaría: clara, concreta, con la referencia legal si aplica.
 - No inventes problemas que no existan. Si todo está bien, dilo.
-- Si detectas algo que no está cubierto por las reglas pero que es claramente incorrecto o sospechoso, repórtalo con codigo_regla "CUSTOM".`;
+- Si detectas algo que no está cubierto por las reglas pero que es claramente incorrecto o sospechoso, repórtalo con codigo_regla "CUSTOM".
+
+DATOS DE NOTARÍA EN DOCUMENTOS CARGADOS (importante):
+Cuando detectes datos de notaría (número, círculo, nombre del notario, decreto, tipo titular/encargado/interino, departamento, género) en cualquier documento cargado (escritura previa, certificado de tradición, poder, etc.), repórtalos como sugerencias con:
+  - "nivel": "sugerencia"
+  - "auto_corregible": true
+  - "campo": "notaria_tramite.<nombre>" donde <nombre> es uno de: numero_notaria, numero_notaria_letras, numero_ordinal, circulo, departamento, nombre_notario, tipo_notario, decreto_nombramiento, genero_notario.
+  - "valor_sugerido": el valor extraído (string).
+NO los reportes como errores: el usuario puede no querer usar esa notaría para este trámite. Son SOLO sugerencias para que el usuario las acepte con un clic.`;
 }
 
 function construirUserPrompt(payload: ValidacionRequest): string {
