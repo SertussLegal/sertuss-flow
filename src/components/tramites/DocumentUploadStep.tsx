@@ -774,13 +774,13 @@ const DocumentUploadStep = () => {
             <Alert className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800 dark:text-amber-200">
-                <p className="font-medium mb-1">Cédulas faltantes según el certificado de tradición:</p>
+                <p className="font-medium mb-1">Personas naturales identificadas en el certificado sin cédula cargada:</p>
                 <ul className="list-disc list-inside space-y-1">
                   {missingAlerts.map((a, i) => (
                     <li key={i} className="text-sm">{a.nombre} (CC {a.cedula})</li>
                   ))}
                 </ul>
-                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Puedes continuar sin estas cédulas. Los campos correspondientes quedarán en blanco en la escritura para completar manualmente en la notaría.</p>
+                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Si alguna es vendedor en este trámite, sube su cédula. Si son acreedores u otros terceros, puedes continuar — esos datos se completarán en la notaría.</p>
               </AlertDescription>
             </Alert>
           )}
