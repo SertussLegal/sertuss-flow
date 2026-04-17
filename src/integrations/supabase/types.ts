@@ -699,6 +699,24 @@ export type Database = {
           },
         ]
       }
+      radicado_counters: {
+        Row: {
+          last_number: number
+          organization_id: string
+          year: number
+        }
+        Insert: {
+          last_number?: number
+          organization_id: string
+          year: number
+        }
+        Update: {
+          last_number?: number
+          organization_id?: string
+          year?: number
+        }
+        Relationships: []
+      }
       reglas_validacion: {
         Row: {
           activa: boolean | null
@@ -892,6 +910,7 @@ export type Database = {
         Args: { uid: string }
         Returns: Database["public"]["Enums"]["org_role"]
       }
+      next_radicado: { Args: { p_org_id: string }; Returns: string }
       purge_expired_drafts: { Args: never; Returns: undefined }
       restore_credit: { Args: { org_id: string }; Returns: undefined }
       unlock_expediente: {
