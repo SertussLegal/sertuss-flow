@@ -387,6 +387,7 @@ const DocxPreview = ({
   textoFinalWord,
   onSugerenciaAccepted,
   notariaConfig,
+  notariaTramite,
   extractedDocumento,
   extractedPredial,
   slotsPendientes = [],
