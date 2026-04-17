@@ -13,7 +13,25 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const { vendedores, compradores, inmueble, actos } = await req.json();
+    const { vendedores, compradores, inmueble, actos, notaria_tramite } = await req.json();
+
+    const BLANK = "___________";
+    const ntVal = (key: string) => {
+      const raw = notaria_tramite && typeof notaria_tramite === "object" ? notaria_tramite[key] : "";
+      const s = (raw ?? "").toString().trim();
+      return s.length > 0 ? s : BLANK;
+    };
+    const notariaBlock = `DATOS DE LA NOTARÍA PARA ESTE TRÁMITE:
+Número: ${ntVal("numero_notaria")} (${ntVal("numero_notaria_letras")})
+Ordinal: ${ntVal("numero_ordinal")}
+Círculo: ${ntVal("circulo")}
+Departamento: ${ntVal("departamento")}
+Notario: ${ntVal("nombre_notario")}
+Tipo: ${ntVal("tipo_notario")}
+Decreto: ${ntVal("decreto_nombramiento")}
+Género: ${ntVal("genero_notario")}
+
+REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría. Si algún campo aparece como "___________" arriba, debes devolver "___________" en los campos correspondientes del tool (notaria_numero_letras, notaria_ordinal, notaria_circulo, notario_nombre, notario_tipo, etc.). NUNCA inventes datos de notaría ni uses los de la "Notaría Quinta de Bogotá" o cualquier otra notaría real no proporcionada. Es preferible una línea en blanco a un dato inventado.`;
 
     const systemPrompt = `Eres un asistente jurídico experto en derecho notarial colombiano (Ley 1579 de 2012, Decreto 960 de 1970).
 Tu tarea es generar el contenido legal estructurado para una escritura pública de compraventa (y posible hipoteca) a partir de los datos proporcionados.
@@ -41,6 +59,8 @@ ${JSON.stringify(inmueble, null, 2)}
 
 ACTOS:
 ${JSON.stringify(actos, null, 2)}
+
+${notariaBlock}
 
 Genera el contenido legal estructurado para llenar la plantilla de escritura pública.`;
 
@@ -75,6 +95,14 @@ Genera el contenido legal estructurado para llenar la plantilla de escritura pú
               valor_compraventa_letras: { type: "string", description: "Valor de compraventa en letras y números" },
               valor_hipoteca_letras: { type: "string", description: "Valor de hipoteca en letras y números (vacío si no aplica)" },
               entidad_bancaria: { type: "string", description: "Nombre de la entidad bancaria (vacío si no aplica)" },
+              notaria_numero: { type: "string", description: "Número de la notaría destino. Devuelve '___________' si no fue proporcionado." },
+              notaria_numero_letras: { type: "string", description: "Número de la notaría en letras (ej: QUINTA, VEINTIUNA). Devuelve '___________' si no fue proporcionado." },
+              notaria_ordinal: { type: "string", description: "Ordinal del notario (ej: QUINTO, VEINTIUNO). Devuelve '___________' si no fue proporcionado." },
+              notaria_circulo: { type: "string", description: "Círculo notarial (ej: BOGOTÁ D.C.). Devuelve '___________' si no fue proporcionado." },
+              notaria_departamento: { type: "string", description: "Departamento de la notaría. Devuelve '___________' si no fue proporcionado." },
+              notario_nombre: { type: "string", description: "Nombre completo del notario titular/encargado. Devuelve '___________' si no fue proporcionado." },
+              notario_tipo: { type: "string", description: "Tipo de notario (titular, encargado, interino). Devuelve '___________' si no fue proporcionado." },
+              notario_decreto: { type: "string", description: "Decreto de nombramiento del notario. Devuelve '___________' si no fue proporcionado." },
             },
             required: [
               "fecha_escritura", "comparecientes_vendedor", "comparecientes_comprador",
