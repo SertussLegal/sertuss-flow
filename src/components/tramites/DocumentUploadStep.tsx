@@ -187,12 +187,25 @@ const DocumentUploadStep = () => {
   const certSlot = propSlots.find(s => s.type === "certificado_tradicion" && s.status === "done");
   const propietariosCert: { nombre: string; cedula: string }[] = useMemo(() => {
     if (!certSlot?.result?.personas) return [];
-    const ENTITY_PATTERNS = /\b(S\.?A\.?S?\.?|LTDA|BANCO|BANCOLOMBIA|DAVIVIENDA|BBVA|FIDUCIARIA|CONSTRUCTORA|FONDO|LEASING|CORP|INC|FUNDACION|E\.?S\.?P)\b/i;
+    // Detección genérica de personas jurídicas (sin nombres hardcodeados):
+    // 1) tipo_id explícito = NIT
+    // 2) nombre con sufijo societario genérico
+    // 3) número con formato NIT colombiano (empieza por 8 o 9, 9-10 dígitos)
+    const LEGAL_SUFFIX = /\b(S\.?A\.?S?\.?|LTDA\.?|E\.?S\.?P\.?|E\.?I\.?C\.?E\.?|S\.?C\.?A\.?|S\.?\s*EN\s*C\.?|&\s*C[IÍ]A|Y\s+C[IÍ]A|EU|SAS|S\s+A\s+S|CORP|INC|GMBH|N\.?V\.?)\b/i;
+    const NIT_NUMBER_PATTERN = /^[89]\d{8,9}$/;
+    const isPersonaJuridica = (nombre: string, tipoId: string, numero: string): boolean => {
+      if (tipoId && tipoId.toUpperCase().trim() === "NIT") return true;
+      if (nombre && LEGAL_SUFFIX.test(nombre)) return true;
+      if (numero && NIT_NUMBER_PATTERN.test(numero)) return true;
+      return false;
+    };
     const deduped = new Map<string, { nombre: string; cedula: string }>();
     for (const p of certSlot.result.personas as any[]) {
       const nombre = p.nombre_completo || p.nombre || "";
+      const tipoId = String(p.tipo_identificacion ?? p.tipo_id ?? "");
       const cedula = String(p.numero_identificacion ?? p.numero_cedula ?? "").replace(/\D/g, "");
-      if (!cedula || ENTITY_PATTERNS.test(nombre)) continue;
+      if (!cedula) continue;
+      if (isPersonaJuridica(nombre, tipoId, cedula)) continue;
       if (!deduped.has(cedula)) deduped.set(cedula, { nombre, cedula });
     }
     return Array.from(deduped.values());
@@ -761,13 +774,13 @@ const DocumentUploadStep = () => {
             <Alert className="border-amber-400 bg-amber-50 dark:bg-amber-950/20">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800 dark:text-amber-200">
-                <p className="font-medium mb-1">Cédulas faltantes según el certificado de tradición:</p>
+                <p className="font-medium mb-1">Personas naturales identificadas en el certificado sin cédula cargada:</p>
                 <ul className="list-disc list-inside space-y-1">
                   {missingAlerts.map((a, i) => (
                     <li key={i} className="text-sm">{a.nombre} (CC {a.cedula})</li>
                   ))}
                 </ul>
-                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Puedes continuar sin estas cédulas. Los campos correspondientes quedarán en blanco en la escritura para completar manualmente en la notaría.</p>
+                <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">Si alguna es vendedor en este trámite, sube su cédula. Si son acreedores u otros terceros, puedes continuar — esos datos se completarán en la notaría.</p>
               </AlertDescription>
             </Alert>
           )}
