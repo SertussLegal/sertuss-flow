@@ -213,6 +213,9 @@ const Validacion = () => {
   const { toast } = useToast();
   const { user, profile, organization, credits, refreshCredits } = useAuth();
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [radicado, setRadicado] = useState<string>("");
+  const [radicadoDraft, setRadicadoDraft] = useState<string>("");
+  const [savingRadicado, setSavingRadicado] = useState(false);
 
   const [tramiteId, setTramiteId] = useState<string | null>(id ?? null);
   const [vendedores, setVendedores] = useState<Persona[]>([createEmptyPersona()]);
