@@ -104,6 +104,47 @@ interface NotariaConfig {
   nombre_notario: string; decreto_nombramiento: string;
 }
 
+export interface NotariaTramite {
+  numero_notaria: string;          // "5", "21"
+  numero_notaria_letras: string;   // "QUINTA", "VEINTIUNA"
+  numero_ordinal: string;          // "5o", "21a"
+  circulo: string;                 // "BOGOTÁ D.C."
+  departamento: string;            // "CUNDINAMARCA"
+  nombre_notario: string;
+  tipo_notario: string;            // "TITULAR" (vacío en docx) | "ENCARGADO" | "INTERINO"
+  decreto_nombramiento: string;
+  genero_notario: string;          // "MASCULINO" | "FEMENINO"
+}
+
+export const createEmptyNotariaTramite = (): NotariaTramite => ({
+  numero_notaria: "",
+  numero_notaria_letras: "",
+  numero_ordinal: "",
+  circulo: "",
+  departamento: "",
+  nombre_notario: "",
+  tipo_notario: "",
+  decreto_nombramiento: "",
+  genero_notario: "",
+});
+
+// QUINTO -> QUINTA, PRIMERO -> PRIMERA, etc. (best-effort para ordinales españoles)
+const deriveFemenino = (s: string): string => {
+  if (!s) return "";
+  const upper = s.toUpperCase().trim();
+  if (upper.endsWith("O")) return upper.slice(0, -1) + "A";
+  return upper;
+};
+
+const toProperCase = (s: string): string => {
+  if (!s) return "";
+  return s
+    .toLowerCase()
+    .split(/(\s+)/)
+    .map((part) => /^\s+$/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+};
+
 interface ExtractedDocumento {
   notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
   modo_adquisicion?: string; adquirido_de?: string;
