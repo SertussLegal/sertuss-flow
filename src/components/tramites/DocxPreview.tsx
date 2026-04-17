@@ -104,6 +104,47 @@ interface NotariaConfig {
   nombre_notario: string; decreto_nombramiento: string;
 }
 
+export interface NotariaTramite {
+  numero_notaria: string;          // "5", "21"
+  numero_notaria_letras: string;   // "QUINTA", "VEINTIUNA"
+  numero_ordinal: string;          // "5o", "21a"
+  circulo: string;                 // "BOGOTÁ D.C."
+  departamento: string;            // "CUNDINAMARCA"
+  nombre_notario: string;
+  tipo_notario: string;            // "TITULAR" (vacío en docx) | "ENCARGADO" | "INTERINO"
+  decreto_nombramiento: string;
+  genero_notario: string;          // "MASCULINO" | "FEMENINO"
+}
+
+export const createEmptyNotariaTramite = (): NotariaTramite => ({
+  numero_notaria: "",
+  numero_notaria_letras: "",
+  numero_ordinal: "",
+  circulo: "",
+  departamento: "",
+  nombre_notario: "",
+  tipo_notario: "",
+  decreto_nombramiento: "",
+  genero_notario: "",
+});
+
+// QUINTO -> QUINTA, PRIMERO -> PRIMERA, etc. (best-effort para ordinales españoles)
+const deriveFemenino = (s: string): string => {
+  if (!s) return "";
+  const upper = s.toUpperCase().trim();
+  if (upper.endsWith("O")) return upper.slice(0, -1) + "A";
+  return upper;
+};
+
+const toProperCase = (s: string): string => {
+  if (!s) return "";
+  return s
+    .toLowerCase()
+    .split(/(\s+)/)
+    .map((part) => /^\s+$/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+};
+
 interface ExtractedDocumento {
   notaria_origen?: string; numero_escritura?: string; fecha_documento?: string;
   modo_adquisicion?: string; adquirido_de?: string;
@@ -131,6 +172,7 @@ interface DocxPreviewProps {
   textoFinalWord?: string;
   onSugerenciaAccepted?: (idx: number, textoSugerido: string) => void;
   notariaConfig?: NotariaConfig | null;
+  notariaTramite?: NotariaTramite | null;
   extractedDocumento?: ExtractedDocumento | null;
   extractedPredial?: ExtractedPredial | null;
   slotsPendientes?: string[];
@@ -345,6 +387,7 @@ const DocxPreview = ({
   textoFinalWord,
   onSugerenciaAccepted,
   notariaConfig,
+  notariaTramite,
   extractedDocumento,
   extractedPredial,
   slotsPendientes = [],
@@ -598,21 +641,32 @@ const DocxPreview = ({
       "apoderado_banco.notaria_poder_num": (actos as any).apoderado_notaria_poder || "___________",
       "apoderado_banco.notaria_poder_ciudad": (actos as any).apoderado_notaria_ciudad || "___________",
       "apoderado_banco.email": (actos as any).apoderado_email || "___________",
-      // Notario — from notaria config, fallback to extractedDocumento
-      "notario_nombre": notariaConfig?.nombre_notario || notariaConfig?.notario_titular || "___________",
-      "notario_decreto": notariaConfig?.decreto_nombramiento || "___________",
-      "notario_tipo": notariaConfig?.tipo_notario || "___________",
-      "notaria_nombre": notariaConfig?.nombre_notaria || "___________",
-      "notaria_ciudad": notariaConfig?.ciudad || "___________",
-      "notaria_circulo": notariaConfig?.circulo || "___________",
-      "notaria_departamento": notariaConfig?.departamento || "___________",
-      "notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
+      // Notario / Notaría — SIEMPRE desde notariaTramite (este trámite). Sin pre-llenado desde org/notariaConfig.
+      // Los placeholders nuevos del template (notaria_numero_letras, notaria_ordinal, notaria_circulo, etc.)
+      // caen a "___________" si el usuario no los ha llenado o no aceptó la sugerencia de Claude.
+      "notario_nombre": notariaTramite?.nombre_notario || "___________",
+      "notario_decreto": notariaTramite?.decreto_nombramiento || "___________",
+      "notario_tipo": notariaTramite?.tipo_notario || "",  // vacío si TITULAR (queda limpio en docx)
+      "notaria_nombre": "___________",
+      "notaria_ciudad": notariaTramite?.circulo || "___________",
+      "notaria_circulo": notariaTramite?.circulo || "___________",
+      "notaria_circulo_proper": notariaTramite?.circulo ? toProperCase(notariaTramite.circulo) : "___________",
+      "notaria_departamento": notariaTramite?.departamento || "___________",
+      "notaria_numero": notariaTramite?.numero_notaria || "___________",
+      "notaria_numero_letras": notariaTramite?.numero_notaria_letras || "___________",
+      "notaria_numero_letras_lower": notariaTramite?.numero_notaria_letras
+        ? notariaTramite.numero_notaria_letras.toLowerCase()
+        : "___________",
+      "notaria_numero_letras_femenino": notariaTramite?.numero_notaria_letras
+        ? deriveFemenino(notariaTramite.numero_notaria_letras)
+        : "___________",
+      "notaria_ordinal": notariaTramite?.numero_ordinal || "___________",
       "escritura_numero": "___________",
       "fecha_escritura_corta": "___________",
     };
 
     return replacements;
-  }, [vendedores, compradores, inmueble, actos, notariaConfig, extractedDocumento, extractedPredial]);
+  }, [vendedores, compradores, inmueble, actos, notariaConfig, notariaTramite, extractedDocumento, extractedPredial]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {

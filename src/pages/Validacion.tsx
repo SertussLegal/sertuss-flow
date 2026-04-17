@@ -20,7 +20,9 @@ import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
 import type { ExtractedPersona, ExtractedDocumento } from "@/components/tramites/InmuebleForm";
 import ActosForm from "@/components/tramites/ActosForm";
-import DocxPreview from "@/components/tramites/DocxPreview";
+import DocxPreview, { createEmptyNotariaTramite } from "@/components/tramites/DocxPreview";
+import type { NotariaTramite } from "@/components/tramites/DocxPreview";
+import OcrSuggestion from "@/components/tramites/OcrSuggestion";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
@@ -254,6 +256,9 @@ const Validacion = () => {
   const [validacionCampos, setValidacionCampos] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
   const [validandoCampos, setValidandoCampos] = useState(false);
   const [bannerExpanded, setBannerExpanded] = useState(false);
+  const [notariaTramite, setNotariaTramite] = useState<NotariaTramite>(createEmptyNotariaTramite());
+  const [notariaPanelOpen, setNotariaPanelOpen] = useState(false);
+  const [ignoredNotariaSuggestions, setIgnoredNotariaSuggestions] = useState<Set<string>>(new Set());
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
@@ -288,7 +293,7 @@ const Validacion = () => {
       setIsDirty(true);
       setSyncStatus("unsaved");
     }
-  }, [vendedores, compradores, inmueble, actos, overrides]);
+  }, [vendedores, compradores, inmueble, actos, overrides, notariaTramite]);
 
   // Auto-save debounce: 15 seconds
   useEffect(() => {
@@ -297,7 +302,7 @@ const Validacion = () => {
       handleAutoSave();
     }, 15000);
     return () => clearTimeout(timer);
-  }, [isDirty, vendedores, compradores, inmueble, actos, overrides, profile?.organization_id]);
+  }, [isDirty, vendedores, compradores, inmueble, actos, overrides, notariaTramite, profile?.organization_id]);
 
   // beforeunload: force save before leaving
   useEffect(() => {
@@ -356,6 +361,13 @@ const Validacion = () => {
         map.set(k, v as NivelConfianza);
       }
       setConfianzaFields(map);
+    }
+
+    // Restore notaria_tramite (datos de notaría POR TRÁMITE — sin pre-llenado desde org)
+    if (meta?.notaria_tramite && typeof meta.notaria_tramite === "object") {
+      setNotariaTramite({ ...createEmptyNotariaTramite(), ...meta.notaria_tramite });
+    } else {
+      setNotariaTramite(createEmptyNotariaTramite());
     }
 
     // Restore AI snapshot from logs_extraccion for correction tracking
@@ -779,6 +791,7 @@ const Validacion = () => {
         overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
+        notaria_tramite: notariaTramite,
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
@@ -1508,6 +1521,7 @@ const Validacion = () => {
         overrides: overrides.map(ov => ({ ...ov })),
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
+        notaria_tramite: notariaTramite,
         ...(sugerenciasIA.length > 0 ? { sugerencias_ia: sugerenciasIA } : {}),
         ...(textoFinalWord ? { texto_final_word: textoFinalWord } : {}),
       } as Record<string, unknown>;
@@ -1803,8 +1817,25 @@ const Validacion = () => {
         // Root-level
         escritura_numero: _,
         fecha_escritura_corta: new Date().toLocaleDateString("es-CO"),
-        notario_nombre: notariaConfig?.nombre_notario || _,
-        notario_decreto: notariaConfig?.decreto_nombramiento || _,
+        notario_nombre: notariaTramite.nombre_notario || _,
+        notario_decreto: notariaTramite.decreto_nombramiento || _,
+        notario_tipo: notariaTramite.tipo_notario || "",
+        notaria_numero: notariaTramite.numero_notaria || _,
+        notaria_numero_letras: notariaTramite.numero_notaria_letras || _,
+        notaria_numero_letras_lower: notariaTramite.numero_notaria_letras
+          ? notariaTramite.numero_notaria_letras.toLowerCase()
+          : _,
+        notaria_numero_letras_femenino: notariaTramite.numero_notaria_letras
+          ? (notariaTramite.numero_notaria_letras.toUpperCase().endsWith("O")
+              ? notariaTramite.numero_notaria_letras.toUpperCase().slice(0, -1) + "A"
+              : notariaTramite.numero_notaria_letras.toUpperCase())
+          : _,
+        notaria_ordinal: notariaTramite.numero_ordinal || _,
+        notaria_circulo: notariaTramite.circulo || _,
+        notaria_circulo_proper: notariaTramite.circulo
+          ? notariaTramite.circulo.toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase())
+          : _,
+        notaria_departamento: notariaTramite.departamento || _,
 
         // Booleans for conditionals
         tiene_hipoteca: actos.es_hipoteca,
@@ -2003,8 +2034,130 @@ const Validacion = () => {
     const conteo = validacionCampos ? contarPorNivel(validacionCampos) : null;
     const totalHallazgos = conteo ? conteo.errores + conteo.advertencias + conteo.sugerencias : 0;
 
+    // Sugerencias de notaría detectadas por Claude (auto-corregibles, campo notaria_tramite.*)
+    const NOTARIA_FIELDS: Array<keyof NotariaTramite> = [
+      "numero_notaria", "numero_notaria_letras", "numero_ordinal", "circulo",
+      "departamento", "nombre_notario", "tipo_notario", "decreto_nombramiento", "genero_notario",
+    ];
+    const NOTARIA_LABELS: Record<keyof NotariaTramite, string> = {
+      numero_notaria: "Número de notaría",
+      numero_notaria_letras: "Número en letras (QUINTA, VEINTIUNA…)",
+      numero_ordinal: "Ordinal (5o, 21a…)",
+      circulo: "Círculo notarial",
+      departamento: "Departamento",
+      nombre_notario: "Nombre del notario",
+      tipo_notario: "Tipo (TITULAR / ENCARGADO / INTERINO)",
+      decreto_nombramiento: "Decreto / Resolución",
+      genero_notario: "Género (MASCULINO / FEMENINO)",
+    };
+    const notariaSuggestions = new Map<keyof NotariaTramite, string>();
+    if (validacionCampos?.validaciones) {
+      for (const v of validacionCampos.validaciones) {
+        if (!v.auto_corregible || !v.valor_sugerido) continue;
+        const m = (v.campo || "").match(/^notaria(?:_tramite)?\.(.+)$/);
+        if (!m) continue;
+        const key = m[1] as keyof NotariaTramite;
+        if (!NOTARIA_FIELDS.includes(key)) continue;
+        if (ignoredNotariaSuggestions.has(`${key}=${v.valor_sugerido}`)) continue;
+        if (notariaTramite[key]) continue; // ya tiene valor: no sugerir
+        if (!notariaSuggestions.has(key)) notariaSuggestions.set(key, v.valor_sugerido);
+      }
+    }
+
+    const applyNotariaSuggestion = (key: keyof NotariaTramite, value: string) => {
+      setNotariaTramite(prev => ({ ...prev, [key]: value }));
+      setIgnoredNotariaSuggestions(prev => new Set(prev).add(`${key}=${value}`));
+    };
+    const ignoreNotariaSuggestion = (key: keyof NotariaTramite, value: string) => {
+      setIgnoredNotariaSuggestions(prev => new Set(prev).add(`${key}=${value}`));
+    };
+    const applyAllNotariaSuggestions = () => {
+      const updates: Partial<NotariaTramite> = {};
+      const newIgnored = new Set(ignoredNotariaSuggestions);
+      notariaSuggestions.forEach((value, key) => {
+        updates[key] = value as any;
+        newIgnored.add(`${key}=${value}`);
+      });
+      setNotariaTramite(prev => ({ ...prev, ...updates }));
+      setIgnoredNotariaSuggestions(newIgnored);
+    };
+
+    const renderNotariaInput = (key: keyof NotariaTramite) => {
+      const sug = notariaSuggestions.get(key);
+      const input = (
+        <input
+          type="text"
+          value={notariaTramite[key]}
+          onChange={(e) => setNotariaTramite(prev => ({ ...prev, [key]: e.target.value }))}
+          placeholder="___________"
+          className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      );
+      if (!sug) return input;
+      return (
+        <OcrSuggestion
+          value={sug}
+          onConfirm={() => applyNotariaSuggestion(key, sug)}
+          onIgnore={() => ignoreNotariaSuggestion(key, sug)}
+        >
+          <div className="ring-2 ring-primary/40 rounded-md">{input}</div>
+        </OcrSuggestion>
+      );
+    };
+
+    const camposLlenos = NOTARIA_FIELDS.filter(k => notariaTramite[k]).length;
+
     return (
     <Tabs defaultValue="vendedores" className="w-full">
+      {/* Panel: Datos de la Notaría (POR TRÁMITE) */}
+      <div className="mb-4 rounded-md border border-border/60 bg-card">
+        <button
+          type="button"
+          onClick={() => setNotariaPanelOpen(v => !v)}
+          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">Datos de la Notaría</span>
+            <span className="text-xs text-muted-foreground">
+              ({camposLlenos}/{NOTARIA_FIELDS.length} campos)
+            </span>
+            {notariaSuggestions.size > 0 && (
+              <Badge variant="outline" className="border-primary/40 text-primary text-[10px]">
+                {notariaSuggestions.size} sugerencia{notariaSuggestions.size !== 1 ? "s" : ""} de IA
+              </Badge>
+            )}
+          </div>
+          {notariaPanelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        {notariaPanelOpen && (
+          <div className="border-t border-border/40 p-3 space-y-3">
+            <p className="text-[11px] text-muted-foreground">
+              Estos datos se usan para llenar las referencias a la notaría en la escritura.
+              Si los dejas vacíos, el documento mostrará líneas en blanco (___________).
+            </p>
+            {notariaSuggestions.size > 0 && (
+              <div className="flex items-center justify-between gap-2 rounded bg-primary/5 border border-primary/20 px-2 py-1.5">
+                <span className="text-xs text-foreground">
+                  El asistente IA detectó {notariaSuggestions.size} dato{notariaSuggestions.size !== 1 ? "s" : ""} de notaría en los documentos cargados.
+                </span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={applyAllNotariaSuggestions}>
+                  Aplicar todas
+                </Button>
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {NOTARIA_FIELDS.map(key => (
+                <div key={key} className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">{NOTARIA_LABELS[key]}</label>
+                  {renderNotariaInput(key)}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <TabsList className="mb-3 w-full">
         <TabsTrigger value="vendedores" className="flex-1">Vendedores{renderTabIcon("vendedores")}</TabsTrigger>
         <TabsTrigger value="compradores" className="flex-1">Compradores{renderTabIcon("compradores")}</TabsTrigger>
@@ -2162,6 +2315,7 @@ const Validacion = () => {
               textoFinalWord={textoFinalWord}
               onSugerenciaAccepted={handleSugerenciaAccepted}
               notariaConfig={notariaConfig}
+              notariaTramite={notariaTramite}
               extractedDocumento={extractedDocumento}
               extractedPredial={extractedPredial}
               slotsPendientes={slotsPendientes}
@@ -2209,6 +2363,7 @@ const Validacion = () => {
               textoFinalWord={textoFinalWord}
               onSugerenciaAccepted={handleSugerenciaAccepted}
               notariaConfig={notariaConfig}
+              notariaTramite={notariaTramite}
               extractedDocumento={extractedDocumento}
               extractedPredial={extractedPredial}
               slotsPendientes={slotsPendientes}
