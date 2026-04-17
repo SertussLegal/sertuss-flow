@@ -187,12 +187,25 @@ const DocumentUploadStep = () => {
   const certSlot = propSlots.find(s => s.type === "certificado_tradicion" && s.status === "done");
   const propietariosCert: { nombre: string; cedula: string }[] = useMemo(() => {
     if (!certSlot?.result?.personas) return [];
-    const ENTITY_PATTERNS = /\b(S\.?A\.?S?\.?|LTDA|BANCO|BANCOLOMBIA|DAVIVIENDA|BBVA|FIDUCIARIA|CONSTRUCTORA|FONDO|LEASING|CORP|INC|FUNDACION|E\.?S\.?P)\b/i;
+    // Detección genérica de personas jurídicas (sin nombres hardcodeados):
+    // 1) tipo_id explícito = NIT
+    // 2) nombre con sufijo societario genérico
+    // 3) número con formato NIT colombiano (empieza por 8 o 9, 9-10 dígitos)
+    const LEGAL_SUFFIX = /\b(S\.?A\.?S?\.?|LTDA\.?|E\.?S\.?P\.?|E\.?I\.?C\.?E\.?|S\.?C\.?A\.?|S\.?\s*EN\s*C\.?|&\s*C[IÍ]A|Y\s+C[IÍ]A|EU|SAS|S\s+A\s+S|CORP|INC|GMBH|N\.?V\.?)\b/i;
+    const NIT_NUMBER_PATTERN = /^[89]\d{8,9}$/;
+    const isPersonaJuridica = (nombre: string, tipoId: string, numero: string): boolean => {
+      if (tipoId && tipoId.toUpperCase().trim() === "NIT") return true;
+      if (nombre && LEGAL_SUFFIX.test(nombre)) return true;
+      if (numero && NIT_NUMBER_PATTERN.test(numero)) return true;
+      return false;
+    };
     const deduped = new Map<string, { nombre: string; cedula: string }>();
     for (const p of certSlot.result.personas as any[]) {
       const nombre = p.nombre_completo || p.nombre || "";
+      const tipoId = String(p.tipo_identificacion ?? p.tipo_id ?? "");
       const cedula = String(p.numero_identificacion ?? p.numero_cedula ?? "").replace(/\D/g, "");
-      if (!cedula || ENTITY_PATTERNS.test(nombre)) continue;
+      if (!cedula) continue;
+      if (isPersonaJuridica(nombre, tipoId, cedula)) continue;
       if (!deduped.has(cedula)) deduped.set(cedula, { nombre, cedula });
     }
     return Array.from(deduped.values());
