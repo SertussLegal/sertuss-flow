@@ -1320,8 +1320,18 @@ const DocxPreview = ({
           fieldName={editPopover.field}
           currentValue={editPopover.value}
           position={editPopover.position}
+          suggestion={editPopover.suggestion}
           onApply={handleFieldApply}
           onClose={() => setEditPopover(null)}
+          onGotoForm={
+            onScrollToField
+              ? () => {
+                  const f = editPopover.field;
+                  setEditPopover(null);
+                  onScrollToField(f);
+                }
+              : undefined
+          }
         />
       )}
 
