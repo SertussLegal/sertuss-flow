@@ -183,7 +183,7 @@ interface DocxPreviewProps {
   inmueble: Inmueble;
   actos: Actos;
   overrides?: TextOverride[];
-  onFieldEdit?: (field: string, value: string) => void;
+  onFieldEdit?: (field: string, value: string, anchorText?: string) => void;
   onCreateOverride?: (originalText: string, newText: string, replaceAll: boolean, contextBefore: string, contextAfter: string) => void;
   onRemoveOverride?: (id: string) => void;
   sugerenciasIA?: SugerenciaIA[];
@@ -1092,7 +1092,9 @@ const DocxPreview = ({
 
   const handleFieldApply = useCallback((value: string) => {
     if (!editPopover || !onFieldEdit) return;
-    onFieldEdit(editPopover.field, value);
+    // Pass the original on-screen text as anchor so unmapped fields can
+    // fall back to a semantic override in the parent.
+    onFieldEdit(editPopover.field, value, editPopover.value);
     setEditPopover(null);
   }, [editPopover, onFieldEdit]);
 

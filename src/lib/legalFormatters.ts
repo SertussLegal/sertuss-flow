@@ -103,6 +103,48 @@ export function formatFechaLegal(fecha: string): string {
   return `${diaLetras} (${dia}) de ${mesLetras} de ${anioLetras} (${anio})`;
 }
 
+// ── Casing normalization for notarial style coherence ──
+function toTitleCaseEs(s: string): string {
+  const minor = new Set(["de", "del", "la", "las", "el", "los", "y", "e", "o", "u", "a"]);
+  return s
+    .toLocaleLowerCase("es-CO")
+    .split(/\s+/)
+    .map((w, i) => {
+      if (!w) return w;
+      if (i > 0 && minor.has(w)) return w;
+      return w.charAt(0).toLocaleUpperCase("es-CO") + w.slice(1);
+    })
+    .join(" ");
+}
+
+/**
+ * Normalizes user-typed values for notarial-style coherence.
+ * Default = MAYÚSCULAS (Spanish locale, preserves accents).
+ * Numeric / date / explicit-suffix fields are passed through or cased accordingly.
+ */
+export function normalizeFieldCasing(field: string, value: string): string {
+  if (!value) return value;
+  const v = value.trim();
+  if (!v) return v;
+  const f = field.toLowerCase();
+
+  // Explicit casing suffixes win
+  if (f.endsWith("_lower")) return v.toLocaleLowerCase("es-CO");
+  if (f.endsWith("_proper")) return toTitleCaseEs(v);
+
+  // Dates → passthrough (formatting handled elsewhere)
+  if (/fecha/.test(f)) return v;
+
+  // Pure numerics (avoid touching "_letras" variants)
+  const isNumericField =
+    /(numero|ordinal|decreto|nit|cedula|matricula|chip|catastral|estrato|area|avaluo|valor|saldo|pago)/.test(f) &&
+    !/letras/.test(f);
+  if (isNumericField) return v;
+
+  // Default: MAYÚSCULAS con tildes preservadas
+  return v.toLocaleUpperCase("es-CO");
+}
+
 /**
  * Formats a cédula number with dots and expedition place.
  * "79681841", "Bogotá D.C." → "79.681.841 expedida en Bogotá D.C."

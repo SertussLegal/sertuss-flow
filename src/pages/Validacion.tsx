@@ -848,30 +848,45 @@ const Validacion = () => {
   };
 
   // Bidirectional sync: preview → form data
-  const handleFieldEdit = useCallback((field: string, value: string) => {
+  const handleFieldEdit = useCallback((field: string, value: string, anchorText?: string) => {
     // Track manually edited fields to prevent OCR overwrite
     manuallyEditedFieldsRef.current.add(field);
+
+    // Normalize casing for notarial-style coherence (uppercase by default,
+    // numeric/date/explicit-suffix fields passed through).
+    const v = normalizeFieldCasing(field, value);
 
     if (field.startsWith("__override__")) {
       const ovId = field.replace("__override__", "");
       setOverrides((prev) =>
-        prev.map((ov) => (ov.id === ovId ? { ...ov, newText: value } : ov))
+        prev.map((ov) => (ov.id === ovId ? { ...ov, newText: v } : ov))
       );
       return;
     }
     if (FIELD_TO_INMUEBLE[field]) {
       const inmuebleKey = FIELD_TO_INMUEBLE[field];
       manuallyEditedFieldsRef.current.add(inmuebleKey);
-      setInmueble((prev) => ({ ...prev, [inmuebleKey]: value }));
+      setInmueble((prev) => ({ ...prev, [inmuebleKey]: v }));
       return;
     }
     if (FIELD_TO_ACTOS[field]) {
       const actosKey = FIELD_TO_ACTOS[field];
       manuallyEditedFieldsRef.current.add(actosKey);
-      setActos((prev) => ({ ...prev, [actosKey]: value }));
+      setActos((prev) => ({ ...prev, [actosKey]: v }));
       return;
     }
+
+    // Universal fallback: any unmapped placeholder becomes a semantic override
+    // anchored on the exact text the user clicked. Persisted in metadata.overrides.
+    if (anchorText && anchorText.trim() && anchorText !== v) {
+      handleCreateOverrideRef.current?.(anchorText, v, false, "", "");
+    }
   }, []);
+
+  // Ref bridge to avoid hoisting issues with handleCreateOverride defined later
+  const handleCreateOverrideRef = useRef<
+    ((originalText: string, newText: string, replaceAll: boolean, contextBefore: string, contextAfter: string) => void) | null
+  >(null);
 
   const handlePersonasExtracted = useCallback((personas: ExtractedPersona[]) => {
     if (!personas.length) return;
