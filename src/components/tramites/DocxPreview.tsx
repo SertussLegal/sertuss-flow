@@ -958,12 +958,13 @@ const DocxPreview = ({
     const target = e.target as HTMLElement;
 
     // Check for sugerencia click
-    const sugerenciaIdx = target.getAttribute("data-sugerencia-idx");
-    if (sugerenciaIdx !== null && sugerenciasIA.length > 0) {
+    const sugEl = target.closest('[data-sugerencia-idx]') as HTMLElement | null;
+    const sugerenciaIdx = sugEl?.getAttribute("data-sugerencia-idx") ?? null;
+    if (sugEl && sugerenciaIdx !== null && sugerenciasIA.length > 0) {
       const idx = parseInt(sugerenciaIdx, 10);
       const sug = sugerenciasIA[idx];
       if (sug) {
-        const rect = target.getBoundingClientRect();
+        const rect = sugEl.getBoundingClientRect();
         setEditPopover(null);
         setSelectionToolbar(null);
         setSugerenciaPopover({
@@ -976,12 +977,12 @@ const DocxPreview = ({
     }
 
     // Check for template variable click
-    const field = target.getAttribute("data-field");
-    if (field) {
-      const text = target.textContent || "";
-      // Always open edit popover (works for both empty ___________ and filled values)
+    const fieldEl = target.closest('[data-field]') as HTMLElement | null;
+    const field = fieldEl?.getAttribute("data-field");
+    if (fieldEl && field) {
+      const text = fieldEl.textContent || "";
       if (onFieldEdit) {
-        const rect = target.getBoundingClientRect();
+        const rect = fieldEl.getBoundingClientRect();
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
         const isEmpty = text === "___________";
@@ -992,7 +993,6 @@ const DocxPreview = ({
           inmueble,
           actos,
         );
-        // Only show suggestion if it differs from current value
         const finalSuggestion =
           suggestion && (isEmpty || suggestion.value !== text) ? suggestion : undefined;
         setEditPopover({
@@ -1006,11 +1006,12 @@ const DocxPreview = ({
     }
 
     // Check for override click
-    const overrideId = target.getAttribute("data-override");
-    if (overrideId && onFieldEdit) {
+    const overrideEl = target.closest('[data-override]') as HTMLElement | null;
+    const overrideId = overrideEl?.getAttribute("data-override");
+    if (overrideEl && overrideId && onFieldEdit) {
       const ov = overrides.find((o) => o.id === overrideId);
       if (ov) {
-        const rect = target.getBoundingClientRect();
+        const rect = overrideEl.getBoundingClientRect();
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
         setEditPopover({

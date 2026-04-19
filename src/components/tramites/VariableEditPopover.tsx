@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -70,33 +71,42 @@ const VariableEditPopover = ({
   }, []);
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+    const handleOutside = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (popoverRef.current && t && !popoverRef.current.contains(t)) {
+        // Ignore clicks on the originating data-field span (re-opens itself)
+        const fieldEl = (e.target as HTMLElement).closest?.('[data-field]');
+        if (fieldEl) return;
         onClose();
       }
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    document.addEventListener("mousedown", handleClickOutside);
+    // Defer registration to skip the click that opened this popover
+    const id = window.setTimeout(() => {
+      document.addEventListener("pointerdown", handleOutside, true);
+    }, 0);
     document.addEventListener("keydown", handleEscape);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      window.clearTimeout(id);
+      document.removeEventListener("pointerdown", handleOutside, true);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [onClose]);
 
   const label = FIELD_LABELS[fieldName] || fieldName;
 
-  // Clamp position to viewport
-  const top = Math.min(position.top, window.innerHeight - 220);
-  const left = Math.min(position.left, window.innerWidth - 304);
+  // Clamp position to viewport (symmetric)
+  const top = Math.max(8, Math.min(position.top, window.innerHeight - 240));
+  const left = Math.max(8, Math.min(position.left, window.innerWidth - 328));
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       className="fixed z-[100] w-80 rounded-lg border bg-popover p-3 shadow-lg animate-in fade-in-0 zoom-in-95"
       style={{ top, left }}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-1.5 mb-2">
         <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
@@ -158,7 +168,8 @@ const VariableEditPopover = ({
           Ir al formulario <ArrowRight className="h-3 w-3" />
         </button>
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
 
