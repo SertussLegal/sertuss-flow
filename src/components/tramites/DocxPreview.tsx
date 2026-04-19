@@ -750,8 +750,10 @@ const DocxPreview = ({
       "fecha_escritura_corta": "___________",
     };
 
-    return replacements;
-  }, [vendedores, compradores, inmueble, actos, notariaConfig, notariaTramite, extractedDocumento, extractedPredial]);
+    // Manual edits from popover (unmapped fields) take highest precedence —
+    // they always win over computed defaults / "___________" placeholders.
+    return { ...replacements, ...manualFieldOverrides };
+  }, [vendedores, compradores, inmueble, actos, notariaConfig, notariaTramite, extractedDocumento, extractedPredial, manualFieldOverrides]);
 
   // Apply replacements or use textoFinalWord
   useEffect(() => {
@@ -795,10 +797,15 @@ const DocxPreview = ({
 
       for (const [key, value] of Object.entries(replacements)) {
         const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const isUserEdited = key in manualFieldOverrides && !!manualFieldOverrides[key];
         if (value && value !== "___________") {
+          const cls = isUserEdited ? "var-user-edited" : "var-resolved";
+          const style = isUserEdited
+            ? "color:#6d28d9;background:#f5f3ff;font-weight:bold;cursor:pointer;border-bottom:1px dashed #6d28d9;border-radius:2px;padding:0 2px"
+            : "color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46";
           result = result.replace(
             new RegExp(`\\{${escaped}\\}`, "g"),
-            `<span data-field="${key}" class="var-resolved" style="color:#065f46;font-weight:bold;cursor:pointer;border-bottom:1px dashed #065f46">${value}</span>`
+            `<span data-field="${key}" class="${cls}" style="${style}">${value}</span>`
           );
         } else {
           const style = optionalPendingFields.has(key) ? pendingOrangeStyle : pendingRedStyle;
