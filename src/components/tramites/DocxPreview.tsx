@@ -373,6 +373,69 @@ function processLoops(
   return result;
 }
 
+/**
+ * Returns an OCR-derived suggestion for a given template field, or undefined.
+ * Pure function — only returns when source data exists and is non-empty.
+ */
+function getSuggestionForField(
+  field: string,
+  extractedDocumento: any,
+  extractedPredial: any,
+  inmueble: Inmueble,
+  actos: Actos,
+): { value: string; source: string } | undefined {
+  const pick = (v: any): string | undefined => {
+    if (v === undefined || v === null) return undefined;
+    const s = String(v).trim();
+    return s && s !== "___________" ? s : undefined;
+  };
+
+  if (field === "inmueble.matricula" || field === "matricula_inmobiliaria") {
+    const v = pick(extractedDocumento?.titulo_antecedente?.matricula_inmobiliaria);
+    if (v) return { value: v, source: "Cert. Tradición" };
+  }
+  if (field === "inmueble.cedula_catastral" || field === "identificador_predial") {
+    const v = pick(extractedPredial?.identificador_predial) || pick(extractedPredial?.cedula_catastral);
+    if (v) return { value: v, source: "Predial" };
+  }
+  if (field === "inmueble.direccion" || field === "direccion_inmueble") {
+    const vp = pick(extractedPredial?.direccion);
+    if (vp) return { value: vp, source: "Predial" };
+    const vd = pick(extractedDocumento?.titulo_antecedente?.direccion);
+    if (vd) return { value: vd, source: "Cert. Tradición" };
+  }
+  if (field === "inmueble.estrato" || field === "estrato") {
+    const v = pick(extractedPredial?.estrato);
+    if (v) return { value: v, source: "Predial" };
+  }
+  if (field === "inmueble.avaluo_catastral" || field === "avaluo_catastral") {
+    const v = pick(extractedPredial?.valor_pagado);
+    if (v) return { value: v, source: "Predial" };
+  }
+  if (field === "actos.entidad_nit") {
+    const bank = lookupBank(actos.entidad_bancaria || "");
+    if (bank?.nit) return { value: bank.nit, source: "Directorio bancos" };
+  }
+  if (field === "actos.entidad_domicilio") {
+    const bank = lookupBank(actos.entidad_bancaria || "");
+    if (bank?.domicilio) return { value: bank.domicilio, source: "Directorio bancos" };
+  }
+  if (field === "notaria_previa_numero" || field === "antecedentes.notaria_previa_numero") {
+    const v = pick(extractedDocumento?.titulo_antecedente?.notaria_documento) || pick(extractedDocumento?.notaria_origen);
+    if (v) return { value: v, source: "Cert. Tradición" };
+  }
+  if (field === "antecedentes.escritura_num_numero" || field === "escritura_num_numero") {
+    const v = pick(extractedDocumento?.titulo_antecedente?.numero_documento) || pick(extractedDocumento?.numero_escritura);
+    if (v) return { value: v, source: "Cert. Tradición" };
+  }
+  if (field === "antecedentes.notaria_previa_circulo") {
+    const v = pick(extractedDocumento?.titulo_antecedente?.ciudad_documento);
+    if (v) return { value: v, source: "Cert. Tradición" };
+  }
+
+  return undefined;
+}
+
 const DocxPreview = ({
   vendedores,
   compradores,
