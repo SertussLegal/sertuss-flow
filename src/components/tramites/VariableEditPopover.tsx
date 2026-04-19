@@ -101,11 +101,12 @@ const VariableEditPopover = ({
   const top = Math.max(8, Math.min(position.top, window.innerHeight - 240));
   const left = Math.max(8, Math.min(position.left, window.innerWidth - 328));
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       className="fixed z-[100] w-80 rounded-lg border bg-popover p-3 shadow-lg animate-in fade-in-0 zoom-in-95"
       style={{ top, left }}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-1.5 mb-2">
         <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
@@ -167,7 +168,8 @@ const VariableEditPopover = ({
           Ir al formulario <ArrowRight className="h-3 w-3" />
         </button>
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
 
