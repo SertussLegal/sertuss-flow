@@ -35,7 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
-import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal } from "@/lib/legalFormatters";
+import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
 import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 
@@ -1429,6 +1429,11 @@ const Validacion = () => {
       description: `"${originalText.slice(0, 30)}…" → "${newText.slice(0, 30)}…"`,
     });
   }, [toast]);
+
+  // Wire ref so handleFieldEdit (defined earlier) can fall back to overrides
+  useEffect(() => {
+    handleCreateOverrideRef.current = handleCreateOverride;
+  }, [handleCreateOverride]);
 
   const handleRemoveOverride = useCallback((id: string) => {
     setOverrides((prev) => prev.filter((o) => o.id !== id));
