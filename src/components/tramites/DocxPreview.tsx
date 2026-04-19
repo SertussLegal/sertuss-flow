@@ -885,7 +885,7 @@ const DocxPreview = ({
       }
 
       setHtml(sanitize(result));
-    }, 500);
+    }, 80);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
