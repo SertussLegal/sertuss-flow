@@ -183,6 +183,7 @@ interface DocxPreviewProps {
   inmueble: Inmueble;
   actos: Actos;
   overrides?: TextOverride[];
+  manualFieldOverrides?: Record<string, string>;
   onFieldEdit?: (field: string, value: string, anchorText?: string) => void;
   onCreateOverride?: (originalText: string, newText: string, replaceAll: boolean, contextBefore: string, contextAfter: string) => void;
   onRemoveOverride?: (id: string) => void;
@@ -461,6 +462,7 @@ const DocxPreview = ({
   inmueble,
   actos,
   overrides = [],
+  manualFieldOverrides = {},
   onFieldEdit,
   onCreateOverride,
   onRemoveOverride,
