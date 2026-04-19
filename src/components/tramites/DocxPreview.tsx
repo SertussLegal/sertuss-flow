@@ -1020,7 +1020,7 @@ const DocxPreview = ({
         });
       }
     }
-  }, [onFieldEdit, onScrollToField, overrides, sugerenciasIA]);
+  }, [onFieldEdit, onScrollToField, overrides, sugerenciasIA, extractedDocumento, extractedPredial, inmueble, actos]);
 
   // Handle text selection for inline editing
   const handleMouseUp = useCallback(() => {
