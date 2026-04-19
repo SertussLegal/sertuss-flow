@@ -410,6 +410,7 @@ const DocxPreview = ({
     field: string;
     value: string;
     position: { top: number; left: number };
+    suggestion?: { value: string; source: string };
   } | null>(null);
 
   // Selection toolbar state (inline edit)
