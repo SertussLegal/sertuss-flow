@@ -11,6 +11,25 @@ import InlineEditToolbar from "./InlineEditToolbar";
 import DOMPurify from "dompurify";
 import mammoth from "mammoth";
 
+// Whitelist de campos con destino real en el formulario lateral.
+// Solo estos muestran el atajo "Ir al formulario" en el popover de edición.
+const FORM_FIELDS = new Set<string>([
+  // Inmueble
+  "inmueble.direccion", "inmueble.matricula", "inmueble.cedula_catastral",
+  "inmueble.linderos_especiales", "inmueble.linderos_generales",
+  "inmueble.avaluo_catastral", "inmueble.estrato", "inmueble.orip_ciudad",
+  "matricula_inmobiliaria", "identificador_predial", "direccion_inmueble",
+  "municipio", "departamento", "area", "linderos", "avaluo_catastral",
+  "estrato", "codigo_orip",
+  // Actos
+  "actos.cuantia_compraventa_letras", "actos.cuantia_compraventa_numero",
+  "actos.entidad_bancaria", "actos.entidad_nit", "actos.entidad_domicilio",
+  "tipo_acto", "entidad_bancaria", "valor_compraventa_letras",
+  "valor_hipoteca_letras",
+  // Comparecientes
+  "comparecientes_vendedor", "comparecientes_comprador",
+]);
+
 // ── Number to words (Spanish) ──────────────────────────────────
 const UNITS = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
 const TEENS = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISÉIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
@@ -1325,7 +1344,7 @@ const DocxPreview = ({
           onApply={handleFieldApply}
           onClose={() => setEditPopover(null)}
           onGotoForm={
-            onScrollToField
+            onScrollToField && FORM_FIELDS.has(editPopover.field)
               ? () => {
                   const f = editPopover.field;
                   setEditPopover(null);
