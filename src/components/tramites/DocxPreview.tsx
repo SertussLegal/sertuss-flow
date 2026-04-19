@@ -1344,7 +1344,7 @@ const DocxPreview = ({
           onApply={handleFieldApply}
           onClose={() => setEditPopover(null)}
           onGotoForm={
-            onScrollToField
+            onScrollToField && FORM_FIELDS.has(editPopover.field)
               ? () => {
                   const f = editPopover.field;
                   setEditPopover(null);
