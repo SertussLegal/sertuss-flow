@@ -224,6 +224,7 @@ const Validacion = () => {
   const [inmueble, setInmueble] = useState<Inmueble>(createEmptyInmueble());
   const [actos, setActos] = useState<Actos>(createEmptyActos());
   const [overrides, setOverrides] = useState<TextOverride[]>([]);
+  const [manualFieldOverrides, setManualFieldOverrides] = useState<Record<string, string>>({});
   const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
   const [textoFinalWord, setTextoFinalWord] = useState<string>("");
   const [generatingWord, setGeneratingWord] = useState(false);
@@ -343,7 +344,11 @@ const Validacion = () => {
     // Restore overrides (with legacy migration from custom_variables)
     if (meta?.overrides) {
       setOverrides(meta.overrides);
-    } else if (meta?.custom_variables) {
+    }
+    if (meta?.manualFieldOverrides && typeof meta.manualFieldOverrides === "object") {
+      setManualFieldOverrides(meta.manualFieldOverrides as Record<string, string>);
+    }
+    if (!meta?.overrides && meta?.custom_variables) {
       // Migrate legacy custom variables to TextOverride format
       setOverrides((meta.custom_variables as CustomVariable[]).map((cv: CustomVariable) => ({
         id: cv.id,
@@ -796,6 +801,7 @@ const Validacion = () => {
       const formMetadata = {
         last_saved: new Date().toISOString(),
         overrides: overrides.map(ov => ({ ...ov })),
+        manualFieldOverrides: { ...manualFieldOverrides },
         progress: calculateProgress(),
         confianza_map: Object.fromEntries(confianzaFields),
         notaria_tramite: notariaTramite,
@@ -876,11 +882,20 @@ const Validacion = () => {
       return;
     }
 
-    // Universal fallback: any unmapped placeholder becomes a semantic override
-    // anchored on the exact text the user clicked. Persisted in metadata.overrides.
-    if (anchorText && anchorText.trim() && anchorText !== v) {
-      handleCreateOverrideRef.current?.(anchorText, v, false, "", "");
-    }
+    // Universal fallback for unmapped placeholders: route through the canonical
+    // replacements pipeline via manualFieldOverrides. This avoids fragile regex
+    // matching on indistinguishable "___________" placeholders. Persisted in
+    // metadata.manualFieldOverrides. handleCreateOverride is reserved for
+    // free-text selections from the inline visor toolbar.
+    setManualFieldOverrides((prev) => {
+      if (!v) {
+        const { [field]: _, ...rest } = prev;
+        return rest;
+      }
+      if (prev[field] === v) return prev;
+      return { ...prev, [field]: v };
+    });
+    setIsDirty(true);
   }, []);
 
   // Ref bridge to avoid hoisting issues with handleCreateOverride defined later
@@ -2362,6 +2377,7 @@ const Validacion = () => {
               inmueble={inmueble}
               actos={actos}
               overrides={overrides}
+              manualFieldOverrides={manualFieldOverrides}
               onFieldEdit={handleFieldEdit}
               onCreateOverride={handleCreateOverride}
               onRemoveOverride={handleRemoveOverride}
@@ -2410,6 +2426,7 @@ const Validacion = () => {
               inmueble={inmueble}
               actos={actos}
               overrides={overrides}
+              manualFieldOverrides={manualFieldOverrides}
               onFieldEdit={handleFieldEdit}
               onCreateOverride={handleCreateOverride}
               onRemoveOverride={handleRemoveOverride}
