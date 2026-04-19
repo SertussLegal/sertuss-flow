@@ -141,3 +141,16 @@
   border-radius: 2px;
   display: inline;
 }
+
+/* Reactive field state transitions in DocxPreview */
+.var-pending,
+.var-resolved,
+.var-user-edited {
+  transition: color 200ms ease, background-color 200ms ease, border-color 200ms ease;
+}
+.var-user-edited {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-radius: 2px;
+  padding: 0 2px;
+}
