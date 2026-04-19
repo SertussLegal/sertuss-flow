@@ -1,15 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Pencil, Check, X } from "lucide-react";
+import { Pencil, Check, X, Sparkles, ArrowRight } from "lucide-react";
 
 interface VariableEditPopoverProps {
   fieldName: string;
   currentValue: string;
   position: { top: number; left: number };
+  suggestion?: { value: string; source: string };
   onApply: (value: string) => void;
   onClose: () => void;
+  onGotoForm?: () => void;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -26,6 +28,9 @@ const FIELD_LABELS: Record<string, string> = {
   area: "Área",
   linderos: "Linderos",
   avaluo_catastral: "Avalúo Catastral",
+  "inmueble.avaluo_catastral": "Avalúo Catastral",
+  "inmueble.estrato": "Estrato",
+  estrato: "Estrato",
   codigo_orip: "ORIP",
   "inmueble.orip_ciudad": "ORIP Ciudad",
   valor_compraventa_letras: "Valor Compraventa",
@@ -34,12 +39,27 @@ const FIELD_LABELS: Record<string, string> = {
   tipo_acto: "Tipo de Acto",
   entidad_bancaria: "Entidad Bancaria",
   "actos.entidad_bancaria": "Entidad Bancaria",
+  "actos.entidad_nit": "NIT Entidad",
+  "actos.entidad_domicilio": "Domicilio Entidad",
   valor_hipoteca_letras: "Valor Hipoteca",
   comparecientes_vendedor: "Vendedor(es)",
   comparecientes_comprador: "Comprador(es)",
+  notaria_previa_numero: "Notaría Previa",
+  "antecedentes.notaria_previa_numero": "Notaría Previa",
+  "antecedentes.notaria_previa_circulo": "Círculo Notarial Previo",
+  escritura_num_numero: "Número Escritura Antecedente",
+  "antecedentes.escritura_num_numero": "Número Escritura Antecedente",
 };
 
-const VariableEditPopover = ({ fieldName, currentValue, position, onApply, onClose }: VariableEditPopoverProps) => {
+const VariableEditPopover = ({
+  fieldName,
+  currentValue,
+  position,
+  suggestion,
+  onApply,
+  onClose,
+  onGotoForm,
+}: VariableEditPopoverProps) => {
   const [value, setValue] = useState(currentValue === "___________" ? "" : currentValue);
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -68,16 +88,48 @@ const VariableEditPopover = ({ fieldName, currentValue, position, onApply, onClo
 
   const label = FIELD_LABELS[fieldName] || fieldName;
 
+  // Clamp position to viewport
+  const top = Math.min(position.top, window.innerHeight - 220);
+  const left = Math.min(position.left, window.innerWidth - 304);
+
   return (
     <div
       ref={popoverRef}
-      className="fixed z-[100] w-72 rounded-lg border bg-popover p-3 shadow-lg animate-in fade-in-0 zoom-in-95"
-      style={{ top: position.top, left: position.left }}
+      className="fixed z-[100] w-80 rounded-lg border bg-popover p-3 shadow-lg animate-in fade-in-0 zoom-in-95"
+      style={{ top, left }}
     >
       <div className="flex items-center gap-1.5 mb-2">
         <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
         <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
       </div>
+
+      {suggestion && (
+        <div className="mb-2 rounded-md border border-primary/30 bg-primary/5 p-2">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Sparkles className="h-3 w-3 text-primary" />
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+              Sugerencia · {suggestion.source}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm font-medium text-foreground truncate" title={suggestion.value}>
+              {suggestion.value}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-6 px-2 text-xs"
+              onClick={() => {
+                setValue(suggestion.value);
+                inputRef.current?.focus();
+              }}
+            >
+              Usar
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2">
         <Input
           ref={inputRef}
@@ -96,6 +148,16 @@ const VariableEditPopover = ({ fieldName, currentValue, position, onApply, onClo
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
+
+      {onGotoForm && (
+        <button
+          type="button"
+          onClick={onGotoForm}
+          className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Ir al formulario <ArrowRight className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 };
