@@ -916,20 +916,27 @@ const DocxPreview = ({
     const field = target.getAttribute("data-field");
     if (field) {
       const text = target.textContent || "";
-      // If pending (empty) field → scroll to the form input
-      if (text === "___________" && onScrollToField) {
-        onScrollToField(field);
-        return;
-      }
-      // Otherwise open edit popover
+      // Always open edit popover (works for both empty ___________ and filled values)
       if (onFieldEdit) {
         const rect = target.getBoundingClientRect();
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
+        const isEmpty = text === "___________";
+        const suggestion = getSuggestionForField(
+          field,
+          extractedDocumento,
+          extractedPredial,
+          inmueble,
+          actos,
+        );
+        // Only show suggestion if it differs from current value
+        const finalSuggestion =
+          suggestion && (isEmpty || suggestion.value !== text) ? suggestion : undefined;
         setEditPopover({
           field,
-          value: text,
+          value: isEmpty ? "" : text,
           position: { top: rect.bottom + 4, left: Math.max(8, rect.left) },
+          suggestion: finalSuggestion,
         });
       }
       return;
