@@ -827,6 +827,47 @@ const DocxPreview = ({
         }
       }
 
+      // ── Bloque único Notaría: agrupar visualmente {letras} + {ordinal} en orden canónico ──
+      // Estándar Colombia: "QUINTA (5.ª)" — siempre LETRAS (NÚMERO ENTRE PARÉNTESIS).
+      // Detecta los dos spans adyacentes en cualquier orden (con paréntesis u otros separadores)
+      // y los reemite envueltos en un único contenedor morado.
+      {
+        const spanRe = /<span data-field="notaria_(numero_letras|ordinal)"[^>]*>([^<]*)<\/span>/g;
+        type Hit = { full: string; key: "letras" | "ordinal"; text: string; start: number; end: number };
+        const hits: Hit[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = spanRe.exec(result)) !== null) {
+          hits.push({
+            full: m[0],
+            key: m[1] === "numero_letras" ? "letras" : "ordinal",
+            text: m[2],
+            start: m.index,
+            end: m.index + m[0].length,
+          });
+        }
+        // Buscar pares adyacentes (separados solo por whitespace/paréntesis)
+        for (let i = hits.length - 2; i >= 0; i--) {
+          const a = hits[i];
+          const b = hits[i + 1];
+          if (a.key === b.key) continue;
+          const between = result.slice(a.end, b.start);
+          if (!/^[\s\(\)]*$/.test(between)) continue;
+          const letras = a.key === "letras" ? a : b;
+          const ordinal = a.key === "ordinal" ? a : b;
+          const isUserEditedL = "notaria_numero_letras" in manualFieldOverrides && !!manualFieldOverrides["notaria_numero_letras"];
+          const isUserEditedO = "notaria_ordinal" in manualFieldOverrides && !!manualFieldOverrides["notaria_ordinal"];
+          // Spans hijos: limpios (sin border ni background propio), conservan data-field para edición
+          const childStyle = "color:#065f46;font-weight:bold;cursor:pointer";
+          const childUserStyle = "color:#6d28d9;font-weight:bold;cursor:pointer";
+          const lInner = `<span data-field="notaria_numero_letras" class="${isUserEditedL ? "var-user-edited" : "var-resolved"}" style="${isUserEditedL ? childUserStyle : childStyle}">${letras.text}</span>`;
+          const oInner = `<span data-field="notaria_ordinal" class="${isUserEditedO ? "var-user-edited" : "var-resolved"}" style="${isUserEditedO ? childUserStyle : childStyle}">${ordinal.text}</span>`;
+          // Wrapper: una sola caja morada (estilo agrupado)
+          const groupStyle = "background:#f5f3ff;border-bottom:1px dashed #6d28d9;border-radius:2px;padding:0 4px;display:inline";
+          const wrapper = `<span data-group="notaria-numero" style="${groupStyle}">${lInner} (${oInner})</span>`;
+          result = result.slice(0, a.start) + wrapper + result.slice(b.end);
+        }
+      }
+
       // Clean remaining loop markers and unmapped placeholders
       result = result.replace(/\{[#/^][^}]*\}/g, "");
       result = result.replace(/\{[a-zA-Z_][a-zA-Z0-9_.]*\}/g, `<span class="var-pending" style="${pendingRedStyle}">___________</span>`);
