@@ -2299,65 +2299,158 @@ const Validacion = () => {
 
   return (
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
-      <header className="border-b bg-notarial-dark text-white shrink-0">
-        <div className="container flex h-14 items-center gap-4">
-          <Button variant="ghost-dark" size="sm" onClick={handleBack}>
-            <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
-          </Button>
-          <span className="text-sm font-medium">Validación de Escritura</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] uppercase tracking-wide text-white/60">Radicado</span>
-            <Input
-              value={radicadoDraft}
-              onChange={(e) => setRadicadoDraft(e.target.value)}
-              onBlur={async () => {
-                const trimmed = radicadoDraft.trim();
-                if (trimmed === radicado || !tramiteId) return;
-                setSavingRadicado(true);
-                const { error } = await supabase
-                  .from("tramites")
-                  .update({ radicado: trimmed || null })
-                  .eq("id", tramiteId);
-                setSavingRadicado(false);
-                if (error) {
-                  toast({ title: "No se pudo guardar el radicado", description: error.message, variant: "destructive" });
-                  setRadicadoDraft(radicado);
-                } else {
-                  setRadicado(trimmed);
-                  toast({ title: "Radicado actualizado" });
-                }
-              }}
-              placeholder="2026-0001"
-              disabled={savingRadicado}
-              className="h-7 w-32 bg-white/10 border-white/30 text-white placeholder:text-white/40 text-xs px-2"
-            />
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <Button variant="ghost-dark" size="sm" onClick={() => setShowDocPanel(true)} className="border border-white/30">
-              <FileText className="mr-1 h-4 w-4" />
-              Documentos ({expedienteDocs.filter(d => d.status === "procesado").length}/{expedienteDocs.length})
-            </Button>
-            <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
-              <Coins className="mr-1 h-3 w-3" /> {credits} créditos
-            </Badge>
-            {syncIndicator()}
-            <Button variant="ghost-dark" size="sm" onClick={handleSave} disabled={saving} className="border border-white/30">
-              <Save className="mr-1 h-4 w-4" /> {saving ? "Guardando..." : "Guardar"}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handlePrevisualizar}
-              disabled={validando}
-              className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
-            >
-              {validando ? (
-                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando...</>
+      <header className="sticky top-0 z-50 h-12 shrink-0 border-b border-white/5 bg-notarial-dark/80 backdrop-blur-md text-white">
+        <TooltipProvider delayDuration={200}>
+          <div className="flex h-full items-center justify-between px-4">
+            {/* Izquierda */}
+            <div className="flex items-center gap-x-3 min-w-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost-dark"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleBack}
+                    aria-label="Volver al dashboard"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                  Dashboard
+                </TooltipContent>
+              </Tooltip>
+
+              <span className="text-sm font-medium text-white/90 whitespace-nowrap">Validación</span>
+              <span className="text-white/30 select-none">·</span>
+
+              {/* Chip Radicado */}
+              {editingRadicado ? (
+                <Input
+                  autoFocus
+                  value={radicadoDraft}
+                  onChange={(e) => setRadicadoDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") {
+                      setRadicadoDraft(radicado);
+                      setEditingRadicado(false);
+                    }
+                  }}
+                  onBlur={async () => {
+                    const trimmed = radicadoDraft.trim();
+                    setEditingRadicado(false);
+                    if (trimmed === radicado || !tramiteId) return;
+                    setSavingRadicado(true);
+                    setSyncStatus("saving");
+                    const { error } = await supabase
+                      .from("tramites")
+                      .update({ radicado: trimmed || null })
+                      .eq("id", tramiteId);
+                    setSavingRadicado(false);
+                    if (error) {
+                      setSyncStatus("unsaved");
+                      toast({ title: "No se pudo guardar el radicado", description: error.message, variant: "destructive" });
+                      setRadicadoDraft(radicado);
+                    } else {
+                      setRadicado(trimmed);
+                      setSyncStatus("saved");
+                    }
+                  }}
+                  placeholder="2026-0001"
+                  disabled={savingRadicado}
+                  className="h-8 w-[180px] bg-white/10 border-white/20 text-white placeholder:text-white/40 text-sm px-3"
+                />
               ) : (
-                <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setEditingRadicado(true)}
+                      className="group flex h-8 w-[180px] items-center justify-between rounded-md border border-white/10 bg-white/5 px-3 text-sm transition-colors hover:bg-white/10"
+                    >
+                      <span className={`truncate ${radicado ? "text-white" : "text-white/40 italic"}`}>
+                        {radicado || "[Sin Radicado]"}
+                      </span>
+                      <Edit3 className="h-3 w-3 text-white/60 opacity-0 transition-opacity group-hover:opacity-100" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                    Editar radicado
+                  </TooltipContent>
+                </Tooltip>
               )}
-            </Button>
+            </div>
+
+            {/* Derecha */}
+            <div className="flex items-center gap-x-4">
+              {/* Documentos */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setShowDocPanel(true)}
+                    className="flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white transition-colors hover:bg-white/10"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    <span>{expedienteDocs.filter(d => d.status === "procesado").length}/{expedienteDocs.length}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                  Gestión de Expediente ({expedienteDocs.filter(d => d.status === "procesado").length} de {expedienteDocs.length} documentos)
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Créditos */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white">
+                    <Coins className="h-4 w-4 text-notarial-gold" />
+                    <span>{credits}</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                  Créditos disponibles
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Sync */}
+              {syncIndicator()}
+
+              {/* Guardar */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost-dark"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleSave}
+                    disabled={saving}
+                    aria-label="Guardar borrador"
+                  >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                  Guardar borrador ahora
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Previsualizar (primario) */}
+              <Button
+                onClick={handlePrevisualizar}
+                disabled={validando}
+                className="h-9 px-6 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium"
+              >
+                {validando ? (
+                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando…</>
+                ) : (
+                  <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+                )}
+              </Button>
+            </div>
           </div>
-        </div>
+        </TooltipProvider>
       </header>
 
       {/* Documents Panel (Sheet) */}
