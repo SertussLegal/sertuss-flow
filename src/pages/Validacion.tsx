@@ -217,6 +217,7 @@ const Validacion = () => {
   const [radicado, setRadicado] = useState<string>("");
   const [radicadoDraft, setRadicadoDraft] = useState<string>("");
   const [savingRadicado, setSavingRadicado] = useState(false);
+  const [editingRadicado, setEditingRadicado] = useState(false);
 
   const [tramiteId, setTramiteId] = useState<string | null>(id ?? null);
   const [vendedores, setVendedores] = useState<Persona[]>([createEmptyPersona()]);
