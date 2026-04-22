@@ -738,14 +738,24 @@ const DocxPreview = ({
       "notaria_circulo_proper": notariaTramite?.circulo ? toProperCase(notariaTramite.circulo) : "___________",
       "notaria_departamento": notariaTramite?.departamento || "___________",
       "notaria_numero": notariaTramite?.numero_notaria || "___________",
-      "notaria_numero_letras": notariaTramite?.numero_notaria_letras || "___________",
-      "notaria_numero_letras_lower": notariaTramite?.numero_notaria_letras
-        ? notariaTramite.numero_notaria_letras.toLowerCase()
-        : "___________",
-      "notaria_numero_letras_femenino": notariaTramite?.numero_notaria_letras
-        ? deriveFemenino(notariaTramite.numero_notaria_letras)
-        : "___________",
-      "notaria_ordinal": notariaTramite?.numero_ordinal || "___________",
+      "notaria_numero_letras": (() => {
+        if (notariaTramite?.numero_notaria_letras) return notariaTramite.numero_notaria_letras;
+        const auto = numeroNotariaToLetras(notariaTramite?.numero_notaria || "");
+        return auto || "___________";
+      })(),
+      "notaria_numero_letras_lower": (() => {
+        const v = notariaTramite?.numero_notaria_letras || numeroNotariaToLetras(notariaTramite?.numero_notaria || "");
+        return v ? v.toLowerCase() : "___________";
+      })(),
+      "notaria_numero_letras_femenino": (() => {
+        const v = notariaTramite?.numero_notaria_letras || numeroNotariaToLetras(notariaTramite?.numero_notaria || "");
+        return v ? deriveFemenino(v) : "___________";
+      })(),
+      "notaria_ordinal": (() => {
+        if (notariaTramite?.numero_ordinal) return notariaTramite.numero_ordinal;
+        const auto = numeroToOrdinalAbbr(notariaTramite?.numero_notaria || "", "volada");
+        return auto || "___________";
+      })(),
       "escritura_numero": "___________",
       "fecha_escritura_corta": "___________",
     };
