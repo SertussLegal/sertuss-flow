@@ -2014,28 +2014,36 @@ const Validacion = () => {
   };
 
   const syncIndicator = () => {
-    switch (syncStatus) {
-      case "saved":
-        return (
-          <span className="flex items-center gap-1 text-xs text-secondary">
-            <Cloud className="h-3.5 w-3.5" /> Guardado
-          </span>
-        );
-      case "saving":
-        return (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Guardando...
-          </span>
-        );
-      case "unsaved":
-        return (
-          <span className="flex items-center gap-1 text-xs text-accent">
-            <CloudOff className="h-3.5 w-3.5" /> Sin guardar
-          </span>
-        );
-      default:
-        return null;
+    let Icon: typeof Cloud = Cloud;
+    let label = "Sin cambios pendientes";
+    let className = "text-white/60";
+    let spin = false;
+    if (syncStatus === "saving") {
+      Icon = Loader2;
+      label = "Guardando…";
+      className = "text-white/80";
+      spin = true;
+    } else if (syncStatus === "saved") {
+      Icon = Check;
+      label = "Guardado · hace un momento";
+      className = "text-notarial-green";
+    } else if (syncStatus === "unsaved") {
+      Icon = CloudOff;
+      label = "Sin guardar";
+      className = "text-notarial-gold";
     }
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md ${className}`} aria-label={label}>
+            <Icon className={`h-4 w-4 ${spin ? "animate-spin" : ""}`} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    );
   };
 
   const renderTabs = () => {
