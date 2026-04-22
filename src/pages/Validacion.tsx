@@ -35,7 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
-import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing } from "@/lib/legalFormatters";
+import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
 import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 
@@ -265,6 +265,9 @@ const Validacion = () => {
   const [notariaTramite, setNotariaTramite] = useState<NotariaTramite>(createEmptyNotariaTramite());
   const [notariaPanelOpen, setNotariaPanelOpen] = useState(false);
   const [ignoredNotariaSuggestions, setIgnoredNotariaSuggestions] = useState<Set<string>>(new Set());
+  // Campos del bloque notaría que el usuario tocó manualmente (no auto-derivar al cambiar el número)
+  const [notariaManualOverrides, setNotariaManualOverrides] = useState<Set<keyof NotariaTramite>>(new Set());
+  const [formatoOrdinalNotaria, setFormatoOrdinalNotaria] = useState<FormatoOrdinal>("volada");
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
@@ -378,9 +381,19 @@ const Validacion = () => {
 
     // Restore notaria_tramite (datos de notaría POR TRÁMITE — sin pre-llenado desde org)
     if (meta?.notaria_tramite && typeof meta.notaria_tramite === "object") {
-      setNotariaTramite({ ...createEmptyNotariaTramite(), ...meta.notaria_tramite });
+      const nt = { ...createEmptyNotariaTramite(), ...meta.notaria_tramite } as NotariaTramite;
+      setNotariaTramite(nt);
+      // Si los derivados ya tienen valor distinto al auto-derivado, marcarlos como manuales
+      const overrides = new Set<keyof NotariaTramite>();
+      const autoLetras = numeroNotariaToLetras(nt.numero_notaria);
+      const autoOrdinal = numeroToOrdinalAbbr(nt.numero_notaria, "volada");
+      if (nt.numero_notaria_letras && nt.numero_notaria_letras !== autoLetras) overrides.add("numero_notaria_letras");
+      if (nt.numero_ordinal && nt.numero_ordinal !== autoOrdinal && nt.numero_ordinal !== numeroToOrdinalAbbr(nt.numero_notaria, "to")) overrides.add("numero_ordinal");
+      setNotariaManualOverrides(overrides);
+      if (nt.numero_ordinal) setFormatoOrdinalNotaria(detectarFormatoOrdinal(nt.numero_ordinal));
     } else {
       setNotariaTramite(createEmptyNotariaTramite());
+      setNotariaManualOverrides(new Set());
     }
 
     // Restore AI snapshot from logs_extraccion for correction tracking
@@ -2094,7 +2107,7 @@ const Validacion = () => {
     const NOTARIA_LABELS: Record<keyof NotariaTramite, string> = {
       numero_notaria: "Número de notaría",
       numero_notaria_letras: "Número en letras (QUINTA, VEINTIUNA…)",
-      numero_ordinal: "Ordinal (5o, 21a…)",
+      numero_ordinal: "Ordinal (5.ª, 21.ª…)",
       circulo: "Círculo notarial",
       departamento: "Departamento",
       nombre_notario: "Nombre del notario",
@@ -2134,6 +2147,60 @@ const Validacion = () => {
       setIgnoredNotariaSuggestions(newIgnored);
     };
 
+    // Handler especial para `numero_notaria` que también re-deriva letras y ordinal
+    // (excepto si el usuario ya los marcó como manuales).
+    const updateNumeroNotaria = (raw: string) => {
+      const cleaned = raw.replace(/\D/g, "").slice(0, 4);
+      setNotariaTramite(prev => {
+        const next: NotariaTramite = { ...prev, numero_notaria: cleaned };
+        if (cleaned && !notariaManualOverrides.has("numero_notaria_letras")) {
+          next.numero_notaria_letras = numeroNotariaToLetras(cleaned);
+        }
+        if (cleaned && !notariaManualOverrides.has("numero_ordinal")) {
+          next.numero_ordinal = numeroToOrdinalAbbr(cleaned, formatoOrdinalNotaria);
+        }
+        if (!cleaned) {
+          if (!notariaManualOverrides.has("numero_notaria_letras")) next.numero_notaria_letras = "";
+          if (!notariaManualOverrides.has("numero_ordinal")) next.numero_ordinal = "";
+        }
+        return next;
+      });
+    };
+
+    const updateDerivado = (key: "numero_notaria_letras" | "numero_ordinal", value: string) => {
+      setNotariaTramite(prev => ({ ...prev, [key]: value }));
+      setNotariaManualOverrides(prev => {
+        const n = new Set(prev);
+        if (value) n.add(key);
+        else n.delete(key);
+        return n;
+      });
+    };
+
+    const regenerarDerivado = (key: "numero_notaria_letras" | "numero_ordinal") => {
+      const num = notariaTramite.numero_notaria;
+      if (!num) return;
+      const auto = key === "numero_notaria_letras"
+        ? numeroNotariaToLetras(num)
+        : numeroToOrdinalAbbr(num, formatoOrdinalNotaria);
+      setNotariaTramite(prev => ({ ...prev, [key]: auto }));
+      setNotariaManualOverrides(prev => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
+    };
+
+    const cambiarFormatoOrdinal = (nuevo: FormatoOrdinal) => {
+      setFormatoOrdinalNotaria(nuevo);
+      if (notariaTramite.numero_notaria && !notariaManualOverrides.has("numero_ordinal")) {
+        setNotariaTramite(prev => ({
+          ...prev,
+          numero_ordinal: numeroToOrdinalAbbr(prev.numero_notaria, nuevo),
+        }));
+      }
+    };
+
     const renderNotariaInput = (key: keyof NotariaTramite) => {
       const sug = notariaSuggestions.get(key);
       const input = (
@@ -2158,6 +2225,15 @@ const Validacion = () => {
     };
 
     const camposLlenos = NOTARIA_FIELDS.filter(k => notariaTramite[k]).length;
+    // Campos del bloque número (manejados por la sub-tarjeta especial)
+    const NUMERO_BLOCK_KEYS = new Set<keyof NotariaTramite>(["numero_notaria", "numero_notaria_letras", "numero_ordinal"]);
+    const OTROS_NOTARIA_FIELDS = NOTARIA_FIELDS.filter(k => !NUMERO_BLOCK_KEYS.has(k));
+
+    // Vista previa del bloque tal como aparecerá en el documento: "QUINTA (5.ª)"
+    const previewLetras = notariaTramite.numero_notaria_letras
+      || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
+    const previewOrdinal = notariaTramite.numero_ordinal
+      || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "");
 
     return (
     <Tabs defaultValue="vendedores" className="w-full">
@@ -2198,8 +2274,116 @@ const Validacion = () => {
                 </Button>
               </div>
             )}
+
+            {/* ── Bloque único: Número de Notaría (genera letras y ordinal) ── */}
+            <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground">
+                  Número de notaría <span className="text-muted-foreground font-normal">— genera letras y ordinal</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={notariaTramite.numero_notaria}
+                  onChange={(e) => updateNumeroNotaria(e.target.value)}
+                  placeholder="65"
+                  className="w-32 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+
+              <div className="border-l-2 border-primary/30 pl-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Derivados — editables
+                  </span>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="text-muted-foreground">Formato:</span>
+                    <button
+                      type="button"
+                      onClick={() => cambiarFormatoOrdinal("volada")}
+                      className={`px-1.5 py-0.5 rounded border transition-colors ${
+                        formatoOrdinalNotaria === "volada"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      5.ª
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cambiarFormatoOrdinal("to")}
+                      className={`px-1.5 py-0.5 rounded border transition-colors ${
+                        formatoOrdinalNotaria === "to"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      5ta
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">En letras</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={notariaTramite.numero_notaria_letras}
+                        onChange={(e) => updateDerivado("numero_notaria_letras", e.target.value.toLocaleUpperCase("es-CO"))}
+                        placeholder={notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "QUINTA"}
+                        className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      {notariaManualOverrides.has("numero_notaria_letras") && notariaTramite.numero_notaria && (
+                        <button
+                          type="button"
+                          onClick={() => regenerarDerivado("numero_notaria_letras")}
+                          title="Regenerar desde el número"
+                          className="text-muted-foreground hover:text-primary p-1"
+                        >
+                          ↻
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Abreviatura ordinal</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={notariaTramite.numero_ordinal}
+                        onChange={(e) => updateDerivado("numero_ordinal", e.target.value)}
+                        placeholder={notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "5.ª"}
+                        className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      {notariaManualOverrides.has("numero_ordinal") && notariaTramite.numero_notaria && (
+                        <button
+                          type="button"
+                          onClick={() => regenerarDerivado("numero_ordinal")}
+                          title="Regenerar desde el número"
+                          className="text-muted-foreground hover:text-primary p-1"
+                        >
+                          ↻
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {(previewLetras || previewOrdinal) && (
+                  <p className="text-[11px] text-muted-foreground">
+                    En el documento aparecerá como:{" "}
+                    <span className="font-semibold text-foreground bg-primary/10 px-1.5 py-0.5 rounded">
+                      {previewLetras || "___"} ({previewOrdinal || "___"})
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Demás campos de notaría */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {NOTARIA_FIELDS.map(key => (
+              {OTROS_NOTARIA_FIELDS.map(key => (
                 <div key={key} className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">{NOTARIA_LABELS[key]}</label>
                   {renderNotariaInput(key)}

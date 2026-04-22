@@ -20,6 +20,10 @@ function convertGroupLegal(n: number): string {
   return rest === 0 ? HUNDREDS[h] : `${HUNDREDS[h]} ${convertGroupLegal(rest)}`;
 }
 
+export function numberToWords(num: number): string {
+  return numberToWordsLegal(num);
+}
+
 function numberToWordsLegal(num: number): string {
   if (num === 0) return "cero";
 
@@ -157,4 +161,56 @@ export function formatCedulaLegal(cedula: string, expedicion?: string): string {
     return `${formatted} expedida en ${expedicion}`;
   }
   return formatted;
+}
+
+// ── Helpers notariales para el bloque "Notaría N°" ──
+
+const ORDINALES_FEMENINOS_1_10 = [
+  "", "PRIMERA", "SEGUNDA", "TERCERA", "CUARTA", "QUINTA",
+  "SEXTA", "SÉPTIMA", "OCTAVA", "NOVENA", "DÉCIMA",
+];
+
+/**
+ * Convierte un número de notaría a su representación en letras (femenino).
+ * En español notarial colombiano "la notaría" es femenino.
+ *  - 1..10 → ordinales (PRIMERA, QUINTA, DÉCIMA…)
+ *  - >10   → cardinal en femenino (VEINTIUNA, SESENTA Y CINCO…)
+ * Output siempre en MAYÚSCULAS.
+ */
+export function numeroNotariaToLetras(n: number | string): string {
+  const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
+  if (!Number.isFinite(num) || num <= 0) return "";
+  if (num <= 10) return ORDINALES_FEMENINOS_1_10[num];
+  // Cardinal en femenino: ajustar terminaciones masculinas → femeninas
+  let words = numberToWordsLegal(num);
+  // "veintiún" / "veintiuno" → "veintiuna"
+  words = words.replace(/\bveintiun[oó]?\b/gi, "veintiuna");
+  // "un" final o aislado → "una"
+  words = words.replace(/(^|\s)un(\s|$)/gi, "$1una$2");
+  return words.toLocaleUpperCase("es-CO");
+}
+
+export type FormatoOrdinal = "volada" | "to";
+
+/**
+ * Genera la abreviatura ordinal del número de notaría.
+ *  - "volada" (default, estándar elegante en escrituras): 5 → "5.ª", 21 → "21.ª"
+ *  - "to" (estilo histórico): 5 → "5ta", 21 → "21a"
+ * Siempre femenino (la notaría).
+ */
+export function numeroToOrdinalAbbr(n: number | string, formato: FormatoOrdinal = "volada"): string {
+  const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
+  if (!Number.isFinite(num) || num <= 0) return "";
+  if (formato === "volada") return `${num}.ª`;
+  // formato "to" — sufijos comunes en práctica notarial colombiana
+  const sufijos: Record<number, string> = { 1: "ra", 2: "da", 3: "ra", 4: "ta", 5: "ta", 6: "ta", 7: "ma", 8: "va", 9: "na", 10: "ma" };
+  return `${num}${sufijos[num] ?? "a"}`;
+}
+
+/**
+ * Detecta el formato del ordinal almacenado.
+ */
+export function detectarFormatoOrdinal(ordinal: string): FormatoOrdinal {
+  if (!ordinal) return "volada";
+  return /\.[ºª]/.test(ordinal) ? "volada" : "to";
 }
