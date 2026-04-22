@@ -265,6 +265,9 @@ const Validacion = () => {
   const [notariaTramite, setNotariaTramite] = useState<NotariaTramite>(createEmptyNotariaTramite());
   const [notariaPanelOpen, setNotariaPanelOpen] = useState(false);
   const [ignoredNotariaSuggestions, setIgnoredNotariaSuggestions] = useState<Set<string>>(new Set());
+  // Campos del bloque notaría que el usuario tocó manualmente (no auto-derivar al cambiar el número)
+  const [notariaManualOverrides, setNotariaManualOverrides] = useState<Set<keyof NotariaTramite>>(new Set());
+  const [formatoOrdinalNotaria, setFormatoOrdinalNotaria] = useState<FormatoOrdinal>("volada");
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
