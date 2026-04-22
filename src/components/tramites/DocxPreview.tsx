@@ -214,7 +214,7 @@ const purifyConfig = {
     "table", "tr", "td", "th", "thead", "tbody", "div", "a", "sup", "sub",
   ],
   ALLOWED_ATTR: [
-    "class", "style", "data-field", "data-override", "data-sugerencia-idx",
+    "class", "style", "data-field", "data-override", "data-sugerencia-idx", "data-group",
     "href", "target",
   ],
 };
