@@ -381,9 +381,19 @@ const Validacion = () => {
 
     // Restore notaria_tramite (datos de notaría POR TRÁMITE — sin pre-llenado desde org)
     if (meta?.notaria_tramite && typeof meta.notaria_tramite === "object") {
-      setNotariaTramite({ ...createEmptyNotariaTramite(), ...meta.notaria_tramite });
+      const nt = { ...createEmptyNotariaTramite(), ...meta.notaria_tramite } as NotariaTramite;
+      setNotariaTramite(nt);
+      // Si los derivados ya tienen valor distinto al auto-derivado, marcarlos como manuales
+      const overrides = new Set<keyof NotariaTramite>();
+      const autoLetras = numeroNotariaToLetras(nt.numero_notaria);
+      const autoOrdinal = numeroToOrdinalAbbr(nt.numero_notaria, "volada");
+      if (nt.numero_notaria_letras && nt.numero_notaria_letras !== autoLetras) overrides.add("numero_notaria_letras");
+      if (nt.numero_ordinal && nt.numero_ordinal !== autoOrdinal && nt.numero_ordinal !== numeroToOrdinalAbbr(nt.numero_notaria, "to")) overrides.add("numero_ordinal");
+      setNotariaManualOverrides(overrides);
+      if (nt.numero_ordinal) setFormatoOrdinalNotaria(detectarFormatoOrdinal(nt.numero_ordinal));
     } else {
       setNotariaTramite(createEmptyNotariaTramite());
+      setNotariaManualOverrides(new Set());
     }
 
     // Restore AI snapshot from logs_extraccion for correction tracking
