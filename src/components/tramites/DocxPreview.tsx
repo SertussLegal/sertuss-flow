@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { lookupBank } from "@/lib/bankDirectory";
-import { formatMonedaLegal, formatFechaLegal, formatCedulaLegal } from "@/lib/legalFormatters";
+import { formatMonedaLegal, formatFechaLegal, formatCedulaLegal, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal } from "@/lib/legalFormatters";
 import { Button } from "@/components/ui/button";
 import { FileText, Loader2, ChevronLeft, ChevronRight, AlertTriangle, Palette, Check, X, Info, Pencil, Undo2 } from "lucide-react";
 import type { Persona, Inmueble, Actos, TextOverride, SugerenciaIA } from "@/lib/types";
