@@ -20,6 +20,10 @@ function convertGroupLegal(n: number): string {
   return rest === 0 ? HUNDREDS[h] : `${HUNDREDS[h]} ${convertGroupLegal(rest)}`;
 }
 
+export function numberToWords(num: number): string {
+  return numberToWordsLegal(num);
+}
+
 function numberToWordsLegal(num: number): string {
   if (num === 0) return "cero";
 
