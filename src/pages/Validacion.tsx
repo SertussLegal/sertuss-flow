@@ -2107,7 +2107,7 @@ const Validacion = () => {
     const NOTARIA_LABELS: Record<keyof NotariaTramite, string> = {
       numero_notaria: "Número de notaría",
       numero_notaria_letras: "Número en letras (QUINTA, VEINTIUNA…)",
-      numero_ordinal: "Ordinal (5o, 21a…)",
+      numero_ordinal: "Ordinal (5.ª, 21.ª…)",
       circulo: "Círculo notarial",
       departamento: "Departamento",
       nombre_notario: "Nombre del notario",
