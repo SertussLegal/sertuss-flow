@@ -1,81 +1,60 @@
 
 
-## Coherencia notarial — Bloque único Notaría (número + letras + ordinal)
+## Aplicar migración SQL: memberships + auditoría de créditos
 
-### Problema
-El número de la notaría hoy se maneja como 3 campos sueltos editables independientemente. En el preview se renderizan como 2-3 cajas moradas separadas (screenshot: `QUINTO` y `(4to)` aparecen como variables independientes y desincronizadas). El usuario puede dejarlos incoherentes y no hay derivación automática.
+Voy a ejecutar la migración en Lovable Cloud (modo Build) que crea toda la infraestructura de multi-pertenencia y trazabilidad atómica de créditos.
 
-### Solución
-**Una sola fuente de verdad: el número entero.** Letras y ordinal se derivan automáticamente. El usuario edita un input principal; los demás se rellenan en vivo y son visualmente un único bloque morado en el preview, **siempre con el orden notarial colombiano: `LETRAS (Nº)`** (ej. `QUINTA (5.º)`).
+### Qué hace la migración
 
-### Cambios
+**1. Tablas nuevas**
 
-**1. `src/lib/legalFormatters.ts` — Helpers nuevos**
+- `memberships(id, user_id, organization_id, role, is_personal, created_at)` con `unique(user_id, organization_id)`. Reemplaza el `profiles.organization_id` único.
+- `user_active_context(user_id pk, organization_id, updated_at)`. Guarda qué contexto está usando cada usuario ahora mismo.
+- `credit_consumption(id, organization_id, user_id, tramite_id, action, credits, tipo_acto, created_at)` con índices `(organization_id, created_at)` y `(user_id, created_at)`. Tabla de auditoría inmutable.
 
-Reutilizar `numberToWordsLegal` ya existente:
+**2. Funciones**
 
-- `numberToWords(n)` — wrapper público.
-- `numeroNotariaToLetras(n)` — devuelve siempre **femenino** (la "notaría" es femenino en español notarial colombiano):
-  - 1-10: ordinales especiales `PRIMERA, SEGUNDA, TERCERA, CUARTA, QUINTA, SEXTA, SÉPTIMA, OCTAVA, NOVENA, DÉCIMA`.
-  - >10: cardinal en femenino → `VEINTIUNA`, `SESENTA Y CINCO`, etc. (ajustando `un→una`, `veintiún→veintiuna`).
-  - Output siempre en MAYÚSCULAS.
-- `numeroToOrdinalAbbr(n, formato: "volada"|"to")` — **default `"volada"`** (estándar elegante de escrituras públicas):
-  - `5,"volada"` → `"5.ª"` (femenino — coherente con "notaría"); opción `"5.º"` solo si se pide masculino explícito.
-  - `5,"to"` → `"5ta"` (femenino) / `"5to"` (masculino) como opción secundaria.
-  - Mantener compatibilidad con valores existentes en BD (`"5o"`, `"21a"`).
+- `get_active_org(uid)` → lee `user_active_context`; fallback a la membresía personal del usuario. Reemplaza el rol de `get_user_org` sin romperlo (lo mantenemos como wrapper que ahora delega en `get_active_org`).
+- `get_user_role(uid)` → ahora devuelve el rol de la membresía activa.
+- `set_active_context(p_org_id)` → valida que el usuario tenga membresía en esa org y actualiza `user_active_context`. También sincroniza `profiles.organization_id` y `profiles.role` por compatibilidad.
+- `consume_credit_v2(p_org_id, p_user_id, p_action, p_tramite_id, p_tipo_acto)` → **atómica**: `SELECT ... FOR UPDATE` del balance, `UPDATE organizations`, `INSERT credit_consumption`, todo en una transacción. Falla → rollback completo, no queda gasto sin auditoría.
+- `unlock_expediente(...)` → reescrita con la misma garantía atómica (descuenta 2, inserta una fila `APERTURA_EXPEDIENTE`).
+- `consume_credit(org_id)` legacy → wrapper que delega en `consume_credit_v2` con `auth.uid()` y `action='LEGACY'`.
+- `handle_new_user()` → guarda `full_name` desde `raw_user_meta_data`, crea organización personal con 5 créditos, inserta `memberships(is_personal=true, role='owner')` y `user_active_context`.
+- `accept_invitation(p_invitation_id)` → al aceptar, crea membresía no-personal y marca `accepted_at`. No toca la org personal del invitado.
 
-**2. `src/components/tramites/DocxPreview.tsx` — Auto-derivación + agrupación visual con orden fijo**
+**3. RLS**
 
-a) **Derivación al construir replacements** (en `buildReplacements`, ~línea 740):
-   Si `numero_notaria` tiene valor pero `numero_notaria_letras` o `numero_ordinal` están vacíos, derivarlos al vuelo. Respetar overrides manuales (`manualFieldOverrides`).
+- `memberships`: usuario ve sus propias membresías; owner/admin de una org ven todas las membresías de esa org.
+- `user_active_context`: cada usuario solo ve y actualiza la suya.
+- `credit_consumption`:
+  - SELECT: `(organization_id = get_active_org(auth.uid()) AND get_user_role(auth.uid()) IN ('owner','admin'))` **OR** `user_id = auth.uid()`. Cumple la regla: un member solo ve lo suyo; owner/admin ven el global de la org activa. Si el usuario cambia de contexto a una org donde es 'member', deja de ver el historial global de la otra.
+  - INSERT: solo `service_role` (las funciones SECURITY DEFINER).
+- Todas las políticas existentes (`tramites`, `personas`, `inmuebles`, `actos`, `configuracion_notaria`, `notaria_styles`, `historial_validaciones`, `invitations`, `activity_logs`, `organizations`) se mantienen llamando a `get_user_org` — que ahora internamente delega en `get_active_org`. Cambio transparente, cero riesgo de romper acceso.
 
-b) **Agrupación visual con orden canónico forzado** (post-process tras sustituciones, ~línea 818):
-   - **Independientemente del orden en que aparezcan los placeholders en el template o en el HTML resultante**, detectar la presencia adyacente (con tolerancia a paréntesis y whitespace) de los spans `notaria_numero_letras` y `notaria_ordinal` y reescribir el bloque al orden canónico:
-     ```
-     <span data-group="notaria-numero" style="background:#f5f3ff;border-bottom:1px dashed #6d28d9;border-radius:2px;padding:0 2px">
-       <span data-field="notaria_numero_letras">QUINTA</span> (<span data-field="notaria_ordinal">5.ª</span>)
-     </span>
-     ```
-   - Regex flexible que captura ambos spans en cualquier orden:
-     ```
-     /(<span data-field="notaria_(?:numero_letras|ordinal)"[^>]*>[^<]*<\/span>)\s*\(?\s*(<span data-field="notaria_(?:numero_letras|ordinal)"[^>]*>[^<]*<\/span>)\s*\)?/g
-     ```
-     Luego identificar cada span por `data-field` y emitir SIEMPRE en el orden `letras (ordinal)`, descartando paréntesis del template y poniéndolos manualmente.
-   - Los spans hijos pierden `border-bottom` y `background` propios (solo conservan `data-field` para edición individual y `cursor:pointer`); el contorno morado vive solo en el wrapper `data-group`.
-   - Si solo uno de los dos está presente, NO agrupar (mantener span individual).
+**4. Backfill (datos existentes)**
 
-c) **Click handler**: extender el listener de clicks del preview para que cuando el target esté dentro de `[data-group="notaria-numero"]`, se abra un popover de edición de bloque con los 3 sub-campos (número, letras, ordinal) en una sola tarjeta. Implementación: nuevo componente `NotariaBlockEditPopover.tsx` (basado en `VariableEditPopover.tsx`) con 3 inputs y toggle de formato ordinal.
+- Para cada `profiles` con `organization_id` actual: `INSERT INTO memberships` con su rol; `is_personal = true` solo si el usuario es el único owner y la org tiene un único miembro (heurística conservadora).
+- `INSERT INTO user_active_context` apuntando a esa org.
+- Sin pérdida de datos: nada se borra ni se reasigna.
 
-**3. `src/pages/Validacion.tsx` — Panel "Datos de la Notaría"**
+### Garantías clave
 
-a) **Reorganización** (en `renderNotariaInput` y grid ~líneas 2137-2208):
-   - `numero_notaria` primero, full-width, label `"Número de notaría (genera letras y ordinal)"`.
-   - Sub-bloque visual debajo (borde izquierdo discreto) con `numero_notaria_letras` y `numero_ordinal`, label `"Derivados — editables"` y placeholders mostrando el valor auto-derivado en gris.
-   - `onChange` de `numero_notaria` actualiza letras/ordinal salvo dirty-flag (`Set<keyof NotariaTramite>` `notariaManualOverrides` local).
-   - Botón micro `↻` junto a cada derivado para revertir a auto.
-   - Toggle `5.ª ⇄ 5ta` en el sub-bloque (default `5.ª`).
+- **Atomicidad**: `consume_credit_v2` y `unlock_expediente` ejecutan deducción + auditoría en una sola transacción. Imposible gasto sin registro.
+- **Aislamiento por contexto**: `get_active_org` se evalúa en cada query; cambiar de perfil cambia inmediatamente qué trámites, créditos y consumo se ven.
+- **Compatibilidad hacia atrás**: `get_user_org`, `consume_credit(org_id)` y `profiles.organization_id` siguen funcionando — el código actual no se rompe mientras se hace el rollout del frontend.
 
-b) **Nota visual al usuario**: pequeño hint debajo del bloque: *"En el documento aparecerá como: **QUINTA (5.ª)**"* para reforzar el orden canónico.
+### Después de la migración
 
-### Verificación
-1. `65` → letras `SESENTA Y CINCO`, ordinal `65.ª`. ✅
-2. Preview siempre muestra `QUINTA (5.ª)` en ese orden, aunque el template tenga `{notaria_ordinal} {notaria_numero_letras}`. ✅
-3. Una sola caja morada agrupada, no dos. ✅
-4. Toggle a `5ta` regenera y agrupa igual. ✅
-5. Editar letras manualmente → ordinal y número intactos; cambiar número ya no pisa letras (dirty). ✅
-6. Click en bloque agrupado del preview abre popover con los 3 sub-campos. ✅
-7. Trámites existentes con `5o` / `21a` siguen renderizando sin romperse. ✅
+Una vez aplicada, sigue la implementación frontend ya planificada:
+1. `Login.tsx` — campo "Nombre completo" obligatorio.
+2. `AuthContext.tsx` — cargar `memberships`, exponer `activeMembership` y `switchContext()`.
+3. `ProfileSwitcher.tsx` (nuevo) — dropdown en header.
+4. `Team.tsx` — pestaña "Consumo" con filtro por miembro y mes + edición inline de nombre.
+5. `Validacion.tsx` — migrar llamadas a `consume_credit_v2` pasando `user_id`, `action`, `tramite_id`, `tipo_acto`.
 
-### Archivos modificados (3) + 1 nuevo
-- `src/lib/legalFormatters.ts` — helpers nuevos (~70 líneas).
-- `src/components/tramites/DocxPreview.tsx` — derivación + post-process de agrupación canónica + handler `data-group` (~60 líneas).
-- `src/pages/Validacion.tsx` — sub-bloque notaría rediseñado + dirty tracking + toggle formato (~70 líneas).
-- `src/components/tramites/NotariaBlockEditPopover.tsx` — **nuevo** (~120 líneas, derivado de `VariableEditPopover`).
+### Riesgo y mitigación
 
-### Lo que NO se toca
-Estructura `NotariaTramite`, persistencia `metadata.notaria_tramite`, sugerencias Claude (`OcrSuggestion`), template Word, Edge Functions, auto-save.
-
-### Riesgos
-- Trámites existentes con letras/ordinal incoherentes con el número se respetan (no auto-pisar al cargar). La derivación solo aplica si el campo está vacío o si el usuario edita el número sin haber tocado el derivado.
-- Edge cases (`0`, no numérico): `parseInt` defensivo; si falla, no derivar.
+- Si una RLS quedara mal evaluada tras el cambio, `get_active_org` siempre tiene fallback a la org personal del usuario → nadie queda sin acceso.
+- Migración idempotente: usa `IF NOT EXISTS` en tablas y `CREATE OR REPLACE` en funciones.
 
