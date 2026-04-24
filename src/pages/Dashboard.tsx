@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Building2, Settings } from "lucide-react";
+import ProfileSwitcher from "@/components/ProfileSwitcher";
 import { Progress } from "@/components/ui/progress";
 import SetupOrgModal from "@/components/SetupOrgModal";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -129,7 +130,8 @@ const Dashboard = () => {
             <Scale className="h-6 w-6 text-notarial-gold" />
             <span className="text-lg font-bold">Sertuss</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <ProfileSwitcher variant="dark" />
             {profile?.role === "owner" && (
               <Button variant="ghost-dark" size="sm" onClick={() => navigate("/admin")}>
                 <Shield className="mr-1 h-4 w-4" /> Admin
