@@ -19,6 +19,7 @@ const formatNit = (value: string): string => {
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [orgName, setOrgName] = useState("");
   const [nit, setNit] = useState("");
   const [isRegister, setIsRegister] = useState(false);
@@ -35,6 +36,11 @@ const Login = () => {
     setLoading(true);
     try {
       if (isRegister) {
+        if (!fullName.trim() || fullName.trim().length < 3) {
+          toast({ title: "Error", description: "El nombre completo es obligatorio (mínimo 3 caracteres).", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
         if (!orgName.trim()) {
           toast({ title: "Error", description: "La Razón Social es obligatoria.", variant: "destructive" });
           setLoading(false);
@@ -47,12 +53,14 @@ const Login = () => {
           return;
         }
 
-        // Store org data in user_metadata — this works without active session
+        // Store full_name + org data in user_metadata — read by handle_new_user trigger
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
+            emailRedirectTo: `${window.location.origin}/`,
             data: {
+              full_name: fullName.trim(),
               org_name: orgName.trim(),
               nit: nit.trim(),
             },
@@ -97,6 +105,18 @@ const Login = () => {
               {isRegister && (
                 <fieldset className="space-y-4 rounded-md border border-border p-4">
                   <legend className="px-2 text-sm font-semibold text-foreground">Datos Legales</legend>
+                  <div className="space-y-2">
+                    <Label htmlFor="fullName">Nombre completo</Label>
+                    <Input
+                      id="fullName"
+                      placeholder="Tu nombre y apellidos"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
+                      minLength={3}
+                    />
+                    <p className="text-xs text-muted-foreground">Aparecerá en el registro de auditoría de créditos.</p>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="orgName">Razón Social</Label>
                     <Input

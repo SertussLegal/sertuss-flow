@@ -85,9 +85,23 @@ serve(async (req) => {
       }),
     });
 
+    if (!claudeResponse) {
+      return new Response(
+        JSON.stringify({ error: "Claude API no respondió" }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const claudeData = await claudeResponse.json();
 
     if (!claudeResponse.ok) {
+      // Surface upstream quota / rate-limit errors to the client
+      if (claudeResponse.status === 402 || claudeResponse.status === 429) {
+        return new Response(
+          JSON.stringify({ error: claudeData?.error?.message ?? "Cuota agotada" }),
+          { status: claudeResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       throw new Error(`Claude API error: ${JSON.stringify(claudeData)}`);
     }
 

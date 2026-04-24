@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -19,6 +19,18 @@ interface Organization {
   credit_balance: number;
 }
 
+export interface MembershipEntry {
+  organization_id: string;
+  role: "owner" | "admin" | "operator";
+  is_personal: boolean;
+  organization: {
+    id: string;
+    name: string;
+    nit: string | null;
+    credit_balance: number;
+  };
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -27,8 +39,12 @@ interface AuthContextType {
   credits: number;
   loading: boolean;
   needsOrgSetup: boolean;
+  memberships: MembershipEntry[];
+  activeOrgId: string | null;
   refreshProfile: () => Promise<void>;
   refreshCredits: () => Promise<void>;
+  refreshMemberships: () => Promise<void>;
+  switchContext: (orgId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,10 +60,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [memberships, setMemberships] = useState<MembershipEntry[]>([]);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsOrgSetup, setNeedsOrgSetup] = useState(false);
 
-  const fetchProfile = async (currentUser: User) => {
+  const fetchMemberships = useCallback(async (uid: string) => {
+    const { data } = await supabase
+      .from("memberships")
+      .select("organization_id, role, is_personal, organization:organizations(id, name, nit, credit_balance)")
+      .eq("user_id", uid);
+    if (data) setMemberships(data as unknown as MembershipEntry[]);
+
+    const { data: ctx } = await supabase
+      .from("user_active_context")
+      .select("organization_id")
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (ctx?.organization_id) setActiveOrgId(ctx.organization_id);
+  }, []);
+
+  const fetchProfile = useCallback(async (currentUser: User) => {
     const { data } = await supabase
       .from("profiles")
       .select("*")
@@ -57,17 +90,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setProfile(data as Profile);
 
       if (!data.organization_id) {
-        // Check if user has org data in metadata (from registration)
         const meta = currentUser.user_metadata;
         if (meta?.org_name || meta?.nit) {
-          // Auto-create org from metadata
           const { data: orgId, error } = await supabase.rpc("create_organization_for_user", {
             p_user_id: currentUser.id,
             p_org_name: meta.org_name || "",
             p_org_nit: meta.nit || "",
           });
           if (!error && orgId) {
-            // Re-fetch profile after org creation
             const { data: updatedProfile } = await supabase
               .from("profiles")
               .select("*")
@@ -82,11 +112,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 .single();
               if (org) setOrganization(org as Organization);
               setNeedsOrgSetup(false);
+              await fetchMemberships(currentUser.id);
               return;
             }
           }
         }
-        // No metadata or RPC failed — show setup modal
         setNeedsOrgSetup(true);
       } else {
         setNeedsOrgSetup(false);
@@ -97,14 +127,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .single();
         if (org) setOrganization(org as Organization);
       }
+      await fetchMemberships(currentUser.id);
     }
-  };
+  }, [fetchMemberships]);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user);
-  };
+  }, [user, fetchProfile]);
 
-  const refreshCredits = async () => {
+  const refreshMemberships = useCallback(async () => {
+    if (user) await fetchMemberships(user.id);
+  }, [user, fetchMemberships]);
+
+  const refreshCredits = useCallback(async () => {
     if (profile?.organization_id) {
       const { data } = await supabase
         .from("organizations")
@@ -113,9 +148,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .single();
       if (data) {
         setOrganization((prev) => prev ? { ...prev, credit_balance: data.credit_balance } : prev);
+        setMemberships((prev) =>
+          prev.map((m) =>
+            m.organization_id === profile.organization_id
+              ? { ...m, organization: { ...m.organization, credit_balance: data.credit_balance } }
+              : m
+          )
+        );
       }
     }
-  };
+  }, [profile?.organization_id]);
+
+  const switchContext = useCallback(async (orgId: string) => {
+    if (!user) return;
+    const { error } = await supabase.rpc("set_active_context", { p_org_id: orgId });
+    if (error) throw error;
+    setActiveOrgId(orgId);
+    // Re-hydrate profile (legacy fields are synced server-side)
+    await fetchProfile(user);
+  }, [user, fetchProfile]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -127,6 +178,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setProfile(null);
           setOrganization(null);
+          setMemberships([]);
+          setActiveOrgId(null);
           setNeedsOrgSetup(false);
         }
         setLoading(false);
@@ -143,7 +196,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchProfile]);
 
   return (
     <AuthContext.Provider
@@ -155,8 +208,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         credits: organization?.credit_balance ?? 0,
         loading,
         needsOrgSetup,
+        memberships,
+        activeOrgId,
         refreshProfile,
         refreshCredits,
+        refreshMemberships,
+        switchContext,
       }}
     >
       {children}

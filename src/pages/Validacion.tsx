@@ -31,6 +31,7 @@ import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib
 import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
+import { consumeCredit, notifyHttpQuotaError } from "@/services/credits";
 import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
@@ -1182,14 +1183,17 @@ const Validacion = () => {
 
   // Handle sidebar document upload: invoke scan-document and re-hydrate
   const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
-    if (!profile?.organization_id) return;
+    if (!profile?.organization_id || !user) return;
 
-    // Consume credit before OCR
-    const { data: hasCredit } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-    if (!hasCredit) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
-      return;
-    }
+    // Atomic credit consumption + audit (consume_credit_v2)
+    const ok = await consumeCredit({
+      organizationId: profile.organization_id,
+      userId: user.id,
+      action: "OCR_DOCUMENTO",
+      tramiteId: tramiteId ?? null,
+      tipoActo: actos.tipo_acto ?? null,
+    });
+    if (!ok) return;
 
     setSidebarUploading(tipo);
     try {
