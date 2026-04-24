@@ -31,6 +31,7 @@ import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib
 import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
+import { consumeCredit, notifyHttpQuotaError } from "@/services/credits";
 import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
@@ -1190,7 +1191,7 @@ const Validacion = () => {
       userId: user.id,
       action: "OCR_DOCUMENTO",
       tramiteId: tramiteId ?? null,
-      tipoActo: tipoActo ?? null,
+      tipoActo: actos.tipo_acto ?? null,
     });
     if (!ok) return;
 
