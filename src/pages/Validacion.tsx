@@ -1182,14 +1182,17 @@ const Validacion = () => {
 
   // Handle sidebar document upload: invoke scan-document and re-hydrate
   const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
-    if (!profile?.organization_id) return;
+    if (!profile?.organization_id || !user) return;
 
-    // Consume credit before OCR
-    const { data: hasCredit } = await supabase.rpc("consume_credit", { org_id: profile.organization_id });
-    if (!hasCredit) {
-      toast({ title: "Sin créditos", description: "No hay créditos disponibles para procesar documentos.", variant: "destructive" });
-      return;
-    }
+    // Atomic credit consumption + audit (consume_credit_v2)
+    const ok = await consumeCredit({
+      organizationId: profile.organization_id,
+      userId: user.id,
+      action: "OCR_DOCUMENTO",
+      tramiteId: tramiteId ?? null,
+      tipoActo: tipoActo ?? null,
+    });
+    if (!ok) return;
 
     setSidebarUploading(tipo);
     try {
