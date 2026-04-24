@@ -447,6 +447,12 @@ serve(async (req) => {
       if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
     }
 
+    if (!response) {
+      return new Response(JSON.stringify({ error: "AI gateway no respondió" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!response.ok) {
       const errText = await response.text();
       console.error("AI gateway error:", response.status, errText);
