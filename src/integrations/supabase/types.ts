@@ -219,6 +219,47 @@ export type Database = {
           },
         ]
       }
+      credit_consumption: {
+        Row: {
+          action: string
+          created_at: string
+          credits: number
+          id: string
+          organization_id: string
+          tipo_acto: string | null
+          tramite_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          credits?: number
+          id?: string
+          organization_id: string
+          tipo_acto?: string | null
+          tramite_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          credits?: number
+          id?: string
+          organization_id?: string
+          tipo_acto?: string | null
+          tramite_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_consumption_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       historial_validaciones: {
         Row: {
           correcciones_aplicadas: Json | null
@@ -449,6 +490,41 @@ export type Database = {
             columns: ["tramite_id"]
             isOneToOne: false
             referencedRelation: "tramites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memberships: {
+        Row: {
+          created_at: string
+          id: string
+          is_personal: boolean
+          organization_id: string
+          role: Database["public"]["Enums"]["org_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_personal?: boolean
+          organization_id: string
+          role?: Database["public"]["Enums"]["org_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_personal?: boolean
+          organization_id?: string
+          role?: Database["public"]["Enums"]["org_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -871,11 +947,38 @@ export type Database = {
           },
         ]
       }
+      user_active_context: {
+        Row: {
+          organization_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          organization_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          organization_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_active_context_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      accept_invitation: { Args: { p_invitation_id: string }; Returns: string }
       admin_update_credits: {
         Args: { new_balance: number; reason: string; target_org_id: string }
         Returns: undefined
@@ -890,10 +993,22 @@ export type Database = {
         Returns: undefined
       }
       consume_credit: { Args: { org_id: string }; Returns: boolean }
+      consume_credit_v2: {
+        Args: {
+          p_action: string
+          p_credits?: number
+          p_org_id: string
+          p_tipo_acto?: string
+          p_tramite_id?: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       create_organization_for_user: {
         Args: { p_org_name: string; p_org_nit: string; p_user_id: string }
         Returns: string
       }
+      get_active_org: { Args: { uid: string }; Returns: string }
       get_all_organizations: {
         Args: never
         Returns: {
@@ -913,6 +1028,7 @@ export type Database = {
       next_radicado: { Args: { p_org_id: string }; Returns: string }
       purge_expired_drafts: { Args: never; Returns: undefined }
       restore_credit: { Args: { org_id: string }; Returns: undefined }
+      set_active_context: { Args: { p_org_id: string }; Returns: undefined }
       unlock_expediente: {
         Args: { p_org_id: string; p_tramite_id: string; p_user_id: string }
         Returns: boolean
