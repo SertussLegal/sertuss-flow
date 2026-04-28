@@ -2705,27 +2705,53 @@ const Validacion = () => {
       <div className="flex-1 min-h-0 hidden lg:flex">
         <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
           <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
-            <DocxPreview
-              vendedores={vendedores}
-              compradores={compradores}
-              inmueble={inmueble}
-              actos={actos}
-              overrides={overrides}
-              manualFieldOverrides={manualFieldOverrides}
-              onFieldEdit={handleFieldEdit}
-              onCreateOverride={handleCreateOverride}
-              onRemoveOverride={handleRemoveOverride}
-              sugerenciasIA={sugerenciasIA}
-              generating={generatingWord}
-              textoFinalWord={textoFinalWord}
-              onSugerenciaAccepted={handleSugerenciaAccepted}
-              notariaConfig={notariaConfig}
-              notariaTramite={notariaTramite}
-              extractedDocumento={extractedDocumento}
-              extractedPredial={extractedPredial}
-              slotsPendientes={slotsPendientes}
-              onScrollToField={onScrollToField}
-            />
+            <div className="flex flex-col h-full">
+              {docxPath && (
+                <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/10 bg-slate-950/60 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowFinalView(false)}
+                    className={`px-3 py-1 text-xs rounded-md transition ${!showFinalView ? "bg-notarial-gold text-notarial-dark font-semibold" : "text-white/60 hover:text-white"}`}
+                  >
+                    Editor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFinalView(true)}
+                    className={`px-3 py-1 text-xs rounded-md transition ${showFinalView ? "bg-notarial-gold text-notarial-dark font-semibold" : "text-white/60 hover:text-white"}`}
+                  >
+                    Vista final
+                  </button>
+                </div>
+              )}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {docxPath && showFinalView ? (
+                  <PdfViewerPane tramiteId={tramiteId ?? ""} docxPath={docxPath} />
+                ) : (
+                  <DocxPreview
+                    vendedores={vendedores}
+                    compradores={compradores}
+                    inmueble={inmueble}
+                    actos={actos}
+                    overrides={overrides}
+                    manualFieldOverrides={manualFieldOverrides}
+                    onFieldEdit={handleFieldEdit}
+                    onCreateOverride={handleCreateOverride}
+                    onRemoveOverride={handleRemoveOverride}
+                    sugerenciasIA={sugerenciasIA}
+                    generating={generatingWord}
+                    textoFinalWord={textoFinalWord}
+                    onSugerenciaAccepted={handleSugerenciaAccepted}
+                    notariaConfig={notariaConfig}
+                    notariaTramite={notariaTramite}
+                    extractedDocumento={extractedDocumento}
+                    extractedPredial={extractedPredial}
+                    slotsPendientes={slotsPendientes}
+                    onScrollToField={onScrollToField}
+                  />
+                )}
+              </div>
+            </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
