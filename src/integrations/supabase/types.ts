@@ -884,6 +884,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string
+          docx_path: string | null
           fecha: string | null
           id: string
           is_unlocked: boolean
@@ -898,6 +899,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by: string
+          docx_path?: string | null
           fecha?: string | null
           id?: string
           is_unlocked?: boolean
@@ -912,6 +914,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string
+          docx_path?: string | null
           fecha?: string | null
           id?: string
           is_unlocked?: boolean
@@ -1029,6 +1032,7 @@ export type Database = {
       purge_expired_drafts: { Args: never; Returns: undefined }
       restore_credit: { Args: { org_id: string }; Returns: undefined }
       set_active_context: { Args: { p_org_id: string }; Returns: undefined }
+      tramite_org_from_path: { Args: { p_path: string }; Returns: string }
       unlock_expediente: {
         Args: { p_org_id: string; p_tramite_id: string; p_user_id: string }
         Returns: boolean
