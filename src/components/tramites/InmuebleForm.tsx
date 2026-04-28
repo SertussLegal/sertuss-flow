@@ -9,6 +9,7 @@ import { AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Inmueble, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
+import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
