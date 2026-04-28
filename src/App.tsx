@@ -16,6 +16,7 @@ import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
 import NotariaSettings from "./pages/NotariaSettings";
 import DocumentUploadStep from "./components/tramites/DocumentUploadStep";
+import CreditsBlockedModal from "./components/CreditsBlockedModal";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <CreditsBlockedModal />
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
