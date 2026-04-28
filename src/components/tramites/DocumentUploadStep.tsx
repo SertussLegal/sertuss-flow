@@ -110,7 +110,12 @@ const DocumentUploadStep = () => {
   const processFile = useCallback(async (file: File, type: string): Promise<any> => {
     const base64 = await fileToBase64(file);
     const { data, error } = await monitored.invoke("scan-document", { image: base64, type });
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (isCreditsBlockedError(error, data)) {
+        emitCreditsBlocked({ source: "scan-document" });
+      }
+      throw new Error(error.message);
+    }
     return data?.data || null;
   }, []);
 
