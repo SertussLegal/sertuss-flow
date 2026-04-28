@@ -1309,7 +1309,11 @@ const Validacion = () => {
     } catch (err: any) {
       await supabase.rpc("restore_credit", { org_id: profile.organization_id });
       await refreshCredits();
-      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
+      if (isCreditsBlockedError(err)) {
+        emitCreditsBlocked({ source: "scan-document" });
+      } else {
+        toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSidebarUploading(null);
     }
