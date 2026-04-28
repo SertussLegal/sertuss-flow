@@ -1823,8 +1823,20 @@ const Validacion = () => {
         tramite_id: tramiteId,
         notaria_tramite: notariaTramite,
       }, { tramiteId });
-      if (fnError) throw new Error("Error en el pipeline de IA: " + fnError.message);
-      if (result?.error) throw new Error(result.error);
+      if (fnError) {
+        if (isCreditsBlockedError(fnError, result)) {
+          emitCreditsBlocked({ source: "process-expediente" });
+          return;
+        }
+        throw new Error("Error en el pipeline de IA: " + fnError.message);
+      }
+      if (result?.error) {
+        if (isCreditsBlockedError(null, result)) {
+          emitCreditsBlocked({ source: "process-expediente" });
+          return;
+        }
+        throw new Error(result.error);
+      }
 
       // Store AI results
       const aiTexto = result.texto_final_word || "";
