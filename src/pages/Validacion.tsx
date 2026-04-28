@@ -2060,7 +2060,11 @@ const Validacion = () => {
       setSyncStatus("saved");
       toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      if (isCreditsBlockedError(err)) {
+        emitCreditsBlocked({ source: "process-expediente" });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     } finally {
       setGenerating(false);
       setGeneratingWord(false);
