@@ -27,6 +27,8 @@ import OcrSuggestion from "@/components/tramites/OcrSuggestion";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
+import PdfViewerPane from "@/components/tramites/PdfViewerPane";
+import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
 import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -230,6 +232,8 @@ const Validacion = () => {
   const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
   const [textoFinalWord, setTextoFinalWord] = useState<string>("");
   const [generatingWord, setGeneratingWord] = useState(false);
+  const [docxPath, setDocxPath] = useState<string | null>(null);
+  const [showFinalView, setShowFinalView] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
