@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { fetchAiGateway, aiGatewayErrorResponse, parseToolCallArguments } from "../_shared/aiFetch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -147,52 +148,41 @@ serve(async (req) => {
       },
     ];
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools,
-        tool_choice: { type: "function", function: { name: "redactar_escritura" } },
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Límite de solicitudes excedido. Intenta de nuevo en unos minutos." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA agotados. Contacta al administrador." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify({ error: "Error al generar documento con IA" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    let response: Response;
+    try {
+      response = await fetchAiGateway({
+        apiKey: LOVABLE_API_KEY,
+        body: {
+          model: "google/gemini-2.5-pro",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          tools,
+          tool_choice: { type: "function", function: { name: "redactar_escritura" } },
+        },
+        tag: "process-expediente",
       });
+    } catch (err) {
+      const r = aiGatewayErrorResponse(err, corsHeaders);
+      if (r) return r;
+      throw err;
     }
 
-    const result = await response.json();
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response:", JSON.stringify(result));
-      return new Response(JSON.stringify({ error: "La IA no devolvió datos estructurados" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    interface EditorResult {
+      texto_final_word: string;
+      sugerencias_ia?: unknown[];
+      [k: string]: unknown;
     }
 
-    const editorResult = JSON.parse(toolCall.function.arguments);
+    let editorResult: EditorResult;
+    try {
+      editorResult = await parseToolCallArguments<EditorResult>(response, "process-expediente");
+    } catch (err) {
+      const r = aiGatewayErrorResponse(err, corsHeaders);
+      if (r) return r;
+      throw err;
+    }
 
     // 7. Save results to tramite metadata
     const updatedMetadata = {

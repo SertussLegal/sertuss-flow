@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchAiGateway, aiGatewayErrorResponse, parseToolCallArguments } from "../_shared/aiFetch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -429,68 +430,27 @@ serve(async (req) => {
       tool_choice: { type: "function", function: { name: toolName } },
     });
 
-    const aiHeaders = {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    };
-
-    // Retry up to 2 times on transient errors (503, 502, 429)
-    let response: Response | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: aiHeaders,
-        body: aiBody,
+    let response: Response;
+    try {
+      response = await fetchAiGateway({
+        apiKey: LOVABLE_API_KEY,
+        body: JSON.parse(aiBody),
+        tag: "scan-document",
       });
-      if (response.ok || (response.status !== 503 && response.status !== 502)) break;
-      await response.text(); // consume body
-      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+    } catch (err) {
+      const r = aiGatewayErrorResponse(err, corsHeaders);
+      if (r) return r;
+      throw err;
     }
 
-    if (!response) {
-      return new Response(JSON.stringify({ error: "AI gateway no respondió" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let extractedData: Record<string, unknown>;
+    try {
+      extractedData = await parseToolCallArguments<Record<string, unknown>>(response, "scan-document");
+    } catch (err) {
+      const r = aiGatewayErrorResponse(err, corsHeaders);
+      if (r) return r;
+      throw err;
     }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Límite de solicitudes excedido. Intenta de nuevo en unos minutos." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA agotados. Contacta al administrador." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify({ error: "Error al procesar documento con IA" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const result = await response.json();
-
-    console.log("=== SERTUSS EXTRACT: Raw AI Response ===");
-    console.log(JSON.stringify(result, null, 2));
-
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-
-    console.log("=== SERTUSS EXTRACT: Tool Call ===");
-    console.log("Function name:", toolCall?.function?.name);
-    console.log("Arguments raw:", toolCall?.function?.arguments);
-
-    if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response:", JSON.stringify(result));
-      return new Response(JSON.stringify({ error: "La IA no pudo extraer datos del documento" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const extractedData = JSON.parse(toolCall.function.arguments);
 
     console.log("=== SERTUSS EXTRACT: Parsed Data ===");
     console.log("Doc type:", type);
