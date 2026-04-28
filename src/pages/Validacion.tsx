@@ -344,6 +344,7 @@ const Validacion = () => {
     if (!t) return;
 
     setIsUnlocked(!!(t as any).is_unlocked);
+    setDocxPath((t as any).docx_path ?? null);
     const rad = (t as any).radicado ?? "";
     setRadicado(rad);
     setRadicadoDraft(rad);
