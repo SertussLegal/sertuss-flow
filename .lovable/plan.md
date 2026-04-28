@@ -1,86 +1,72 @@
-# Plan aprobado — Ejecución en Build
+# Fase 3 — Backend edge functions (helper aiFetch + refactor)
 
-Ya hay un plan detallado en `.lovable/plan.md`. Confirmo el orden de ejecución y los refinamientos solicitados (Loading/Error en PdfViewerPane, validación del trigger de revocación antes del frontend).
+## Objetivo
 
-## Orden de ejecución atómico
+Centralizar las llamadas al AI Gateway de Lovable en un único helper compartido y refactorizar las 3 funciones que lo consumen para eliminar por construcción los `TS18047` ("Object is possibly 'null'") y unificar el manejo de retries, 402, 429 y respuestas inválidas.
 
-### Fase 1 — Migración SQL única (bloquea todo lo demás)
+`validar-con-claude` queda fuera del scope: usa la API directa de Anthropic (no Lovable Gateway), tiene shape distinta y por diseño no debe lanzar errores al cliente (fallback silencioso).
 
-Una sola migración idempotente que aplica:
+## Cambios
 
-1. **Storage privado**
-   - `INSERT INTO storage.buckets (id, name, public) VALUES ('expediente-files', 'expediente-files', false) ON CONFLICT DO NOTHING`
-   - Función `public.tramite_org_from_path(path text)` SECURITY DEFINER → resuelve `organization_id` desde el primer segmento del path (`{tramite_id}/...`)
-   - 4 policies RLS sobre `storage.objects` filtradas por `bucket_id = 'expediente-files'`:
-     - SELECT/INSERT/UPDATE: `tramite_org_from_path(name) = get_active_org(auth.uid())`
-     - DELETE: además requiere rol owner/admin
+### 1. Nuevo `supabase/functions/_shared/aiFetch.ts`
 
-2. **Auditoría obligatoria**
-   - Trigger `BEFORE INSERT` en `credit_consumption`: rechaza `tramite_id IS NULL` cuando `action <> 'LEGACY'`
+Helper compartido que expone:
 
-3. **Revocación instantánea**
-   - Policy DELETE en `memberships`: owners/admins eliminan miembros de su org activa, excepto su propia membership y memberships personales
-   - Trigger `AFTER DELETE ON memberships` SECURITY DEFINER: si la membership coincidía con `user_active_context.organization_id` del usuario afectado, redirige el contexto a su org personal y sincroniza `profiles.organization_id` legacy
+- **`fetchAiGateway({ apiKey, body, maxRetries?, backoffMs?, tag? })`** → devuelve `Response` no-null o lanza `AiGatewayError`. Reintenta automáticamente en 502/503/429 con backoff lineal (`base * (attempt+1)`). Por defecto 2 retries (3 intentos totales), backoff 2000ms. Captura errores de red y los reintenta también.
+- **`AiGatewayError`** (`Error` con `status` + `rawBody`) — preserva el status code original (especialmente 402 y 429) para que el frontend pueda reaccionar.
+- **`aiGatewayErrorResponse(err, corsHeaders)`** → mapea `AiGatewayError` a `Response` con CORS y status code correcto (preserva 402/429, normaliza el resto a 500). Retorna `null` si el error no es de gateway, para que el caller delegue a su catch genérico.
+- **`parseToolCallArguments<T>(response)`** → extrae y parsea `choices[0].message.tool_calls[0].function.arguments`. Lanza `AiGatewayError(502)` si la IA no devolvió tool call o el JSON es inválido. Elimina la cadena de optional-chains que producía TS18047.
 
-4. **Persistencia del .docx**
-   - `ALTER TABLE tramites ADD COLUMN IF NOT EXISTS docx_path text`
+### 2. Refactor `supabase/functions/scan-document/index.ts`
 
-### Fase 2 — Verificación pre-frontend (read-only)
+Reemplaza el bloque `let response: Response | null = null; for (...) { ... }` (líneas ~432-473) y el parseo de tool call (líneas ~475-498) por:
 
-Antes de tocar UI, ejecuto checks de smoke con `supabase--read_query`:
+```ts
+let response: Response;
+try {
+  response = await fetchAiGateway({
+    apiKey: LOVABLE_API_KEY,
+    body: JSON.parse(aiBody),
+    tag: "scan-document",
+  });
+} catch (err) {
+  const r = aiGatewayErrorResponse(err, corsHeaders);
+  if (r) return r;
+  throw err;
+}
 
-- `SELECT id, public FROM storage.buckets WHERE id='expediente-files'` → confirma bucket privado
-- `SELECT polname FROM pg_policy WHERE polrelid='storage.objects'::regclass AND polname LIKE '%expediente%'` → 4 policies
-- `SELECT tgname FROM pg_trigger WHERE tgrelid='public.credit_consumption'::regclass` → trigger presente
-- `SELECT tgname FROM pg_trigger WHERE tgrelid='public.memberships'::regclass` → trigger presente
-- Run `supabase--linter` → cero `errors` críticos nuevos
+const extractedData = await parseToolCallArguments<Record<string, unknown>>(response);
+```
 
-**Test funcional del trigger de revocación** (sin tocar usuarios reales):
-- Verifico la lógica leyendo la función creada y ejecutando un dry-run mental contra un escenario sintético; si hay riesgo, sembrar un caso temporal con `INSERT` en una org de prueba, ejecutar `DELETE FROM memberships WHERE ...` y leer `user_active_context` con `read_query` para confirmar el redirect. Limpieza inmediata.
+Logging de la respuesta cruda y de los keys extraídos se mantiene.
 
-Si cualquier check falla → **stop, reporto al usuario, no toco frontend.**
+### 3. Refactor `supabase/functions/process-expediente/index.ts`
 
-### Fase 3 — Backend edge functions
+Idéntico patrón: reemplaza el `fetch` directo + bloque `if (!response.ok)` + parseo manual (líneas ~150-195) por `fetchAiGateway` + `parseToolCallArguments<EditorResult>()`. La persistencia en `tramites.metadata` y `logs_extraccion` se mantiene exactamente igual.
 
-- `supabase/functions/_shared/aiFetch.ts` (nuevo) — `fetchWithRetry` que siempre devuelve `Response` o lanza
-- Refactor de `scan-document`, `process-expediente`, `generate-document` para usar el helper. Elimina TS18047 por construcción.
+### 4. Refactor `supabase/functions/generate-document/index.ts`
 
-### Fase 4 — Frontend (cliente)
+Mismo patrón en líneas ~120-166.
 
-1. `src/lib/expedienteStorage.ts` — `uploadExpedienteFile` + `getExpedienteFileUrl` (signed URL 1h)
-2. `src/components/tramites/PdfViewerPane.tsx` — visor con **3 estados explícitos**:
-   - **Loading**: skeleton centrado + spinner mientras se firma la URL
-   - **Empty**: ícono `FileText` + "Sube documentos en el panel de expediente para verlos aquí"
-   - **Error**: ícono `AlertCircle` + "No se pudo cargar el documento" + botón "Reintentar" + link "Abrir en pestaña nueva" como fallback (cubre bloqueo de PDF in-iframe en algunos navegadores)
-   - Caché de signed URLs en `useRef<Map>`, reset al cambiar `activeOrgId`
-   - Toolbar: selector de documento, zoom 50–200% (paso 25%), cerrar
-3. `src/components/CreditBlockedDialog.tsx` — AlertDialog global montado en `App.tsx`, escucha `window.addEventListener('credits:blocked')`
-4. `src/lib/notariaDerivation.ts` — derivación única de número/letras/ordinal
-5. Edits en `Validacion.tsx`:
-   - `ResizablePanelGroup` horizontal con `PdfViewerPane` (desktop) / `Sheet` (mobile)
-   - `handleSidebarUpload`: tras OCR exitoso, subir al bucket y persistir path en `metadata.expediente_files[tipo]`
-   - `handleConfirmGenerate`: subir `.docx` final + `UPDATE tramites SET docx_path=...`
-   - Banner sticky de re-descarga si `status='word_generado'`
-   - Derivación notarial atómica respetando `manualFieldOverrides`
-   - Radicado: `min-w-[180px] max-w-[180px] tabular-nums`
-6. `Dashboard.tsx`: botón "Descargar" que firma `docx_path` (60s) sin regenerar, sin cobrar créditos
-7. `Team.tsx`: leer `?tab=consumo`
-8. `DocxPreview.tsx`: clase `.notaria-group` (caja sólida morada continua) + popover agrupado
-9. `services/credits.ts`: emitir `window.dispatchEvent(new CustomEvent('credits:blocked'))` en 402/saldo 0
-10. `index.css`: estilos `.notaria-group`
+### 5. No se toca
 
-### Fase 5 — Tests Vitest
-
-- `src/test/rls-credits.test.ts` — operator A vs admin B, mismo org, cross-org
-- `src/test/membership-revocation.test.ts` — delete membership → contexto cae a personal, lecturas a la org Y devuelven 0
+- `validar-con-claude/index.ts` — distinta API, distinto shape, por diseño nunca propaga errores al cliente.
+- Prompts (en Google AI Studio para scan-document y process-expediente) — no se tocan.
+- Schemas de tool calling — no se tocan.
 
 ## Garantías
 
-- **Atomicidad**: si la migración falla, no se toca código. Si la verificación detecta cualquier anomalía (bucket no privado, trigger ausente, lint crítico), reporto y paro.
-- **Trigger de revocación validado** funcionalmente antes de la Fase 4.
-- **PdfViewerPane** con Loading / Empty / Error / Retry + fallback "Abrir en pestaña" — sin estados ambiguos.
-- **Idempotencia**: toda la migración usa `IF NOT EXISTS` / `CREATE OR REPLACE` / `DROP POLICY IF EXISTS` antes de `CREATE POLICY`.
-- **Backward compatible**: `consume_credit` legacy sigue funcionando vía exención `LEGACY`; `docx_path` nullable.
-- **Sin componentes basura**: cada archivo nuevo tiene un consumidor explícito; se reusan `ResizablePanelGroup`, `AlertDialog`, `VariableEditPopover`, `legalFormatters`.
+- **Sin TS18047**: `fetchAiGateway` retorna `Response` no-null por tipo, `parseToolCallArguments` retorna `T` no-null por tipo. Las cadenas `result.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments` desaparecen del código de las 3 funciones.
+- **Status codes preservados**: 402 sigue llegando como 402 al cliente → `services/credits.ts` puede emitir `credits:blocked` (Fase 4). 429 sigue llegando como 429 → cliente puede reintentar.
+- **Backward compatible**: misma URL, mismo body, mismas response shapes para el cliente. Cero cambios visibles para el frontend en esta fase.
+- **Idempotencia de despliegue**: las 3 funciones se vuelven a desplegar, el helper `_shared/aiFetch.ts` queda disponible para futuros callers (p.ej. nuevas funciones de generación de actos adicionales).
+- **Logs**: cada intento fallido sigue logueando status + primeros 300 chars del body, con prefijo `[scan-document]` / `[process-expediente]` / `[generate-document]` para filtrar en `edge_function_logs`.
 
-Aprueba para que pase a Build y arranque la Fase 1.
+## Verificación post-build
+
+1. `supabase--deploy_edge_functions` para `scan-document`, `process-expediente`, `generate-document`.
+2. Smoke test con `supabase--curl_edge_functions` (OPTIONS preflight) en las 3 funciones — confirmar 200 + CORS headers.
+3. Revisar `supabase--edge_function_logs` para confirmar que los nuevos tags `[scan-document]` etc. aparecen en logs reales después de un trámite.
+4. Buscar con `rg "Response \| null"` en `supabase/functions/` → 0 matches esperados.
+
+Aprueba para que pase a Build y aplique los 4 cambios en una sola tirada.
