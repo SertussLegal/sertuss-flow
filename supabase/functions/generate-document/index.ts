@@ -118,53 +118,35 @@ Genera el contenido legal estructurado para llenar la plantilla de escritura pú
       },
     ];
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools,
-        tool_choice: { type: "function", function: { name: "fill_template" } },
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Límite de solicitudes excedido. Intenta de nuevo en unos minutos." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA agotados. Contacta al administrador." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify({ error: "Error al generar documento con IA" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    let response: Response;
+    try {
+      response = await fetchAiGateway({
+        apiKey: LOVABLE_API_KEY,
+        body: {
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          tools,
+          tool_choice: { type: "function", function: { name: "fill_template" } },
+        },
+        tag: "generate-document",
       });
+    } catch (err) {
+      const r = aiGatewayErrorResponse(err, corsHeaders);
+      if (r) return r;
+      throw err;
     }
 
-    const result = await response.json();
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response:", JSON.stringify(result));
-      return new Response(JSON.stringify({ error: "La IA no devolvió datos estructurados" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let templateData: Record<string, unknown>;
+    try {
+      templateData = await parseToolCallArguments<Record<string, unknown>>(response, "generate-document");
+    } catch (err) {
+      const r = aiGatewayErrorResponse(err, corsHeaders);
+      if (r) return r;
+      throw err;
     }
-
-    const templateData = JSON.parse(toolCall.function.arguments);
 
     return new Response(JSON.stringify({ templateData }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
