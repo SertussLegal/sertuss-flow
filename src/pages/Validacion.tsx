@@ -27,6 +27,8 @@ import OcrSuggestion from "@/components/tramites/OcrSuggestion";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
+import PdfViewerPane from "@/components/tramites/PdfViewerPane";
+import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
 import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -230,6 +232,8 @@ const Validacion = () => {
   const [sugerenciasIA, setSugerenciasIA] = useState<SugerenciaIA[]>([]);
   const [textoFinalWord, setTextoFinalWord] = useState<string>("");
   const [generatingWord, setGeneratingWord] = useState(false);
+  const [docxPath, setDocxPath] = useState<string | null>(null);
+  const [showFinalView, setShowFinalView] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -340,6 +344,7 @@ const Validacion = () => {
     if (!t) return;
 
     setIsUnlocked(!!(t as any).is_unlocked);
+    setDocxPath((t as any).docx_path ?? null);
     const rad = (t as any).radicado ?? "";
     setRadicado(rad);
     setRadicadoDraft(rad);
@@ -1304,7 +1309,11 @@ const Validacion = () => {
     } catch (err: any) {
       await supabase.rpc("restore_credit", { org_id: profile.organization_id });
       await refreshCredits();
-      toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
+      if (isCreditsBlockedError(err)) {
+        emitCreditsBlocked({ source: "scan-document" });
+      } else {
+        toast({ title: "Error al procesar", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSidebarUploading(null);
     }
@@ -1814,8 +1823,20 @@ const Validacion = () => {
         tramite_id: tramiteId,
         notaria_tramite: notariaTramite,
       }, { tramiteId });
-      if (fnError) throw new Error("Error en el pipeline de IA: " + fnError.message);
-      if (result?.error) throw new Error(result.error);
+      if (fnError) {
+        if (isCreditsBlockedError(fnError, result)) {
+          emitCreditsBlocked({ source: "process-expediente" });
+          return;
+        }
+        throw new Error("Error en el pipeline de IA: " + fnError.message);
+      }
+      if (result?.error) {
+        if (isCreditsBlockedError(null, result)) {
+          emitCreditsBlocked({ source: "process-expediente" });
+          return;
+        }
+        throw new Error(result.error);
+      }
 
       // Store AI results
       const aiTexto = result.texto_final_word || "";
@@ -2018,13 +2039,48 @@ const Validacion = () => {
       link.download = fileName;
       link.click();
 
-      await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
+      // Persist a copy in private bucket so it can be re-downloaded later without re-running AI.
+      // Path MUST start with tramiteId — Phase 1 RLS enforces tramite_org_from_path() on first segment.
+      let uploadedPath: string | null = null;
+      try {
+        const path = `${tramiteId}/${Date.now()}-${fileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from("expediente-files")
+          .upload(path, out, {
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            upsert: false,
+          });
+        if (uploadError) {
+          console.warn("[generate] storage upload failed", uploadError);
+          toast({
+            title: "Documento descargado",
+            description: "No se pudo guardar copia en la nube. Podrás regenerar cuando quieras.",
+          });
+        } else {
+          uploadedPath = path;
+        }
+      } catch (uploadErr: any) {
+        console.warn("[generate] storage upload exception", uploadErr);
+      }
+
+      await supabase
+        .from("tramites")
+        .update({ status: "word_generado", ...(uploadedPath ? { docx_path: uploadedPath } : {}) })
+        .eq("id", tramiteId);
+      if (uploadedPath) {
+        setDocxPath(uploadedPath);
+        setShowFinalView(true);
+      }
       await refreshCredits();
       setIsDirty(false);
       setSyncStatus("saved");
       toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      if (isCreditsBlockedError(err)) {
+        emitCreditsBlocked({ source: "process-expediente" });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     } finally {
       setGenerating(false);
       setGeneratingWord(false);
@@ -2661,27 +2717,53 @@ const Validacion = () => {
       <div className="flex-1 min-h-0 hidden lg:flex">
         <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
           <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 overflow-hidden">
-            <DocxPreview
-              vendedores={vendedores}
-              compradores={compradores}
-              inmueble={inmueble}
-              actos={actos}
-              overrides={overrides}
-              manualFieldOverrides={manualFieldOverrides}
-              onFieldEdit={handleFieldEdit}
-              onCreateOverride={handleCreateOverride}
-              onRemoveOverride={handleRemoveOverride}
-              sugerenciasIA={sugerenciasIA}
-              generating={generatingWord}
-              textoFinalWord={textoFinalWord}
-              onSugerenciaAccepted={handleSugerenciaAccepted}
-              notariaConfig={notariaConfig}
-              notariaTramite={notariaTramite}
-              extractedDocumento={extractedDocumento}
-              extractedPredial={extractedPredial}
-              slotsPendientes={slotsPendientes}
-              onScrollToField={onScrollToField}
-            />
+            <div className="flex flex-col h-full">
+              {docxPath && (
+                <div className="flex items-center gap-1 px-3 py-1.5 border-b border-white/10 bg-slate-950/60 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowFinalView(false)}
+                    className={`px-3 py-1 text-xs rounded-md transition ${!showFinalView ? "bg-notarial-gold text-notarial-dark font-semibold" : "text-white/60 hover:text-white"}`}
+                  >
+                    Editor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFinalView(true)}
+                    className={`px-3 py-1 text-xs rounded-md transition ${showFinalView ? "bg-notarial-gold text-notarial-dark font-semibold" : "text-white/60 hover:text-white"}`}
+                  >
+                    Vista final
+                  </button>
+                </div>
+              )}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {docxPath && showFinalView ? (
+                  <PdfViewerPane tramiteId={tramiteId ?? ""} docxPath={docxPath} />
+                ) : (
+                  <DocxPreview
+                    vendedores={vendedores}
+                    compradores={compradores}
+                    inmueble={inmueble}
+                    actos={actos}
+                    overrides={overrides}
+                    manualFieldOverrides={manualFieldOverrides}
+                    onFieldEdit={handleFieldEdit}
+                    onCreateOverride={handleCreateOverride}
+                    onRemoveOverride={handleRemoveOverride}
+                    sugerenciasIA={sugerenciasIA}
+                    generating={generatingWord}
+                    textoFinalWord={textoFinalWord}
+                    onSugerenciaAccepted={handleSugerenciaAccepted}
+                    notariaConfig={notariaConfig}
+                    notariaTramite={notariaTramite}
+                    extractedDocumento={extractedDocumento}
+                    extractedPredial={extractedPredial}
+                    slotsPendientes={slotsPendientes}
+                    onScrollToField={onScrollToField}
+                  />
+                )}
+              </div>
+            </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">

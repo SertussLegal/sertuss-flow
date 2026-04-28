@@ -154,3 +154,51 @@
   border-radius: 2px;
   padding: 0 2px;
 }
+
+/* PdfViewerPane — simulación de hoja Carta (8.5" x 11") */
+.pdf-viewer-page {
+  width: 100%;
+  max-width: 21.59cm;       /* 8.5 in */
+  min-height: 27.94cm;      /* 11 in */
+  padding: 2.54cm;          /* 1 in margins */
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: 'Times New Roman', Georgia, 'Liberation Serif', serif;
+  font-size: 12pt;
+  line-height: 1.55;
+  text-align: justify;
+  border-radius: 2px;
+  box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.pdf-viewer-page p { margin: 0 0 0.6em 0; }
+.pdf-viewer-page h1,
+.pdf-viewer-page h2,
+.pdf-viewer-page h3 {
+  font-family: inherit;
+  color: #0f172a;
+  margin: 1.2em 0 0.5em 0;
+  text-align: center;
+  font-weight: 700;
+}
+.pdf-viewer-page h1 { font-size: 14pt; }
+.pdf-viewer-page h2 { font-size: 13pt; }
+.pdf-viewer-page h3 { font-size: 12pt; }
+.pdf-viewer-page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+}
+.pdf-viewer-page td,
+.pdf-viewer-page th {
+  border: 1px solid #cbd5e1;
+  padding: 4px 8px;
+  vertical-align: top;
+}
+.pdf-viewer-page ul,
+.pdf-viewer-page ol { margin: 0.4em 0 0.6em 1.5em; }
+@media (max-width: 768px) {
+  .pdf-viewer-page {
+    padding: 1.5cm;
+    font-size: 11pt;
+  }
+}

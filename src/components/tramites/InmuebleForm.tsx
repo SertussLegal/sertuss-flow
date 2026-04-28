@@ -9,6 +9,7 @@ import { AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Inmueble, NivelConfianza } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
+import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
@@ -132,7 +133,12 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         body: { image: base64, type },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        if (isCreditsBlockedError(error, data)) {
+          emitCreditsBlocked({ source: "scan-document" });
+        }
+        throw new Error(error.message);
+      }
       if (data?.data) {
         const d = data.data;
 

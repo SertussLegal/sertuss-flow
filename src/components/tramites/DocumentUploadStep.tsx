@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
+import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import {
   Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft, CreditCard, UserCheck, Building2,
 } from "lucide-react";
@@ -110,7 +111,12 @@ const DocumentUploadStep = () => {
   const processFile = useCallback(async (file: File, type: string): Promise<any> => {
     const base64 = await fileToBase64(file);
     const { data, error } = await monitored.invoke("scan-document", { image: base64, type });
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (isCreditsBlockedError(error, data)) {
+        emitCreditsBlocked({ source: "scan-document" });
+      }
+      throw new Error(error.message);
+    }
     return data?.data || null;
   }, []);
 
