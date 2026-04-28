@@ -2023,7 +2023,38 @@ const Validacion = () => {
       link.download = fileName;
       link.click();
 
-      await supabase.from("tramites").update({ status: "word_generado" }).eq("id", tramiteId);
+      // Persist a copy in private bucket so it can be re-downloaded later without re-running AI.
+      // Path MUST start with tramiteId — Phase 1 RLS enforces tramite_org_from_path() on first segment.
+      let uploadedPath: string | null = null;
+      try {
+        const path = `${tramiteId}/${Date.now()}-${fileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from("expediente-files")
+          .upload(path, out, {
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            upsert: false,
+          });
+        if (uploadError) {
+          console.warn("[generate] storage upload failed", uploadError);
+          toast({
+            title: "Documento descargado",
+            description: "No se pudo guardar copia en la nube. Podrás regenerar cuando quieras.",
+          });
+        } else {
+          uploadedPath = path;
+        }
+      } catch (uploadErr: any) {
+        console.warn("[generate] storage upload exception", uploadErr);
+      }
+
+      await supabase
+        .from("tramites")
+        .update({ status: "word_generado", ...(uploadedPath ? { docx_path: uploadedPath } : {}) })
+        .eq("id", tramiteId);
+      if (uploadedPath) {
+        setDocxPath(uploadedPath);
+        setShowFinalView(true);
+      }
       await refreshCredits();
       setIsDirty(false);
       setSyncStatus("saved");
