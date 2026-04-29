@@ -2738,17 +2738,29 @@ const Validacion = () => {
               </Tooltip>
 
               {/* Previsualizar (primario) */}
-              <Button
-                onClick={handlePrevisualizar}
-                disabled={validando}
-                className="h-9 px-6 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium"
-              >
-                {validando ? (
-                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando…</>
-                ) : (
-                  <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={notariaIncompletaGlobal ? 0 : -1}>
+                    <Button
+                      onClick={handlePrevisualizar}
+                      disabled={validando || notariaIncompletaGlobal}
+                      className="h-9 px-6 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
+                    >
+                      {validando ? (
+                        <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando…</>
+                      ) : (
+                        <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {notariaIncompletaGlobal && (
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-destructive/40 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                    <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
+                    <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
+                  </TooltipContent>
                 )}
-              </Button>
+              </Tooltip>
             </div>
           </div>
         </TooltipProvider>
