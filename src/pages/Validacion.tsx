@@ -2517,6 +2517,7 @@ const Validacion = () => {
                         value={notariaTramite.numero_notaria_letras}
                         onChange={(e) => updateDerivado("numero_notaria_letras", e.target.value.toLocaleUpperCase("es-CO"))}
                         placeholder={notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "Ingresa el número primero"}
+                        data-field-input="notaria_numero_letras"
                         className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       {notariaManualOverrides.has("numero_notaria_letras") && notariaTramite.numero_notaria && (
