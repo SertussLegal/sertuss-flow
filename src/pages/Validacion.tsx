@@ -2146,6 +2146,40 @@ const Validacion = () => {
     }
   };
 
+  // Re-descarga el .docx ya generado desde el bucket privado, sin consumir créditos
+  // ni invocar al pipeline de IA. Usa una signed URL de corta duración.
+  const handleRedownload = async () => {
+    if (!docxPath) return;
+    try {
+      const { data, error } = await supabase.storage
+        .from("expediente-files")
+        .createSignedUrl(docxPath, 60);
+      if (error || !data?.signedUrl) {
+        toast({ title: "No se pudo descargar", description: error?.message ?? "URL no disponible", variant: "destructive" });
+        return;
+      }
+      // Nombre amigable: el archivo en storage tiene timestamp por unicidad,
+      // pero al usuario le entregamos un nombre legible.
+      const tipo = (actos.tipo_acto || "Tramite").replace(/[^\p{L}\p{N}_-]+/gu, "_");
+      const shortId = (tramiteId || "").slice(0, 8) || "doc";
+      const friendlyName = `Escritura_${tipo}_${shortId}.docx`;
+
+      const resp = await fetch(data.signedUrl);
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = friendlyName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Descarga lista", description: "Sin consumo de créditos." });
+    } catch (e: any) {
+      toast({ title: "Error al descargar", description: e?.message ?? String(e), variant: "destructive" });
+    }
+  };
+
   const syncIndicator = () => {
     let Icon: typeof Cloud = Cloud;
     let label = "Sin cambios pendientes";
