@@ -2454,12 +2454,39 @@ const Validacion = () => {
                 </div>
 
                 {(previewLetras || previewOrdinal) && (
-                  <p className="text-[11px] text-muted-foreground">
-                    En el documento aparecerá como:{" "}
-                    <span className="font-semibold text-foreground bg-primary/10 px-1.5 py-0.5 rounded">
-                      {previewLetras || "___"} ({previewOrdinal || "___"})
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1 flex-wrap">
+                    <span>En el documento aparecerá como:</span>
+                    <span className="font-semibold text-foreground bg-primary/10 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                      <span className={letrasAutomatico ? "italic text-notarial-gold" : ""}>
+                        {previewLetras || "___"}
+                      </span>
+                      <span className="text-muted-foreground">(</span>
+                      <span className={ordinalAutomatico ? "italic text-notarial-gold" : ""}>
+                        {previewOrdinal || "___"}
+                      </span>
+                      <span className="text-muted-foreground">)</span>
+                      {(letrasAutomatico || ordinalAutomatico) && (
+                        <Sparkles className="h-3 w-3 text-notarial-gold" />
+                      )}
                     </span>
+                    {(letrasAutomatico || ordinalAutomatico) && (
+                      <span className="text-[10px] italic text-notarial-gold/80">
+                        — valor automático del número
+                      </span>
+                    )}
                   </p>
+                )}
+
+                {/* Guard de coherencia notarial */}
+                {notariaIncompleta && (
+                  <Alert variant="destructive" className="py-2 mt-1">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle className="text-xs font-semibold">[Dato Faltante]</AlertTitle>
+                    <AlertDescription className="text-[11px]">
+                      Faltan campos críticos: <strong>{camposCriticosFaltantes.join(", ")}</strong>.
+                      No podrás previsualizar hasta completarlos para evitar documentos con líneas en blanco.
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
             </div>
