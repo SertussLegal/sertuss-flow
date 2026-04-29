@@ -65,7 +65,28 @@ export async function fetchAiGateway(
         body: serializedBody,
       });
 
-      if (response.ok) return response;
+      if (response.ok) {
+        // Buffer the body so we can detect empty/truncated 200 responses
+        // (gateway sometimes returns 200 with no body under load).
+        const buffered = await response.text();
+        if (!buffered || buffered.trim().length === 0) {
+          lastStatus = 200;
+          lastBody = "";
+          console.error(
+            `[${tag}] AI gateway returned empty 200 body attempt=${attempt + 1}/${totalAttempts}`,
+          );
+          if (attempt === totalAttempts - 1) {
+            throw new AiGatewayError(502, "", "AI gateway returned empty body", tag);
+          }
+          await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
+          continue;
+        }
+        // Re-wrap so downstream `.json()` / `.text()` keeps working.
+        return new Response(buffered, {
+          status: response.status,
+          headers: response.headers,
+        });
+      }
 
       // Read body so we can log + re-use the connection cleanly.
       lastStatus = response.status;
