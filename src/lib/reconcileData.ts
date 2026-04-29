@@ -33,6 +33,56 @@ export function normalizeNameForComparison(name: string): string {
     .trim();
 }
 
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Extracts atomic civil status from raw OCR text, stripping notarial boilerplate.
+ */
+export function sanitizeEstadoCivil(raw: string): string {
+  if (!raw) return "";
+  const lower = stripAccents(raw.toLowerCase()).replace(/\s+/g, " ").trim();
+  const re = /(soltera?|casada?|divorciada?|viuda?|union (?:marital|libre)(?: de hecho)?)(\s+(?:sin|con)\s+(?:union marital(?: de hecho)?|sociedad conyugal(?: vigente| disuelta| liquidada)?))?/;
+  const match = lower.match(re);
+  if (!match) return "";
+  return match[0].replace(/\bunion\b/g, "unión").trim();
+}
+
+/**
+ * Returns a clean postal address or empty string.
+ * Discards generic boilerplate and requires at least one digit.
+ */
+export function sanitizeDireccion(raw: string): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  const lower = stripAccents(trimmed.toLowerCase()).replace(/\s+/g, " ").trim();
+  const formulaic = new Set([
+    "esta ciudad", "en esta ciudad",
+    "domiciliado en esta ciudad", "domiciliada en esta ciudad", "domiciliados en esta ciudad",
+    "en la ciudad", "esta localidad", "el municipio",
+  ]);
+  if (formulaic.has(lower)) return "";
+  const stripped = trimmed.replace(/^domiciliad[oa]s?\s+en\s+/i, "").trim();
+  if (!/\d/.test(stripped)) return "";
+  return stripped;
+}
+
+/**
+ * Returns a clean municipality name or empty string.
+ */
+export function sanitizeMunicipio(raw: string): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  const lower = stripAccents(trimmed.toLowerCase()).replace(/\s+/g, " ").trim();
+  const generic = new Set([
+    "esta ciudad", "en esta ciudad", "el municipio",
+    "este municipio", "esta localidad", "la ciudad",
+  ]);
+  if (generic.has(lower)) return "";
+  return trimmed;
+}
+
 interface CedulaDetail {
   nombre_completo?: string;
   numero_identificacion?: string;
@@ -104,14 +154,17 @@ export function reconcilePersonas(
     });
 
     if (escrituraMatch) {
-      if (escrituraMatch.estado_civil && !enriched.estado_civil && !isDirty("estado_civil")) {
-        enriched.estado_civil = escrituraMatch.estado_civil;
+      const cleanEstado = sanitizeEstadoCivil(escrituraMatch.estado_civil || "");
+      if (cleanEstado && !enriched.estado_civil && !isDirty("estado_civil")) {
+        enriched.estado_civil = cleanEstado;
       }
-      if (escrituraMatch.direccion && !enriched.direccion && !isDirty("direccion")) {
-        enriched.direccion = escrituraMatch.direccion;
+      const cleanDir = sanitizeDireccion(escrituraMatch.direccion || "");
+      if (cleanDir && !enriched.direccion && !isDirty("direccion")) {
+        enriched.direccion = cleanDir;
       }
-      if (escrituraMatch.municipio_domicilio && !enriched.municipio_domicilio && !isDirty("municipio_domicilio")) {
-        enriched.municipio_domicilio = escrituraMatch.municipio_domicilio;
+      const cleanMun = sanitizeMunicipio(escrituraMatch.municipio_domicilio || "");
+      if (cleanMun && !enriched.municipio_domicilio && !isDirty("municipio_domicilio")) {
+        enriched.municipio_domicilio = cleanMun;
       }
     }
 
