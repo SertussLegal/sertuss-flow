@@ -154,14 +154,17 @@ export function reconcilePersonas(
     });
 
     if (escrituraMatch) {
-      if (escrituraMatch.estado_civil && !enriched.estado_civil && !isDirty("estado_civil")) {
-        enriched.estado_civil = escrituraMatch.estado_civil;
+      const cleanEstado = sanitizeEstadoCivil(escrituraMatch.estado_civil || "");
+      if (cleanEstado && !enriched.estado_civil && !isDirty("estado_civil")) {
+        enriched.estado_civil = cleanEstado;
       }
-      if (escrituraMatch.direccion && !enriched.direccion && !isDirty("direccion")) {
-        enriched.direccion = escrituraMatch.direccion;
+      const cleanDir = sanitizeDireccion(escrituraMatch.direccion || "");
+      if (cleanDir && !enriched.direccion && !isDirty("direccion")) {
+        enriched.direccion = cleanDir;
       }
-      if (escrituraMatch.municipio_domicilio && !enriched.municipio_domicilio && !isDirty("municipio_domicilio")) {
-        enriched.municipio_domicilio = escrituraMatch.municipio_domicilio;
+      const cleanMun = sanitizeMunicipio(escrituraMatch.municipio_domicilio || "");
+      if (cleanMun && !enriched.municipio_domicilio && !isDirty("municipio_domicilio")) {
+        enriched.municipio_domicilio = cleanMun;
       }
     }
 
