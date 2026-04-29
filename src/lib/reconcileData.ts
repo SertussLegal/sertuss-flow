@@ -205,7 +205,7 @@ export function reconcilePersonas(
     });
 
     if (escrituraMatch) {
-      const cleanEstado = sanitizeEstadoCivil(escrituraMatch.estado_civil || "");
+      const cleanEstado = sanitizeEstadoCivil(escrituraMatch.estado_civil || "", enriched.nombre_completo || escrituraMatch.nombre || "");
       if (cleanEstado && !enriched.estado_civil && !isDirty("estado_civil")) {
         enriched.estado_civil = cleanEstado;
       }
