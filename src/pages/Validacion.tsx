@@ -9,7 +9,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText, FolderOpen, Edit3, Check } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText, FolderOpen, Edit3, Check, Sparkles } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
@@ -1903,16 +1904,23 @@ const Validacion = () => {
         notario_decreto: notariaTramite.decreto_nombramiento || _,
         notario_tipo: notariaTramite.tipo_notario || "",
         notaria_numero: notariaTramite.numero_notaria || _,
-        notaria_numero_letras: notariaTramite.numero_notaria_letras || _,
-        notaria_numero_letras_lower: notariaTramite.numero_notaria_letras
-          ? notariaTramite.numero_notaria_letras.toLowerCase()
-          : _,
-        notaria_numero_letras_femenino: notariaTramite.numero_notaria_letras
-          ? (notariaTramite.numero_notaria_letras.toUpperCase().endsWith("O")
-              ? notariaTramite.numero_notaria_letras.toUpperCase().slice(0, -1) + "A"
-              : notariaTramite.numero_notaria_letras.toUpperCase())
-          : _,
-        notaria_ordinal: notariaTramite.numero_ordinal || _,
+        // Fallbacks: si la edición manual está vacía, usar el valor derivado del número de notaría.
+        notaria_numero_letras: notariaTramite.numero_notaria_letras
+          || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : _),
+        notaria_numero_letras_lower: (() => {
+          const base = notariaTramite.numero_notaria_letras
+            || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
+          return base ? base.toLowerCase() : _;
+        })(),
+        notaria_numero_letras_femenino: (() => {
+          const base = notariaTramite.numero_notaria_letras
+            || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
+          if (!base) return _;
+          const upper = base.toUpperCase();
+          return upper.endsWith("O") ? upper.slice(0, -1) + "A" : upper;
+        })(),
+        notaria_ordinal: notariaTramite.numero_ordinal
+          || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : _),
         notaria_circulo: notariaTramite.circulo || _,
         notaria_circulo_proper: notariaTramite.circulo
           ? notariaTramite.circulo.toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase())
@@ -2213,18 +2221,29 @@ const Validacion = () => {
       const cleaned = raw.replace(/\D/g, "").slice(0, 4);
       setNotariaTramite(prev => {
         const next: NotariaTramite = { ...prev, numero_notaria: cleaned };
-        if (cleaned && !notariaManualOverrides.has("numero_notaria_letras")) {
-          next.numero_notaria_letras = numeroNotariaToLetras(cleaned);
-        }
-        if (cleaned && !notariaManualOverrides.has("numero_ordinal")) {
-          next.numero_ordinal = numeroToOrdinalAbbr(cleaned, formatoOrdinalNotaria);
-        }
-        if (!cleaned) {
-          if (!notariaManualOverrides.has("numero_notaria_letras")) next.numero_notaria_letras = "";
-          if (!notariaManualOverrides.has("numero_ordinal")) next.numero_ordinal = "";
+        if (cleaned) {
+          if (!notariaManualOverrides.has("numero_notaria_letras")) {
+            next.numero_notaria_letras = numeroNotariaToLetras(cleaned);
+          }
+          if (!notariaManualOverrides.has("numero_ordinal")) {
+            next.numero_ordinal = numeroToOrdinalAbbr(cleaned, formatoOrdinalNotaria);
+          }
+        } else {
+          // Cascading cleanup: si se borra el número, se limpia TODO (incluso overrides
+          // manuales) para forzar reinicio total de coherencia notarial.
+          next.numero_notaria_letras = "";
+          next.numero_ordinal = "";
         }
         return next;
       });
+      if (!cleaned) {
+        setNotariaManualOverrides(prev => {
+          const n = new Set(prev);
+          n.delete("numero_notaria_letras");
+          n.delete("numero_ordinal");
+          return n;
+        });
+      }
     };
 
     const updateDerivado = (key: "numero_notaria_letras" | "numero_ordinal", value: string) => {
@@ -2294,6 +2313,17 @@ const Validacion = () => {
       || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
     const previewOrdinal = notariaTramite.numero_ordinal
       || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "");
+
+    // Indicadores de "valor automático (placeholder)" vs "valor manual"
+    const letrasAutomatico = !notariaTramite.numero_notaria_letras && !!notariaTramite.numero_notaria;
+    const ordinalAutomatico = !notariaTramite.numero_ordinal && !!notariaTramite.numero_notaria;
+
+    // Coherencia notarial: campos críticos para que el documento no salga con líneas en blanco
+    const camposCriticosFaltantes: string[] = [];
+    if (!notariaTramite.numero_notaria) camposCriticosFaltantes.push("Número de notaría");
+    if (!notariaTramite.circulo) camposCriticosFaltantes.push("Círculo notarial");
+    if (!notariaTramite.departamento) camposCriticosFaltantes.push("Departamento");
+    const notariaIncompleta = camposCriticosFaltantes.length > 0;
 
     return (
     <Tabs defaultValue="vendedores" className="w-full">
@@ -2391,7 +2421,7 @@ const Validacion = () => {
                         type="text"
                         value={notariaTramite.numero_notaria_letras}
                         onChange={(e) => updateDerivado("numero_notaria_letras", e.target.value.toLocaleUpperCase("es-CO"))}
-                        placeholder={notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "QUINTA"}
+                        placeholder={notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "Ingresa el número primero"}
                         className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       {notariaManualOverrides.has("numero_notaria_letras") && notariaTramite.numero_notaria && (
@@ -2413,7 +2443,7 @@ const Validacion = () => {
                         type="text"
                         value={notariaTramite.numero_ordinal}
                         onChange={(e) => updateDerivado("numero_ordinal", e.target.value)}
-                        placeholder={notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "5.ª"}
+                        placeholder={notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "Ingresa el número primero"}
                         className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       {notariaManualOverrides.has("numero_ordinal") && notariaTramite.numero_notaria && (
@@ -2431,12 +2461,39 @@ const Validacion = () => {
                 </div>
 
                 {(previewLetras || previewOrdinal) && (
-                  <p className="text-[11px] text-muted-foreground">
-                    En el documento aparecerá como:{" "}
-                    <span className="font-semibold text-foreground bg-primary/10 px-1.5 py-0.5 rounded">
-                      {previewLetras || "___"} ({previewOrdinal || "___"})
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1 flex-wrap">
+                    <span>En el documento aparecerá como:</span>
+                    <span className="font-semibold text-foreground bg-primary/10 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                      <span className={letrasAutomatico ? "italic text-notarial-gold" : ""}>
+                        {previewLetras || "___"}
+                      </span>
+                      <span className="text-muted-foreground">(</span>
+                      <span className={ordinalAutomatico ? "italic text-notarial-gold" : ""}>
+                        {previewOrdinal || "___"}
+                      </span>
+                      <span className="text-muted-foreground">)</span>
+                      {(letrasAutomatico || ordinalAutomatico) && (
+                        <Sparkles className="h-3 w-3 text-notarial-gold" />
+                      )}
                     </span>
+                    {(letrasAutomatico || ordinalAutomatico) && (
+                      <span className="text-[10px] italic text-notarial-gold/80">
+                        — valor automático del número
+                      </span>
+                    )}
                   </p>
+                )}
+
+                {/* Guard de coherencia notarial */}
+                {notariaIncompleta && (
+                  <Alert variant="destructive" className="py-2 mt-1">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle className="text-xs font-semibold">[Dato Faltante]</AlertTitle>
+                    <AlertDescription className="text-[11px]">
+                      Faltan campos críticos: <strong>{camposCriticosFaltantes.join(", ")}</strong>.
+                      No podrás previsualizar hasta completarlos para evitar documentos con líneas en blanco.
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
             </div>
@@ -2540,6 +2597,13 @@ const Validacion = () => {
     </Tabs>
     );
   };
+
+  // Coherencia notarial — guard a nivel global para el botón Previsualizar.
+  const camposCriticosFaltantesGlobal: string[] = [];
+  if (!notariaTramite.numero_notaria) camposCriticosFaltantesGlobal.push("Número de notaría");
+  if (!notariaTramite.circulo) camposCriticosFaltantesGlobal.push("Círculo notarial");
+  if (!notariaTramite.departamento) camposCriticosFaltantesGlobal.push("Departamento");
+  const notariaIncompletaGlobal = camposCriticosFaltantesGlobal.length > 0;
 
   return (
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
@@ -2681,17 +2745,29 @@ const Validacion = () => {
               </Tooltip>
 
               {/* Previsualizar (primario) */}
-              <Button
-                onClick={handlePrevisualizar}
-                disabled={validando}
-                className="h-9 px-6 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium"
-              >
-                {validando ? (
-                  <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando…</>
-                ) : (
-                  <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={notariaIncompletaGlobal ? 0 : -1}>
+                    <Button
+                      onClick={handlePrevisualizar}
+                      disabled={validando || notariaIncompletaGlobal}
+                      className="h-9 px-6 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
+                    >
+                      {validando ? (
+                        <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Validando…</>
+                      ) : (
+                        <><Eye className="mr-1 h-4 w-4" /> Previsualizar</>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {notariaIncompletaGlobal && (
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-destructive/40 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                    <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
+                    <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
+                  </TooltipContent>
                 )}
-              </Button>
+              </Tooltip>
             </div>
           </div>
         </TooltipProvider>

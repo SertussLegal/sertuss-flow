@@ -86,7 +86,9 @@ serve(async (req) => {
 
     // 6. Call SERTUSS-EDITOR-PRO via AI gateway
     const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria, camposObligatorios);
-    const notariaBlock = buildNotariaBlock(notaria_tramite);
+    // Defensa server-side: hidratamos derivados si vienen vacíos del cliente.
+    const hydratedNotaria = hydrateNotariaDerivados(notaria_tramite);
+    const notariaBlock = buildNotariaBlock(hydratedNotaria);
     const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
 
     const tools = [
@@ -312,4 +314,44 @@ function sanitizeAiText(text: string): string {
     .replace(/\(\s*\)/g, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.;:])/g, "$1");
+}
+
+// Convierte número de notaría a letras en mayúscula (1..100). Soporte básico server-side.
+function numeroNotariaToLetrasServer(n: string | number): string {
+  const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
+  if (!num || isNaN(num) || num < 1) return "";
+  const unidades = ["", "PRIMERA", "SEGUNDA", "TERCERA", "CUARTA", "QUINTA", "SEXTA", "SÉPTIMA", "OCTAVA", "NOVENA"];
+  const decenas10_19 = ["DÉCIMA", "DECIMOPRIMERA", "DECIMOSEGUNDA", "DECIMOTERCERA", "DECIMOCUARTA", "DECIMOQUINTA", "DECIMOSEXTA", "DECIMOSÉPTIMA", "DECIMOCTAVA", "DECIMONOVENA"];
+  const decenas = ["", "", "VIGÉSIMA", "TRIGÉSIMA", "CUADRAGÉSIMA", "QUINCUAGÉSIMA", "SEXAGÉSIMA", "SEPTUAGÉSIMA", "OCTOGÉSIMA", "NONAGÉSIMA"];
+  if (num >= 1 && num <= 9) return unidades[num];
+  if (num >= 10 && num <= 19) return decenas10_19[num - 10];
+  if (num === 100) return "CENTÉSIMA";
+  if (num >= 20 && num <= 99) {
+    const d = Math.floor(num / 10);
+    const u = num % 10;
+    return u === 0 ? decenas[d] : `${decenas[d]} ${unidades[u]}`.trim();
+  }
+  return String(num);
+}
+
+function numeroToOrdinalAbbrServer(n: string | number): string {
+  const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
+  if (!num || isNaN(num) || num < 1) return "";
+  return `${num}.ª`;
+}
+
+// Hidratación defensiva: si vienen vacíos, los calculamos del número.
+function hydrateNotariaDerivados(nt: any): any {
+  if (!nt || typeof nt !== "object") return nt;
+  const out = { ...nt };
+  const num = (out.numero_notaria ?? "").toString().trim();
+  if (num) {
+    if (!out.numero_notaria_letras || !out.numero_notaria_letras.toString().trim()) {
+      out.numero_notaria_letras = numeroNotariaToLetrasServer(num);
+    }
+    if (!out.numero_ordinal || !out.numero_ordinal.toString().trim()) {
+      out.numero_ordinal = numeroToOrdinalAbbrServer(num);
+    }
+  }
+  return out;
 }
