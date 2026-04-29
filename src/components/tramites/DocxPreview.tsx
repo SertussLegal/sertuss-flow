@@ -1204,12 +1204,35 @@ const DocxPreview = ({
   }, [onCreateOverride]);
 
   const handleFieldApply = useCallback((value: string) => {
-    if (!editPopover || !onFieldEdit) return;
-    // Pass the original on-screen text as anchor so unmapped fields can
-    // fall back to a semantic override in the parent.
+    if (!editPopover) return;
+    // Blanks IA genéricos no son campos mapeados: persistirlos como
+    // TextOverride con contexto para distinguir cada ocurrencia.
+    if (editPopover.field === "__ai_blank__" && onCreateOverride) {
+      // Buscar contexto alrededor del span clickeado para localizar la ocurrencia exacta.
+      const spans = contentRef.current?.querySelectorAll('[data-field="__ai_blank__"]');
+      let contextBefore = "";
+      let contextAfter = "";
+      if (spans) {
+        for (const sp of Array.from(spans)) {
+          const rect = (sp as HTMLElement).getBoundingClientRect();
+          if (Math.abs(rect.top - editPopover.position.top + 4) < 2 &&
+              Math.abs(rect.left - editPopover.position.left) < 2) {
+            const prev = (sp.previousSibling?.textContent || "").slice(-30);
+            const next = (sp.nextSibling?.textContent || "").slice(0, 30);
+            contextBefore = prev;
+            contextAfter = next;
+            break;
+          }
+        }
+      }
+      onCreateOverride("___________", value, false, contextBefore, contextAfter);
+      setEditPopover(null);
+      return;
+    }
+    if (!onFieldEdit) return;
     onFieldEdit(editPopover.field, value, editPopover.value);
     setEditPopover(null);
-  }, [editPopover, onFieldEdit]);
+  }, [editPopover, onFieldEdit, onCreateOverride]);
 
   const handleApplyOverride = useCallback((newText: string, replaceAll: boolean) => {
     if (!selectionToolbar || !onCreateOverride) return;
