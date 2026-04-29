@@ -756,10 +756,51 @@ const Validacion = () => {
     "apoderado_banco.cedula": "apoderado_cedula",
     "comparecientes_vendedor": "vendedor_0_nombre_completo",
     "comparecientes_comprador": "comprador_0_nombre_completo",
+    // ── Notaría (panel colapsable arriba de los tabs) ──
+    "notaria_numero": "notaria_numero",
+    "notaria_numero_letras": "notaria_numero_letras",
+    "notaria_numero_letras_lower": "notaria_numero_letras",
+    "notaria_numero_letras_femenino": "notaria_numero_letras",
+    "notaria_ordinal": "notaria_ordinal",
+    "notaria_circulo": "notaria_circulo",
+    "notaria_circulo_proper": "notaria_circulo",
+    "notaria_departamento": "notaria_departamento",
   };
+
+  // Set de campos que viven en el panel "Datos de la Notaría" (no en tabs)
+  const NOTARIA_FIELD_SET = new Set([
+    "notaria_numero",
+    "notaria_numero_letras",
+    "notaria_ordinal",
+    "notaria_circulo",
+    "notaria_departamento",
+  ]);
 
   const onScrollToField = useCallback((field: string) => {
     const resolved = FIELD_ALIAS[field] || FIELD_TO_INMUEBLE[field] || FIELD_TO_ACTOS[field] || field;
+
+    // Caso especial: campos de Notaría → abrir el panel colapsable, no cambiar de tab
+    const isNotariaField =
+      field.startsWith("notaria_") || NOTARIA_FIELD_SET.has(resolved);
+
+    if (isNotariaField) {
+      setNotariaPanelOpen(true);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const el = document.querySelector(`[data-field-input="${resolved}"]`) as HTMLElement;
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.focus({ preventScroll: true });
+            el.classList.remove("field-spotlight");
+            void el.offsetWidth;
+            el.classList.add("field-spotlight");
+            window.setTimeout(() => el.classList.remove("field-spotlight"), 1300);
+          }
+        }, 120);
+      });
+      return;
+    }
+
     const tabsEl = document.querySelector('[role="tablist"]');
     if (!tabsEl) return;
 
