@@ -2471,6 +2471,7 @@ const Validacion = () => {
                   value={notariaTramite.numero_notaria}
                   onChange={(e) => updateNumeroNotaria(e.target.value)}
                   placeholder="65"
+                  data-field-input="notaria_numero"
                   className="w-32 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
