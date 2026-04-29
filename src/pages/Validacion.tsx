@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText, FolderOpen, Edit3, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText, FolderOpen, Edit3, Check, Sparkles, Download } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
