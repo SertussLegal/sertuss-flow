@@ -2882,6 +2882,24 @@ const Validacion = () => {
                 </TooltipContent>
               </Tooltip>
 
+              {/* Re-descarga sin créditos (solo si ya hay docx generado) */}
+              {docxPath && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      onClick={handleRedownload}
+                      className="h-9 px-4 border-notarial-gold/40 bg-white/5 text-notarial-gold hover:bg-notarial-gold/10"
+                    >
+                      <Download className="mr-1 h-4 w-4" /> Descargar Word
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                    Re-descargar el documento generado (sin consumir créditos)
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               {/* Previsualizar (primario) */}
               <Tooltip>
                 <TooltipTrigger asChild>
