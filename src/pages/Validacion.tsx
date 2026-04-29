@@ -37,7 +37,7 @@ import { monitored } from "@/services/monitoredClient";
 import { consumeCredit, notifyHttpQuotaError } from "@/services/credits";
 import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
-import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
+import { reconcilePersonas, reconcileInmueble, sanitizeDireccion, sanitizeEstadoCivil } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
 import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
