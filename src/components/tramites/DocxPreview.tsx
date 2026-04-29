@@ -770,7 +770,56 @@ const DocxPreview = ({
     // If we have AI-generated text, use it instead of template
     if (textoFinalWord) {
       let result = textoFinalWord;
-      
+
+      // ── Pase A: limpieza tipográfica defensiva (paréntesis vacíos / dobles) ──
+      result = result
+        .replace(/\)\s*\)+/g, ")")                 // "))" → ")"
+        .replace(/\(\s*\(+/g, "(")                 // "((" → "("
+        .replace(/(_{6,})\s*\(\s*_{6,}\s*\)/g, "$1") // "_____ (_____)" → "_____"
+        .replace(/\(\s*\)/g, "")                    // "( )" → ""
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/\s+([,.;:])/g, "$1");
+
+      // ── Pase B: inferir data-field semántico para blanks de notario ──
+      // Reusa la misma clase var-pending y estilo rojo del template branch.
+      const pendingRedStyle = "background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer";
+      const makePendingSpan = (field: string) =>
+        `<span data-field="${field}" class="var-pending" style="${pendingRedStyle}" title="Haz clic para editar">___________</span>`;
+
+      // NOTARIO/NOTARÍA ___________ → notaria_numero_letras
+      result = result.replace(
+        /(NOTAR[IÍ]O|NOTAR[IÍ]A)(\s+)(_{6,})/gi,
+        (_m, word, sp) => `${word}${sp}${makePendingSpan("notaria_numero_letras")}`,
+      );
+      // CÍRCULO DE ___________ → notaria_circulo
+      result = result.replace(
+        /(C[IÍ]RCULO\s+DE\s+)(_{6,})/gi,
+        (_m, prefix) => `${prefix}${makePendingSpan("notaria_circulo")}`,
+      );
+      // DEPARTAMENTO DE ___________ → notaria_departamento
+      result = result.replace(
+        /(DEPARTAMENTO\s+DE\s+)(_{6,})/gi,
+        (_m, prefix) => `${prefix}${makePendingSpan("notaria_departamento")}`,
+      );
+
+      // ── Pase C: envolver blanks restantes como genéricos clickeables ──
+      const genericPendingSpan = `<span data-field="__ai_blank__" class="var-pending" style="${pendingRedStyle}" title="Haz clic para editar">___________</span>`;
+      const segments = result.split(/_{6,}/);
+      if (segments.length > 1) {
+        result = segments.map((segment, i, arr) => {
+          if (i === arr.length - 1) return segment;
+          // No envolver si está dentro de un atributo HTML abierto
+          const lastAttrOpen = Math.max(segment.lastIndexOf('="'), segment.lastIndexOf("='"));
+          const lastTagClose = segment.lastIndexOf(">");
+          if (lastAttrOpen > lastTagClose) return segment + "___________";
+          // No envolver si estamos dentro de una etiqueta <span ...> aún sin cerrar
+          const lastLt = segment.lastIndexOf("<");
+          const lastGt = segment.lastIndexOf(">");
+          if (lastLt > lastGt) return segment + "___________";
+          return segment + genericPendingSpan;
+        }).join("");
+      }
+
       // Apply sugerencias_ia highlights
       if (sugerenciasIA.length > 0) {
         result = applySugerenciaHighlights(result, sugerenciasIA);
@@ -1065,13 +1114,17 @@ const DocxPreview = ({
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
         const isEmpty = text === "___________";
-        const suggestion = getSuggestionForField(
-          field,
-          extractedDocumento,
-          extractedPredial,
-          inmueble,
-          actos,
-        );
+        // Blanks IA genéricos no tienen mapeo OCR conocido — abrir sin sugerencia.
+        const suggestion =
+          field === "__ai_blank__"
+            ? undefined
+            : getSuggestionForField(
+                field,
+                extractedDocumento,
+                extractedPredial,
+                inmueble,
+                actos,
+              );
         const finalSuggestion =
           suggestion && (isEmpty || suggestion.value !== text) ? suggestion : undefined;
         setEditPopover({
@@ -1151,12 +1204,35 @@ const DocxPreview = ({
   }, [onCreateOverride]);
 
   const handleFieldApply = useCallback((value: string) => {
-    if (!editPopover || !onFieldEdit) return;
-    // Pass the original on-screen text as anchor so unmapped fields can
-    // fall back to a semantic override in the parent.
+    if (!editPopover) return;
+    // Blanks IA genéricos no son campos mapeados: persistirlos como
+    // TextOverride con contexto para distinguir cada ocurrencia.
+    if (editPopover.field === "__ai_blank__" && onCreateOverride) {
+      // Buscar contexto alrededor del span clickeado para localizar la ocurrencia exacta.
+      const spans = contentRef.current?.querySelectorAll('[data-field="__ai_blank__"]');
+      let contextBefore = "";
+      let contextAfter = "";
+      if (spans) {
+        for (const sp of Array.from(spans)) {
+          const rect = (sp as HTMLElement).getBoundingClientRect();
+          if (Math.abs(rect.top - editPopover.position.top + 4) < 2 &&
+              Math.abs(rect.left - editPopover.position.left) < 2) {
+            const prev = (sp.previousSibling?.textContent || "").slice(-30);
+            const next = (sp.nextSibling?.textContent || "").slice(0, 30);
+            contextBefore = prev;
+            contextAfter = next;
+            break;
+          }
+        }
+      }
+      onCreateOverride("___________", value, false, contextBefore, contextAfter);
+      setEditPopover(null);
+      return;
+    }
+    if (!onFieldEdit) return;
     onFieldEdit(editPopover.field, value, editPopover.value);
     setEditPopover(null);
-  }, [editPopover, onFieldEdit]);
+  }, [editPopover, onFieldEdit, onCreateOverride]);
 
   const handleApplyOverride = useCallback((newText: string, replaceAll: boolean) => {
     if (!selectionToolbar || !onCreateOverride) return;
