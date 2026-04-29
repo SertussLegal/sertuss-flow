@@ -2362,14 +2362,26 @@ const Validacion = () => {
       }
     };
 
+    // Mapa de claves de NotariaTramite → atributo `data-field-input` que usa
+    // `onScrollToField` para enfocar el input desde el preview.
+    const NOTARIA_INPUT_ATTR: Partial<Record<keyof NotariaTramite, string>> = {
+      numero_notaria: "notaria_numero",
+      numero_notaria_letras: "notaria_numero_letras",
+      numero_ordinal: "notaria_ordinal",
+      circulo: "notaria_circulo",
+      departamento: "notaria_departamento",
+    };
+
     const renderNotariaInput = (key: keyof NotariaTramite) => {
       const sug = notariaSuggestions.get(key);
+      const dataAttr = NOTARIA_INPUT_ATTR[key];
       const input = (
         <input
           type="text"
           value={notariaTramite[key]}
           onChange={(e) => setNotariaTramite(prev => ({ ...prev, [key]: e.target.value }))}
           placeholder="___________"
+          data-field-input={dataAttr}
           className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
       );
