@@ -2307,6 +2307,17 @@ const Validacion = () => {
     const previewOrdinal = notariaTramite.numero_ordinal
       || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "");
 
+    // Indicadores de "valor automático (placeholder)" vs "valor manual"
+    const letrasAutomatico = !notariaTramite.numero_notaria_letras && !!notariaTramite.numero_notaria;
+    const ordinalAutomatico = !notariaTramite.numero_ordinal && !!notariaTramite.numero_notaria;
+
+    // Coherencia notarial: campos críticos para que el documento no salga con líneas en blanco
+    const camposCriticosFaltantes: string[] = [];
+    if (!notariaTramite.numero_notaria) camposCriticosFaltantes.push("Número de notaría");
+    if (!notariaTramite.circulo) camposCriticosFaltantes.push("Círculo notarial");
+    if (!notariaTramite.departamento) camposCriticosFaltantes.push("Departamento");
+    const notariaIncompleta = camposCriticosFaltantes.length > 0;
+
     return (
     <Tabs defaultValue="vendedores" className="w-full">
       {/* Panel: Datos de la Notaría (POR TRÁMITE) */}
