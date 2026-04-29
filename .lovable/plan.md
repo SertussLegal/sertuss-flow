@@ -1,71 +1,71 @@
-## Fase 4 — Visor persistente + bus de créditos (aprobada)
 
-Cierra el ciclo del trámite: el .docx generado se sube a `expediente-files`, queda referenciado en `tramites.docx_path`, se previsualiza en formato hoja Carta y se puede re-descargar sin volver a consumir créditos. Errores 402 disparan modal global.
+## Diagnóstico (validado contra el DOM real)
 
-### 1. Verificación previa del trigger de revocación
+Inspeccioné el trámite `003e40e5-…` en vivo. El HTML real del párrafo es:
 
-Antes de tocar frontend, `read_query` para confirmar que `handle_membership_revocation` está enlazado como AFTER DELETE en `memberships`. Si no lo está, migración corta para crearlo.
-
-### 2. Persistencia del .docx en Storage
-
-En `Validacion.tsx › handleConfirmGenerate`, tras `outZip.generate(...)`:
-1. Path canónico: `${tramiteId}/${Date.now()}-${fileName}` (tramiteId como primer segmento — las RLS de Fase 1 lo exigen).
-2. `supabase.storage.from('expediente-files').upload(path, blob, { contentType, upsert: false })`.
-3. Si falla: toast no bloqueante, continúa la descarga local.
-4. Si OK: `update tramites set docx_path = path, status = 'word_generado'` en un solo UPDATE; setear `docxPath` en estado local.
-5. Conservar la descarga local actual intacta.
-
-### 3. Componente `PdfViewerPane`
-
-`src/components/tramites/PdfViewerPane.tsx`. Props: `{ tramiteId, docxPath: string | null }`.
-
-**Estados:** `idle` (sin docxPath), `loading`, `ready`, `error` (404 / 403 / red — mensaje diferenciado + botón Reintentar).
-
-**Loader:** `createSignedUrl(docxPath, 300)` → `fetch` → `arrayBuffer` → `mammoth.convertToHtml`. Reusar import estático de mammoth (ver `mem://tech/estabilidad-despliegue-vite`).
-
-**Simulación hoja Carta (requerimiento clave del usuario):**
-- Wrapper externo con fondo gris oscuro y `padding` vertical para "marco".
-- Hoja interna: `max-width: 21.59cm` (Carta), `min-height: 27.94cm`, `padding: 2.54cm` (1 pulgada), fondo blanco puro, sombra elevada estilo glassmorphism, tipografía serif notarial (`'Times New Roman', Georgia, serif`), `font-size: 12pt`, `line-height: 1.5`, color `#1a1a1a`.
-- Centrado con `mx-auto`, scroll vertical en el wrapper externo.
-- Estilos encapsulados en `.pdf-viewer-page` para no contaminar el resto.
-- Botón "Descargar .docx" flotante arriba a la derecha, reusa la signed URL (no consume créditos).
-
-### 4. Hidratación al abrir trámite
-
-Leer `tramites.docx_path` al cargar y guardar en estado `docxPath`. Pasar a `PdfViewerPane`. Tras subida nueva, actualizar el estado local también.
-
-### 5. Wiring del visor
-
-Cuando `docxPath` existe, mostrar tab "Vista final" junto a la "Editor" actual. Sin `docxPath`, solo se ve el `DocxPreview` actual (sin cambios). No romper UX existente.
-
-### 6. Event bus `credits:blocked`
-
-- `src/lib/creditsBus.ts` → `emitCreditsBlocked({ source })` vía `CustomEvent`.
-- `src/components/CreditsBlockedModal.tsx` montado una vez en `App.tsx`. Listener global → abre Dialog: "Sin créditos disponibles" + descripción contextual + botón "Ver planes" → `/equipo`.
-- Integración en los 4 puntos que invocan edge functions: `DocumentUploadStep.tsx`, `Validacion.tsx › handleSidebarUpload`, `Validacion.tsx › handleConfirmGenerate`, `InmuebleForm.tsx`. Cuando el error indique 402 (preservado por `aiGatewayErrorResponse` de Fase 3), emitir el evento en lugar del toast genérico. Para 429, mantener `notifyHttpQuotaError` actual.
-
-## Archivos afectados
-
-```text
-src/components/tramites/PdfViewerPane.tsx        (nuevo)
-src/components/CreditsBlockedModal.tsx           (nuevo)
-src/lib/creditsBus.ts                            (nuevo)
-src/App.tsx                                      (montar modal global)
-src/pages/Validacion.tsx                         (upload Storage, hidratar docxPath, tab nueva, emit credits:blocked)
-src/components/tramites/DocumentUploadStep.tsx   (emit credits:blocked en 402)
-src/components/tramites/InmuebleForm.tsx         (emit credits:blocked en 402)
-supabase/migrations/<timestamp>_*.sql            (solo si el trigger de revocación no estuviera ya activo)
+```html
+<strong>OTORGADA ANTE EL NOTARIO ___________ ( ___________ ) ) DEL CÍRCULO DE ___________</strong>
 ```
 
-## Fuera de alcance
+Texto plano dentro de `<strong>`. **Cero spans interactivos**. Por eso al hacer click no pasa nada — `handleContentClick` busca `[data-field]` / `[data-override]` y no los encuentra.
 
-Conversión a PDF real (LibreOffice/Gotenberg en backend), versionado/historial de .docx, cambios en edge functions de Fase 3.
+### Dos bugs encadenados
 
-## Validación post-implementación
+**Bug 1 — Frontend:** `src/components/tramites/DocxPreview.tsx` líneas 769-781. Cuando hay `textoFinalWord` (texto generado por Gemini), el `useEffect` hace `return` antes de toda la lógica que envuelve `___________` en `<span class="var-pending" data-field="…">` y antes del agrupador notaría. Resultado: los blanks de la rama IA son texto plano no clickeable.
 
-1. Generar trámite → archivo aparece en `expediente-files/<tramiteId>/...` y `docx_path` referenciado.
-2. Recargar página → tab "Vista final" carga desde Storage sin llamar a Gemini.
-3. `PdfViewerPane` con `docxPath` inexistente → estado de error amigable + Reintentar.
-4. Hoja se visualiza con dimensiones Carta y tipografía serif notarial.
-5. Forzar 402 → aparece modal global, no toast.
-6. Revocar membresía no-personal del usuario activo → `user_active_context` cae a su org personal.
+**Bug 2 — Backend:** `supabase/functions/process-expediente/index.ts` línea 274. El prompt arma `Número: ${num} (${letras})` que cuando ambos están vacíos produce `Número: ___________ (___________)`. Combinado sin instrucción tipográfica, Gemini escribe `OTORGADA ANTE EL NOTARIO ___________ (___________))` con cierre de paréntesis duplicado.
+
+---
+
+## Plan (dos archivos, sin schema, sin componentes nuevos)
+
+### 1. `src/components/tramites/DocxPreview.tsx` — rama `textoFinalWord`
+
+Antes del `setHtml(sanitize(result))` actual (línea 779), añadir tres pases que **reusan exactamente los mismos estilos, clases y popover** que ya usa la rama del template:
+
+- **Pase A — Limpieza tipográfica defensiva** sobre el texto IA:
+  - `))` → `)`, `((` → `(`
+  - `___________ (___________)` → `___________` (paréntesis redundantes con solo blanks)
+  - `( )` vacío → eliminar
+  - Espacios duplicados y espacios antes de coma/punto
+- **Pase B — Inferencia semántica de `data-field` para el bloque notario**, usando la misma clase `var-pending` y el mismo `pendingRedStyle` ya definidos en el archivo:
+  - `NOTARIO/NOTARÍA ___________` → `data-field="notaria_numero_letras"`
+  - `CÍRCULO DE ___________` → `data-field="notaria_circulo"`
+  - `DEPARTAMENTO DE ___________` → `data-field="notaria_departamento"`
+- **Pase C — Wrap genérico de blanks restantes** con `data-field="__ai_blank__"` y la misma clase `var-pending`. La detección de "está dentro de atributo / dentro de span" reusa la lógica del FINAL PASS existente (líneas 902-936) para evitar doble envoltura.
+
+Con esto, **al hacer click** el flujo pasa por el mismo `handleContentClick` (línea 1059) → mismo `VariableEditPopover` (línea 1400) → misma persistencia en `manualFieldOverrides`. Cero componentes nuevos, cero estilos nuevos.
+
+Para `__ai_blank__` (blanks que no se pudieron mapear), pequeño ajuste en `handleContentClick`: cuando el campo es `__ai_blank__`, abrir el popover sin sugerencia OCR (no hay mapeo conocido) y al aplicar enrutar vía `onCreateOverride` para guardarlo como `TextOverride` con contexto, igual que el flujo de selección de texto que ya existe.
+
+### 2. `supabase/functions/process-expediente/index.ts` — fix en origen
+
+- En `buildNotariaBlock`: cuando `numero_notaria_letras` esté vacío, **omitir el paréntesis**. Línea queda solo `Número: ___________` en lugar de `Número: ___________ (___________)`.
+- Añadir al bloque `REGLA CRÍTICA` instrucción tipográfica explícita: nunca emitir `( )`, nunca paréntesis con solo blanks dentro, nunca `))`.
+- **Post-proceso defensivo** sobre `texto_final_word` antes de devolverlo al cliente: las mismas regex de limpieza del Pase A, aplicadas server-side. Doble red para futuras alucinaciones del modelo.
+
+### 3. Despliegue y validación
+
+- Desplegar `process-expediente` con `supabase--deploy_edge_functions`.
+- En el preview, verificar que cada `___________` cerca de `OTORGADA ANTE EL NOTARIO`:
+  - Está envuelto en `<span data-field="…" class="var-pending">`
+  - Abre `VariableEditPopover` al hacer click (mismo popover que el resto)
+  - Tras editar, queda en color púrpura (`var-user-edited`) y persiste
+  - Ya no hay `) )` ni `( )` vacíos en el texto
+
+---
+
+## Garantía de consistencia
+
+Todo el fix **reusa los componentes y comportamientos existentes**:
+
+| Pieza | Reuso |
+|---|---|
+| Popover de edición | `VariableEditPopover` (sin cambios) |
+| Estilos de blanks | `var-pending` + `pendingRedStyle` ya definidos |
+| Estilos de editados | `var-user-edited` ya definido |
+| Persistencia | `manualFieldOverrides` (sin cambios) |
+| Override semántico | `onCreateOverride` / `TextOverride` ya existentes |
+| Detección click | `handleContentClick` con mínimo ajuste para `__ai_blank__` |
+
+Sin nuevos componentes, sin nuevas tablas, sin nuevos estilos.
