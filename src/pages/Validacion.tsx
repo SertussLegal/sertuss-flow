@@ -775,16 +775,19 @@ const Validacion = () => {
     const trigger = tabsEl.querySelector(`[data-value="${targetTab}"]`) as HTMLElement;
     if (trigger) trigger.click();
 
-    // Wait for tab content to render, then scroll
+    // Wait for tab content to render, then scroll + spotlight
     requestAnimationFrame(() => {
       setTimeout(() => {
         const el = document.querySelector(`[data-field-input="${resolved}"]`) as HTMLElement;
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.focus();
-          el.style.outline = "2px solid hsl(var(--primary))";
-          el.style.outlineOffset = "2px";
-          setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 2000);
+          el.focus({ preventScroll: true });
+          // Reinicia la animación si el usuario reclica el mismo campo
+          el.classList.remove("field-spotlight");
+          // Force reflow para reiniciar el keyframe
+          void el.offsetWidth;
+          el.classList.add("field-spotlight");
+          window.setTimeout(() => el.classList.remove("field-spotlight"), 1300);
         }
       }, 100);
     });

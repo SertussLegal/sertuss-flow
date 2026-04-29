@@ -202,3 +202,36 @@
     font-size: 11pt;
   }
 }
+
+/* ── Field spotlight: destello dorado al hacer scroll-to-field desde el preview ── */
+@keyframes field-spotlight {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--notarial-gold) / 0.0), 0 0 0 0 hsl(var(--notarial-gold) / 0.0);
+    background-color: hsl(var(--notarial-gold) / 0.0);
+  }
+  15% {
+    box-shadow: 0 0 0 4px hsl(var(--notarial-gold) / 0.55), 0 0 22px 6px hsl(var(--notarial-gold) / 0.45);
+    background-color: hsl(var(--notarial-gold) / 0.18);
+  }
+  60% {
+    box-shadow: 0 0 0 3px hsl(var(--notarial-gold) / 0.35), 0 0 16px 4px hsl(var(--notarial-gold) / 0.25);
+    background-color: hsl(var(--notarial-gold) / 0.10);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--notarial-gold) / 0.0), 0 0 0 0 hsl(var(--notarial-gold) / 0.0);
+    background-color: hsl(var(--notarial-gold) / 0.0);
+  }
+}
+.field-spotlight {
+  animation: field-spotlight 1.2s ease-out 1;
+  border-radius: 0.375rem;
+  position: relative;
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-spotlight {
+    animation: none;
+    box-shadow: 0 0 0 3px hsl(var(--notarial-gold) / 0.55);
+    transition: box-shadow 0.4s ease-out;
+  }
+}
