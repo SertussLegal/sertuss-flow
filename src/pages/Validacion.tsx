@@ -2540,6 +2540,7 @@ const Validacion = () => {
                         value={notariaTramite.numero_ordinal}
                         onChange={(e) => updateDerivado("numero_ordinal", e.target.value)}
                         placeholder={notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "Ingresa el número primero"}
+                        data-field-input="notaria_ordinal"
                         className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       {notariaManualOverrides.has("numero_ordinal") && notariaTramite.numero_notaria && (
