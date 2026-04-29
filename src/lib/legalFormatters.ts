@@ -214,3 +214,29 @@ export function detectarFormatoOrdinal(ordinal: string): FormatoOrdinal {
   if (!ordinal) return "volada";
   return /\.[ºª]/.test(ordinal) ? "volada" : "to";
 }
+
+/**
+ * Inverso de `numeroNotariaToLetras`: convierte texto en letras (p.ej. "QUINTA",
+ * "veintiuna", "sesenta y cinco") al número correspondiente. Devuelve `null`
+ * si no encuentra coincidencia en el rango 1..9999.
+ *
+ * Implementación: normaliza acentos/caso y busca exhaustivamente comparando
+ * contra `numeroNotariaToLetras(n)` para n=1..9999. Es O(N) pero N es chico
+ * y solo se ejecuta en onChange manual del campo, así que es aceptable.
+ */
+export function letrasNotariaToNumero(input: string): number | null {
+  if (!input) return null;
+  const norm = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("es-CO")
+      .replace(/\s+/g, " ")
+      .trim();
+  const target = norm(input);
+  if (!target) return null;
+  for (let n = 1; n <= 9999; n++) {
+    if (norm(numeroNotariaToLetras(n)) === target) return n;
+  }
+  return null;
+}

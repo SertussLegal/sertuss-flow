@@ -39,7 +39,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
-import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, type FormatoOrdinal } from "@/lib/legalFormatters";
+import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
 import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 
@@ -756,10 +756,51 @@ const Validacion = () => {
     "apoderado_banco.cedula": "apoderado_cedula",
     "comparecientes_vendedor": "vendedor_0_nombre_completo",
     "comparecientes_comprador": "comprador_0_nombre_completo",
+    // ── Notaría (panel colapsable arriba de los tabs) ──
+    "notaria_numero": "notaria_numero",
+    "notaria_numero_letras": "notaria_numero_letras",
+    "notaria_numero_letras_lower": "notaria_numero_letras",
+    "notaria_numero_letras_femenino": "notaria_numero_letras",
+    "notaria_ordinal": "notaria_ordinal",
+    "notaria_circulo": "notaria_circulo",
+    "notaria_circulo_proper": "notaria_circulo",
+    "notaria_departamento": "notaria_departamento",
   };
+
+  // Set de campos que viven en el panel "Datos de la Notaría" (no en tabs)
+  const NOTARIA_FIELD_SET = new Set([
+    "notaria_numero",
+    "notaria_numero_letras",
+    "notaria_ordinal",
+    "notaria_circulo",
+    "notaria_departamento",
+  ]);
 
   const onScrollToField = useCallback((field: string) => {
     const resolved = FIELD_ALIAS[field] || FIELD_TO_INMUEBLE[field] || FIELD_TO_ACTOS[field] || field;
+
+    // Caso especial: campos de Notaría → abrir el panel colapsable, no cambiar de tab
+    const isNotariaField =
+      field.startsWith("notaria_") || NOTARIA_FIELD_SET.has(resolved);
+
+    if (isNotariaField) {
+      setNotariaPanelOpen(true);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const el = document.querySelector(`[data-field-input="${resolved}"]`) as HTMLElement;
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.focus({ preventScroll: true });
+            el.classList.remove("field-spotlight");
+            void el.offsetWidth;
+            el.classList.add("field-spotlight");
+            window.setTimeout(() => el.classList.remove("field-spotlight"), 1300);
+          }
+        }, 120);
+      });
+      return;
+    }
+
     const tabsEl = document.querySelector('[role="tablist"]');
     if (!tabsEl) return;
 
@@ -2250,6 +2291,35 @@ const Validacion = () => {
     };
 
     const updateDerivado = (key: "numero_notaria_letras" | "numero_ordinal", value: string) => {
+      // ── Sincronización bidireccional ──
+      // Si el usuario edita "En letras" y el texto coincide con un número conocido,
+      // re-derivamos `numero_notaria` y, si el ordinal NO está marcado como manual,
+      // también lo re-generamos para mantener coherencia visual entre los 3 campos.
+      if (key === "numero_notaria_letras") {
+        const inferido = letrasNotariaToNumero(value);
+        if (inferido !== null) {
+          const nStr = String(inferido);
+          setNotariaTramite(prev => {
+            const next: NotariaTramite = {
+              ...prev,
+              numero_notaria: nStr,
+              numero_notaria_letras: numeroNotariaToLetras(inferido), // canónico (MAYÚSCULAS)
+            };
+            if (!notariaManualOverrides.has("numero_ordinal")) {
+              next.numero_ordinal = numeroToOrdinalAbbr(inferido, formatoOrdinalNotaria);
+            }
+            return next;
+          });
+          // El valor en letras ahora es canónico, no es "edición manual" en strict sense.
+          setNotariaManualOverrides(prev => {
+            const n = new Set(prev);
+            n.delete("numero_notaria_letras");
+            return n;
+          });
+          return;
+        }
+      }
+
       setNotariaTramite(prev => ({ ...prev, [key]: value }));
       setNotariaManualOverrides(prev => {
         const n = new Set(prev);
@@ -2273,24 +2343,45 @@ const Validacion = () => {
       });
     };
 
+    // El switch de formato (5.ª / 5ta) SIEMPRE re-deriva el ordinal y limpia
+    // cualquier override manual sobre `numero_ordinal`. Razón UX: el formato es
+    // una decisión visual global; un override manual con notación contraria al
+    // formato seleccionado rompe la coherencia del documento.
     const cambiarFormatoOrdinal = (nuevo: FormatoOrdinal) => {
       setFormatoOrdinalNotaria(nuevo);
-      if (notariaTramite.numero_notaria && !notariaManualOverrides.has("numero_ordinal")) {
+      if (notariaTramite.numero_notaria) {
         setNotariaTramite(prev => ({
           ...prev,
           numero_ordinal: numeroToOrdinalAbbr(prev.numero_notaria, nuevo),
         }));
+        setNotariaManualOverrides(prev => {
+          const n = new Set(prev);
+          n.delete("numero_ordinal");
+          return n;
+        });
       }
+    };
+
+    // Mapa de claves de NotariaTramite → atributo `data-field-input` que usa
+    // `onScrollToField` para enfocar el input desde el preview.
+    const NOTARIA_INPUT_ATTR: Partial<Record<keyof NotariaTramite, string>> = {
+      numero_notaria: "notaria_numero",
+      numero_notaria_letras: "notaria_numero_letras",
+      numero_ordinal: "notaria_ordinal",
+      circulo: "notaria_circulo",
+      departamento: "notaria_departamento",
     };
 
     const renderNotariaInput = (key: keyof NotariaTramite) => {
       const sug = notariaSuggestions.get(key);
+      const dataAttr = NOTARIA_INPUT_ATTR[key];
       const input = (
         <input
           type="text"
           value={notariaTramite[key]}
           onChange={(e) => setNotariaTramite(prev => ({ ...prev, [key]: e.target.value }))}
           placeholder="___________"
+          data-field-input={dataAttr}
           className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
       );
@@ -2380,6 +2471,7 @@ const Validacion = () => {
                   value={notariaTramite.numero_notaria}
                   onChange={(e) => updateNumeroNotaria(e.target.value)}
                   placeholder="65"
+                  data-field-input="notaria_numero"
                   className="w-32 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
@@ -2425,6 +2517,7 @@ const Validacion = () => {
                         value={notariaTramite.numero_notaria_letras}
                         onChange={(e) => updateDerivado("numero_notaria_letras", e.target.value.toLocaleUpperCase("es-CO"))}
                         placeholder={notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "Ingresa el número primero"}
+                        data-field-input="notaria_numero_letras"
                         className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       {notariaManualOverrides.has("numero_notaria_letras") && notariaTramite.numero_notaria && (
@@ -2447,6 +2540,7 @@ const Validacion = () => {
                         value={notariaTramite.numero_ordinal}
                         onChange={(e) => updateDerivado("numero_ordinal", e.target.value)}
                         placeholder={notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : "Ingresa el número primero"}
+                        data-field-input="notaria_ordinal"
                         className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       {notariaManualOverrides.has("numero_ordinal") && notariaTramite.numero_notaria && (

@@ -783,8 +783,11 @@ const DocxPreview = ({
       // ── Pase B: inferir data-field semántico para blanks de notario ──
       // Reusa la misma clase var-pending y estilo rojo del template branch.
       const pendingRedStyle = "background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer";
-      const makePendingSpan = (field: string) =>
-        `<span data-field="${field}" class="var-pending" style="${pendingRedStyle}" title="Haz clic para editar">___________</span>`;
+      const makePendingSpan = (field: string) => {
+        const isNotaria = field.startsWith("notaria_");
+        const tip = isNotaria ? "Editar en Datos de la Notaría →" : "Haz clic para editar";
+        return `<span data-field="${field}" class="var-pending" style="${pendingRedStyle}" title="${tip}">___________</span>`;
+      };
 
       // NOTARIO/NOTARÍA ___________ → notaria_numero_letras
       result = result.replace(
@@ -1108,6 +1111,17 @@ const DocxPreview = ({
     const fieldEl = target.closest('[data-field]') as HTMLElement | null;
     const field = fieldEl?.getAttribute("data-field");
     if (fieldEl && field) {
+      // ── Campos de Notaría: NO abrir popover. Llevar al usuario directo al
+      // panel "Datos de la Notaría" para mantener una única fuente de edición
+      // y evitar inconsistencias entre popover y formulario.
+      if (field.startsWith("notaria_") && onScrollToField) {
+        setEditPopover(null);
+        setSelectionToolbar(null);
+        setSugerenciaPopover(null);
+        onScrollToField(field);
+        return;
+      }
+
       const text = fieldEl.textContent || "";
       if (onFieldEdit) {
         const rect = fieldEl.getBoundingClientRect();
