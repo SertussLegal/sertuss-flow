@@ -2291,6 +2291,35 @@ const Validacion = () => {
     };
 
     const updateDerivado = (key: "numero_notaria_letras" | "numero_ordinal", value: string) => {
+      // ── Sincronización bidireccional ──
+      // Si el usuario edita "En letras" y el texto coincide con un número conocido,
+      // re-derivamos `numero_notaria` y, si el ordinal NO está marcado como manual,
+      // también lo re-generamos para mantener coherencia visual entre los 3 campos.
+      if (key === "numero_notaria_letras") {
+        const inferido = letrasNotariaToNumero(value);
+        if (inferido !== null) {
+          const nStr = String(inferido);
+          setNotariaTramite(prev => {
+            const next: NotariaTramite = {
+              ...prev,
+              numero_notaria: nStr,
+              numero_notaria_letras: numeroNotariaToLetras(inferido), // canónico (MAYÚSCULAS)
+            };
+            if (!notariaManualOverrides.has("numero_ordinal")) {
+              next.numero_ordinal = numeroToOrdinalAbbr(inferido, formatoOrdinalNotaria);
+            }
+            return next;
+          });
+          // El valor en letras ahora es canónico, no es "edición manual" en strict sense.
+          setNotariaManualOverrides(prev => {
+            const n = new Set(prev);
+            n.delete("numero_notaria_letras");
+            return n;
+          });
+          return;
+        }
+      }
+
       setNotariaTramite(prev => ({ ...prev, [key]: value }));
       setNotariaManualOverrides(prev => {
         const n = new Set(prev);
@@ -2314,13 +2343,22 @@ const Validacion = () => {
       });
     };
 
+    // El switch de formato (5.ª / 5ta) SIEMPRE re-deriva el ordinal y limpia
+    // cualquier override manual sobre `numero_ordinal`. Razón UX: el formato es
+    // una decisión visual global; un override manual con notación contraria al
+    // formato seleccionado rompe la coherencia del documento.
     const cambiarFormatoOrdinal = (nuevo: FormatoOrdinal) => {
       setFormatoOrdinalNotaria(nuevo);
-      if (notariaTramite.numero_notaria && !notariaManualOverrides.has("numero_ordinal")) {
+      if (notariaTramite.numero_notaria) {
         setNotariaTramite(prev => ({
           ...prev,
           numero_ordinal: numeroToOrdinalAbbr(prev.numero_notaria, nuevo),
         }));
+        setNotariaManualOverrides(prev => {
+          const n = new Set(prev);
+          n.delete("numero_ordinal");
+          return n;
+        });
       }
     };
 
