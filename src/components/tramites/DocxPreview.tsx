@@ -1108,6 +1108,17 @@ const DocxPreview = ({
     const fieldEl = target.closest('[data-field]') as HTMLElement | null;
     const field = fieldEl?.getAttribute("data-field");
     if (fieldEl && field) {
+      // ── Campos de Notaría: NO abrir popover. Llevar al usuario directo al
+      // panel "Datos de la Notaría" para mantener una única fuente de edición
+      // y evitar inconsistencias entre popover y formulario.
+      if (field.startsWith("notaria_") && onScrollToField) {
+        setEditPopover(null);
+        setSelectionToolbar(null);
+        setSugerenciaPopover(null);
+        onScrollToField(field);
+        return;
+      }
+
       const text = fieldEl.textContent || "";
       if (onFieldEdit) {
         const rect = fieldEl.getBoundingClientRect();
