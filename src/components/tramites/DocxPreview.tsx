@@ -911,8 +911,11 @@ const DocxPreview = ({
           // Spans hijos: limpios (sin border ni background propio), conservan data-field para edición
           const childStyle = "color:#065f46;font-weight:bold;cursor:pointer";
           const childUserStyle = "color:#6d28d9;font-weight:bold;cursor:pointer";
-          const lInner = `<span data-field="notaria_numero_letras" class="${isUserEditedL ? "var-user-edited" : "var-resolved"}" style="${isUserEditedL ? childUserStyle : childStyle}">${letras.text}</span>`;
-          const oInner = `<span data-field="notaria_ordinal" class="${isUserEditedO ? "var-user-edited" : "var-resolved"}" style="${isUserEditedO ? childUserStyle : childStyle}">${ordinal.text}</span>`;
+          // Microicono "IA" cuando el valor es derivado automáticamente (no editado a mano).
+          // Sutil: superíndice dorado, baja opacidad, no afecta la línea base ni el espacio.
+          const iaBadge = `<sup class="ia-badge" title="Sugerido por IA — automático" aria-label="automático">⚡</sup>`;
+          const lInner = `<span data-field="notaria_numero_letras" class="${isUserEditedL ? "var-user-edited" : "var-resolved"}" style="${isUserEditedL ? childUserStyle : childStyle}">${letras.text}${isUserEditedL ? "" : iaBadge}</span>`;
+          const oInner = `<span data-field="notaria_ordinal" class="${isUserEditedO ? "var-user-edited" : "var-resolved"}" style="${isUserEditedO ? childUserStyle : childStyle}">${ordinal.text}${isUserEditedO ? "" : iaBadge}</span>`;
           // Wrapper: una sola caja morada (estilo agrupado)
           const groupStyle = "background:#f5f3ff;border-bottom:1px dashed #6d28d9;border-radius:2px;padding:0 4px;display:inline";
           const wrapper = `<span data-group="notaria-numero" style="${groupStyle}">${lInner} (${oInner})</span>`;
