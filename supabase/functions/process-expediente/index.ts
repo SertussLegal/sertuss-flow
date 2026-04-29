@@ -86,7 +86,9 @@ serve(async (req) => {
 
     // 6. Call SERTUSS-EDITOR-PRO via AI gateway
     const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria, camposObligatorios);
-    const notariaBlock = buildNotariaBlock(notaria_tramite);
+    // Defensa server-side: hidratamos derivados si vienen vacíos del cliente.
+    const hydratedNotaria = hydrateNotariaDerivados(notaria_tramite);
+    const notariaBlock = buildNotariaBlock(hydratedNotaria);
     const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
 
     const tools = [
