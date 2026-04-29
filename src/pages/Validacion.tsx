@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText, FolderOpen, Edit3, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Save, Eye, Cloud, CloudOff, Loader2, Coins, AlertTriangle, AlertCircle, Info, CheckCircle2, FileText, FolderOpen, Edit3, Check, Sparkles, Download } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,7 +37,7 @@ import { monitored } from "@/services/monitoredClient";
 import { consumeCredit, notifyHttpQuotaError } from "@/services/credits";
 import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
-import { reconcilePersonas, reconcileInmueble } from "@/lib/reconcileData";
+import { reconcilePersonas, reconcileInmueble, sanitizeDireccion, sanitizeEstadoCivil } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
 import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
@@ -1919,19 +1919,26 @@ const Validacion = () => {
       };
 
       const _ = "___________";
-      const mapPersona = (p: typeof vendedores[0]) => ({
-        nombre: p.nombre_completo || _,
-        cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula) : _,
-        expedida_en: p.lugar_expedicion || _,
-        estado_civil: p.estado_civil || _,
-        domicilio: p.municipio_domicilio || _,
-        direccion_residencia: p.direccion || _,
-        telefono: _,
-        actividad_economica: _,
-        email: _,
-        es_pep: p.es_pep,
-        acepta_notificaciones: true,
-      });
+      const mapPersona = (p: typeof vendedores[0]) => {
+        // Red de seguridad final: aunque el dato venga de un borrador antiguo o
+        // de una edición previa al refuerzo de sanitizadores, garantizamos que
+        // al .docx solo llegue dirección postal/rural válida y estado civil atómico.
+        const cleanDir = sanitizeDireccion(p.direccion || "");
+        const cleanEstado = sanitizeEstadoCivil(p.estado_civil || "", p.nombre_completo || "");
+        return {
+          nombre: p.nombre_completo || _,
+          cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula) : _,
+          expedida_en: p.lugar_expedicion || _,
+          estado_civil: cleanEstado || _,
+          domicilio: p.municipio_domicilio || _,
+          direccion_residencia: cleanDir || _,
+          telefono: _,
+          actividad_economica: _,
+          email: _,
+          es_pep: p.es_pep,
+          acepta_notificaciones: true,
+        };
+      };
 
       // Parse titulo antecedente dates
       const antFecha = parseFechaFields(extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento || "");
@@ -2136,6 +2143,40 @@ const Validacion = () => {
     } finally {
       setGenerating(false);
       setGeneratingWord(false);
+    }
+  };
+
+  // Re-descarga el .docx ya generado desde el bucket privado, sin consumir créditos
+  // ni invocar al pipeline de IA. Usa una signed URL de corta duración.
+  const handleRedownload = async () => {
+    if (!docxPath) return;
+    try {
+      const { data, error } = await supabase.storage
+        .from("expediente-files")
+        .createSignedUrl(docxPath, 60);
+      if (error || !data?.signedUrl) {
+        toast({ title: "No se pudo descargar", description: error?.message ?? "URL no disponible", variant: "destructive" });
+        return;
+      }
+      // Nombre amigable: el archivo en storage tiene timestamp por unicidad,
+      // pero al usuario le entregamos un nombre legible.
+      const tipo = (actos.tipo_acto || "Tramite").replace(/[^\p{L}\p{N}_-]+/gu, "_");
+      const shortId = (tramiteId || "").slice(0, 8) || "doc";
+      const friendlyName = `Escritura_${tipo}_${shortId}.docx`;
+
+      const resp = await fetch(data.signedUrl);
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = friendlyName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Descarga lista", description: "Sin consumo de créditos." });
+    } catch (e: any) {
+      toast({ title: "Error al descargar", description: e?.message ?? String(e), variant: "destructive" });
     }
   };
 
@@ -2840,6 +2881,24 @@ const Validacion = () => {
                   Guardar borrador ahora
                 </TooltipContent>
               </Tooltip>
+
+              {/* Re-descarga sin créditos (solo si ya hay docx generado) */}
+              {docxPath && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      onClick={handleRedownload}
+                      className="h-9 px-4 border-notarial-gold/40 bg-white/5 text-notarial-gold hover:bg-notarial-gold/10"
+                    >
+                      <Download className="mr-1 h-4 w-4" /> Descargar Word
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                    Re-descargar el documento generado (sin consumir créditos)
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
               {/* Previsualizar (primario) */}
               <Tooltip>
