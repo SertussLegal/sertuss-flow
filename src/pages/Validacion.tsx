@@ -1919,19 +1919,26 @@ const Validacion = () => {
       };
 
       const _ = "___________";
-      const mapPersona = (p: typeof vendedores[0]) => ({
-        nombre: p.nombre_completo || _,
-        cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula) : _,
-        expedida_en: p.lugar_expedicion || _,
-        estado_civil: p.estado_civil || _,
-        domicilio: p.municipio_domicilio || _,
-        direccion_residencia: p.direccion || _,
-        telefono: _,
-        actividad_economica: _,
-        email: _,
-        es_pep: p.es_pep,
-        acepta_notificaciones: true,
-      });
+      const mapPersona = (p: typeof vendedores[0]) => {
+        // Red de seguridad final: aunque el dato venga de un borrador antiguo o
+        // de una edición previa al refuerzo de sanitizadores, garantizamos que
+        // al .docx solo llegue dirección postal/rural válida y estado civil atómico.
+        const cleanDir = sanitizeDireccion(p.direccion || "");
+        const cleanEstado = sanitizeEstadoCivil(p.estado_civil || "", p.nombre_completo || "");
+        return {
+          nombre: p.nombre_completo || _,
+          cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula) : _,
+          expedida_en: p.lugar_expedicion || _,
+          estado_civil: cleanEstado || _,
+          domicilio: p.municipio_domicilio || _,
+          direccion_residencia: cleanDir || _,
+          telefono: _,
+          actividad_economica: _,
+          email: _,
+          es_pep: p.es_pep,
+          acepta_notificaciones: true,
+        };
+      };
 
       // Parse titulo antecedente dates
       const antFecha = parseFechaFields(extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento || "");
