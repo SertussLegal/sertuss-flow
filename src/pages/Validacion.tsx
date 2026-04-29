@@ -2213,18 +2213,29 @@ const Validacion = () => {
       const cleaned = raw.replace(/\D/g, "").slice(0, 4);
       setNotariaTramite(prev => {
         const next: NotariaTramite = { ...prev, numero_notaria: cleaned };
-        if (cleaned && !notariaManualOverrides.has("numero_notaria_letras")) {
-          next.numero_notaria_letras = numeroNotariaToLetras(cleaned);
-        }
-        if (cleaned && !notariaManualOverrides.has("numero_ordinal")) {
-          next.numero_ordinal = numeroToOrdinalAbbr(cleaned, formatoOrdinalNotaria);
-        }
-        if (!cleaned) {
-          if (!notariaManualOverrides.has("numero_notaria_letras")) next.numero_notaria_letras = "";
-          if (!notariaManualOverrides.has("numero_ordinal")) next.numero_ordinal = "";
+        if (cleaned) {
+          if (!notariaManualOverrides.has("numero_notaria_letras")) {
+            next.numero_notaria_letras = numeroNotariaToLetras(cleaned);
+          }
+          if (!notariaManualOverrides.has("numero_ordinal")) {
+            next.numero_ordinal = numeroToOrdinalAbbr(cleaned, formatoOrdinalNotaria);
+          }
+        } else {
+          // Cascading cleanup: si se borra el número, se limpia TODO (incluso overrides
+          // manuales) para forzar reinicio total de coherencia notarial.
+          next.numero_notaria_letras = "";
+          next.numero_ordinal = "";
         }
         return next;
       });
+      if (!cleaned) {
+        setNotariaManualOverrides(prev => {
+          const n = new Set(prev);
+          n.delete("numero_notaria_letras");
+          n.delete("numero_ordinal");
+          return n;
+        });
+      }
     };
 
     const updateDerivado = (key: "numero_notaria_letras" | "numero_ordinal", value: string) => {
