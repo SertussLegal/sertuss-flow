@@ -184,10 +184,11 @@ serve(async (req) => {
       throw err;
     }
 
-    // 7. Save results to tramite metadata
+    // 7. Save results to tramite metadata (con post-proceso defensivo)
+    const cleanedTexto = sanitizeAiText(editorResult.texto_final_word || "");
     const updatedMetadata = {
       ...metadata,
-      texto_final_word: editorResult.texto_final_word,
+      texto_final_word: cleanedTexto,
       sugerencias_ia: editorResult.sugerencias_ia || [],
       last_generated: new Date().toISOString(),
     };
@@ -204,9 +205,9 @@ serve(async (req) => {
     });
 
     return new Response(JSON.stringify({
-      texto_final_word: editorResult.texto_final_word,
+      texto_final_word: cleanedTexto,
       sugerencias_ia: editorResult.sugerencias_ia || [],
-      templateData: editorResult,
+      templateData: { ...editorResult, texto_final_word: cleanedTexto },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
