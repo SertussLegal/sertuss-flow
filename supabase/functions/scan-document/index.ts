@@ -382,7 +382,12 @@ La escritura es la FUENTE DE VERDAD para estado civil, dirección y municipio de
 
 REGLA CRÍTICA — VALORES ATÓMICOS (OBLIGATORIO):
 - estado_civil: extrae SOLO el término legal puro y sus calificadores directos. REGLA DE GÉNERO: normaliza el sufijo según el nombre del compareciente — si el nombre es femenino usa "soltera/casada/divorciada/viuda", si es masculino usa "soltero/casado/divorciado/viudo". Ejemplos: "soltero sin unión marital de hecho", "casada con sociedad conyugal vigente", "unión marital de hecho". NUNCA incluyas "mayor de edad", "de nacionalidad colombiana", "identificado(a) con", "domiciliado(a) en", ni ningún otro texto formulario.
-- direccion: SOLO si la escritura menciona una dirección postal REAL con nomenclatura urbana explícita (Calle, Carrera, Avenida, Diagonal, Transversal, Circular, Autopista, o sus abreviaturas Cll/Cra/Av/Dg/Tv) Y al menos un número. Si solo aparece "domiciliado en esta ciudad", "residente en esta ciudad" o frases similares sin nomenclatura postal, devuelve cadena vacía "". JAMÁS inventes una dirección.
+- direccion: aplica NOMENCLATURA ESTRICTA (estándar DANE/SNR colombiano). Orden obligatorio:
+  1) Quita prefijos contextuales: "domiciliado(a) en", "residente en", "vecino(a) de", "con domicilio en".
+  2) Separación de contexto: si la dirección viene precedida por la ciudad (ej: "en Bogotá en la Calle 10 # 20-30"), devuelve SOLO la parte postal ("Calle 10 # 20-30").
+  3) Acepta URBANO solo con nomenclatura explícita: Calle/CL/CLL, Carrera/CRA/CR/KR/KRA, Avenida/AV, Diagonal/DG, Transversal/TV, Circular, Autopista, Pasaje — y al menos un número (Calle 10 # 20-30, KR 13 # 85-32 TO 4 AP 503).
+  4) Acepta RURAL: "Kilómetro X vía Y", "Vereda Z, Finca El Recreo", "Lote 4 Parcelación La Mesa", "Corregimiento de…", "Predio…", "Sector…".
+  5) PROHIBICIÓN DE ALUCINACIÓN: si no hay un identificador de vía urbana o rural, devuelve cadena vacía "". Frases como "esta ciudad", "en esta ciudad", "este municipio", "residente de este municipio", "vecino de esta ciudad" → "". Fragmentos sueltos de unidad ("Apto 301", "Mz B") sin vía → "". JAMÁS inventes una dirección.
 - municipio_domicilio: extrae SOLO el nombre propio del municipio (ej: "Bogotá"). Si solo dice "esta ciudad", "el municipio" o referencias genéricas, devuelve cadena vacía "".
 - SILENCIO POR DEFECTO: ante la mínima duda o si el dato no es 100% claro, DEVUELVE VACÍO. Es mejor que la app marque el campo en rojo a entregar un borrador con texto basura.
 
