@@ -265,13 +265,24 @@ Si alguno de estos campos está vacío o falta, genera una sugerencia de tipo "d
 
 function buildNotariaBlock(nt: any): string {
   const BLANK = "___________";
+  const raw = (key: string) => {
+    const r = nt && typeof nt === "object" ? nt[key] : "";
+    return (r ?? "").toString().trim();
+  };
   const v = (key: string) => {
-    const raw = nt && typeof nt === "object" ? nt[key] : "";
-    const s = (raw ?? "").toString().trim();
+    const s = raw(key);
     return s.length > 0 ? s : BLANK;
   };
+  // Solo mostrar el paréntesis con letras si EXISTEN letras; nunca "_____ (_____)".
+  const num = raw("numero_notaria");
+  const numLetras = raw("numero_notaria_letras");
+  const numeroLine =
+    numLetras.length > 0
+      ? `Número: ${num.length > 0 ? num : BLANK} (${numLetras})`
+      : `Número: ${num.length > 0 ? num : BLANK}`;
+
   return `DATOS DE LA NOTARÍA PARA ESTE TRÁMITE:
-Número: ${v("numero_notaria")} (${v("numero_notaria_letras")})
+${numeroLine}
 Ordinal: ${v("numero_ordinal")}
 Círculo: ${v("circulo")}
 Departamento: ${v("departamento")}
@@ -280,5 +291,24 @@ Tipo: ${v("tipo_notario")}
 Decreto: ${v("decreto_nombramiento")}
 Género: ${v("genero_notario")}
 
-REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría en el documento (encabezado, calificación, intro, cierre, pie de página). Si algún campo está vacío arriba aparece como "___________" — en ese caso debes dejar líneas en blanco (___________) en el documento. NUNCA inventes ni uses datos de una notaría específica que no fueron proporcionados (por ejemplo, NO uses "Notaría Quinta de Bogotá" ni ninguna otra notaría real). Es preferible una línea en blanco a un dato inventado.`;
+REGLA CRÍTICA: Usa estos datos en TODAS las referencias a la notaría en el documento (encabezado, calificación, intro, cierre, pie de página). Si algún campo está vacío arriba aparece como "___________" — en ese caso debes dejar líneas en blanco (___________) en el documento. NUNCA inventes ni uses datos de una notaría específica que no fueron proporcionados (por ejemplo, NO uses "Notaría Quinta de Bogotá" ni ninguna otra notaría real). Es preferible una línea en blanco a un dato inventado.
+
+REGLAS TIPOGRÁFICAS ESTRICTAS para los blanks "___________":
+- NUNCA emitas paréntesis cuyo único contenido sea uno o más blanks. Ej. PROHIBIDO: "___________ (___________)" — usa solo "___________".
+- NUNCA dupliques cierres ni aperturas de paréntesis. PROHIBIDO ")) " o "((".
+- NUNCA dejes paréntesis vacíos "( )" o "()".
+- Si una cifra y su versión en letras estarían ambas vacías, escribe un único "___________" sin paréntesis adicionales.`;
+}
+
+// Post-proceso defensivo: limpia paréntesis dobles/vacíos/redundantes que el modelo
+// pudiera emitir alrededor de los blanks. Misma lógica espejo del Pase A en el cliente.
+function sanitizeAiText(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/\)\s*\)+/g, ")")
+    .replace(/\(\s*\(+/g, "(")
+    .replace(/(_{6,})\s*\(\s*_{6,}\s*\)/g, "$1")
+    .replace(/\(\s*\)/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1");
 }
