@@ -155,6 +155,23 @@
   padding: 0 2px;
 }
 
+/* Microicono "IA" sutil sobre valores derivados automáticamente.
+   Superíndice dorado, opacidad baja para no estorbar la lectura del preview. */
+.ia-badge {
+  font-size: 0.55em;
+  line-height: 0;
+  margin-left: 1px;
+  vertical-align: super;
+  color: hsl(var(--notarial-gold, 47 100% 44%));
+  opacity: 0.55;
+  font-weight: 400;
+  pointer-events: none;
+  user-select: none;
+}
+.ia-badge:hover {
+  opacity: 0.9;
+}
+
 /* PdfViewerPane — simulación de hoja Carta (8.5" x 11") */
 .pdf-viewer-page {
   width: 100%;
