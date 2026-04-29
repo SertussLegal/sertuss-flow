@@ -2591,6 +2591,13 @@ const Validacion = () => {
     );
   };
 
+  // Coherencia notarial — guard a nivel global para el botón Previsualizar.
+  const camposCriticosFaltantesGlobal: string[] = [];
+  if (!notariaTramite.numero_notaria) camposCriticosFaltantesGlobal.push("Número de notaría");
+  if (!notariaTramite.circulo) camposCriticosFaltantesGlobal.push("Círculo notarial");
+  if (!notariaTramite.departamento) camposCriticosFaltantesGlobal.push("Departamento");
+  const notariaIncompletaGlobal = camposCriticosFaltantesGlobal.length > 0;
+
   return (
     <div className="flex h-dvh flex-col bg-background lg:overflow-hidden overflow-auto">
       <header className="sticky top-0 z-50 h-12 shrink-0 border-b border-white/5 bg-notarial-dark/80 backdrop-blur-md text-white">
