@@ -37,21 +37,69 @@ function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-/**
- * Extracts atomic civil status from raw OCR text, stripping notarial boilerplate.
- */
-export function sanitizeEstadoCivil(raw: string): string {
-  if (!raw) return "";
-  const lower = stripAccents(raw.toLowerCase()).replace(/\s+/g, " ").trim();
-  const re = /(soltera?|casada?|divorciada?|viuda?|union (?:marital|libre)(?: de hecho)?)(\s+(?:sin|con)\s+(?:union marital(?: de hecho)?|sociedad conyugal(?: vigente| disuelta| liquidada)?))?/;
-  const match = lower.match(re);
-  if (!match) return "";
-  return match[0].replace(/\bunion\b/g, "unión").trim();
+// Common Colombian female first names (heuristic complement to "ends with a")
+const FEMALE_FIRST_NAMES = new Set([
+  "maria","ana","luz","luisa","carmen","rosa","esperanza","beatriz","patricia","claudia",
+  "sandra","monica","martha","marta","gloria","adriana","diana","catalina","carolina",
+  "natalia","paola","andrea","angela","alejandra","liliana","yolanda","mercedes","isabel",
+  "elena","laura","valentina","camila","daniela","sofia","sara","juliana","ximena","gabriela",
+  "clara","cecilia","consuelo","amparo","stella","ruth","nubia","fanny","blanca","helena",
+  "ines","irene","lucia","margarita","matilde","olga","pilar","silvia","teresa","veronica",
+  "zulma","yesenia","jenny","leidy","kelly","tatiana","viviana","yaneth","marcela",
+]);
+
+// Heuristic: returns true if the first name appears female.
+function isFemaleName(fullName?: string): boolean {
+  if (!fullName) return false;
+  const first = stripAccents(fullName.trim().split(/\s+/)[0] || "").toLowerCase();
+  if (!first) return false;
+  if (FEMALE_FIRST_NAMES.has(first)) return true;
+  // Default heuristic for Spanish names: ends with 'a' (with common exceptions).
+  const masculineEndingA = new Set(["andrea","nicolas","tomas","lucas","matias","jeremias","elias","jonas"]);
+  if (masculineEndingA.has(first)) return false;
+  return first.endsWith("a");
 }
 
 /**
+ * Extracts atomic civil status from raw OCR text, stripping notarial boilerplate.
+ * Optionally normalizes gender suffix (o/a) based on the person's name.
+ */
+export function sanitizeEstadoCivil(raw: string, nombre?: string): string {
+  if (!raw) return "";
+  let lower = stripAccents(raw.toLowerCase()).replace(/\s+/g, " ").trim();
+  // Strip known trash tokens before matching
+  const trashPatterns = [
+    /\bmayor(?:es)? de edad\b/g,
+    /\bde nacionalidad [a-z]+\b/g,
+    /\bidentificad[oa]s? (?:con|mediante)[^,;.]*/g,
+    /\bdomiciliad[oa]s? en[^,;.]*/g,
+    /\bvecin[oa]s? de[^,;.]*/g,
+    /\bportador(?:es)? (?:de|del)[^,;.]*/g,
+  ];
+  for (const p of trashPatterns) lower = lower.replace(p, " ");
+  lower = lower.replace(/\s+/g, " ").trim();
+
+  const re = /(soltera?|casada?|divorciada?|viuda?|union (?:marital|libre)(?: de hecho)?)(\s+(?:sin|con)\s+(?:union marital(?: de hecho)?|sociedad conyugal(?: vigente| disuelta| liquidada)?))?/;
+  const match = lower.match(re);
+  if (!match) return "";
+  let result = match[0].replace(/\bunion\b/g, "unión").trim();
+
+  // Gender normalization based on name
+  if (nombre) {
+    const female = isFemaleName(nombre);
+    result = result.replace(/\b(solter|casad|divorciad|viud)([oa])\b/g, (_m, root) => {
+      return root + (female ? "a" : "o");
+    });
+  }
+  return result;
+}
+
+// Required postal nomenclature tokens (Colombian conventions)
+const POSTAL_NOMENCLATURE_RE = /\b(calle|cll|carrera|cra|cr|kra|avenida|av|ave|diagonal|dg|diag|transversal|tv|trans|circular|circ|autopista|auto|via|kilometro|km|manzana|mz)\b/i;
+
+/**
  * Returns a clean postal address or empty string.
- * Discards generic boilerplate and requires at least one digit.
+ * Requires explicit postal nomenclature (Calle, Carrera, etc.) AND at least one digit.
  */
 export function sanitizeDireccion(raw: string): string {
   if (!raw) return "";
@@ -60,10 +108,13 @@ export function sanitizeDireccion(raw: string): string {
   const formulaic = new Set([
     "esta ciudad", "en esta ciudad",
     "domiciliado en esta ciudad", "domiciliada en esta ciudad", "domiciliados en esta ciudad",
-    "en la ciudad", "esta localidad", "el municipio",
+    "en la ciudad", "esta localidad", "el municipio", "este municipio",
+    "residente en esta ciudad", "residente en la ciudad",
   ]);
   if (formulaic.has(lower)) return "";
   const stripped = trimmed.replace(/^domiciliad[oa]s?\s+en\s+/i, "").trim();
+  // Must contain BOTH postal nomenclature AND a digit
+  if (!POSTAL_NOMENCLATURE_RE.test(stripped)) return "";
   if (!/\d/.test(stripped)) return "";
   return stripped;
 }
@@ -154,7 +205,7 @@ export function reconcilePersonas(
     });
 
     if (escrituraMatch) {
-      const cleanEstado = sanitizeEstadoCivil(escrituraMatch.estado_civil || "");
+      const cleanEstado = sanitizeEstadoCivil(escrituraMatch.estado_civil || "", enriched.nombre_completo || escrituraMatch.nombre || "");
       if (cleanEstado && !enriched.estado_civil && !isDirty("estado_civil")) {
         enriched.estado_civil = cleanEstado;
       }
