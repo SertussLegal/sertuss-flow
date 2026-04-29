@@ -1904,16 +1904,23 @@ const Validacion = () => {
         notario_decreto: notariaTramite.decreto_nombramiento || _,
         notario_tipo: notariaTramite.tipo_notario || "",
         notaria_numero: notariaTramite.numero_notaria || _,
-        notaria_numero_letras: notariaTramite.numero_notaria_letras || _,
-        notaria_numero_letras_lower: notariaTramite.numero_notaria_letras
-          ? notariaTramite.numero_notaria_letras.toLowerCase()
-          : _,
-        notaria_numero_letras_femenino: notariaTramite.numero_notaria_letras
-          ? (notariaTramite.numero_notaria_letras.toUpperCase().endsWith("O")
-              ? notariaTramite.numero_notaria_letras.toUpperCase().slice(0, -1) + "A"
-              : notariaTramite.numero_notaria_letras.toUpperCase())
-          : _,
-        notaria_ordinal: notariaTramite.numero_ordinal || _,
+        // Fallbacks: si la edición manual está vacía, usar el valor derivado del número de notaría.
+        notaria_numero_letras: notariaTramite.numero_notaria_letras
+          || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : _),
+        notaria_numero_letras_lower: (() => {
+          const base = notariaTramite.numero_notaria_letras
+            || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
+          return base ? base.toLowerCase() : _;
+        })(),
+        notaria_numero_letras_femenino: (() => {
+          const base = notariaTramite.numero_notaria_letras
+            || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
+          if (!base) return _;
+          const upper = base.toUpperCase();
+          return upper.endsWith("O") ? upper.slice(0, -1) + "A" : upper;
+        })(),
+        notaria_ordinal: notariaTramite.numero_ordinal
+          || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : _),
         notaria_circulo: notariaTramite.circulo || _,
         notaria_circulo_proper: notariaTramite.circulo
           ? notariaTramite.circulo.toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase())
