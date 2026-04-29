@@ -1114,13 +1114,17 @@ const DocxPreview = ({
         setSelectionToolbar(null);
         setSugerenciaPopover(null);
         const isEmpty = text === "___________";
-        const suggestion = getSuggestionForField(
-          field,
-          extractedDocumento,
-          extractedPredial,
-          inmueble,
-          actos,
-        );
+        // Blanks IA genéricos no tienen mapeo OCR conocido — abrir sin sugerencia.
+        const suggestion =
+          field === "__ai_blank__"
+            ? undefined
+            : getSuggestionForField(
+                field,
+                extractedDocumento,
+                extractedPredial,
+                inmueble,
+                actos,
+              );
         const finalSuggestion =
           suggestion && (isEmpty || suggestion.value !== text) ? suggestion : undefined;
         setEditPopover({
