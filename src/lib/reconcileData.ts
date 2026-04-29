@@ -94,29 +94,74 @@ export function sanitizeEstadoCivil(raw: string, nombre?: string): string {
   return result;
 }
 
-// Required postal nomenclature tokens (Colombian conventions)
-const POSTAL_NOMENCLATURE_RE = /\b(calle|cll|carrera|cra|cr|kra|avenida|av|ave|diagonal|dg|diag|transversal|tv|trans|circular|circ|autopista|auto|via|kilometro|km|manzana|mz)\b/i;
+// Vías urbanas oficiales (Colombia, DANE/SNR): formas largas + abreviaturas notariales.
+// CL=Calle, KR/CR/CRA/KRA=Carrera, DG=Diagonal, TV=Transversal, AV=Avenida.
+const URBAN_TOKEN_RE = /\b(calle|cll|cl|carrera|cra|cr|kra|kr|avenida|av|ave|diagonal|dg|diag|transversal|tv|trans|circular|circ|circunvalar|autopista|auto|peatonal|pasaje|pje)\b/i;
+// Identificadores rurales válidos.
+const RURAL_TOKEN_RE = /\b(vereda|corregimiento|kilometro|kil[oó]metro|km|via|v[ií]a|finca|hacienda|parcela|parcelaci[oó]n|lote|predio|sector|inspecci[oó]n)\b/i;
+// Cualquier token (vía o rural) — se usa para localizar la "parte postal" dentro de un texto contextual.
+const ANY_ADDRESS_TOKEN_RE = /\b(calle|cll|cl|carrera|cra|cr|kra|kr|avenida|av|ave|diagonal|dg|diag|transversal|tv|trans|circular|circ|circunvalar|autopista|auto|peatonal|pasaje|pje|vereda|corregimiento|kilometro|kil[oó]metro|km|v[ií]a|finca|hacienda|parcela|parcelaci[oó]n|lote|predio|sector|inspecci[oó]n)\b/i;
+
+const FORMULAIC_ADDRESSES = new Set([
+  "esta ciudad", "en esta ciudad",
+  "domiciliado en esta ciudad", "domiciliada en esta ciudad", "domiciliados en esta ciudad",
+  "en la ciudad", "esta localidad", "el municipio", "este municipio",
+  "residente en esta ciudad", "residente en la ciudad",
+  "residente de este municipio", "residente en este municipio",
+  "vecino de esta ciudad", "vecina de esta ciudad",
+]);
 
 /**
- * Returns a clean postal address or empty string.
- * Requires explicit postal nomenclature (Calle, Carrera, etc.) AND at least one digit.
+ * Returns a clean Colombian postal/rural address or empty string.
+ *
+ * Orden de limpieza (estricto):
+ *  1) Quitar prefijos contextuales ("domiciliado en…", "residente de…", "con domicilio en…").
+ *  2) Separación de contexto: si va precedida por la ciudad ("en Bogotá en la Calle 10…"),
+ *     conservar solo desde el primer token de vía/rural.
+ *  3) Buscar tokens (urbano o rural). Si no hay → "".
+ *  4) Validar: urbano exige dígito; rural exige nombre propio o número.
  */
 export function sanitizeDireccion(raw: string): string {
   if (!raw) return "";
-  const trimmed = raw.trim();
-  const lower = stripAccents(trimmed.toLowerCase()).replace(/\s+/g, " ").trim();
-  const formulaic = new Set([
-    "esta ciudad", "en esta ciudad",
-    "domiciliado en esta ciudad", "domiciliada en esta ciudad", "domiciliados en esta ciudad",
-    "en la ciudad", "esta localidad", "el municipio", "este municipio",
-    "residente en esta ciudad", "residente en la ciudad",
-  ]);
-  if (formulaic.has(lower)) return "";
-  const stripped = trimmed.replace(/^domiciliad[oa]s?\s+en\s+/i, "").trim();
-  // Must contain BOTH postal nomenclature AND a digit
-  if (!POSTAL_NOMENCLATURE_RE.test(stripped)) return "";
-  if (!/\d/.test(stripped)) return "";
-  return stripped;
+
+  // 1) Prefijos contextuales
+  let candidate = raw.trim().replace(/\s+/g, " ");
+  candidate = candidate.replace(/^(?:y\s+|,\s*|;\s*)+/i, "").trim();
+  candidate = candidate
+    .replace(/^(?:domiciliad[oa]s?|residentes?|vecin[oa]s?|con\s+domicilio)\s+(?:en\s+|de\s+)?/i, "")
+    .trim();
+
+  // Boilerplate exacto tras quitar prefijos
+  const lowerEarly = stripAccents(candidate.toLowerCase());
+  if (FORMULAIC_ADDRESSES.has(lowerEarly)) return "";
+
+  // 2) Separación de contexto: si hay texto antes del primer token, recortar.
+  const tokenMatch = candidate.match(ANY_ADDRESS_TOKEN_RE);
+  if (tokenMatch && typeof tokenMatch.index === "number" && tokenMatch.index > 0) {
+    const head = candidate.slice(0, tokenMatch.index);
+    if (/[a-záéíóúñ]/i.test(head)) {
+      candidate = candidate.slice(tokenMatch.index).trim();
+    }
+  }
+
+  // 3) Si no hay token de vía o rural → vacío (prohibición de alucinación).
+  const hasUrban = URBAN_TOKEN_RE.test(candidate);
+  const hasRural = RURAL_TOKEN_RE.test(candidate);
+  if (!hasUrban && !hasRural) return "";
+
+  // 4) Validación
+  const hasDigit = /\d/.test(candidate);
+  if (hasUrban && !hasRural && !hasDigit) return "";
+  if (!hasUrban && hasRural) {
+    const cleaned = candidate.replace(RURAL_TOKEN_RE, "").trim();
+    if (cleaned.length < 3 && !hasDigit) return "";
+  }
+
+  // Re-chequeo final de boilerplate por si quedó tras el recorte.
+  const lowerFinal = stripAccents(candidate.toLowerCase()).replace(/\s+/g, " ").trim();
+  if (FORMULAIC_ADDRESSES.has(lowerFinal)) return "";
+
+  return candidate.replace(/[\s,;]+$/g, "").trim();
 }
 
 /**
