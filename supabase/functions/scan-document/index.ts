@@ -380,6 +380,12 @@ Además, extrae los COMPARECIENTES de la sección de COMPARECENCIA de la escritu
 
 La escritura es la FUENTE DE VERDAD para estado civil, dirección y municipio de domicilio. Estos datos NO aparecen en la cédula física colombiana.
 
+REGLA CRÍTICA — VALORES ATÓMICOS (OBLIGATORIO):
+- estado_civil: extrae SOLO el estado civil puro y sus calificadores directos (ej: "soltero sin unión marital de hecho", "casada con sociedad conyugal vigente"). NUNCA incluyas "mayor de edad", "de nacionalidad colombiana", "identificado(a) con", "domiciliado(a) en", ni ningún otro texto formulario.
+- direccion: extrae SOLO una dirección postal real con números (ej: "Calle 10 # 20-30 Apto 401"). Si solo aparece "domiciliado en esta ciudad" o frases similares sin dirección postal específica, devuelve cadena vacía "".
+- municipio_domicilio: extrae SOLO el nombre propio del municipio (ej: "Bogotá"). Si solo dice "esta ciudad", "el municipio" o referencias genéricas, devuelve cadena vacía "".
+- Ante la duda, prefiere DEVOLVER VACÍO antes que incluir boilerplate notarial. La app marcará el campo como faltante y pedirá al usuario completarlo.
+
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
 - "media": parcialmente legible
