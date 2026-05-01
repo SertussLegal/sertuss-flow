@@ -283,6 +283,10 @@ const Validacion = () => {
   // Campos del bloque notaría que el usuario tocó manualmente (no auto-derivar al cambiar el número)
   const [notariaManualOverrides, setNotariaManualOverrides] = useState<Set<keyof NotariaTramite>>(new Set());
   const [formatoOrdinalNotaria, setFormatoOrdinalNotaria] = useState<FormatoOrdinal>("volada");
+  // ── Modo depuración variables .docx ───────────────────────────────────
+  const [debugDocxOn, setDebugDocxOn] = useState<boolean>(() => isDebugDocxEnabled());
+  const [debugModalOpen, setDebugModalOpen] = useState(false);
+  const [debugAuditPayload, setDebugAuditPayload] = useState<DocxAuditPayload | null>(null);
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
