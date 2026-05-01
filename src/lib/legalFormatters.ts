@@ -78,6 +78,12 @@ export function coeficienteToLetras(coef?: number | string | null): string {
   const decimalLetras = decimal > 0 ? ` punto ${numberToWordsLegal(decimal)}` : "";
   return `${enteroLetras}${decimalLetras} por ciento`;
 }
+
+/**
+ * Formats a numeric string into Colombian notarial currency format.
+ * "150000000" → "CIENTO CINCUENTA MILLONES DE PESOS M/CTE ($150.000.000,00)"
+ */
+export function formatMonedaLegal(valor: string): string {
   if (!valor) return "";
   const cleaned = valor.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
   const num = parseInt(cleaned, 10);
