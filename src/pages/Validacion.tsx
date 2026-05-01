@@ -2167,7 +2167,67 @@ const Validacion = () => {
         },
       };
 
-      doc.render(structuredData);
+      // ── Instrumentación de auditoría de variables (siempre activa para system_events;
+      //    el modal/console.log solo aparecen si el toggle de depuración está ON) ──
+      const _debugOn = isDebugDocxEnabled();
+      const _renderStart = performance.now();
+      let _auditPayload: DocxAuditPayload | null = null;
+      let _renderError: unknown = null;
+      try {
+        if (_debugOn) {
+          const _tags = await extractTemplateTags(content);
+          _auditPayload = buildAuditPayload({
+            tramiteId: tramiteId || "unknown",
+            template: "template_venta_hipoteca.docx",
+            tipoActo: actos.tipo_acto || "",
+            tags: _tags,
+            structuredData,
+          });
+        }
+        doc.render(structuredData);
+      } catch (err) {
+        _renderError = err;
+        // Si falla, igual capturamos snapshot para diagnóstico
+        if (!_auditPayload) {
+          _auditPayload = buildAuditPayload({
+            tramiteId: tramiteId || "unknown",
+            template: "template_venta_hipoteca.docx",
+            tipoActo: actos.tipo_acto || "",
+            tags: [],
+            structuredData,
+          });
+        }
+        throw err;
+      } finally {
+        const _renderMs = Math.round(performance.now() - _renderStart);
+        if (_auditPayload) _auditPayload.renderMs = _renderMs;
+        // Registro liviano histórico — siempre, no depende del toggle
+        monitored.log(
+          "docx-render",
+          _renderError ? "error" : "success",
+          "docx",
+          {
+            template: "template_venta_hipoteca.docx",
+            tipo_acto: actos.tipo_acto || null,
+            keys_count: _auditPayload?.counts.flatKeys ?? Object.keys(structuredData).length,
+            tags_count: _auditPayload?.counts.tags ?? null,
+            mapped_count: _auditPayload?.counts.mapped ?? null,
+            missing_count: _auditPayload?.counts.missing ?? null,
+            unused_count: _auditPayload?.counts.unused ?? null,
+            empty_count: _auditPayload?.counts.empty ?? null,
+            debug_enabled: _debugOn,
+            error_message: _renderError instanceof Error ? _renderError.message : null,
+          },
+          _renderMs,
+          undefined,
+          tramiteId || undefined,
+        );
+        if (_debugOn && _auditPayload) {
+          logDocxAuditToConsole(_auditPayload);
+          setDebugAuditPayload(_auditPayload);
+          setDebugModalOpen(true);
+        }
+      }
 
       let outZip = doc.getZip();
       // Apply text overrides to DOCX XML using robust virtualization
