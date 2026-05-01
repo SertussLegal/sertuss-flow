@@ -3241,6 +3241,14 @@ const Validacion = () => {
         generating={generating}
       />
 
+      {/* Modal de auditoría de variables del .docx */}
+      <DocxDebugModal
+        open={debugModalOpen}
+        onOpenChange={setDebugModalOpen}
+        payload={debugAuditPayload}
+      />
+
+
       {/* Dialog de validación Claude — errores críticos */}
       <AlertDialog open={validacionDialogOpen} onOpenChange={setValidacionDialogOpen}>
         <AlertDialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
