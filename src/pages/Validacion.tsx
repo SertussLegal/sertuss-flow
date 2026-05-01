@@ -42,6 +42,15 @@ import type { ReconcileAlert } from "@/lib/reconcileData";
 import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, coeficienteToLetras, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
 import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
+import DocxDebugModal from "@/components/tramites/DocxDebugModal";
+import {
+  isDebugDocxEnabled,
+  setDebugDocx,
+  extractTemplateTags,
+  buildAuditPayload,
+  logDocxAuditToConsole,
+  type DocxAuditPayload,
+} from "@/lib/docxDebug";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
