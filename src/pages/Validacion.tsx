@@ -42,6 +42,15 @@ import type { ReconcileAlert } from "@/lib/reconcileData";
 import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, coeficienteToLetras, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
 import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
+import DocxDebugModal from "@/components/tramites/DocxDebugModal";
+import {
+  isDebugDocxEnabled,
+  setDebugDocx,
+  extractTemplateTags,
+  buildAuditPayload,
+  logDocxAuditToConsole,
+  type DocxAuditPayload,
+} from "@/lib/docxDebug";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -274,6 +283,10 @@ const Validacion = () => {
   // Campos del bloque notaría que el usuario tocó manualmente (no auto-derivar al cambiar el número)
   const [notariaManualOverrides, setNotariaManualOverrides] = useState<Set<keyof NotariaTramite>>(new Set());
   const [formatoOrdinalNotaria, setFormatoOrdinalNotaria] = useState<FormatoOrdinal>("volada");
+  // ── Modo depuración variables .docx ───────────────────────────────────
+  const [debugDocxOn, setDebugDocxOn] = useState<boolean>(() => isDebugDocxEnabled());
+  const [debugModalOpen, setDebugModalOpen] = useState(false);
+  const [debugAuditPayload, setDebugAuditPayload] = useState<DocxAuditPayload | null>(null);
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
@@ -2154,7 +2167,67 @@ const Validacion = () => {
         },
       };
 
-      doc.render(structuredData);
+      // ── Instrumentación de auditoría de variables (siempre activa para system_events;
+      //    el modal/console.log solo aparecen si el toggle de depuración está ON) ──
+      const _debugOn = isDebugDocxEnabled();
+      const _renderStart = performance.now();
+      let _auditPayload: DocxAuditPayload | null = null;
+      let _renderError: unknown = null;
+      try {
+        if (_debugOn) {
+          const _tags = await extractTemplateTags(content);
+          _auditPayload = buildAuditPayload({
+            tramiteId: tramiteId || "unknown",
+            template: "template_venta_hipoteca.docx",
+            tipoActo: actos.tipo_acto || "",
+            tags: _tags,
+            structuredData,
+          });
+        }
+        doc.render(structuredData);
+      } catch (err) {
+        _renderError = err;
+        // Si falla, igual capturamos snapshot para diagnóstico
+        if (!_auditPayload) {
+          _auditPayload = buildAuditPayload({
+            tramiteId: tramiteId || "unknown",
+            template: "template_venta_hipoteca.docx",
+            tipoActo: actos.tipo_acto || "",
+            tags: [],
+            structuredData,
+          });
+        }
+        throw err;
+      } finally {
+        const _renderMs = Math.round(performance.now() - _renderStart);
+        if (_auditPayload) _auditPayload.renderMs = _renderMs;
+        // Registro liviano histórico — siempre, no depende del toggle
+        monitored.log(
+          "docx-render",
+          _renderError ? "error" : "success",
+          "docx",
+          {
+            template: "template_venta_hipoteca.docx",
+            tipo_acto: actos.tipo_acto || null,
+            keys_count: _auditPayload?.counts.flatKeys ?? Object.keys(structuredData).length,
+            tags_count: _auditPayload?.counts.tags ?? null,
+            mapped_count: _auditPayload?.counts.mapped ?? null,
+            missing_count: _auditPayload?.counts.missing ?? null,
+            unused_count: _auditPayload?.counts.unused ?? null,
+            empty_count: _auditPayload?.counts.empty ?? null,
+            debug_enabled: _debugOn,
+            error_message: _renderError instanceof Error ? _renderError.message : null,
+          },
+          _renderMs,
+          undefined,
+          tramiteId || undefined,
+        );
+        if (_debugOn && _auditPayload) {
+          logDocxAuditToConsole(_auditPayload);
+          setDebugAuditPayload(_auditPayload);
+          setDebugModalOpen(true);
+        }
+      }
 
       let outZip = doc.getZip();
       // Apply text overrides to DOCX XML using robust virtualization
@@ -2981,6 +3054,33 @@ const Validacion = () => {
                 </Tooltip>
               )}
 
+              {/* Toggle modo depuración variables — solo visible en dev o con ?debug=docx */}
+              {(import.meta.env.DEV || (typeof window !== "undefined" && window.location.search.includes("debug=docx"))) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={debugDocxOn ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        const next = !debugDocxOn;
+                        setDebugDocx(next);
+                        setDebugDocxOn(next);
+                        sonnerToast.success(next ? "Depuración .docx ON" : "Depuración .docx OFF");
+                      }}
+                      className="h-9 px-3"
+                      aria-label="Modo depuración variables del .docx"
+                    >
+                      <span className="text-base mr-1">🐞</span>
+                      <span className="text-xs hidden sm:inline">{debugDocxOn ? "Debug ON" : "Debug"}</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                    Audita las variables enviadas al .docx (mapeadas, vacías, missing, sin uso) tras generar.
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               {/* Previsualizar (primario) */}
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -3140,6 +3240,14 @@ const Validacion = () => {
         onConfirm={handleConfirmGenerate}
         generating={generating}
       />
+
+      {/* Modal de auditoría de variables del .docx */}
+      <DocxDebugModal
+        open={debugModalOpen}
+        onOpenChange={setDebugModalOpen}
+        payload={debugAuditPayload}
+      />
+
 
       {/* Dialog de validación Claude — errores críticos */}
       <AlertDialog open={validacionDialogOpen} onOpenChange={setValidacionDialogOpen}>
