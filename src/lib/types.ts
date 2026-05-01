@@ -70,6 +70,8 @@ export interface Inmueble {
   area_construida: string;
   area_privada: string;
   linderos: string;
+  linderos_especiales?: string;
+  linderos_generales?: string;
   avaluo_catastral: string;
   escritura_ph: string;
   reformas_ph: string;
@@ -175,6 +177,8 @@ export const createEmptyInmueble = (): Inmueble => ({
   area_construida: "",
   area_privada: "",
   linderos: "",
+  linderos_especiales: "",
+  linderos_generales: "",
   avaluo_catastral: "",
   escritura_ph: "",
   reformas_ph: "",

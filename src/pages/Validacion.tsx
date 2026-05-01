@@ -39,7 +39,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { lookupBank } from "@/lib/bankDirectory";
 import { reconcilePersonas, reconcileInmueble, sanitizeDireccion, sanitizeEstadoCivil } from "@/lib/reconcileData";
 import type { ReconcileAlert } from "@/lib/reconcileData";
-import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, type FormatoOrdinal } from "@/lib/legalFormatters";
+import { formatMonedaLegal, formatCedulaLegal, formatFechaLegal, normalizeFieldCasing, numeroNotariaToLetras, numeroToOrdinalAbbr, detectarFormatoOrdinal, letrasNotariaToNumero, coeficienteToLetras, type FormatoOrdinal } from "@/lib/legalFormatters";
 import ExpedienteSidebar from "@/components/tramites/ExpedienteSidebar";
 import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 
@@ -1064,7 +1064,7 @@ const Validacion = () => {
                 matricula_matriz: "matricula_matriz", direccion: "direccion",
                 municipio: "municipio", departamento: "departamento",
                 area: "area", area_construida: "area_construida", area_privada: "area_privada",
-                linderos: "linderos", linderos_especiales: "linderos", linderos_generales: "linderos",
+                linderos: "linderos", linderos_especiales: "linderos_especiales", linderos_generales: "linderos_generales",
                 avaluo_catastral: "avaluo_catastral", estrato: "estrato", nupre: "nupre",
                 valorizacion: "valorizacion", escritura_ph: "escritura_ph",
                 coeficiente: "coeficiente_copropiedad", coeficiente_copropiedad: "coeficiente_copropiedad",
@@ -1947,15 +1947,52 @@ const Validacion = () => {
       // Parse credito dates
       const creditoFecha = parseFechaFields(actos.fecha_credito || "");
 
+      // ===== Jerarquía jurídica de fuentes =====
+      // Carta de aprobación de crédito (documento vigente) > campos manuales > certificado de tradición (gravamen histórico)
+      const cartaCredito = (extractedDocumento as any)?.carta_credito || (extractedDocumento as any)?.aprobacion_credito || null;
+      const certificadoBanco = (extractedDocumento as any)?.acreedor_hipotecario || (extractedDocumento as any)?.banco_certificado || null;
+      const resolveBancoData = () => {
+        const banco = cartaCredito?.banco || cartaCredito?.entidad || actos.entidad_bancaria || certificadoBanco?.nombre || certificadoBanco || "";
+        const nit = cartaCredito?.nit || actos.entidad_nit || certificadoBanco?.nit || "";
+        const valor = cartaCredito?.valor_aprobado || cartaCredito?.valor || actos.valor_hipoteca || "";
+        const fecha = cartaCredito?.fecha_aprobacion || cartaCredito?.fecha || actos.fecha_credito || "";
+        const domicilio = cartaCredito?.domicilio || actos.entidad_domicilio || "";
+        return {
+          entidad_bancaria: typeof banco === "string" ? banco : "",
+          entidad_nit: typeof nit === "string" ? nit : "",
+          entidad_domicilio: typeof domicilio === "string" ? domicilio : "",
+          valor_credito: typeof valor === "string" ? valor : (valor ? String(valor) : ""),
+          fecha_credito: typeof fecha === "string" ? fecha : "",
+        };
+      };
+      const banco = resolveBancoData();
+      const creditoFechaResolved = parseFechaFields(banco.fecha_credito || actos.fecha_credito || "");
+
+      // Sanitización defensiva: limpia subrayados/strings residuales antes de inyectar al .docx
+      const _safe = (v: unknown): string => {
+        if (v === null || v === undefined) return "";
+        let s = String(v).trim();
+        if (!s) return "";
+        // Strip placeholders heredados de borradores antiguos
+        s = s.replace(/_{3,}/g, "").trim();
+        if (!s) return "";
+        return s;
+      };
+      const orBlank = (v: unknown) => _safe(v) || _;
+
+      // Linderos: priorizar separación; si solo hay un bloque, va a "especiales"
+      const linderosEspeciales = _safe(inmueble.linderos_especiales) || _safe(inmueble.linderos);
+      const linderosGenerales = _safe(inmueble.linderos_generales);
+      const coefLetras = coeficienteToLetras(inmueble.coeficiente_copropiedad);
+
       const structuredData = {
-        // Root-level
+        // ===== Root-level: notaría =====
         escritura_numero: _,
         fecha_escritura_corta: new Date().toLocaleDateString("es-CO"),
-        notario_nombre: notariaTramite.nombre_notario || _,
-        notario_decreto: notariaTramite.decreto_nombramiento || _,
+        notario_nombre: orBlank(notariaTramite.nombre_notario),
+        notario_decreto: orBlank(notariaTramite.decreto_nombramiento),
         notario_tipo: notariaTramite.tipo_notario || "",
-        notaria_numero: notariaTramite.numero_notaria || _,
-        // Fallbacks: si la edición manual está vacía, usar el valor derivado del número de notaría.
+        notaria_numero: orBlank(notariaTramite.numero_notaria),
         notaria_numero_letras: notariaTramite.numero_notaria_letras
           || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : _),
         notaria_numero_letras_lower: (() => {
@@ -1972,104 +2009,148 @@ const Validacion = () => {
         })(),
         notaria_ordinal: notariaTramite.numero_ordinal
           || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : _),
-        notaria_circulo: notariaTramite.circulo || _,
+        notaria_circulo: orBlank(notariaTramite.circulo),
         notaria_circulo_proper: notariaTramite.circulo
           ? notariaTramite.circulo.toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase())
           : _,
-        notaria_departamento: notariaTramite.departamento || _,
+        notaria_departamento: orBlank(notariaTramite.departamento),
 
-        // Booleans for conditionals
+        // ===== Flags booleanos para bloques dinámicos {#has_X}…{/has_X} =====
+        has_ph: !!inmueble.es_propiedad_horizontal,
+        has_linderos: !!(linderosEspeciales),
+        has_linderos_especiales: !!linderosEspeciales,
+        has_linderos_generales: !!linderosGenerales,
+        has_hipoteca: !!actos.es_hipoteca,
+        has_credito: !!(banco.valor_credito || banco.entidad_bancaria),
+        has_apoderado_banco: !!(actos.apoderado_nombre && actos.apoderado_cedula),
+        has_antecedente: !!(extractedDocumento?.titulo_antecedente?.numero_documento || (extractedDocumento as any)?.numero_escritura),
+        has_afectacion_familiar: !!actos.afectacion_vivienda_familiar,
+        has_predial: !!extractedPredial?.numero_recibo,
+        has_coeficiente: !!inmueble.coeficiente_copropiedad,
+        has_carta_credito: !!cartaCredito,
+        // Compat anterior
         tiene_hipoteca: actos.es_hipoteca,
         afectacion_vivienda: actos.afectacion_vivienda_familiar || false,
 
-        // Person loops
+        // ===== Personas =====
         vendedores: vendedores.map(mapPersona),
         compradores: compradores.map(mapPersona),
 
-        // Inmueble nested
+        // ===== ROOT-LEVEL aliases del inmueble =====
+        // (la mayoría de plantillas notariales usan tags root como {ubicacion_predio})
+        ubicacion_predio: orBlank(inmueble.direccion),
+        ubicacion_inmueble: orBlank(inmueble.direccion),
+        direccion_inmueble: orBlank(inmueble.direccion),
+        matricula_inmobiliaria: orBlank(inmueble.matricula_inmobiliaria),
+        cedula_catastral: orBlank(inmueble.identificador_predial),
+        chip: orBlank(inmueble.identificador_predial),
+        identificador_predial: orBlank(inmueble.identificador_predial),
+        inmueble_nombre: orBlank(inmueble.nombre_edificio_conjunto),
+        nombre_edificio_conjunto: orBlank(inmueble.nombre_edificio_conjunto),
+        linderos_especiales: linderosEspeciales || _,
+        linderos_generales: linderosGenerales || _,
+        coeficiente_letras: coefLetras || _,
+        coeficiente_numero: orBlank(inmueble.coeficiente_copropiedad),
+        coeficiente_copropiedad: orBlank(inmueble.coeficiente_copropiedad),
+        municipio_inmueble: orBlank(inmueble.municipio),
+        departamento_inmueble: orBlank(inmueble.departamento),
+        orip_ciudad: orBlank(inmueble.codigo_orip),
+
+        // ===== ROOT-LEVEL aliases del banco/crédito (jerarquía aplicada) =====
+        entidad_bancaria: orBlank(banco.entidad_bancaria),
+        entidad_nit: orBlank(banco.entidad_nit),
+        entidad_domicilio: orBlank(banco.entidad_domicilio),
+        banco_nombre: orBlank(banco.entidad_bancaria),
+        banco_nit: orBlank(banco.entidad_nit),
+
+        // ===== Inmueble nested (compat con tags {inmueble.X} ya existentes) =====
         inmueble: {
-          matricula: inmueble.matricula_inmobiliaria || _,
-          cedula_catastral: inmueble.identificador_predial || _,
-          direccion: inmueble.direccion || _,
-          nombre_edificio_conjunto: inmueble.nombre_edificio_conjunto || _,
-          linderos_especiales: inmueble.linderos || _,
-          linderos_generales: inmueble.linderos || _,
-          orip_ciudad: inmueble.codigo_orip || _,
+          matricula: orBlank(inmueble.matricula_inmobiliaria),
+          matricula_inmobiliaria: orBlank(inmueble.matricula_inmobiliaria),
+          cedula_catastral: orBlank(inmueble.identificador_predial),
+          chip: orBlank(inmueble.identificador_predial),
+          ubicacion: orBlank(inmueble.direccion),
+          direccion: orBlank(inmueble.direccion),
+          nombre_edificio_conjunto: orBlank(inmueble.nombre_edificio_conjunto),
+          inmueble_nombre: orBlank(inmueble.nombre_edificio_conjunto),
+          linderos_especiales: linderosEspeciales || _,
+          linderos_generales: linderosGenerales || _,
+          orip_ciudad: orBlank(inmueble.codigo_orip),
           orip_zona: _,
-          coeficiente_letras: _,
-          coeficiente_numero: inmueble.coeficiente_copropiedad || _,
-          nupre: inmueble.nupre || _,
-          estrato: inmueble.estrato || _,
+          coeficiente_letras: coefLetras || _,
+          coeficiente_numero: orBlank(inmueble.coeficiente_copropiedad),
+          nupre: orBlank(inmueble.nupre),
+          estrato: orBlank(inmueble.estrato),
           es_rph: inmueble.es_propiedad_horizontal,
-          predial_anio: extractedPredial?.anio_gravable || _,
-          predial_num: extractedPredial?.numero_recibo || _,
+          predial_anio: orBlank(extractedPredial?.anio_gravable),
+          predial_num: orBlank(extractedPredial?.numero_recibo),
           predial_valor: extractedPredial?.valor_pagado ? formatMonedaLegal(extractedPredial.valor_pagado) : _,
           idu_num: _, idu_fecha: _, idu_vigencia: _,
           admin_fecha: _, admin_vigencia: _,
         },
 
-        // Actos nested
+        // ===== Actos nested (con jerarquía bancaria) =====
         actos: {
           cuantia_compraventa_letras: actos.valor_compraventa ? formatMonedaLegal(actos.valor_compraventa).split("($")[0]?.trim() || _ : _,
           cuantia_compraventa_numero: actos.valor_compraventa ? formatMonedaLegal(actos.valor_compraventa) : _,
-          cuantia_hipoteca_letras: actos.valor_hipoteca ? formatMonedaLegal(actos.valor_hipoteca).split("($")[0]?.trim() || _ : _,
-          cuantia_hipoteca_numero: actos.valor_hipoteca ? formatMonedaLegal(actos.valor_hipoteca) : _,
+          cuantia_hipoteca_letras: banco.valor_credito ? formatMonedaLegal(banco.valor_credito).split("($")[0]?.trim() || _ : _,
+          cuantia_hipoteca_numero: banco.valor_credito ? formatMonedaLegal(banco.valor_credito) : _,
           fecha_escritura_letras: _,
-          entidad_bancaria: actos.entidad_bancaria || _,
-          entidad_nit: actos.entidad_nit || _,
-          entidad_domicilio: actos.entidad_domicilio || _,
+          entidad_bancaria: orBlank(banco.entidad_bancaria),
+          entidad_nit: orBlank(banco.entidad_nit),
+          entidad_domicilio: orBlank(banco.entidad_domicilio),
           pago_inicial_letras: actos.pago_inicial ? formatMonedaLegal(actos.pago_inicial).split("($")[0]?.trim() || _ : _,
           pago_inicial_numero: actos.pago_inicial ? formatMonedaLegal(actos.pago_inicial) : _,
           saldo_financiado_letras: actos.saldo_financiado ? formatMonedaLegal(actos.saldo_financiado).split("($")[0]?.trim() || _ : _,
           saldo_financiado_numero: actos.saldo_financiado ? formatMonedaLegal(actos.saldo_financiado) : _,
-          credito_dia_letras: creditoFecha.dia_letras,
-          credito_dia_num: creditoFecha.dia_num,
-          credito_mes: creditoFecha.mes,
-          credito_anio_letras: creditoFecha.anio_letras,
-          credito_anio_num: creditoFecha.anio_num,
+          credito_dia_letras: creditoFechaResolved.dia_letras,
+          credito_dia_num: creditoFechaResolved.dia_num,
+          credito_mes: creditoFechaResolved.mes,
+          credito_anio_letras: creditoFechaResolved.anio_letras,
+          credito_anio_num: creditoFechaResolved.anio_num,
           redam_resultado: _,
           afectacion_vivienda: actos.afectacion_vivienda_familiar || false,
         },
 
-        // Antecedentes
+        // ===== Antecedentes =====
         antecedentes: {
-          modo: extractedDocumento?.modo_adquisicion || _,
-          adquirido_de: extractedDocumento?.adquirido_de || _,
+          modo: orBlank(extractedDocumento?.modo_adquisicion),
+          adquirido_de: orBlank(extractedDocumento?.adquirido_de),
           escritura_num_letras: _,
-          escritura_num_numero: extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || _,
+          escritura_num_numero: orBlank(extractedDocumento?.titulo_antecedente?.numero_documento || (extractedDocumento as any)?.numero_escritura),
           escritura_dia_letras: antFecha.dia_letras,
           escritura_dia_num: antFecha.dia_num,
           escritura_mes: antFecha.mes,
           escritura_anio_letras: antFecha.anio_letras,
           escritura_anio_num: antFecha.anio_num,
-          notaria_previa_numero: extractedDocumento?.titulo_antecedente?.notaria_documento || extractedDocumento?.notaria_origen || _,
-          notaria_previa_circulo: extractedDocumento?.titulo_antecedente?.ciudad_documento || _,
+          notaria_previa_numero: orBlank(extractedDocumento?.titulo_antecedente?.notaria_documento || (extractedDocumento as any)?.notaria_origen),
+          notaria_previa_circulo: orBlank(extractedDocumento?.titulo_antecedente?.ciudad_documento),
         },
 
-        // RPH
+        // ===== RPH =====
         rph: {
           escritura_num_letras: _,
-          escritura_num_numero: inmueble.escritura_ph_numero || _,
+          escritura_num_numero: orBlank(inmueble.escritura_ph_numero),
           escritura_dia_letras: rphFecha.dia_letras,
           escritura_dia_num: rphFecha.dia_num,
           escritura_mes: rphFecha.mes,
           escritura_anio_letras: rphFecha.anio_letras,
           escritura_anio_num: rphFecha.anio_num,
-          notaria_numero: inmueble.escritura_ph_notaria || _,
-          notaria_ciudad: inmueble.escritura_ph_ciudad || _,
-          matricula_matriz: inmueble.matricula_matriz || _,
+          notaria_numero: orBlank(inmueble.escritura_ph_notaria),
+          notaria_ciudad: orBlank(inmueble.escritura_ph_ciudad),
+          matricula_matriz: orBlank(inmueble.matricula_matriz),
         },
 
-        // Apoderado banco
+        // ===== Apoderado banco =====
         apoderado_banco: {
-          nombre: actos.apoderado_nombre || _,
+          nombre: orBlank(actos.apoderado_nombre),
           cedula: actos.apoderado_cedula ? formatCedulaLegal(actos.apoderado_cedula) : _,
-          expedida_en: actos.apoderado_expedida_en || _,
-          escritura_poder_num: actos.apoderado_escritura_poder || _,
+          expedida_en: orBlank(actos.apoderado_expedida_en),
+          escritura_poder_num: orBlank(actos.apoderado_escritura_poder),
           poder_dia_letras: _, poder_dia_num: _, poder_mes: _, poder_anio_letras: _, poder_anio_num: _,
-          notaria_poder_num: actos.apoderado_notaria_poder || _,
-          notaria_poder_ciudad: actos.apoderado_notaria_ciudad || _,
-          email: actos.apoderado_email || _,
+          notaria_poder_num: orBlank(actos.apoderado_notaria_poder),
+          notaria_poder_ciudad: orBlank(actos.apoderado_notaria_ciudad),
+          email: orBlank(actos.apoderado_email),
         },
       };
 
