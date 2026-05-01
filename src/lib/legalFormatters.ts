@@ -52,10 +52,32 @@ function numberToWordsLegal(num: number): string {
 }
 
 /**
- * Formats a numeric string into Colombian notarial currency format.
- * "150000000" → "CIENTO CINCUENTA MILLONES DE PESOS M/CTE ($150.000.000,00)"
+ * Convierte un coeficiente de copropiedad numérico a su forma legal en letras.
+ * Acepta tanto "0.0234" (proporción) como "2.34" (porcentaje directo).
+ *   0.0234 → "dos punto treinta y cuatro por ciento"
+ *   2.34   → "dos punto treinta y cuatro por ciento"
+ *   0.5    → "cincuenta por ciento"
+ *   1      → "uno por ciento"  (interpretado como 1%, ver regla)
+ *
+ * Regla: si el valor es < 1 se interpreta como proporción (0.0234 = 2.34%);
+ * si es >= 1 se interpreta como porcentaje directo.
  */
-export function formatMonedaLegal(valor: string): string {
+export function coeficienteToLetras(coef?: number | string | null): string {
+  if (coef === undefined || coef === null || coef === "") return "";
+  const raw = typeof coef === "string" ? coef.replace(/%/g, "").replace(",", ".").trim() : coef;
+  const n = typeof raw === "string" ? parseFloat(raw) : raw;
+  if (!Number.isFinite(n) || n <= 0) return "";
+
+  const pct = n < 1 ? n * 100 : n;
+  // Redondea a 2 decimales para evitar arrastres de coma flotante (0.0234 * 100 = 2.3399999)
+  const rounded = Math.round(pct * 100) / 100;
+  const entero = Math.floor(rounded);
+  const decimal = Math.round((rounded - entero) * 100);
+
+  const enteroLetras = entero === 0 ? "cero" : numberToWordsLegal(entero);
+  const decimalLetras = decimal > 0 ? ` punto ${numberToWordsLegal(decimal)}` : "";
+  return `${enteroLetras}${decimalLetras} por ciento`;
+}
   if (!valor) return "";
   const cleaned = valor.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
   const num = parseInt(cleaned, 10);
