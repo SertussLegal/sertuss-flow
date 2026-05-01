@@ -1064,7 +1064,7 @@ const Validacion = () => {
                 matricula_matriz: "matricula_matriz", direccion: "direccion",
                 municipio: "municipio", departamento: "departamento",
                 area: "area", area_construida: "area_construida", area_privada: "area_privada",
-                linderos: "linderos", linderos_especiales: "linderos", linderos_generales: "linderos",
+                linderos: "linderos", linderos_especiales: "linderos_especiales", linderos_generales: "linderos_generales",
                 avaluo_catastral: "avaluo_catastral", estrato: "estrato", nupre: "nupre",
                 valorizacion: "valorizacion", escritura_ph: "escritura_ph",
                 coeficiente: "coeficiente_copropiedad", coeficiente_copropiedad: "coeficiente_copropiedad",
