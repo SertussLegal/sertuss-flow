@@ -3054,6 +3054,33 @@ const Validacion = () => {
                 </Tooltip>
               )}
 
+              {/* Toggle modo depuración variables — solo visible en dev o con ?debug=docx */}
+              {(import.meta.env.DEV || (typeof window !== "undefined" && window.location.search.includes("debug=docx"))) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={debugDocxOn ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        const next = !debugDocxOn;
+                        setDebugDocx(next);
+                        setDebugDocxOn(next);
+                        sonnerToast.success(next ? "Depuración .docx ON" : "Depuración .docx OFF");
+                      }}
+                      className="h-9 px-3"
+                      aria-label="Modo depuración variables del .docx"
+                    >
+                      <span className="text-base mr-1">🐞</span>
+                      <span className="text-xs hidden sm:inline">{debugDocxOn ? "Debug ON" : "Debug"}</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                    Audita las variables enviadas al .docx (mapeadas, vacías, missing, sin uso) tras generar.
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               {/* Previsualizar (primario) */}
               <Tooltip>
                 <TooltipTrigger asChild>
