@@ -193,7 +193,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </div>
 
         <Tabs defaultValue="all" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-6 w-full">
             <TabsTrigger value="all">
               Todas <Badge variant="secondary" className="ml-1">{allRows.length}</Badge>
             </TabsTrigger>
@@ -208,6 +208,15 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
             </TabsTrigger>
             <TabsTrigger value="unused">
               Sin uso <Badge variant="secondary" className="ml-1">{unused.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="rescued">
+              Rescatados{" "}
+              <Badge
+                variant={payload.counts.rescued > 0 ? "default" : "secondary"}
+                className="ml-1"
+              >
+                {payload.counts.rescued}
+              </Badge>
             </TabsTrigger>
           </TabsList>
 
