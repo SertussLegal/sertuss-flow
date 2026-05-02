@@ -1913,6 +1913,18 @@ const Validacion = () => {
       const content = await response.arrayBuffer();
 
       const zip = new PizZip(content);
+
+      // Pre-normalización: reconstruye tags `{xxx}` partidos entre múltiples
+      // <w:r> (incluidos los que están dentro de tablas). Si la salida no es
+      // XML válido se hace rollback automático del archivo afectado.
+      const _normalizeResult = normalizeDocxRuns(zip, { verbose: isDebugDocxEnabled() });
+      if (!_normalizeResult.xmlValid.ok) {
+        console.warn(
+          "[DocxDebug] Normalización descartada por XML inválido:",
+          _normalizeResult.xmlValid.errors,
+        );
+      }
+
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
