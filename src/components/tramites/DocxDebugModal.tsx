@@ -248,6 +248,9 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
                 hint="Clave enviada en structuredData que ningún tag de la plantilla consume (alias muerto o redundante)"
               />
             </TabsContent>
+            <TabsContent value="rescued" className="m-0">
+              <RescuedList items={payload.rescued} />
+            </TabsContent>
           </ScrollArea>
         </Tabs>
       </DialogContent>
