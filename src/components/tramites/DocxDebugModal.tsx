@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Bug, Copy, Download } from "lucide-react";
-import type { DocxAuditPayload, FlatEntry } from "@/lib/docxDebug";
+import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
 
 interface Props {
   open: boolean;
