@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Bug, Copy, Download } from "lucide-react";
-import type { DocxAuditPayload, FlatEntry } from "@/lib/docxDebug";
+import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
 
 interface Props {
   open: boolean;
@@ -127,7 +127,45 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
             tone="danger"
           />
           <Stat label="Sin uso" value={payload.counts.unused} tone="muted" />
+          <Stat
+            label="Rescatados"
+            value={payload.counts.rescued}
+            tone={payload.counts.rescued > 0 ? "success" : "muted"}
+          />
+          <Stat
+            label="Cross-párrafo"
+            value={payload.counts.crossParagraph}
+            tone={payload.counts.crossParagraph > 0 ? "danger" : "muted"}
+          />
         </div>
+
+        {payload.crossParagraph.length > 0 && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-1.5">
+            <div className="font-semibold text-destructive flex items-center gap-1.5">
+              ⚠️ La plantilla necesita corrección manual
+            </div>
+            <p className="text-muted-foreground">
+              Se detectaron {payload.crossParagraph.length} tag(s) potencialmente
+              cortados entre párrafos (saltos de línea dentro de <code>{"{...}"}</code>).
+              El normalizador no puede repararlos automáticamente; abre la plantilla
+              en Word y une cada tag en un solo párrafo.
+            </p>
+            <ul className="space-y-0.5 font-mono text-[11px] text-foreground/80">
+              {payload.crossParagraph.slice(0, 5).map((c, i) => (
+                <li key={i}>
+                  · <span className="text-destructive">{c.hint}</span> en{" "}
+                  {c.file}#p{c.paragraphIndex}
+                  {c.inTable ? " (tabla)" : ""}
+                </li>
+              ))}
+              {payload.crossParagraph.length > 5 && (
+                <li className="text-muted-foreground">
+                  …y {payload.crossParagraph.length - 5} más
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <Input
@@ -155,7 +193,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </div>
 
         <Tabs defaultValue="all" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-6 w-full">
             <TabsTrigger value="all">
               Todas <Badge variant="secondary" className="ml-1">{allRows.length}</Badge>
             </TabsTrigger>
@@ -170,6 +208,15 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
             </TabsTrigger>
             <TabsTrigger value="unused">
               Sin uso <Badge variant="secondary" className="ml-1">{unused.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="rescued">
+              Rescatados{" "}
+              <Badge
+                variant={payload.counts.rescued > 0 ? "default" : "secondary"}
+                className="ml-1"
+              >
+                {payload.counts.rescued}
+              </Badge>
             </TabsTrigger>
           </TabsList>
 
@@ -200,6 +247,9 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
                 tone="muted"
                 hint="Clave enviada en structuredData que ningún tag de la plantilla consume (alias muerto o redundante)"
               />
+            </TabsContent>
+            <TabsContent value="rescued" className="m-0">
+              <RescuedList items={payload.rescued} />
             </TabsContent>
           </ScrollArea>
         </Tabs>
@@ -315,6 +365,55 @@ function TagList({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function RescuedList({ items }: { items: RescuedTagEntry[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="p-6 text-center text-sm text-muted-foreground">
+        No se rescató ningún tag fragmentado en esta plantilla. ✅
+      </div>
+    );
+  }
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-xs text-muted-foreground italic">
+        Tags que Word había partido entre múltiples runs y que el normalizador
+        consolidó automáticamente antes del render. Si la cantidad es alta,
+        considera regenerar la plantilla.
+      </p>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40%]">Tag</TableHead>
+            <TableHead className="w-[35%]">Ubicación</TableHead>
+            <TableHead className="w-[15%]">Contexto</TableHead>
+            <TableHead className="w-[10%]">Runs</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((r, i) => (
+            <TableRow key={`${r.file}-${r.paragraphIndex}-${i}`}>
+              <TableCell className="font-mono text-xs">{r.raw}</TableCell>
+              <TableCell className="font-mono text-[11px] text-muted-foreground">
+                {r.file}#p{r.paragraphIndex}
+              </TableCell>
+              <TableCell className="text-xs">
+                {r.inTable ? (
+                  <Badge variant="outline" className="border-primary/40 text-primary">
+                    tabla
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">párrafo</span>
+                )}
+              </TableCell>
+              <TableCell className="text-xs">{r.runsFused + 1}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -51,6 +51,7 @@ import {
   logDocxAuditToConsole,
   type DocxAuditPayload,
 } from "@/lib/docxDebug";
+import { normalizeDocxRuns } from "@/lib/docxRunNormalizer";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -1912,6 +1913,18 @@ const Validacion = () => {
       const content = await response.arrayBuffer();
 
       const zip = new PizZip(content);
+
+      // Pre-normalización: reconstruye tags `{xxx}` partidos entre múltiples
+      // <w:r> (incluidos los que están dentro de tablas). Si la salida no es
+      // XML válido se hace rollback automático del archivo afectado.
+      const _normalizeResult = normalizeDocxRuns(zip, { verbose: isDebugDocxEnabled() });
+      if (!_normalizeResult.xmlValid.ok) {
+        console.warn(
+          "[DocxDebug] Normalización descartada por XML inválido:",
+          _normalizeResult.xmlValid.errors,
+        );
+      }
+
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
@@ -2182,6 +2195,8 @@ const Validacion = () => {
             tipoActo: actos.tipo_acto || "",
             tags: _tags,
             structuredData,
+            rescued: _normalizeResult.rescued,
+            crossParagraph: _normalizeResult.crossParagraph,
           });
         }
         doc.render(structuredData);
@@ -2195,6 +2210,8 @@ const Validacion = () => {
             tipoActo: actos.tipo_acto || "",
             tags: [],
             structuredData,
+            rescued: _normalizeResult.rescued,
+            crossParagraph: _normalizeResult.crossParagraph,
           });
         }
         throw err;
@@ -2215,6 +2232,9 @@ const Validacion = () => {
             missing_count: _auditPayload?.counts.missing ?? null,
             unused_count: _auditPayload?.counts.unused ?? null,
             empty_count: _auditPayload?.counts.empty ?? null,
+            rescued_count: _normalizeResult.rescued.length,
+            cross_paragraph_count: _normalizeResult.crossParagraph.length,
+            normalized_files: _normalizeResult.filesProcessed,
             debug_enabled: _debugOn,
             error_message: _renderError instanceof Error ? _renderError.message : null,
           },
