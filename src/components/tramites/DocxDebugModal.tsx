@@ -368,3 +368,52 @@ function TagList({
     </div>
   );
 }
+
+function RescuedList({ items }: { items: RescuedTagEntry[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="p-6 text-center text-sm text-muted-foreground">
+        No se rescató ningún tag fragmentado en esta plantilla. ✅
+      </div>
+    );
+  }
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-xs text-muted-foreground italic">
+        Tags que Word había partido entre múltiples runs y que el normalizador
+        consolidó automáticamente antes del render. Si la cantidad es alta,
+        considera regenerar la plantilla.
+      </p>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40%]">Tag</TableHead>
+            <TableHead className="w-[35%]">Ubicación</TableHead>
+            <TableHead className="w-[15%]">Contexto</TableHead>
+            <TableHead className="w-[10%]">Runs</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((r, i) => (
+            <TableRow key={`${r.file}-${r.paragraphIndex}-${i}`}>
+              <TableCell className="font-mono text-xs">{r.raw}</TableCell>
+              <TableCell className="font-mono text-[11px] text-muted-foreground">
+                {r.file}#p{r.paragraphIndex}
+              </TableCell>
+              <TableCell className="text-xs">
+                {r.inTable ? (
+                  <Badge variant="outline" className="border-primary/40 text-primary">
+                    tabla
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">párrafo</span>
+                )}
+              </TableCell>
+              <TableCell className="text-xs">{r.runsFused + 1}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
