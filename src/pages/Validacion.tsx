@@ -51,6 +51,7 @@ import {
   logDocxAuditToConsole,
   type DocxAuditPayload,
 } from "@/lib/docxDebug";
+import { normalizeDocxRuns } from "@/lib/docxRunNormalizer";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
