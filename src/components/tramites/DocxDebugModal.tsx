@@ -166,13 +166,6 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
             </ul>
           </div>
         )}
-          <Stat
-            label="Missing"
-            value={payload.counts.missing}
-            tone="danger"
-          />
-          <Stat label="Sin uso" value={payload.counts.unused} tone="muted" />
-        </div>
 
         <div className="flex items-center gap-2">
           <Input
