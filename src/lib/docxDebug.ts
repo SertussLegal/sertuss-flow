@@ -307,6 +307,15 @@ export function logDocxAuditToConsole(payload: DocxAuditPayload): void {
   );
   console.log("Aliases sin uso:", payload.diff.unused);
   console.log("Tags vacíos:", payload.diff.empty);
+  if (payload.rescued.length > 0) {
+    console.log("Tags rescatados (split runs reconstruidos):", payload.rescued);
+  }
+  if (payload.crossParagraph.length > 0) {
+    console.warn(
+      "⚠️ Tags potencialmente partidos entre párrafos (requieren corrección manual en plantilla):",
+      payload.crossParagraph,
+    );
+  }
   const flatRows = Object.values(payload.flat)
     .slice(0, 80)
     .map((e) => ({
