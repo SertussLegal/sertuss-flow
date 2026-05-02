@@ -216,6 +216,22 @@ export function diffTagsVsData(
 
 // ── Payload de auditoría completo ────────────────────────────────────────
 
+export interface RescuedTagEntry {
+  tag: string;
+  raw: string;
+  file: string;
+  paragraphIndex: number;
+  inTable: boolean;
+  runsFused: number;
+}
+
+export interface CrossParagraphEntry {
+  hint: string;
+  file: string;
+  paragraphIndex: number;
+  inTable: boolean;
+}
+
 export interface DocxAuditPayload {
   tramiteId: string;
   template: string;
@@ -229,9 +245,13 @@ export interface DocxAuditPayload {
     missing: number;
     unused: number;
     empty: number;
+    rescued: number;
+    crossParagraph: number;
   };
   diff: DocxDiff;
   flat: Record<string, FlatEntry>;
+  rescued: RescuedTagEntry[];
+  crossParagraph: CrossParagraphEntry[];
 }
 
 export function buildAuditPayload(args: {
@@ -241,9 +261,13 @@ export function buildAuditPayload(args: {
   tags: string[];
   structuredData: unknown;
   renderMs?: number;
+  rescued?: RescuedTagEntry[];
+  crossParagraph?: CrossParagraphEntry[];
 }): DocxAuditPayload {
   const flat = flattenStructuredData(args.structuredData);
   const diff = diffTagsVsData(args.tags, flat);
+  const rescued = args.rescued ?? [];
+  const crossParagraph = args.crossParagraph ?? [];
   return {
     tramiteId: args.tramiteId,
     template: args.template,
@@ -257,9 +281,13 @@ export function buildAuditPayload(args: {
       missing: diff.missing.length,
       unused: diff.unused.length,
       empty: diff.empty.length,
+      rescued: rescued.length,
+      crossParagraph: crossParagraph.length,
     },
     diff,
     flat,
+    rescued,
+    crossParagraph,
   };
 }
 
