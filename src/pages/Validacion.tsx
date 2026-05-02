@@ -2195,6 +2195,8 @@ const Validacion = () => {
             tipoActo: actos.tipo_acto || "",
             tags: _tags,
             structuredData,
+            rescued: _normalizeResult.rescued,
+            crossParagraph: _normalizeResult.crossParagraph,
           });
         }
         doc.render(structuredData);
@@ -2208,6 +2210,8 @@ const Validacion = () => {
             tipoActo: actos.tipo_acto || "",
             tags: [],
             structuredData,
+            rescued: _normalizeResult.rescued,
+            crossParagraph: _normalizeResult.crossParagraph,
           });
         }
         throw err;
@@ -2228,6 +2232,9 @@ const Validacion = () => {
             missing_count: _auditPayload?.counts.missing ?? null,
             unused_count: _auditPayload?.counts.unused ?? null,
             empty_count: _auditPayload?.counts.empty ?? null,
+            rescued_count: _normalizeResult.rescued.length,
+            cross_paragraph_count: _normalizeResult.crossParagraph.length,
+            normalized_files: _normalizeResult.filesProcessed,
             debug_enabled: _debugOn,
             error_message: _renderError instanceof Error ? _renderError.message : null,
           },
