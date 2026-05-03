@@ -256,7 +256,7 @@ Cuando detectes datos de notaría (número, círculo, nombre del notario, decret
   - "auto_corregible": true
   - "campo": "notaria_tramite.<nombre>" donde <nombre> es uno de: numero_notaria, numero_notaria_letras, numero_ordinal, circulo, departamento, nombre_notario, tipo_notario, decreto_nombramiento, genero_notario.
   - "valor_sugerido": el valor extraído (string).
-NO los reportes como errores: el usuario puede no querer usar esa notaría para este trámite. Son SOLO sugerencias para que el usuario las acepte con un clic.`;
+NO los reportes como errores: el usuario puede no querer usar esa notaría para este trámite. Son SOLO sugerencias para que el usuario las acepte con un clic.${STRICT_OUTPUT_RULES}`;
 }
 
 function construirUserPrompt(payload: ValidacionRequest): string {
