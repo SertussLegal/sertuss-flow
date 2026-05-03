@@ -187,12 +187,13 @@ serve(async (req) => {
       throw err;
     }
 
-    // 7. Save results to tramite metadata (con post-proceso defensivo)
-    const cleanedTexto = sanitizeAiText(editorResult.texto_final_word || "");
+    // 7. Save results to tramite metadata (con post-proceso defensivo + sanitizer Fase 1)
+    const cleanedTexto = sanitizeAiOutput(sanitizeAiText(editorResult.texto_final_word || ""));
+    const cleanedSugerencias = sanitizeAiJson(editorResult.sugerencias_ia || []);
     const updatedMetadata = {
       ...metadata,
       texto_final_word: cleanedTexto,
-      sugerencias_ia: editorResult.sugerencias_ia || [],
+      sugerencias_ia: cleanedSugerencias,
       last_generated: new Date().toISOString(),
     };
 
