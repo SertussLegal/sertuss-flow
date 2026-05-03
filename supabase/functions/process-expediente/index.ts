@@ -210,8 +210,8 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       texto_final_word: cleanedTexto,
-      sugerencias_ia: editorResult.sugerencias_ia || [],
-      templateData: { ...editorResult, texto_final_word: cleanedTexto },
+      sugerencias_ia: cleanedSugerencias,
+      templateData: { ...sanitizeAiJson(editorResult), texto_final_word: cleanedTexto, sugerencias_ia: cleanedSugerencias },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
