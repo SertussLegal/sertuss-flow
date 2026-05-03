@@ -155,6 +155,30 @@ serve(async (req) => {
       costo_estimado_usd: costoEstimado,
     });
 
+    // Fase 2: evento de telemetría para medir costo/tokens y mix de severidades por llamada.
+    try {
+      await supabase.from("system_events").insert({
+        evento: "validar-con-claude",
+        resultado: "success",
+        categoria: "ai_metrics",
+        tiempo_ms: tiempoRespuesta,
+        organization_id: payload.organization_id,
+        tramite_id: payload.tramite_id,
+        detalle: {
+          phase: "fase_2",
+          modo: payload.modo,
+          tipo_acto: payload.tipo_acto,
+          tokens_input: tokensInput,
+          tokens_output: tokensOutput,
+          costo_usd: costoEstimado,
+          total_errores: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "error").length || 0,
+          total_advertencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "advertencia").length || 0,
+          total_sugerencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "sugerencia").length || 0,
+          puntuacion: respuestaParsed.puntuacion ?? null,
+        },
+      });
+    } catch { /* never break main flow */ }
+
     // 8. Devolver respuesta
     return new Response(JSON.stringify(respuestaParsed), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
