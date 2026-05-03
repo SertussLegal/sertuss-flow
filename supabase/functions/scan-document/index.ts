@@ -466,6 +466,9 @@ serve(async (req) => {
       throw err;
     }
 
+    // Defensive sanitization (Phase 1): strip forbidden chars from every string field.
+    extractedData = sanitizeAiJson(extractedData);
+
     console.log("=== SERTUSS EXTRACT: Parsed Data ===");
     console.log("Doc type:", type);
     console.log("Extracted fields:", Object.keys(extractedData));
