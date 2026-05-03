@@ -197,7 +197,7 @@ serve(async (req) => {
       if (r) return r;
       throw err;
     }
-    const tStart = Date.now();
+    
 
     // 7. Save results to tramite metadata (con post-proceso defensivo + sanitizer Fase 1)
     const cleanedTexto = sanitizeAiOutput(sanitizeAiText(editorResult.texto_final_word || ""));
