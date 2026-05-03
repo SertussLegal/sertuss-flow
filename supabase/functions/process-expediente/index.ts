@@ -111,7 +111,7 @@ serve(async (req) => {
                 items: {
                   type: "object",
                   properties: {
-                    tipo: { type: "string", enum: ["discrepancia", "estilo"] },
+                    tipo: { type: "string", enum: ["estilo"], description: "Solo sugerencias de estilo. Las discrepancias entre documentos las maneja el auditor (Claude), NO el redactor." },
                     texto_original: { type: "string", description: "Fragmento exacto del texto que se señala" },
                     texto_sugerido: { type: "string", description: "Texto corregido o mejorado" },
                     mensaje: { type: "string", description: "Explicación breve" },
