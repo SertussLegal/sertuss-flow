@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchAiGateway, aiGatewayErrorResponse, parseToolCallArguments } from "../_shared/aiFetch.ts";
+import { STRICT_OUTPUT_RULES, sanitizeAiJson } from "../_shared/aiOutputRules.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -430,7 +431,7 @@ serve(async (req) => {
     const aiBody = JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: baseSystemPrompts[type] },
+        { role: "system", content: baseSystemPrompts[type] + STRICT_OUTPUT_RULES },
         {
           role: "user",
           content: [
@@ -464,6 +465,9 @@ serve(async (req) => {
       if (r) return r;
       throw err;
     }
+
+    // Defensive sanitization (Phase 1): strip forbidden chars from every string field.
+    extractedData = sanitizeAiJson(extractedData);
 
     console.log("=== SERTUSS EXTRACT: Parsed Data ===");
     console.log("Doc type:", type);

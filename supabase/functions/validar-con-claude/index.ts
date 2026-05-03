@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { STRICT_OUTPUT_RULES, sanitizeAiJson } from "../_shared/aiOutputRules.ts";
 
 const CLAUDE_API_KEY = Deno.env.get("CLAUDE_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -123,6 +124,9 @@ serve(async (req) => {
         retroalimentacion_general: respuestaTexto,
       };
     }
+
+    // Fase 1: sanitización defensiva de todos los strings devueltos por Claude.
+    respuestaParsed = sanitizeAiJson(respuestaParsed);
 
     // 7. Guardar en historial
     const tiempoRespuesta = Date.now() - startTime;
@@ -252,7 +256,7 @@ Cuando detectes datos de notaría (número, círculo, nombre del notario, decret
   - "auto_corregible": true
   - "campo": "notaria_tramite.<nombre>" donde <nombre> es uno de: numero_notaria, numero_notaria_letras, numero_ordinal, circulo, departamento, nombre_notario, tipo_notario, decreto_nombramiento, genero_notario.
   - "valor_sugerido": el valor extraído (string).
-NO los reportes como errores: el usuario puede no querer usar esa notaría para este trámite. Son SOLO sugerencias para que el usuario las acepte con un clic.`;
+NO los reportes como errores: el usuario puede no querer usar esa notaría para este trámite. Son SOLO sugerencias para que el usuario las acepte con un clic.${STRICT_OUTPUT_RULES}`;
 }
 
 function construirUserPrompt(payload: ValidacionRequest): string {

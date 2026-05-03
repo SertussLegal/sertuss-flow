@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { fetchAiGateway, aiGatewayErrorResponse, parseToolCallArguments } from "../_shared/aiFetch.ts";
+import { STRICT_OUTPUT_RULES, sanitizeAiOutput, sanitizeAiJson } from "../_shared/aiOutputRules.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -186,12 +187,13 @@ serve(async (req) => {
       throw err;
     }
 
-    // 7. Save results to tramite metadata (con post-proceso defensivo)
-    const cleanedTexto = sanitizeAiText(editorResult.texto_final_word || "");
+    // 7. Save results to tramite metadata (con post-proceso defensivo + sanitizer Fase 1)
+    const cleanedTexto = sanitizeAiOutput(sanitizeAiText(editorResult.texto_final_word || ""));
+    const cleanedSugerencias = sanitizeAiJson(editorResult.sugerencias_ia || []);
     const updatedMetadata = {
       ...metadata,
       texto_final_word: cleanedTexto,
-      sugerencias_ia: editorResult.sugerencias_ia || [],
+      sugerencias_ia: cleanedSugerencias,
       last_generated: new Date().toISOString(),
     };
 
@@ -208,8 +210,8 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       texto_final_word: cleanedTexto,
-      sugerencias_ia: editorResult.sugerencias_ia || [],
-      templateData: { ...editorResult, texto_final_word: cleanedTexto },
+      sugerencias_ia: cleanedSugerencias,
+      templateData: { ...sanitizeAiJson(editorResult), texto_final_word: cleanedTexto, sugerencias_ia: cleanedSugerencias },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -263,6 +265,7 @@ Si alguno de estos campos está vacío o falta, genera una sugerencia de tipo "d
     base += `\n\nAplica el estilo de linderos y cláusulas personalizadas de esta notaría en la redacción.`;
   }
 
+  base += STRICT_OUTPUT_RULES;
   return base;
 }
 
