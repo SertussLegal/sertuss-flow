@@ -265,6 +265,7 @@ Si alguno de estos campos está vacío o falta, genera una sugerencia de tipo "d
     base += `\n\nAplica el estilo de linderos y cláusulas personalizadas de esta notaría en la redacción.`;
   }
 
+  base += STRICT_OUTPUT_RULES;
   return base;
 }
 
