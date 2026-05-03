@@ -179,13 +179,25 @@ serve(async (req) => {
     }
 
     let editorResult: EditorResult;
+    let geminiUsage: { input?: number; output?: number; total?: number } = {};
     try {
+      // Clonamos para extraer usage (parseToolCallArguments consume el body).
+      const usageClone = response.clone();
       editorResult = await parseToolCallArguments<EditorResult>(response, "process-expediente");
+      try {
+        const raw = await usageClone.json() as any;
+        geminiUsage = {
+          input: raw?.usage?.prompt_tokens ?? raw?.usage?.input_tokens,
+          output: raw?.usage?.completion_tokens ?? raw?.usage?.output_tokens,
+          total: raw?.usage?.total_tokens,
+        };
+      } catch { /* usage es opcional */ }
     } catch (err) {
       const r = aiGatewayErrorResponse(err, corsHeaders);
       if (r) return r;
       throw err;
     }
+    const tStart = Date.now();
 
     // 7. Save results to tramite metadata (con post-proceso defensivo + sanitizer Fase 1)
     const cleanedTexto = sanitizeAiOutput(sanitizeAiText(editorResult.texto_final_word || ""));
