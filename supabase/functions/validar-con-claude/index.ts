@@ -125,6 +125,9 @@ serve(async (req) => {
       };
     }
 
+    // Fase 1: sanitización defensiva de todos los strings devueltos por Claude.
+    respuestaParsed = sanitizeAiJson(respuestaParsed);
+
     // 7. Guardar en historial
     const tiempoRespuesta = Date.now() - startTime;
     const tokensInput = claudeData.usage?.input_tokens || 0;
