@@ -111,7 +111,7 @@ serve(async (req) => {
                 items: {
                   type: "object",
                   properties: {
-                    tipo: { type: "string", enum: ["discrepancia", "estilo"] },
+                    tipo: { type: "string", enum: ["estilo"], description: "Solo sugerencias de estilo. Las discrepancias entre documentos las maneja el auditor (Claude), NO el redactor." },
                     texto_original: { type: "string", description: "Fragmento exacto del texto que se señala" },
                     texto_sugerido: { type: "string", description: "Texto corregido o mejorado" },
                     mensaje: { type: "string", description: "Explicación breve" },
@@ -179,13 +179,25 @@ serve(async (req) => {
     }
 
     let editorResult: EditorResult;
+    let geminiUsage: { input?: number; output?: number; total?: number } = {};
     try {
+      // Clonamos para extraer usage (parseToolCallArguments consume el body).
+      const usageClone = response.clone();
       editorResult = await parseToolCallArguments<EditorResult>(response, "process-expediente");
+      try {
+        const raw = await usageClone.json() as any;
+        geminiUsage = {
+          input: raw?.usage?.prompt_tokens ?? raw?.usage?.input_tokens,
+          output: raw?.usage?.completion_tokens ?? raw?.usage?.output_tokens,
+          total: raw?.usage?.total_tokens,
+        };
+      } catch { /* usage es opcional */ }
     } catch (err) {
       const r = aiGatewayErrorResponse(err, corsHeaders);
       if (r) return r;
       throw err;
     }
+    
 
     // 7. Save results to tramite metadata (con post-proceso defensivo + sanitizer Fase 1)
     const cleanedTexto = sanitizeAiOutput(sanitizeAiText(editorResult.texto_final_word || ""));
@@ -202,7 +214,40 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }).eq("id", tramite_id);
 
-    // 8. Insert logs_extraccion
+    // Fase 2: telemetría — tokens, longitud del documento, mix de sugerencias.
+    // Coste estimado Gemini 2.5 Pro: $1.25/M input, $10/M output (referencia).
+    try {
+      const sugList = Array.isArray(cleanedSugerencias) ? cleanedSugerencias as any[] : [];
+      const tipoCounts = sugList.reduce((acc: Record<string, number>, s) => {
+        const t = String(s?.tipo ?? "desconocido");
+        acc[t] = (acc[t] ?? 0) + 1;
+        return acc;
+      }, {});
+      const inT = geminiUsage.input ?? 0;
+      const outT = geminiUsage.output ?? 0;
+      const costoUsd = (inT * 1.25) / 1_000_000 + (outT * 10) / 1_000_000;
+      await sb.from("system_events").insert({
+        evento: "process-expediente",
+        resultado: "success",
+        categoria: "ai_metrics",
+        tramite_id,
+        organization_id: tramite.organization_id,
+        detalle: {
+          phase: "fase_2",
+          model: "google/gemini-2.5-pro",
+          tipo_acto: tipoActo,
+          tokens_input: inT,
+          tokens_output: outT,
+          tokens_total: geminiUsage.total ?? (inT + outT),
+          costo_usd: costoUsd,
+          texto_chars: cleanedTexto.length,
+          sugerencias_total: sugList.length,
+          sugerencias_por_tipo: tipoCounts,
+          sugerencias_discrepancia: tipoCounts["discrepancia"] ?? 0, // debe tender a 0 en Fase 2
+        },
+      });
+    } catch { /* never break main flow */ }
+
     await sb.from("logs_extraccion").insert({
       tramite_id,
       data_ia: editorResult,
@@ -224,31 +269,31 @@ serve(async (req) => {
 });
 
 function buildEditorProPrompt(estiloNotaria: any, camposObligatorios: string[]): string {
-  let base = `Eres SERTUSS-EDITOR-PRO, un redactor jurídico experto en derecho notarial colombiano (Ley 1579 de 2012, Decreto 960 de 1970).
+  let base = `Eres SERTUSS-EDITOR-PRO, redactor jurídico experto en derecho notarial colombiano (Ley 1579 de 2012, Decreto 960 de 1970).
 
-Tu tarea es:
-1. Redactar la escritura pública COMPLETA en formato HTML usando los datos proporcionados
-2. Identificar discrepancias entre datos (ej: una dirección en la cédula diferente a la del certificado)
-3. Señalar ajustes de estilo notarial (concordancia de género, uso de protocolos, formato de linderos)
+ROL ÚNICO: REDACCIÓN.
+Tu única tarea es redactar la escritura pública COMPLETA en HTML usando los datos proporcionados.
+NO valides reglas de negocio. NO detectes discrepancias entre documentos. NO audites cumplimiento.
+Esa labor la realiza otro sistema (auditor Claude). Si los datos están incompletos, redacta con líneas en blanco "___________" — no generes alertas.
 
 Reglas de redacción:
-- Lenguaje formal notarial colombiano
-- Valores monetarios en letras y números: "CIEN MILLONES DE PESOS M/CTE ($100.000.000)"
-- Cédulas formateadas con puntos de miles
-- Si hay hipoteca, incluir cláusulas hipotecarias completas
-- Si hay afectación a vivienda familiar, incluir la cláusula correspondiente
-- Si hay apoderado, incluir la cláusula de poder
-- Si hay persona jurídica, usar razón social y NIT
+- Lenguaje formal notarial colombiano.
+- Valores monetarios en letras y números: "CIEN MILLONES DE PESOS M/CTE ($100.000.000)".
+- Cédulas formateadas con puntos de miles.
+- Si hay hipoteca, incluye cláusulas hipotecarias completas.
+- Si hay afectación a vivienda familiar, incluye la cláusula correspondiente.
+- Si hay apoderado, incluye la cláusula de poder.
+- Si hay persona jurídica, usa razón social y NIT.
 
-Para las sugerencias:
-- tipo "discrepancia": datos que no coinciden entre documentos (NARANJA en la UI)
-- tipo "estilo": mejoras de formato, concordancia de género, protocolo notarial (AZUL en la UI)
-- El campo "texto_original" DEBE existir textualmente en "texto_final_word"
-- El campo "campo" debe mapear al campo del formulario cuando sea posible`;
+Sugerencias permitidas (campo "sugerencias_ia"):
+- SOLO de tipo "estilo": concordancia de género, formato de linderos, protocolo notarial, ortografía.
+- PROHIBIDO emitir sugerencias de tipo "discrepancia", "validación legal", "campos requeridos" o "cumplimiento". Esas las hace el auditor.
+- "texto_original" debe existir literalmente en "texto_final_word".
+- "campo" debe mapear al campo del formulario cuando aplique.`;
 
   if (camposObligatorios.length > 0) {
-    base += `\n\nCAMPOS OBLIGATORIOS para este tipo de acto: ${camposObligatorios.join(", ")}
-Si alguno de estos campos está vacío o falta, genera una sugerencia de tipo "discrepancia" indicando que el campo es requerido por ley.`;
+    base += `\n\nCAMPOS OBLIGATORIOS para este tipo de acto: ${camposObligatorios.join(", ")}.
+Si alguno está vacío, simplemente déjalo como "___________" en el documento. NO emitas sugerencia ni alerta — el auditor lo reportará.`;
   }
 
   if (estiloNotaria) {

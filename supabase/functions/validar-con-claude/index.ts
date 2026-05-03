@@ -155,6 +155,30 @@ serve(async (req) => {
       costo_estimado_usd: costoEstimado,
     });
 
+    // Fase 2: evento de telemetría para medir costo/tokens y mix de severidades por llamada.
+    try {
+      await supabase.from("system_events").insert({
+        evento: "validar-con-claude",
+        resultado: "success",
+        categoria: "ai_metrics",
+        tiempo_ms: tiempoRespuesta,
+        organization_id: payload.organization_id,
+        tramite_id: payload.tramite_id,
+        detalle: {
+          phase: "fase_2",
+          modo: payload.modo,
+          tipo_acto: payload.tipo_acto,
+          tokens_input: tokensInput,
+          tokens_output: tokensOutput,
+          costo_usd: costoEstimado,
+          total_errores: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "error").length || 0,
+          total_advertencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "advertencia").length || 0,
+          total_sugerencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "sugerencia").length || 0,
+          puntuacion: respuestaParsed.puntuacion ?? null,
+        },
+      });
+    } catch { /* never break main flow */ }
+
     // 8. Devolver respuesta
     return new Response(JSON.stringify(respuestaParsed), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -207,6 +231,11 @@ function construirSystemPrompt(
     : "No hay plantilla específica. Validar con reglas generales.";
 
   return `Eres el auditor senior de documentos notariales de Sertuss, una plataforma tecnológica para notarías en Colombia. Tu trabajo es revisar datos extraídos por OCR de documentos notariales y validar que sean correctos, coherentes y legalmente válidos.
+
+ROL ÚNICO: AUDITORÍA. NUNCA REDACCIÓN.
+- PROHIBIDO reescribir cláusulas, redactar prosa notarial, proponer texto alternativo de párrafos, o generar fragmentos de escritura.
+- "valor_sugerido" debe ser SIEMPRE un dato puntual atómico (cédula corregida, fecha normalizada, monto en letras, nombre con tilde, etc.). NUNCA un párrafo ni una cláusula.
+- Si detectas un error de redacción en el texto generado, repórtalo como nivel "advertencia" con auto_corregible:false y explica qué corregir, pero NO escribas el texto corregido. La redacción es responsabilidad de otro sistema (Gemini Pro).
 
 PRINCIPIOS FUNDAMENTALES:
 1. NUNCA contradices correcciones que ya fueron aplicadas por el sistema anterior (Gemini). Si se te informa que una corrección ya fue hecha, la respetas.
