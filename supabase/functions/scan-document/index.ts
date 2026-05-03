@@ -431,7 +431,7 @@ serve(async (req) => {
     const aiBody = JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: baseSystemPrompts[type] },
+        { role: "system", content: baseSystemPrompts[type] + STRICT_OUTPUT_RULES },
         {
           role: "user",
           content: [
