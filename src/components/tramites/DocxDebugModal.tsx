@@ -66,6 +66,18 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
   const isAdvanced = profile?.role === "owner" || profile?.role === "admin";
   const canExport = isAdvanced;
   const [filter, setFilter] = useState("");
+  const [debugVisualOn, setDebugVisualOn] = useState<boolean>(() => isDebugDocxEnabled());
+
+  // Resincronizar con flag global cada vez que el modal se abre
+  useEffect(() => {
+    if (open) setDebugVisualOn(isDebugDocxEnabled());
+  }, [open]);
+
+  const handleToggleDebugVisual = (v: boolean) => {
+    setDebugDocx(v);
+    setDebugVisualOn(v);
+    onDebugVisualChange?.(v);
+  };
 
   const tagSections = useMemo<TagSection[]>(() => {
     if (!payload) return [];
