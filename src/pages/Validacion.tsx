@@ -3316,27 +3316,78 @@ const Validacion = () => {
 
       {/* Footer flotante de acciones */}
       <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-white/10 bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleSaveDraft}
-            disabled={savingDraft || saving}
-            className="h-9 gap-2 border-white/15 bg-white/5 text-white hover:bg-white/10"
-          >
-            {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Guardar borrador
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || savingDraft}
-            className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Finalizar y validar
-          </Button>
-        </div>
+        <TooltipProvider delayDuration={150}>
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 gap-2">
+            {/* Izquierda: guardado silencioso */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSaveDraft}
+              disabled={savingDraft || saving}
+              className="h-9 gap-2 border-white/20 bg-white/10 text-white hover:bg-white/15"
+            >
+              {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Guardar borrador
+            </Button>
+
+            {/* Derecha: secuencia analizar → validar */}
+            <div className="flex items-center gap-2">
+              {/* Generar y Analizar Word (secundario, borde dorado) */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={notariaIncompletaGlobal ? 0 : -1}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePrevisualizar}
+                      disabled={validando || notariaIncompletaGlobal}
+                      className="h-9 gap-2 border-notarial-gold/60 bg-transparent text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold disabled:opacity-60"
+                    >
+                      {validando ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Analizando…</>
+                      ) : (
+                        <><Eye className="h-4 w-4" /> Generar y Analizar Word</>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {notariaIncompletaGlobal && (
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-destructive/40 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                    <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
+                    <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+
+              {/* Finalizar y validar (acción primaria) */}
+              {(() => {
+                const noAnalizado = !docxPath;
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={noAnalizado ? 0 : -1}>
+                        <Button
+                          type="button"
+                          onClick={handleSave}
+                          disabled={saving || savingDraft || noAnalizado}
+                          className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
+                        >
+                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Finalizar y validar
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                      {noAnalizado
+                        ? "Primero debes generar y analizar el documento para poder validarlo."
+                        : "Finalizar verificación de la escritura"}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })()}
+            </div>
+          </div>
+        </TooltipProvider>
       </footer>
 
       <PreviewModal
