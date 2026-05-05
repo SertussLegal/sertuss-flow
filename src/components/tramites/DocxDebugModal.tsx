@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Bug, Copy, Download, BookOpen, ClipboardCopy } from "lucide-react";
+import { Bug, Copy, Download, BookOpen, ClipboardCopy, FileText } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isDebugDocxEnabled, setDebugDocx } from "@/lib/docxDebug";
 import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
