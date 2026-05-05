@@ -2409,10 +2409,12 @@ const Validacion = () => {
       setSyncStatus("saved");
       toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
+      console.error("[generate-docx] fallo en handleConfirmGenerate", err);
       if (isCreditsBlockedError(err)) {
         emitCreditsBlocked({ source: "process-expediente" });
       } else {
-        toast({ title: "Error", description: err.message, variant: "destructive" });
+        const msg = err?.message || (typeof err === "string" ? err : "Error desconocido al generar el documento.");
+        toast({ title: "Error", description: msg, variant: "destructive", duration: 10000 });
       }
     } finally {
       setGenerating(false);
