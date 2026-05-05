@@ -1925,12 +1925,21 @@ const Validacion = () => {
         );
       }
 
-      const doc = new Docxtemplater(zip, {
+      // Doble intento: primero estricto (errorLogging activo) → si lanza por
+      // tags desconocidos / rawxml, reintentamos con un nullGetter resiliente
+      // que devuelve "___________" para cualquier parte (default | tag | rawxml).
+      // No-bloqueante: si ambos fallan, el catch externo abre el modal de auditoría.
+      const buildDoc = (resilient: boolean) => new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
-        nullGetter: () => "___________",
+        errorLogging: !resilient,
+        nullGetter: (part: any) => {
+          if (resilient && part?.module === "rawxml") return "";
+          return "___________";
+        },
       });
+      let doc = buildDoc(false);
 
       // Helper to parse fecha for template date fields
       const parseFechaFields = (fecha: string) => {
@@ -2186,6 +2195,7 @@ const Validacion = () => {
       const _renderStart = performance.now();
       let _auditPayload: DocxAuditPayload | null = null;
       let _renderError: unknown = null;
+      let _renderAttempts: Array<{ resilient: boolean; ok: boolean; errorMessage?: string; tagErrors?: string[] }> = [];
       try {
         if (_debugOn) {
           const _tags = await extractTemplateTags(content);
@@ -2199,25 +2209,99 @@ const Validacion = () => {
             crossParagraph: _normalizeResult.crossParagraph,
           });
         }
-        doc.render(structuredData);
-      } catch (err) {
+        // Intento estricto
+        try {
+          doc.render(structuredData);
+          _renderAttempts.push({ resilient: false, ok: true });
+        } catch (strictErr: any) {
+          const tagErrors: string[] = Array.isArray(strictErr?.properties?.errors)
+            ? strictErr.properties.errors.map((e: any) =>
+                e?.properties?.xtag || e?.properties?.id || e?.message || String(e),
+              )
+            : [];
+          console.warn("[generate-docx] render estricto falló, reintentando resiliente:", {
+            id: strictErr?.properties?.id,
+            tagErrors,
+            message: strictErr?.message,
+          });
+          _renderAttempts.push({
+            resilient: false,
+            ok: false,
+            errorMessage: strictErr?.message,
+            tagErrors,
+          });
+          // Reintento resiliente: nuevo zip + normalización para no heredar estado parcial
+          const zip2 = new PizZip(content);
+          normalizeDocxRuns(zip2, { verbose: isDebugDocxEnabled() });
+          doc = buildDoc(true);
+          // Re-asignar el zip subyacente al nuevo Docxtemplater
+          doc.render(structuredData);
+          _renderAttempts.push({ resilient: true, ok: true });
+          // Aviso no bloqueante para que el usuario sepa que algunos tags fueron neutralizados
+          toast({
+            title: "Documento generado con tolerancia",
+            description: tagErrors.length
+              ? `Se neutralizaron ${tagErrors.length} tag(s) problemático(s): ${tagErrors.slice(0, 3).join(", ")}${tagErrors.length > 3 ? "…" : ""}. Revisa el documento.`
+              : "Algunos campos de la plantilla no pudieron resolverse y quedaron en blanco.",
+          });
+        }
+      } catch (err: any) {
         _renderError = err;
+        const tagErrors: string[] = Array.isArray(err?.properties?.errors)
+          ? err.properties.errors.map((e: any) =>
+              e?.properties?.xtag || e?.properties?.id || e?.message || String(e),
+            )
+          : [];
+        _renderAttempts.push({
+          resilient: true,
+          ok: false,
+          errorMessage: err?.message,
+          tagErrors,
+        });
         // Si falla, igual capturamos snapshot para diagnóstico
         if (!_auditPayload) {
+          const _tags = await extractTemplateTags(content).catch(() => [] as string[]);
           _auditPayload = buildAuditPayload({
             tramiteId: tramiteId || "unknown",
             template: "template_venta_hipoteca.docx",
             tipoActo: actos.tipo_acto || "",
-            tags: [],
+            tags: _tags,
             structuredData,
             rescued: _normalizeResult.rescued,
             crossParagraph: _normalizeResult.crossParagraph,
           });
         }
+        // Forzar modal de auditoría aunque debug esté OFF, para diagnóstico inmediato
+        if (_auditPayload) {
+          logDocxAuditToConsole(_auditPayload);
+          setDebugAuditPayload(_auditPayload);
+          setDebugModalOpen(true);
+        }
+        const summary = tagErrors.length
+          ? `Tags problemáticos: ${tagErrors.slice(0, 3).join(", ")}${tagErrors.length > 3 ? "…" : ""}`
+          : err?.message || "Error desconocido al armar el documento.";
+        toast({
+          title: "No se pudo armar el .docx",
+          description: `${summary}. Se abrió el panel de auditoría para revisarlo.`,
+          variant: "destructive",
+          duration: 12000,
+        });
         throw err;
       } finally {
         const _renderMs = Math.round(performance.now() - _renderStart);
         if (_auditPayload) _auditPayload.renderMs = _renderMs;
+        // Aviso adicional si el normalizer detectó tags partidos entre párrafos
+        if (_normalizeResult.crossParagraph.length > 0) {
+          console.warn(
+            "[generate-docx] cross-paragraph detectado:",
+            _normalizeResult.crossParagraph,
+          );
+          toast({
+            title: "Plantilla con tags partidos",
+            description: `Se detectaron ${_normalizeResult.crossParagraph.length} posibles tag(s) cortados entre párrafos. La plantilla puede necesitar corrección manual.`,
+            duration: 10000,
+          });
+        }
         // Registro liviano histórico — siempre, no depende del toggle
         monitored.log(
           "docx-render",
@@ -2236,13 +2320,14 @@ const Validacion = () => {
             cross_paragraph_count: _normalizeResult.crossParagraph.length,
             normalized_files: _normalizeResult.filesProcessed,
             debug_enabled: _debugOn,
+            render_attempts: _renderAttempts,
             error_message: _renderError instanceof Error ? _renderError.message : null,
           },
           _renderMs,
           undefined,
           tramiteId || undefined,
         );
-        if (_debugOn && _auditPayload) {
+        if (_debugOn && _auditPayload && !_renderError) {
           logDocxAuditToConsole(_auditPayload);
           setDebugAuditPayload(_auditPayload);
           setDebugModalOpen(true);
@@ -2260,17 +2345,32 @@ const Validacion = () => {
         }
       }
 
-      const out = outZip.generate({
-        type: "blob",
-        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
+      let out: Blob;
+      try {
+        out = outZip.generate({
+          type: "blob",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        });
+        console.info("[generate-docx] blob ready bytes=", out?.size ?? 0);
+      } catch (zipErr: any) {
+        console.error("[generate-docx] outZip.generate fallo", zipErr);
+        throw new Error("Error al empaquetar el .docx: " + (zipErr?.message || String(zipErr)));
+      }
 
       const fileName = `Escritura_${actos.tipo_acto || "Tramite"}_${tramiteId.slice(0, 8)}.docx`;
-      const url = window.URL.createObjectURL(out);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      link.click();
+      try {
+        const url = window.URL.createObjectURL(out);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        // Liberar el objeto URL en el siguiente tick
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      } catch (dlErr: any) {
+        console.warn("[generate-docx] descarga directa falló (continúa upload):", dlErr);
+      }
 
       // Persist a copy in private bucket so it can be re-downloaded later without re-running AI.
       // Path MUST start with tramiteId — Phase 1 RLS enforces tramite_org_from_path() on first segment.
@@ -2309,10 +2409,12 @@ const Validacion = () => {
       setSyncStatus("saved");
       toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
+      console.error("[generate-docx] fallo en handleConfirmGenerate", err);
       if (isCreditsBlockedError(err)) {
         emitCreditsBlocked({ source: "process-expediente" });
       } else {
-        toast({ title: "Error", description: err.message, variant: "destructive" });
+        const msg = err?.message || (typeof err === "string" ? err : "Error desconocido al generar el documento.");
+        toast({ title: "Error", description: msg, variant: "destructive", duration: 10000 });
       }
     } finally {
       setGenerating(false);
