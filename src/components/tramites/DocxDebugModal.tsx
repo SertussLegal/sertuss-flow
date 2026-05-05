@@ -179,7 +179,6 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         )}
 
         <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2">
           <Input
             placeholder="Filtrar por nombre de variable…"
             value={filter}
