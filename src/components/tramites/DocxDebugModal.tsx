@@ -21,9 +21,16 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Bug, Copy, Download } from "lucide-react";
+import { Bug, Copy, Download, BookOpen, ClipboardCopy } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
+import {
+  buildTagCatalog,
+  type TagSection,
+  type TagCardData,
+  type LoopBlock as CatalogLoopBlock,
+} from "@/lib/docxTagCatalog";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
