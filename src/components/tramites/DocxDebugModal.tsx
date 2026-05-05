@@ -429,7 +429,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                   />
                 </TabsContent>
                 <TabsContent value="rescued" className="m-0">
-                  <RescuedList items={payload.rescued} />
+                  <RescuedList items={rescued} />
                 </TabsContent>
               </>
             )}
