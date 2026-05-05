@@ -273,6 +273,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                     variant="outline"
                     size="icon"
                     onClick={handleCopyJson}
+                    disabled={!payload}
                     aria-label="Copiar JSON de auditoría"
                     className="h-9 w-9 shrink-0"
                   >
@@ -288,6 +289,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                     variant="outline"
                     size="icon"
                     onClick={handleDownloadJson}
+                    disabled={!payload}
                     aria-label="Descargar reporte de auditoría"
                     className="h-9 w-9 shrink-0"
                   >
