@@ -3330,47 +3330,54 @@ const Validacion = () => {
               Guardar borrador
             </Button>
 
-            {/* Derecha: secuencia analizar → validar */}
-            <div className="flex items-center gap-2">
-              {/* Generar y Analizar Word (secundario, borde dorado) */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span tabIndex={notariaIncompletaGlobal ? 0 : -1}>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handlePrevisualizar}
-                      disabled={validando || notariaIncompletaGlobal}
-                      className="h-9 gap-2 border-notarial-gold/60 bg-transparent text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold disabled:opacity-60"
-                    >
-                      {validando ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" /> Analizando…</>
-                      ) : (
-                        <><Eye className="h-4 w-4" /> Generar y Analizar Word</>
-                      )}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {notariaIncompletaGlobal && (
-                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-destructive/40 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
-                    <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
-                    <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
-                  </TooltipContent>
-                )}
-              </Tooltip>
+            {/* Derecha: secuencia analizar → validar (style-swap según docxPath) */}
+            {(() => {
+              const noAnalizado = !docxPath;
+              const analizarClasses = noAnalizado
+                ? "h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
+                : "h-9 gap-2 border border-notarial-gold/60 bg-transparent text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold disabled:opacity-60";
+              const finalizarClasses = noAnalizado
+                ? "h-9 gap-2 border border-white/10 bg-transparent text-white/40 cursor-not-allowed"
+                : "h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60";
+              return (
+                <div className="flex items-center gap-2">
+                  {/* Generar y Analizar Word */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={notariaIncompletaGlobal ? 0 : -1}>
+                        <Button
+                          type="button"
+                          variant={noAnalizado ? "default" : "outline"}
+                          onClick={handlePrevisualizar}
+                          disabled={validando || notariaIncompletaGlobal}
+                          className={analizarClasses}
+                        >
+                          {validando ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /> Analizando…</>
+                          ) : (
+                            <><Eye className="h-4 w-4" /> Generar y Analizar Word</>
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {notariaIncompletaGlobal && (
+                      <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-destructive/40 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                        <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
+                        <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
 
-              {/* Finalizar y validar (acción primaria) */}
-              {(() => {
-                const noAnalizado = !docxPath;
-                return (
+                  {/* Finalizar y validar */}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span tabIndex={noAnalizado ? 0 : -1}>
                         <Button
                           type="button"
+                          variant={noAnalizado ? "outline" : "default"}
                           onClick={handleSave}
                           disabled={saving || savingDraft || noAnalizado}
-                          className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
+                          className={finalizarClasses}
                         >
                           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                           Finalizar y validar
@@ -3383,9 +3390,9 @@ const Validacion = () => {
                         : "Finalizar verificación de la escritura"}
                     </TooltipContent>
                   </Tooltip>
-                );
-              })()}
-            </div>
+                </div>
+              );
+            })()}
           </div>
         </TooltipProvider>
       </footer>
