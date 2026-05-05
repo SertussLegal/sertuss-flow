@@ -140,70 +140,66 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Resumen */}
-        <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 text-xs">
-          <Stat label="Tags plantilla" value={payload.counts.tags} />
-          <Stat label="Claves data" value={payload.counts.flatKeys} />
-          <Stat
-            label="Mapeados"
-            value={payload.counts.mapped}
-            tone="success"
-          />
-          <Stat
-            label="Por loop"
-            value={payload.counts.scoped}
-            tone={payload.counts.scoped > 0 ? "success" : "muted"}
-          />
-          <Stat label="Vacíos" value={payload.counts.empty} tone="warning" />
-          <Stat
-            label="Missing"
-            value={payload.counts.missing}
-            tone="danger"
-          />
-          <Stat label="Sin uso" value={payload.counts.unused} tone="muted" />
-          <Stat
-            label="Rescatados"
-            value={payload.counts.rescued}
-            tone={payload.counts.rescued > 0 ? "success" : "muted"}
-          />
-          <Stat
-            label="Cross-párrafo"
-            value={payload.counts.crossParagraph}
-            tone={payload.counts.crossParagraph > 0 ? "danger" : "muted"}
-          />
-        </div>
-
-        {payload.crossParagraph.length > 0 && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-1.5">
-            <div className="font-semibold text-destructive flex items-center gap-1.5">
-              ⚠️ La plantilla necesita corrección manual
+        {isAdvanced && (
+          <>
+            {/* Resumen */}
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 text-xs">
+              <Stat label="Tags plantilla" value={payload.counts.tags} />
+              <Stat label="Claves data" value={payload.counts.flatKeys} />
+              <Stat label="Mapeados" value={payload.counts.mapped} tone="success" />
+              <Stat
+                label="Por loop"
+                value={payload.counts.scoped}
+                tone={payload.counts.scoped > 0 ? "success" : "muted"}
+              />
+              <Stat label="Vacíos" value={payload.counts.empty} tone="warning" />
+              <Stat label="Missing" value={payload.counts.missing} tone="danger" />
+              <Stat label="Sin uso" value={payload.counts.unused} tone="muted" />
+              <Stat
+                label="Rescatados"
+                value={payload.counts.rescued}
+                tone={payload.counts.rescued > 0 ? "success" : "muted"}
+              />
+              <Stat
+                label="Cross-párrafo"
+                value={payload.counts.crossParagraph}
+                tone={payload.counts.crossParagraph > 0 ? "danger" : "muted"}
+              />
             </div>
-            <p className="text-muted-foreground">
-              Se detectaron {payload.crossParagraph.length} tag(s) potencialmente
-              cortados entre párrafos (saltos de línea dentro de <code>{"{...}"}</code>).
-              El normalizador no puede repararlos automáticamente; abre la plantilla
-              en Word y une cada tag en un solo párrafo.
-            </p>
-            <ul className="space-y-0.5 font-mono text-[11px] text-foreground/80">
-              {payload.crossParagraph.slice(0, 5).map((c, i) => (
-                <li key={i}>
-                  · <span className="text-destructive">{c.hint}</span> en{" "}
-                  {c.file}#p{c.paragraphIndex}
-                  {c.inTable ? " (tabla)" : ""}
-                </li>
-              ))}
-              {payload.crossParagraph.length > 5 && (
-                <li className="text-muted-foreground">
-                  …y {payload.crossParagraph.length - 5} más
-                </li>
-              )}
-            </ul>
-          </div>
+
+            {payload.crossParagraph.length > 0 && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-1.5">
+                <div className="font-semibold text-destructive flex items-center gap-1.5">
+                  ⚠️ La plantilla necesita corrección manual
+                </div>
+                <p className="text-muted-foreground">
+                  Se detectaron {payload.crossParagraph.length} tag(s) potencialmente
+                  cortados entre párrafos (saltos de línea dentro de <code>{"{...}"}</code>).
+                  El normalizador no puede repararlos automáticamente; abre la plantilla
+                  en Word y une cada tag en un solo párrafo.
+                </p>
+                <ul className="space-y-0.5 font-mono text-[11px] text-foreground/80">
+                  {payload.crossParagraph.slice(0, 5).map((c, i) => (
+                    <li key={i}>
+                      · <span className="text-destructive">{c.hint}</span> en{" "}
+                      {c.file}#p{c.paragraphIndex}
+                      {c.inTable ? " (tabla)" : ""}
+                    </li>
+                  ))}
+                  {payload.crossParagraph.length > 5 && (
+                    <li className="text-muted-foreground">
+                      …y {payload.crossParagraph.length - 5} más
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </>
         )}
 
         <div className="flex items-center gap-2">
           <Input
-            placeholder="Filtrar por nombre de variable…"
+            placeholder={isAdvanced ? "Filtrar por nombre de variable…" : "Buscar dato (ej: matrícula, vendedor, precio)…"}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="h-9"
