@@ -1925,12 +1925,21 @@ const Validacion = () => {
         );
       }
 
-      const doc = new Docxtemplater(zip, {
+      // Doble intento: primero estricto (errorLogging activo) → si lanza por
+      // tags desconocidos / rawxml, reintentamos con un nullGetter resiliente
+      // que devuelve "___________" para cualquier parte (default | tag | rawxml).
+      // No-bloqueante: si ambos fallan, el catch externo abre el modal de auditoría.
+      const buildDoc = (resilient: boolean) => new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
-        nullGetter: () => "___________",
+        errorLogging: !resilient,
+        nullGetter: (part: any) => {
+          if (resilient && part?.module === "rawxml") return "";
+          return "___________";
+        },
       });
+      let doc = buildDoc(false);
 
       // Helper to parse fecha for template date fields
       const parseFechaFields = (fecha: string) => {
