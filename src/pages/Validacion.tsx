@@ -2345,17 +2345,32 @@ const Validacion = () => {
         }
       }
 
-      const out = outZip.generate({
-        type: "blob",
-        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
+      let out: Blob;
+      try {
+        out = outZip.generate({
+          type: "blob",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        });
+        console.info("[generate-docx] blob ready bytes=", out?.size ?? 0);
+      } catch (zipErr: any) {
+        console.error("[generate-docx] outZip.generate fallo", zipErr);
+        throw new Error("Error al empaquetar el .docx: " + (zipErr?.message || String(zipErr)));
+      }
 
       const fileName = `Escritura_${actos.tipo_acto || "Tramite"}_${tramiteId.slice(0, 8)}.docx`;
-      const url = window.URL.createObjectURL(out);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      link.click();
+      try {
+        const url = window.URL.createObjectURL(out);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        // Liberar el objeto URL en el siguiente tick
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      } catch (dlErr: any) {
+        console.warn("[generate-docx] descarga directa falló (continúa upload):", dlErr);
+      }
 
       // Persist a copy in private bucket so it can be re-downloaded later without re-running AI.
       // Path MUST start with tramiteId — Phase 1 RLS enforces tramite_org_from_path() on first segment.
