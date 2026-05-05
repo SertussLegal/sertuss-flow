@@ -353,9 +353,20 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
             )}
           </TabsList>
 
+          {!payload && isAdvanced && (
+            <div className="text-xs text-muted-foreground italic px-3 py-2 mt-2 border border-white/5 rounded-md bg-white/[0.02]">
+              Genera una previsualización o descarga el .docx para poblar estas vistas.
+            </div>
+          )}
+
           <ScrollArea className="flex-1 mt-2 border rounded-md">
             <TabsContent value="guia" className="m-0">
-              <TagCatalogView sections={tagSections} filter={filter} toast={toast} />
+              <TagCatalogView
+                sections={tagSections}
+                filter={filter}
+                toast={toast}
+                emptyReason={!payload ? "no-payload" : undefined}
+              />
             </TabsContent>
             {isAdvanced && (
               <>
