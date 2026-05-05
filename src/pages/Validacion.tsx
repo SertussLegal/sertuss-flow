@@ -3138,27 +3138,8 @@ const Validacion = () => {
                 </TooltipContent>
               </Tooltip>
 
-              {/* Sync */}
-              {syncIndicator()}
-
-              {/* Guardar */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost-dark"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleSave}
-                    disabled={saving}
-                    aria-label="Guardar borrador"
-                  >
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
-                  Guardar borrador ahora
-                </TooltipContent>
-              </Tooltip>
+              {/* Sync silencioso */}
+              <SyncMicroText />
 
               {/* Re-descarga sin créditos (solo si ya hay docx generado) */}
               {docxPath && (
