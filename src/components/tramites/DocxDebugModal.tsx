@@ -92,6 +92,8 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
   const empty = filterStrings(payload.diff.empty);
   const missing = filterStrings(payload.diff.missing);
   const unused = filterStrings(payload.diff.unused);
+  const scoped = filterStrings(payload.diff.scoped ?? []);
+  const sectionsResolved = payload.diff.sectionsResolved ?? {};
   const allRows = filtered(allEntries);
 
   return (
