@@ -45,7 +45,6 @@ import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 import DocxDebugModal from "@/components/tramites/DocxDebugModal";
 import {
   isDebugDocxEnabled,
-  setDebugDocx,
   extractTemplateTags,
   buildAuditPayload,
   logDocxAuditToConsole,
@@ -3177,73 +3176,39 @@ const Validacion = () => {
                 </Tooltip>
               )}
 
-              {/* Toggle modo depuración variables — solo visible en dev o con ?debug=docx */}
-              {(import.meta.env.DEV || (typeof window !== "undefined" && window.location.search.includes("debug=docx"))) && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        const next = !debugDocxOn;
-                        setDebugDocx(next);
-                        setDebugDocxOn(next);
-                        sonnerToast.success(next ? "Depuración .docx ON" : "Depuración .docx OFF");
-                      }}
-                      className={
-                        debugDocxOn
-                          ? "h-9 w-9 shrink-0 bg-notarial-gold/15 border-notarial-gold/50 text-notarial-gold hover:bg-notarial-gold/25 hover:text-notarial-gold"
-                          : "h-9 w-9 shrink-0 border-white/15 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white hover:border-notarial-gold/40"
-                      }
-                      aria-label={debugDocxOn ? "Desactivar depuración .docx" : "Activar depuración .docx"}
-                      aria-pressed={debugDocxOn}
-                    >
-                      <Bug className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
-                    <div className="font-semibold">
-                      Depuración .docx · <span className={debugDocxOn ? "text-notarial-gold" : "text-white/60"}>{debugDocxOn ? "ON" : "OFF"}</span>
-                    </div>
-                    <div className="text-white/70 mt-0.5">Audita variables del .docx tras generar.</div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-
-              {/* Disparador del DocxDebugModal — solo cuando depuración está ON */}
-              {debugDocxOn && (import.meta.env.DEV || (typeof window !== "undefined" && window.location.search.includes("debug=docx"))) && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        const tab = profile?.role === "operator" ? "guia" : "all";
-                        setDebugInitialTab(tab);
-                        setDebugModalOpen(true);
-                      }}
-                      className="h-9 px-3 shrink-0 gap-2 border-notarial-gold/40 bg-notarial-gold/10 text-notarial-gold hover:bg-notarial-gold/20 hover:text-notarial-gold hover:border-notarial-gold/60"
-                      aria-label="Abrir guía y auditoría de la plantilla Word"
-                    >
-                      <BookOpen className="h-4 w-4" />
-                      <span className="hidden sm:inline">
-                        {profile?.role === "operator" ? "Ver Guía" : "Auditar Plantilla"}
-                      </span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[280px]">
-                    <div className="font-semibold text-notarial-gold">
-                      {profile?.role === "operator" ? "Guía de Tags" : "Auditoría de Plantilla"}
-                    </div>
-                    <div className="text-white/70 mt-0.5">
-                      {profile?.role === "operator"
-                        ? "Diccionario interactivo de variables de tu plantilla Word."
-                        : "Auditoría completa: tags, mapeo, vacíos, missing y exportación."}
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
+              {/* Único disparador del DocxDebugModal (Guía / Auditoría) */}
+              {(import.meta.env.DEV || (typeof window !== "undefined" && window.location.search.includes("debug=docx"))) && (() => {
+                const isAdmin = profile?.role === "owner" || profile?.role === "admin";
+                const Icon = isAdmin ? Bug : BookOpen;
+                const label = isAdmin ? "Auditar Plantilla" : "Ver Guía de Tags";
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setDebugInitialTab(isAdmin ? "all" : "guia");
+                          setDebugModalOpen(true);
+                        }}
+                        className="h-9 px-3 shrink-0 gap-2 border-notarial-gold/40 bg-notarial-gold/10 text-notarial-gold hover:bg-notarial-gold/20 hover:text-notarial-gold hover:border-notarial-gold/60"
+                        aria-label={label}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="hidden sm:inline">{label}</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[280px]">
+                      <div className="font-semibold text-notarial-gold">{label}</div>
+                      <div className="text-white/70 mt-0.5">
+                        {isAdmin
+                          ? "Auditoría completa: tags, mapeo, vacíos, missing y modo diagnóstico visual."
+                          : "Diccionario interactivo de variables de tu plantilla Word."}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })()}
 
               {/* Previsualizar (primario) */}
               <Tooltip>
@@ -3411,6 +3376,7 @@ const Validacion = () => {
         onOpenChange={setDebugModalOpen}
         payload={debugAuditPayload}
         initialTab={debugInitialTab}
+        onDebugVisualChange={setDebugDocxOn}
       />
 
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -21,8 +21,11 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Bug, Copy, Download, BookOpen, ClipboardCopy } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDebugDocxEnabled, setDebugDocx } from "@/lib/docxDebug";
 import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
 import {
   buildTagCatalog,
@@ -38,6 +41,8 @@ interface Props {
   payload: DocxAuditPayload | null;
   /** Pestaña inicial al abrir el modal. Si se omite, se decide por rol. */
   initialTab?: string;
+  /** Notifica al padre cuando admin activa/desactiva el diagnóstico visual. */
+  onDebugVisualChange?: (on: boolean) => void;
 }
 
 const formatValue = (v: unknown, max = 120): string => {
@@ -55,12 +60,24 @@ const formatValue = (v: unknown, max = 120): string => {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 };
 
-export default function DocxDebugModal({ open, onOpenChange, payload, initialTab }: Props) {
+export default function DocxDebugModal({ open, onOpenChange, payload, initialTab, onDebugVisualChange }: Props) {
   const { toast } = useToast();
   const { profile } = useAuth();
   const isAdvanced = profile?.role === "owner" || profile?.role === "admin";
   const canExport = isAdvanced;
   const [filter, setFilter] = useState("");
+  const [debugVisualOn, setDebugVisualOn] = useState<boolean>(() => isDebugDocxEnabled());
+
+  // Resincronizar con flag global cada vez que el modal se abre
+  useEffect(() => {
+    if (open) setDebugVisualOn(isDebugDocxEnabled());
+  }, [open]);
+
+  const handleToggleDebugVisual = (v: boolean) => {
+    setDebugDocx(v);
+    setDebugVisualOn(v);
+    onDebugVisualChange?.(v);
+  };
 
   const tagSections = useMemo<TagSection[]>(() => {
     if (!payload) return [];
@@ -225,7 +242,29 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
           </>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAdvanced && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-white/10 bg-white/5 shrink-0">
+                    <Bug className={cn("h-3.5 w-3.5", debugVisualOn ? "text-notarial-gold" : "text-white/50")} />
+                    <Label htmlFor="docx-debug-visual" className="text-xs text-white/80 cursor-pointer select-none">
+                      Diagnóstico visual
+                    </Label>
+                    <Switch
+                      id="docx-debug-visual"
+                      checked={debugVisualOn}
+                      onCheckedChange={handleToggleDebugVisual}
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[260px]">
+                  Activa indicadores visuales y auto-apertura de auditoría tras generar el .docx.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           <Input
             placeholder={isAdvanced ? "Filtrar por nombre de variable…" : "Buscar dato (ej: matrícula, vendedor, precio)…"}
             value={filter}
