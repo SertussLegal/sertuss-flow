@@ -235,7 +235,38 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
               <DataTable rows={allRows} />
             </TabsContent>
             <TabsContent value="mapped" className="m-0">
-              <TagList items={mapped} hint="Tag de la plantilla con valor utilizable" />
+              <TagList items={mapped} hint="Tag de la plantilla con valor utilizable (incluye los resueltos por loop scoped)." />
+            </TabsContent>
+            <TabsContent value="scoped" className="m-0">
+              <div className="p-3 space-y-3">
+                <p className="text-xs text-muted-foreground italic">
+                  Tags resueltos dentro de un loop <code>{"{#sección}…{/sección}"}</code>.
+                  Docxtemplater los lee del scope local de cada item del array.
+                </p>
+                {Object.keys(sectionsResolved).length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    Sin loops detectados.
+                  </div>
+                ) : (
+                  Object.entries(sectionsResolved).map(([section, keys]) => (
+                    <div key={section} className="space-y-1.5">
+                      <div className="text-xs font-semibold text-emerald-500">
+                        {"{#"}{section}{"}"} <span className="text-muted-foreground font-normal">({keys.length} sub-tags)</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {keys.map((k) => (
+                          <code
+                            key={`${section}-${k}`}
+                            className="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-500 bg-background/40"
+                          >
+                            {k}
+                          </code>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </TabsContent>
             <TabsContent value="empty" className="m-0">
               <TagList
