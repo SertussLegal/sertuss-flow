@@ -200,12 +200,15 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </div>
 
         <Tabs defaultValue="all" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-6 w-full">
+          <TabsList className="grid grid-cols-7 w-full">
             <TabsTrigger value="all">
               Todas <Badge variant="secondary" className="ml-1">{allRows.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="mapped">
               Mapeados <Badge variant="secondary" className="ml-1">{mapped.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="scoped">
+              Por loop <Badge variant="secondary" className="ml-1">{scoped.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="empty">
               Vacíos <Badge variant="secondary" className="ml-1">{empty.length}</Badge>
