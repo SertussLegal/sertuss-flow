@@ -112,13 +112,18 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </DialogHeader>
 
         {/* Resumen */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 text-xs">
           <Stat label="Tags plantilla" value={payload.counts.tags} />
           <Stat label="Claves data" value={payload.counts.flatKeys} />
           <Stat
             label="Mapeados"
             value={payload.counts.mapped}
             tone="success"
+          />
+          <Stat
+            label="Por loop"
+            value={payload.counts.scoped}
+            tone={payload.counts.scoped > 0 ? "success" : "muted"}
           />
           <Stat label="Vacíos" value={payload.counts.empty} tone="warning" />
           <Stat
