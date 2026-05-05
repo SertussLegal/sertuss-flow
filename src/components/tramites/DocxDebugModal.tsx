@@ -182,51 +182,51 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
           <>
             {/* Resumen */}
             <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 text-xs">
-              <Stat label="Tags plantilla" value={payload.counts.tags} />
-              <Stat label="Claves data" value={payload.counts.flatKeys} />
-              <Stat label="Mapeados" value={payload.counts.mapped} tone="success" />
+              <Stat label="Tags plantilla" value={counts.tags} />
+              <Stat label="Claves data" value={counts.flatKeys} />
+              <Stat label="Mapeados" value={counts.mapped} tone="success" />
               <Stat
                 label="Por loop"
-                value={payload.counts.scoped}
-                tone={payload.counts.scoped > 0 ? "success" : "muted"}
+                value={counts.scoped}
+                tone={counts.scoped > 0 ? "success" : "muted"}
               />
-              <Stat label="Vacíos" value={payload.counts.empty} tone="warning" />
-              <Stat label="Missing" value={payload.counts.missing} tone="danger" />
-              <Stat label="Sin uso" value={payload.counts.unused} tone="muted" />
+              <Stat label="Vacíos" value={counts.empty} tone="warning" />
+              <Stat label="Missing" value={counts.missing} tone="danger" />
+              <Stat label="Sin uso" value={counts.unused} tone="muted" />
               <Stat
                 label="Rescatados"
-                value={payload.counts.rescued}
-                tone={payload.counts.rescued > 0 ? "success" : "muted"}
+                value={counts.rescued}
+                tone={counts.rescued > 0 ? "success" : "muted"}
               />
               <Stat
                 label="Cross-párrafo"
-                value={payload.counts.crossParagraph}
-                tone={payload.counts.crossParagraph > 0 ? "danger" : "muted"}
+                value={counts.crossParagraph}
+                tone={counts.crossParagraph > 0 ? "danger" : "muted"}
               />
             </div>
 
-            {payload.crossParagraph.length > 0 && (
+            {crossParagraph.length > 0 && (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-1.5">
                 <div className="font-semibold text-destructive flex items-center gap-1.5">
                   ⚠️ La plantilla necesita corrección manual
                 </div>
                 <p className="text-muted-foreground">
-                  Se detectaron {payload.crossParagraph.length} tag(s) potencialmente
+                  Se detectaron {crossParagraph.length} tag(s) potencialmente
                   cortados entre párrafos (saltos de línea dentro de <code>{"{...}"}</code>).
                   El normalizador no puede repararlos automáticamente; abre la plantilla
                   en Word y une cada tag en un solo párrafo.
                 </p>
                 <ul className="space-y-0.5 font-mono text-[11px] text-foreground/80">
-                  {payload.crossParagraph.slice(0, 5).map((c, i) => (
+                  {crossParagraph.slice(0, 5).map((c, i) => (
                     <li key={i}>
                       · <span className="text-destructive">{c.hint}</span> en{" "}
                       {c.file}#p{c.paragraphIndex}
                       {c.inTable ? " (tabla)" : ""}
                     </li>
                   ))}
-                  {payload.crossParagraph.length > 5 && (
+                  {crossParagraph.length > 5 && (
                     <li className="text-muted-foreground">
-                      …y {payload.crossParagraph.length - 5} más
+                      …y {crossParagraph.length - 5} más
                     </li>
                   )}
                 </ul>
