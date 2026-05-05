@@ -3410,6 +3410,7 @@ const Validacion = () => {
         open={debugModalOpen}
         onOpenChange={setDebugModalOpen}
         payload={debugAuditPayload}
+        initialTab={debugInitialTab}
       />
 
 
