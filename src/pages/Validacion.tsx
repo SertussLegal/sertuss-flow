@@ -3337,7 +3337,31 @@ const Validacion = () => {
         </Sheet>
       </div>
 
-      <PreviewModal
+      {/* Footer flotante de acciones */}
+      <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-white/10 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || saving}
+            className="h-9 gap-2 border-white/15 bg-white/5 text-white hover:bg-white/10"
+          >
+            {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Guardar borrador
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || savingDraft}
+            className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Finalizar y validar
+          </Button>
+        </div>
+      </footer>
+
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         vendedores={vendedores}
