@@ -1,13 +1,11 @@
 /**
  * DocxDebug — herramientas de auditoría para `doc.render(structuredData)`.
  *
- * Permite detectar mismatches entre los tags `{xxx}` definidos en la plantilla
- * Word y las claves disponibles en el objeto `structuredData` que se inyecta.
- *
- * Tres capas de uso:
- *  - `extractTemplateTags`: lee los tags reales de la plantilla.
- *  - `flattenStructuredData`: aplana el objeto inyectado.
- *  - `diffTagsVsData`: produce el reporte (missing / unused / empty).
+ * Detecta mismatches entre los tags `{xxx}` de la plantilla Word y las claves
+ * disponibles en `structuredData`, con soporte para:
+ *  - Loops simples: `{#vendedores}{nombre}{/vendedores}`
+ *  - Sub-claves profundas: `{direccion.ciudad}` dentro de un loop
+ *  - Loops anidados: `{#compradores}{#apoderados}{nombre}{/}{/}`
  *
  * Toggle de UI persistente: localStorage `sertuss.debugDocx = "1"`.
  */
@@ -40,10 +38,6 @@ export function setDebugDocx(enabled: boolean): void {
 
 // ── Extracción de tags desde el .docx ────────────────────────────────────
 
-/**
- * Lee los tags `{xxx}`, `{#xxx}`, `{/xxx}`, `{^xxx}` de todos los XML
- * relevantes (document, headers, footers) de la plantilla Word.
- */
 export async function extractTemplateTags(zipContent: ArrayBuffer): Promise<string[]> {
   try {
     const zip = new PizZip(zipContent);
@@ -55,15 +49,12 @@ export async function extractTemplateTags(zipContent: ArrayBuffer): Promise<stri
     );
 
     const found = new Set<string>();
-    // Word frecuentemente fragmenta los tags entre <w:t> runs; por eso primero
-    // limpiamos las etiquetas XML para reconstruir el texto plano.
     const tagRegex = /\{[#/^]?([a-zA-Z0-9_.-]+)\}/g;
 
     for (const fileName of xmlFiles) {
       const file = zip.file(fileName);
       if (!file) continue;
       const xml = file.asText();
-      // Strip tags de Word para que los `{x}` partidos vuelvan a ser contiguos
       const text = xml.replace(/<[^>]+>/g, "");
       let m: RegExpExecArray | null;
       while ((m = tagRegex.exec(text)) !== null) {
@@ -89,10 +80,6 @@ export interface FlatEntry {
   isEmpty: boolean;
 }
 
-/**
- * Aplana un objeto anidado en pares clave-valor con notación de puntos.
- * Arrays → `vendedores[0].nombre`. Objetos planos → `inmueble.matricula`.
- */
 export function flattenStructuredData(
   data: unknown,
   prefix = "",
@@ -148,25 +135,48 @@ export function flattenStructuredData(
 // ── Diff plantilla ↔ datos ───────────────────────────────────────────────
 
 export interface DocxDiff {
-  /** Tags que la plantilla espera pero no existen como clave en data → `___________` */
   missing: string[];
-  /** Claves enviadas en data que ningún tag consume → posibles aliases muertos */
   unused: string[];
-  /** Tags presentes pero con valor vacío/placeholder */
   empty: string[];
-  /** Tags presentes con valor utilizable */
   mapped: string[];
-  /** Tags resueltos dentro de un loop `{#section}…{/section}` (scope local). */
   scoped: string[];
-  /** Mapa sección → sub-tags consumidos por el loop. */
+  /** Mapa sección → sub-tags consumidos por el loop (incluye anidados). */
   sectionsResolved: Record<string, string[]>;
 }
 
+interface SectionInfo {
+  /** Local paths (arrays stripped) que existen como datos dentro de la sección. */
+  locals: Set<string>;
+  /** Cantidad de items observados (índice máximo + 1). */
+  items: number;
+  /** Por cada local path, cuántos items lo tienen vacío. */
+  emptyByLocal: Record<string, number>;
+}
+
+const INDEX_RE = /\[(\d+)\]/g;
+
 /**
- * Compara los tags de la plantilla con el flat data.
- * Considera coincidencia exacta y también por "raíz" (un tag `inmueble`
- * matchea cualquier `inmueble.*` ya que es una sección/loop).
+ * Para una flat key (p.ej. `compradores[0].apoderados[0].nombre`) devuelve
+ * todas las "ventanas de scope" que crearía Docxtemplater al iterar arrays:
+ *   { section: 'compradores', local: 'apoderados.nombre', emptyContrib }
+ *   { section: 'apoderados',  local: 'nombre',            emptyContrib }
  */
+function deriveScopes(key: string): Array<{ section: string; local: string }> {
+  const out: Array<{ section: string; local: string }> = [];
+  const matches = Array.from(key.matchAll(INDEX_RE));
+  for (const m of matches) {
+    const pos = m.index ?? 0;
+    const before = key.slice(0, pos);
+    const section = before.split(/[.[]/).pop() || "";
+    if (!section) continue;
+    let local = key.slice(pos + m[0].length);
+    if (local.startsWith(".")) local = local.slice(1);
+    local = local.replace(/\[\d+\]/g, "");
+    out.push({ section, local });
+  }
+  return out;
+}
+
 export function diffTagsVsData(
   tags: string[],
   flat: Record<string, FlatEntry>,
@@ -175,31 +185,35 @@ export function diffTagsVsData(
   const flatKeySet = new Set(flatKeys);
   const tagSet = new Set(tags);
 
-  // ── Detectar arrays/secciones en el flat: cualquier raíz `R` con claves `R[i].x`
-  //    se trata como sección iterable. Recolectamos sub-claves locales y si todos
-  //    los items tienen valor vacío en esa sub-clave para marcarlas como "empty".
-  const sectionRoots = new Set<string>();
-  const sectionLocalKeys: Record<string, Set<string>> = {};
-  const sectionItemCount: Record<string, number> = {};
-  const sectionEmptyTally: Record<string, Record<string, number>> = {};
-
-  const arrayKeyRe = /^([a-zA-Z0-9_]+)\[(\d+)\](?:\.(.+))?$/;
+  // 1. Construir mapa de secciones (con soporte para loops anidados).
+  const sections: Record<string, SectionInfo> = {};
   for (const k of flatKeys) {
-    const m = arrayKeyRe.exec(k);
-    if (!m) continue;
-    const [, root, idxStr, sub] = m;
-    sectionRoots.add(root);
-    sectionItemCount[root] = Math.max(sectionItemCount[root] ?? 0, parseInt(idxStr, 10) + 1);
-    if (!sub) continue;
-    // Solo registramos la primera "hoja" del sub-path como tag local del loop
-    // (Docxtemplater resuelve `{nombre}` o `{cedula}` en scope local).
-    const local = sub.split(/[.[]/)[0];
-    if (!sectionLocalKeys[root]) sectionLocalKeys[root] = new Set();
-    sectionLocalKeys[root].add(local);
-    if (!sectionEmptyTally[root]) sectionEmptyTally[root] = {};
-    const e = flat[k];
-    if (e?.isEmpty) {
-      sectionEmptyTally[root][local] = (sectionEmptyTally[root][local] ?? 0) + 1;
+    const scopes = deriveScopes(k);
+    const isEmpty = !!flat[k]?.isEmpty;
+    // Conteo de items por sección: usamos el índice del array que pertenece
+    // a esa sección (el `[i]` cuyo segmento previo es el nombre de la sección).
+    const matches = Array.from(k.matchAll(INDEX_RE));
+    matches.forEach((m) => {
+      const pos = m.index ?? 0;
+      const sectionName = k.slice(0, pos).split(/[.[]/).pop() || "";
+      if (!sectionName) return;
+      const idx = parseInt(m[1], 10);
+      const sec = (sections[sectionName] ??= { locals: new Set(), items: 0, emptyByLocal: {} });
+      sec.items = Math.max(sec.items, idx + 1);
+    });
+    for (const { section, local } of scopes) {
+      const sec = (sections[section] ??= { locals: new Set(), items: 0, emptyByLocal: {} });
+      if (local) {
+        sec.locals.add(local);
+        const first = local.split(".")[0];
+        if (first && first !== local) sec.locals.add(first);
+        if (isEmpty) {
+          sec.emptyByLocal[local] = (sec.emptyByLocal[local] ?? 0) + 1;
+          if (first && first !== local) {
+            sec.emptyByLocal[first] = (sec.emptyByLocal[first] ?? 0) + 1;
+          }
+        }
+      }
     }
   }
 
@@ -210,64 +224,54 @@ export function diffTagsVsData(
   const sectionsResolved: Record<string, string[]> = {};
 
   for (const tag of tags) {
-    // Match exacto (ej. "matricula_inmobiliaria")
+    // (a) Match exacto.
     if (flatKeySet.has(tag)) {
       const e = flat[tag];
       if (e.isEmpty) empty.push(tag);
       else mapped.push(tag);
       continue;
     }
-    // Match por sección/loop (ej. tag "vendedores" → existe "vendedores[0].nombre")
-    const sectionMatch = flatKeys.find((k) => k === tag || k.startsWith(`${tag}.`) || k.startsWith(`${tag}[`));
-    if (sectionMatch) {
+    // (b) Match por sección/loop a nivel root (existe `tag.x` o `tag[i]`).
+    if (flatKeys.some((k) => k.startsWith(`${tag}.`) || k.startsWith(`${tag}[`))) {
       mapped.push(tag);
       continue;
     }
-    // Match scoped: el tag corresponde a una sub-clave dentro de algún array.
-    // Docxtemplater resuelve `{nombre}` en `{#vendedores}…{nombre}…{/vendedores}`.
-    let resolvedInSection: string | null = null;
-    for (const root of sectionRoots) {
-      if (sectionLocalKeys[root]?.has(tag)) {
-        resolvedInSection = root;
+    // (c) Match scoped en cualquier sección (incluye loops anidados).
+    let resolvedSection: string | null = null;
+    for (const [sec, info] of Object.entries(sections)) {
+      if (info.locals.has(tag)) {
+        resolvedSection = sec;
         break;
       }
     }
-    if (resolvedInSection) {
+    if (resolvedSection) {
       scoped.push(tag);
-      const items = sectionItemCount[resolvedInSection] ?? 0;
-      const emptyCount = sectionEmptyTally[resolvedInSection]?.[tag] ?? 0;
-      // Si TODOS los items del array tienen este sub-valor vacío → empty;
-      // de lo contrario → mapped.
-      if (items > 0 && emptyCount >= items) empty.push(tag);
+      const info = sections[resolvedSection];
+      const emptyCount = info.emptyByLocal[tag] ?? 0;
+      if (info.items > 0 && emptyCount >= info.items) empty.push(tag);
       else mapped.push(tag);
-      if (!sectionsResolved[resolvedInSection]) sectionsResolved[resolvedInSection] = [];
-      sectionsResolved[resolvedInSection].push(tag);
+      (sectionsResolved[resolvedSection] ??= []).push(tag);
       continue;
     }
     missing.push(tag);
   }
 
-  // Aliases sin uso: claves en data que no son consumidas por ningún tag.
+  // (d) Aliases sin uso: claves no consumidas por ningún tag (root o scoped).
   const unused: string[] = [];
   for (const key of flatKeys) {
-    // Si es exactamente un tag → usado.
     if (tagSet.has(key)) continue;
-    // Si su raíz (antes del primer `.` o `[`) es un tag → usado por un loop/sección.
     const root = key.split(/[.[]/)[0];
     if (tagSet.has(root)) continue;
-    // Padres intermedios (ej. "inmueble" cuando el tag es "inmueble.matricula"):
-    // si algún tag empieza con `key.` lo consideramos consumido.
     if (tags.some((t) => t.startsWith(`${key}.`))) continue;
-    // Sub-clave de un array cuyo tag local existe (resuelto por loop scoped):
-    // p.ej. `vendedores[0].nombre` consumido por `{nombre}` dentro de `{#vendedores}`.
-    const arrM = arrayKeyRe.exec(key);
-    if (arrM) {
-      const [, arrRoot, , sub] = arrM;
-      if (sub) {
-        const local = sub.split(/[.[]/)[0];
-        if (sectionLocalKeys[arrRoot]?.has(local) && tagSet.has(local)) continue;
-      }
-    }
+    // ¿Alguna ventana de scope produce un local que es un tag?
+    const scopes = deriveScopes(key);
+    const consumedByScope = scopes.some(({ local }) => {
+      if (!local) return false;
+      if (tagSet.has(local)) return true;
+      const first = local.split(".")[0];
+      return !!first && tagSet.has(first);
+    });
+    if (consumedByScope) continue;
     unused.push(key);
   }
 
@@ -276,7 +280,7 @@ export function diffTagsVsData(
     unused: unused.sort(),
     empty: Array.from(new Set(empty)).sort(),
     mapped: Array.from(new Set(mapped)).sort(),
-    scoped: scoped.sort(),
+    scoped: Array.from(new Set(scoped)).sort(),
     sectionsResolved: Object.fromEntries(
       Object.entries(sectionsResolved).map(([k, v]) => [k, Array.from(new Set(v)).sort()]),
     ),
@@ -362,9 +366,6 @@ export function buildAuditPayload(args: {
   };
 }
 
-/**
- * Console.log estructurado y agrupado para inspección rápida en DevTools.
- */
 export function logDocxAuditToConsole(payload: DocxAuditPayload): void {
   /* eslint-disable no-console */
   console.groupCollapsed(
@@ -372,12 +373,11 @@ export function logDocxAuditToConsole(payload: DocxAuditPayload): void {
     "color:#E4B800;font-weight:bold;",
   );
   console.log("Counts:", payload.counts);
-  console.log(
-    `Missing en data (riesgo de ${PLACEHOLDER}):`,
-    payload.diff.missing,
-  );
+  console.log(`Missing en data (riesgo de ${PLACEHOLDER}):`, payload.diff.missing);
   console.log("Aliases sin uso:", payload.diff.unused);
   console.log("Tags vacíos:", payload.diff.empty);
+  console.log("Scoped (resueltos por loop):", payload.diff.scoped);
+  console.log("Secciones detectadas:", payload.diff.sectionsResolved);
   if (payload.rescued.length > 0) {
     console.log("Tags rescatados (split runs reconstruidos):", payload.rescued);
   }
