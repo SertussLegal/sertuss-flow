@@ -3176,35 +3176,30 @@ const Validacion = () => {
                 </Tooltip>
               )}
 
-              {/* Único disparador del DocxDebugModal (Guía / Auditoría) */}
+              {/* Único disparador del DocxDebugModal — solo icono */}
               {(() => {
                 const isAdmin = profile?.role === "owner" || profile?.role === "admin";
                 const Icon = isAdmin ? Bug : BookOpen;
-                const label = isAdmin ? "Auditar Plantilla" : "Ver Guía de Tags";
+                const label = isAdmin ? "Auditar variables de plantilla" : "Ver Guía de Tags";
                 return (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         type="button"
                         variant="outline"
+                        size="icon"
                         onClick={() => {
                           setDebugInitialTab(isAdmin ? "all" : "guia");
                           setDebugModalOpen(true);
                         }}
-                        className="h-9 px-3 shrink-0 gap-2 border-notarial-gold/40 bg-notarial-gold/10 text-notarial-gold hover:bg-notarial-gold/20 hover:text-notarial-gold hover:border-notarial-gold/60"
+                        className="h-9 w-9 shrink-0 border-notarial-gold/30 bg-transparent hover:bg-notarial-gold/10 text-notarial-gold hover:text-notarial-gold hover:border-notarial-gold/60"
                         aria-label={label}
                       >
                         <Icon className="h-4 w-4" />
-                        <span className="hidden sm:inline">{label}</span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[280px]">
-                      <div className="font-semibold text-notarial-gold">{label}</div>
-                      <div className="text-white/70 mt-0.5">
-                        {isAdmin
-                          ? "Auditoría completa: tags, mapeo, vacíos, missing y modo diagnóstico visual."
-                          : "Diccionario interactivo de variables de tu plantilla Word."}
-                      </div>
+                    <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                      {label}
                     </TooltipContent>
                   </Tooltip>
                 );

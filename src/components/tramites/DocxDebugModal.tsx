@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Bug, Copy, Download, BookOpen, ClipboardCopy } from "lucide-react";
+import { Bug, Copy, Download, BookOpen, ClipboardCopy, FileText } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isDebugDocxEnabled, setDebugDocx } from "@/lib/docxDebug";
 import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
@@ -81,7 +81,11 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
 
   const tagSections = useMemo<TagSection[]>(() => {
     if (!payload) return [];
-    return buildTagCatalog(payload.tags, payload.flat, payload.diff);
+    try {
+      return buildTagCatalog(payload.tags ?? [], payload.flat ?? {}, payload.diff);
+    } catch {
+      return [];
+    }
   }, [payload]);
 
   const allEntries = useMemo<FlatEntry[]>(
@@ -124,39 +128,26 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
 
   const resolvedInitialTab = initialTab ?? (isAdvanced ? "all" : "guia");
 
-  if (!payload) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-notarial-gold" />
-              {isAdvanced ? "Auditoría de variables del .docx" : "Guía de tags de tu plantilla Word"}
-            </DialogTitle>
-            <DialogDescription className="pt-2 text-white/70">
-              Aún no se ha generado ningún documento en esta sesión. Genera el .docx
-              (Previsualizar o Descargar Word) para auditar las variables y ver la guía
-              completa de tags.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end pt-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Entendido
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-
-  const mapped = filterStrings(payload.diff.mapped);
-  const empty = filterStrings(payload.diff.empty);
-  const missing = filterStrings(payload.diff.missing);
-  const unused = filterStrings(payload.diff.unused);
-  const scoped = filterStrings(payload.diff.scoped ?? []);
-  const sectionsResolved = payload.diff.sectionsResolved ?? {};
+  const mapped = filterStrings(payload?.diff.mapped ?? []);
+  const empty = filterStrings(payload?.diff.empty ?? []);
+  const missing = filterStrings(payload?.diff.missing ?? []);
+  const unused = filterStrings(payload?.diff.unused ?? []);
+  const scoped = filterStrings(payload?.diff.scoped ?? []);
+  const sectionsResolved = payload?.diff.sectionsResolved ?? {};
   const allRows = filtered(allEntries);
+  const counts = payload?.counts ?? {
+    tags: 0,
+    flatKeys: 0,
+    mapped: 0,
+    scoped: 0,
+    empty: 0,
+    missing: 0,
+    unused: 0,
+    rescued: 0,
+    crossParagraph: 0,
+  };
+  const crossParagraph = payload?.crossParagraph ?? [];
+  const rescued = payload?.rescued ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -171,7 +162,9 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
             {isAdvanced ? "Auditoría de variables del .docx" : "Guía de tags de tu plantilla Word"}
           </DialogTitle>
           <DialogDescription>
-            {isAdvanced ? (
+            {!payload ? (
+              <span className="italic text-muted-foreground">Sin documento generado todavía</span>
+            ) : isAdvanced ? (
               <>
                 Trámite{" "}
                 <span className="font-mono text-xs">
@@ -189,51 +182,51 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
           <>
             {/* Resumen */}
             <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 text-xs">
-              <Stat label="Tags plantilla" value={payload.counts.tags} />
-              <Stat label="Claves data" value={payload.counts.flatKeys} />
-              <Stat label="Mapeados" value={payload.counts.mapped} tone="success" />
+              <Stat label="Tags plantilla" value={counts.tags} />
+              <Stat label="Claves data" value={counts.flatKeys} />
+              <Stat label="Mapeados" value={counts.mapped} tone="success" />
               <Stat
                 label="Por loop"
-                value={payload.counts.scoped}
-                tone={payload.counts.scoped > 0 ? "success" : "muted"}
+                value={counts.scoped}
+                tone={counts.scoped > 0 ? "success" : "muted"}
               />
-              <Stat label="Vacíos" value={payload.counts.empty} tone="warning" />
-              <Stat label="Missing" value={payload.counts.missing} tone="danger" />
-              <Stat label="Sin uso" value={payload.counts.unused} tone="muted" />
+              <Stat label="Vacíos" value={counts.empty} tone="warning" />
+              <Stat label="Missing" value={counts.missing} tone="danger" />
+              <Stat label="Sin uso" value={counts.unused} tone="muted" />
               <Stat
                 label="Rescatados"
-                value={payload.counts.rescued}
-                tone={payload.counts.rescued > 0 ? "success" : "muted"}
+                value={counts.rescued}
+                tone={counts.rescued > 0 ? "success" : "muted"}
               />
               <Stat
                 label="Cross-párrafo"
-                value={payload.counts.crossParagraph}
-                tone={payload.counts.crossParagraph > 0 ? "danger" : "muted"}
+                value={counts.crossParagraph}
+                tone={counts.crossParagraph > 0 ? "danger" : "muted"}
               />
             </div>
 
-            {payload.crossParagraph.length > 0 && (
+            {crossParagraph.length > 0 && (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-1.5">
                 <div className="font-semibold text-destructive flex items-center gap-1.5">
                   ⚠️ La plantilla necesita corrección manual
                 </div>
                 <p className="text-muted-foreground">
-                  Se detectaron {payload.crossParagraph.length} tag(s) potencialmente
+                  Se detectaron {crossParagraph.length} tag(s) potencialmente
                   cortados entre párrafos (saltos de línea dentro de <code>{"{...}"}</code>).
                   El normalizador no puede repararlos automáticamente; abre la plantilla
                   en Word y une cada tag en un solo párrafo.
                 </p>
                 <ul className="space-y-0.5 font-mono text-[11px] text-foreground/80">
-                  {payload.crossParagraph.slice(0, 5).map((c, i) => (
+                  {crossParagraph.slice(0, 5).map((c, i) => (
                     <li key={i}>
                       · <span className="text-destructive">{c.hint}</span> en{" "}
                       {c.file}#p{c.paragraphIndex}
                       {c.inTable ? " (tabla)" : ""}
                     </li>
                   ))}
-                  {payload.crossParagraph.length > 5 && (
+                  {crossParagraph.length > 5 && (
                     <li className="text-muted-foreground">
-                      …y {payload.crossParagraph.length - 5} más
+                      …y {crossParagraph.length - 5} más
                     </li>
                   )}
                 </ul>
@@ -280,6 +273,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                     variant="outline"
                     size="icon"
                     onClick={handleCopyJson}
+                    disabled={!payload}
                     aria-label="Copiar JSON de auditoría"
                     className="h-9 w-9 shrink-0"
                   >
@@ -295,6 +289,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                     variant="outline"
                     size="icon"
                     onClick={handleDownloadJson}
+                    disabled={!payload}
                     aria-label="Descargar reporte de auditoría"
                     className="h-9 w-9 shrink-0"
                   >
@@ -348,19 +343,30 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                 <TabsTrigger value="rescued">
                   Rescatados{" "}
                   <Badge
-                    variant={payload.counts.rescued > 0 ? "default" : "secondary"}
+                    variant={counts.rescued > 0 ? "default" : "secondary"}
                     className="ml-1"
                   >
-                    {payload.counts.rescued}
+                    {counts.rescued}
                   </Badge>
                 </TabsTrigger>
               </>
             )}
           </TabsList>
 
+          {!payload && isAdvanced && (
+            <div className="text-xs text-muted-foreground italic px-3 py-2 mt-2 border border-white/5 rounded-md bg-white/[0.02]">
+              Genera una previsualización o descarga el .docx para poblar estas vistas.
+            </div>
+          )}
+
           <ScrollArea className="flex-1 mt-2 border rounded-md">
             <TabsContent value="guia" className="m-0">
-              <TagCatalogView sections={tagSections} filter={filter} toast={toast} />
+              <TagCatalogView
+                sections={tagSections}
+                filter={filter}
+                toast={toast}
+                emptyReason={!payload ? "no-payload" : undefined}
+              />
             </TabsContent>
             {isAdvanced && (
               <>
@@ -423,7 +429,7 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                   />
                 </TabsContent>
                 <TabsContent value="rescued" className="m-0">
-                  <RescuedList items={payload.rescued} />
+                  <RescuedList items={rescued} />
                 </TabsContent>
               </>
             )}
@@ -625,11 +631,31 @@ function TagCatalogView({
   sections,
   filter,
   toast,
+  emptyReason,
 }: {
   sections: TagSection[];
   filter: string;
   toast: ReturnType<typeof useToast>["toast"];
+  emptyReason?: "no-payload";
 }) {
+  if (emptyReason === "no-payload" || sections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-16 px-8 gap-4 min-h-[320px]">
+        <div className="rounded-full bg-white/5 border border-white/10 p-6">
+          <FileText className="h-12 w-12 text-muted-foreground/40" strokeWidth={1.5} />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground">
+          Aún no hay datos de la plantilla
+        </h3>
+        <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
+          Para activar la guía interactiva, clasificar los tags y ver sus valores
+          de ejemplo en tiempo real, primero genera una previsualización o descarga
+          el Word de este trámite.
+        </p>
+      </div>
+    );
+  }
+
   // Filtrado: una sección se muestra si tiene al menos un block que matchee.
   const filtered = sections
     .map((sec) => {
