@@ -3177,7 +3177,7 @@ const Validacion = () => {
               )}
 
               {/* Único disparador del DocxDebugModal (Guía / Auditoría) */}
-              {(import.meta.env.DEV || (typeof window !== "undefined" && window.location.search.includes("debug=docx"))) && (() => {
+              {(() => {
                 const isAdmin = profile?.role === "owner" || profile?.role === "admin";
                 const Icon = isAdmin ? Bug : BookOpen;
                 const label = isAdmin ? "Auditar Plantilla" : "Ver Guía de Tags";
