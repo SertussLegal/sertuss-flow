@@ -525,3 +525,210 @@ function RescuedList({ items }: { items: RescuedTagEntry[] }) {
     </div>
   );
 }
+
+// ── Pestaña "Guía" — diccionario amigable de tags ────────────────────────
+
+function statusBadge(status: TagCardData["status"]) {
+  switch (status) {
+    case "scoped":
+      return { label: "Por loop", cls: "border-notarial-gold/40 text-notarial-gold" };
+    case "empty":
+      return { label: "Vacío", cls: "border-orange-500/40 text-orange-500" };
+    case "missing":
+      return { label: "Faltante", cls: "border-destructive/40 text-destructive" };
+    case "mapped":
+    default:
+      return { label: "Listo", cls: "border-emerald-500/40 text-emerald-500" };
+  }
+}
+
+function matchesFilter(card: TagCardData, q: string) {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  return (
+    card.friendlyLabel.toLowerCase().includes(needle) ||
+    card.tag.toLowerCase().includes(needle) ||
+    card.rawKey.toLowerCase().includes(needle) ||
+    card.exampleValue.toLowerCase().includes(needle)
+  );
+}
+
+function TagCatalogView({
+  sections,
+  filter,
+  toast,
+}: {
+  sections: TagSection[];
+  filter: string;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  // Filtrado: una sección se muestra si tiene al menos un block que matchee.
+  const filtered = sections
+    .map((sec) => {
+      const blocks = sec.blocks
+        .map((b) => {
+          if (b.kind === "loop") {
+            const items = b.items.filter((i) => matchesFilter(i, filter));
+            return items.length > 0 ? { ...b, items } : null;
+          }
+          return matchesFilter(b.card, filter) ? b : null;
+        })
+        .filter((b): b is NonNullable<typeof b> => b !== null);
+      return { ...sec, blocks };
+    })
+    .filter((s) => s.blocks.length > 0);
+
+  if (filtered.length === 0) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        Sin coincidencias para tu búsqueda.
+      </div>
+    );
+  }
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <div className="p-3 space-y-5">
+        {filtered.map((sec) => (
+          <section key={sec.id} className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">{sec.title}</h3>
+                <p className="text-xs text-muted-foreground">{sec.description}</p>
+              </div>
+              <Badge variant="outline" className="text-[10px] shrink-0">
+                {sec.blocks.reduce(
+                  (n, b) => n + (b.kind === "loop" ? b.items.length : 1),
+                  0,
+                )}{" "}
+                tags
+              </Badge>
+            </div>
+
+            <div className="space-y-3">
+              {sec.blocks.map((b, i) =>
+                b.kind === "loop" ? (
+                  <LoopBlockView key={`loop-${sec.id}-${i}`} block={b} toast={toast} />
+                ) : (
+                  <TagCardView key={`tag-${sec.id}-${b.card.rawKey}`} card={b.card} toast={toast} />
+                ),
+              )}
+            </div>
+          </section>
+        ))}
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function LoopBlockView({
+  block,
+  toast,
+}: {
+  block: CatalogLoopBlock;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const handleCopyAll = async () => {
+    const all = block.items.map((it) => it.tag).join("\n");
+    const text = `{#${block.loopName}}\n${all}\n{/${block.loopName}}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: `Bloque {#${block.loopName}} copiado` });
+    } catch {
+      toast({ title: "No se pudo copiar", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-dashed border-notarial-gold/40 bg-notarial-gold/[0.04] p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <code className="text-xs font-mono text-notarial-gold">
+          {`{#${block.loopName}}`}
+        </code>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleCopyAll}
+              aria-label={`Copiar bloque {#${block.loopName}}`}
+              className="h-7 w-7 text-notarial-gold hover:bg-notarial-gold/10"
+            >
+              <ClipboardCopy className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Copiar bloque completo</TooltipContent>
+        </Tooltip>
+      </div>
+      <p className="text-[11px] text-muted-foreground italic">
+        Todo lo que esté dentro de este bloque se repite automáticamente por cada{" "}
+        <span className="text-notarial-gold/80">{block.loopName.replace(/s$/, "")}</span> del trámite.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {block.items.map((card) => (
+          <TagCardView key={card.rawKey} card={card} toast={toast} />
+        ))}
+      </div>
+      <code className="block text-xs font-mono text-notarial-gold">
+        {`{/${block.loopName}}`}
+      </code>
+    </div>
+  );
+}
+
+function TagCardView({
+  card,
+  toast,
+}: {
+  card: TagCardData;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const badge = statusBadge(card.status);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(card.tag);
+      toast({ title: "Tag copiado", description: card.tag });
+    } catch {
+      toast({ title: "No se pudo copiar", variant: "destructive" });
+    }
+  };
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] backdrop-blur-sm hover:border-notarial-gold/30 transition-colors p-2.5 space-y-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-xs font-medium text-foreground leading-snug">
+          {card.friendlyLabel}
+        </span>
+        <Badge variant="outline" className={cn("text-[10px] shrink-0", badge.cls)}>
+          {badge.label}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <code className="flex-1 text-[11px] font-mono px-2 py-1 rounded border border-white/10 bg-background/60 text-foreground/90 truncate">
+          {card.tag}
+        </code>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleCopy}
+              aria-label={`Copiar ${card.tag}`}
+              className="h-7 w-7 shrink-0 text-foreground/70 hover:text-notarial-gold hover:bg-notarial-gold/10"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Copiar tag</TooltipContent>
+        </Tooltip>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Ejemplo:{" "}
+        <span className={cn("font-mono", card.exampleValue === "—" && "italic opacity-60")}>
+          {card.exampleValue}
+        </span>
+      </p>
+    </div>
+  );
+}
