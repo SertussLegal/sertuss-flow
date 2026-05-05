@@ -36,6 +36,8 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   payload: DocxAuditPayload | null;
+  /** Pestaña inicial al abrir el modal. Si se omite, se decide por rol. */
+  initialTab?: string;
 }
 
 const formatValue = (v: unknown, max = 120): string => {
@@ -53,7 +55,7 @@ const formatValue = (v: unknown, max = 120): string => {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 };
 
-export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
+export default function DocxDebugModal({ open, onOpenChange, payload, initialTab }: Props) {
   const { toast } = useToast();
   const { profile } = useAuth();
   const isAdvanced = profile?.role === "owner" || profile?.role === "admin";
@@ -103,7 +105,33 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  if (!payload) return null;
+  const resolvedInitialTab = initialTab ?? (isAdvanced ? "all" : "guia");
+
+  if (!payload) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-notarial-gold" />
+              {isAdvanced ? "Auditoría de variables del .docx" : "Guía de tags de tu plantilla Word"}
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-white/70">
+              Aún no se ha generado ningún documento en esta sesión. Genera el .docx
+              (Previsualizar o Descargar Word) para auditar las variables y ver la guía
+              completa de tags.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end pt-4">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Entendido
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
 
   const mapped = filterStrings(payload.diff.mapped);
   const empty = filterStrings(payload.diff.empty);
@@ -241,7 +269,8 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </div>
 
         <Tabs
-          defaultValue={isAdvanced ? "all" : "guia"}
+          key={`${open}-${resolvedInitialTab}`}
+          defaultValue={resolvedInitialTab}
           className="flex-1 overflow-hidden flex flex-col"
         >
           <TabsList
