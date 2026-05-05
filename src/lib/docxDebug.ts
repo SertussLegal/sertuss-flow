@@ -156,6 +156,10 @@ export interface DocxDiff {
   empty: string[];
   /** Tags presentes con valor utilizable */
   mapped: string[];
+  /** Tags resueltos dentro de un loop `{#section}…{/section}` (scope local). */
+  scoped: string[];
+  /** Mapa sección → sub-tags consumidos por el loop. */
+  sectionsResolved: Record<string, string[]>;
 }
 
 /**
