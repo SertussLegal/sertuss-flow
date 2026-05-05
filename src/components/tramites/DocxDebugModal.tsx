@@ -41,6 +41,8 @@ interface Props {
   payload: DocxAuditPayload | null;
   /** Pestaña inicial al abrir el modal. Si se omite, se decide por rol. */
   initialTab?: string;
+  /** Notifica al padre cuando admin activa/desactiva el diagnóstico visual. */
+  onDebugVisualChange?: (on: boolean) => void;
 }
 
 const formatValue = (v: unknown, max = 120): string => {
