@@ -247,6 +247,8 @@ const Validacion = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [showDocPanel, setShowDocPanel] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
