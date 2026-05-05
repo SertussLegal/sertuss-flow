@@ -45,7 +45,6 @@ import type { ExpedienteDoc } from "@/components/tramites/ExpedienteSidebar";
 import DocxDebugModal from "@/components/tramites/DocxDebugModal";
 import {
   isDebugDocxEnabled,
-  setDebugDocx,
   extractTemplateTags,
   buildAuditPayload,
   logDocxAuditToConsole,
