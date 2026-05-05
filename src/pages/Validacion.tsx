@@ -3377,6 +3377,7 @@ const Validacion = () => {
         onOpenChange={setDebugModalOpen}
         payload={debugAuditPayload}
         initialTab={debugInitialTab}
+        onDebugVisualChange={setDebugDocxOn}
       />
 
 
