@@ -156,6 +156,10 @@ export interface DocxDiff {
   empty: string[];
   /** Tags presentes con valor utilizable */
   mapped: string[];
+  /** Tags resueltos dentro de un loop `{#section}…{/section}` (scope local). */
+  scoped: string[];
+  /** Mapa sección → sub-tags consumidos por el loop. */
+  sectionsResolved: Record<string, string[]>;
 }
 
 /**
@@ -171,9 +175,39 @@ export function diffTagsVsData(
   const flatKeySet = new Set(flatKeys);
   const tagSet = new Set(tags);
 
+  // ── Detectar arrays/secciones en el flat: cualquier raíz `R` con claves `R[i].x`
+  //    se trata como sección iterable. Recolectamos sub-claves locales y si todos
+  //    los items tienen valor vacío en esa sub-clave para marcarlas como "empty".
+  const sectionRoots = new Set<string>();
+  const sectionLocalKeys: Record<string, Set<string>> = {};
+  const sectionItemCount: Record<string, number> = {};
+  const sectionEmptyTally: Record<string, Record<string, number>> = {};
+
+  const arrayKeyRe = /^([a-zA-Z0-9_]+)\[(\d+)\](?:\.(.+))?$/;
+  for (const k of flatKeys) {
+    const m = arrayKeyRe.exec(k);
+    if (!m) continue;
+    const [, root, idxStr, sub] = m;
+    sectionRoots.add(root);
+    sectionItemCount[root] = Math.max(sectionItemCount[root] ?? 0, parseInt(idxStr, 10) + 1);
+    if (!sub) continue;
+    // Solo registramos la primera "hoja" del sub-path como tag local del loop
+    // (Docxtemplater resuelve `{nombre}` o `{cedula}` en scope local).
+    const local = sub.split(/[.[]/)[0];
+    if (!sectionLocalKeys[root]) sectionLocalKeys[root] = new Set();
+    sectionLocalKeys[root].add(local);
+    if (!sectionEmptyTally[root]) sectionEmptyTally[root] = {};
+    const e = flat[k];
+    if (e?.isEmpty) {
+      sectionEmptyTally[root][local] = (sectionEmptyTally[root][local] ?? 0) + 1;
+    }
+  }
+
   const missing: string[] = [];
   const empty: string[] = [];
   const mapped: string[] = [];
+  const scoped: string[] = [];
+  const sectionsResolved: Record<string, string[]> = {};
 
   for (const tag of tags) {
     // Match exacto (ej. "matricula_inmobiliaria")
@@ -187,6 +221,27 @@ export function diffTagsVsData(
     const sectionMatch = flatKeys.find((k) => k === tag || k.startsWith(`${tag}.`) || k.startsWith(`${tag}[`));
     if (sectionMatch) {
       mapped.push(tag);
+      continue;
+    }
+    // Match scoped: el tag corresponde a una sub-clave dentro de algún array.
+    // Docxtemplater resuelve `{nombre}` en `{#vendedores}…{nombre}…{/vendedores}`.
+    let resolvedInSection: string | null = null;
+    for (const root of sectionRoots) {
+      if (sectionLocalKeys[root]?.has(tag)) {
+        resolvedInSection = root;
+        break;
+      }
+    }
+    if (resolvedInSection) {
+      scoped.push(tag);
+      const items = sectionItemCount[resolvedInSection] ?? 0;
+      const emptyCount = sectionEmptyTally[resolvedInSection]?.[tag] ?? 0;
+      // Si TODOS los items del array tienen este sub-valor vacío → empty;
+      // de lo contrario → mapped.
+      if (items > 0 && emptyCount >= items) empty.push(tag);
+      else mapped.push(tag);
+      if (!sectionsResolved[resolvedInSection]) sectionsResolved[resolvedInSection] = [];
+      sectionsResolved[resolvedInSection].push(tag);
       continue;
     }
     missing.push(tag);
@@ -203,14 +258,28 @@ export function diffTagsVsData(
     // Padres intermedios (ej. "inmueble" cuando el tag es "inmueble.matricula"):
     // si algún tag empieza con `key.` lo consideramos consumido.
     if (tags.some((t) => t.startsWith(`${key}.`))) continue;
+    // Sub-clave de un array cuyo tag local existe (resuelto por loop scoped):
+    // p.ej. `vendedores[0].nombre` consumido por `{nombre}` dentro de `{#vendedores}`.
+    const arrM = arrayKeyRe.exec(key);
+    if (arrM) {
+      const [, arrRoot, , sub] = arrM;
+      if (sub) {
+        const local = sub.split(/[.[]/)[0];
+        if (sectionLocalKeys[arrRoot]?.has(local) && tagSet.has(local)) continue;
+      }
+    }
     unused.push(key);
   }
 
   return {
     missing: missing.sort(),
     unused: unused.sort(),
-    empty: empty.sort(),
-    mapped: mapped.sort(),
+    empty: Array.from(new Set(empty)).sort(),
+    mapped: Array.from(new Set(mapped)).sort(),
+    scoped: scoped.sort(),
+    sectionsResolved: Object.fromEntries(
+      Object.entries(sectionsResolved).map(([k, v]) => [k, Array.from(new Set(v)).sort()]),
+    ),
   };
 }
 
@@ -245,6 +314,7 @@ export interface DocxAuditPayload {
     missing: number;
     unused: number;
     empty: number;
+    scoped: number;
     rescued: number;
     crossParagraph: number;
   };
@@ -281,6 +351,7 @@ export function buildAuditPayload(args: {
       missing: diff.missing.length,
       unused: diff.unused.length,
       empty: diff.empty.length,
+      scoped: diff.scoped.length,
       rescued: rescued.length,
       crossParagraph: crossParagraph.length,
     },

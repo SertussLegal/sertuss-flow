@@ -92,6 +92,8 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
   const empty = filterStrings(payload.diff.empty);
   const missing = filterStrings(payload.diff.missing);
   const unused = filterStrings(payload.diff.unused);
+  const scoped = filterStrings(payload.diff.scoped ?? []);
+  const sectionsResolved = payload.diff.sectionsResolved ?? {};
   const allRows = filtered(allEntries);
 
   return (
@@ -112,13 +114,18 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </DialogHeader>
 
         {/* Resumen */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-2 text-xs">
           <Stat label="Tags plantilla" value={payload.counts.tags} />
           <Stat label="Claves data" value={payload.counts.flatKeys} />
           <Stat
             label="Mapeados"
             value={payload.counts.mapped}
             tone="success"
+          />
+          <Stat
+            label="Por loop"
+            value={payload.counts.scoped}
+            tone={payload.counts.scoped > 0 ? "success" : "muted"}
           />
           <Stat label="Vacíos" value={payload.counts.empty} tone="warning" />
           <Stat
@@ -193,12 +200,15 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         </div>
 
         <Tabs defaultValue="all" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-6 w-full">
+          <TabsList className="grid grid-cols-7 w-full">
             <TabsTrigger value="all">
               Todas <Badge variant="secondary" className="ml-1">{allRows.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="mapped">
               Mapeados <Badge variant="secondary" className="ml-1">{mapped.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="scoped">
+              Por loop <Badge variant="secondary" className="ml-1">{scoped.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="empty">
               Vacíos <Badge variant="secondary" className="ml-1">{empty.length}</Badge>
@@ -225,7 +235,38 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
               <DataTable rows={allRows} />
             </TabsContent>
             <TabsContent value="mapped" className="m-0">
-              <TagList items={mapped} hint="Tag de la plantilla con valor utilizable" />
+              <TagList items={mapped} hint="Tag de la plantilla con valor utilizable (incluye los resueltos por loop scoped)." />
+            </TabsContent>
+            <TabsContent value="scoped" className="m-0">
+              <div className="p-3 space-y-3">
+                <p className="text-xs text-muted-foreground italic">
+                  Tags resueltos dentro de un loop <code>{"{#sección}…{/sección}"}</code>.
+                  Docxtemplater los lee del scope local de cada item del array.
+                </p>
+                {Object.keys(sectionsResolved).length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    Sin loops detectados.
+                  </div>
+                ) : (
+                  Object.entries(sectionsResolved).map(([section, keys]) => (
+                    <div key={section} className="space-y-1.5">
+                      <div className="text-xs font-semibold text-emerald-500">
+                        {"{#"}{section}{"}"} <span className="text-muted-foreground font-normal">({keys.length} sub-tags)</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {keys.map((k) => (
+                          <code
+                            key={`${section}-${k}`}
+                            className="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-500 bg-background/40"
+                          >
+                            {k}
+                          </code>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </TabsContent>
             <TabsContent value="empty" className="m-0">
               <TagList
