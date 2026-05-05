@@ -365,6 +365,7 @@ export function buildAuditPayload(args: {
     flat,
     rescued,
     crossParagraph,
+    tags: args.tags,
   };
 }
 
