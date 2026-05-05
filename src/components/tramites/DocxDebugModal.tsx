@@ -55,7 +55,7 @@ const formatValue = (v: unknown, max = 120): string => {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 };
 
-export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
+export default function DocxDebugModal({ open, onOpenChange, payload, initialTab }: Props) {
   const { toast } = useToast();
   const { profile } = useAuth();
   const isAdvanced = profile?.role === "owner" || profile?.role === "admin";
