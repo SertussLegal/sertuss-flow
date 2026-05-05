@@ -36,6 +36,8 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   payload: DocxAuditPayload | null;
+  /** Pestaña inicial al abrir el modal. Si se omite, se decide por rol. */
+  initialTab?: string;
 }
 
 const formatValue = (v: unknown, max = 120): string => {
