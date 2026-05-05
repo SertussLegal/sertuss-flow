@@ -3288,7 +3288,7 @@ const Validacion = () => {
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
             <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
-              <div className="container max-w-2xl py-6">
+              <div className="container max-w-2xl py-6 pb-24">
                 {renderTabs()}
               </div>
             </ScrollArea>
@@ -3298,7 +3298,7 @@ const Validacion = () => {
 
       {/* Mobile: stacked column */}
       <div className="flex-1 flex flex-col lg:hidden overflow-auto">
-        <div className="container max-w-2xl py-6 pb-20">
+        <div className="container max-w-2xl py-6 pb-28">
           {renderTabs()}
         </div>
         {/* Floating preview button for mobile */}
