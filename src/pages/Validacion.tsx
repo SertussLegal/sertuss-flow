@@ -3315,7 +3315,7 @@ const Validacion = () => {
       </div>
 
       {/* Footer flotante de acciones */}
-      <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-white/10 bg-background/80 backdrop-blur-md">
+      <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-white/10 bg-notarial-dark/95 backdrop-blur-md">
         <TooltipProvider delayDuration={150}>
           <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 gap-2">
             {/* Izquierda: guardado silencioso */}
@@ -3324,82 +3324,106 @@ const Validacion = () => {
               variant="outline"
               onClick={handleSaveDraft}
               disabled={savingDraft || saving}
-              className="h-9 gap-2 border-white/20 bg-white/10 text-white hover:bg-white/15"
+              className="h-9 gap-2 border border-white/20 bg-white/10 text-white hover:bg-white/15 min-w-[150px] justify-center"
             >
               {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Guardar borrador
             </Button>
 
-            {/* Derecha: secuencia analizar → aprobar (intercambio dinámico de posición y estilo) */}
+            {/* Derecha: swap dinámico de posición y estilo */}
             {(() => {
               const noAnalizado = !docxPath;
-
-              const AnalizarBtn = (
-                <Tooltip key="analizar-btn">
-                  <TooltipTrigger asChild>
-                    <span tabIndex={notariaIncompletaGlobal ? 0 : -1}>
-                      <Button
-                        type="button"
-                        variant={noAnalizado ? "default" : "outline"}
-                        onClick={handlePrevisualizar}
-                        disabled={validando || notariaIncompletaGlobal}
-                        className={
-                          noAnalizado
-                            ? "h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
-                            : "h-9 gap-2 border border-notarial-gold/60 bg-transparent text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold disabled:opacity-60"
-                        }
-                      >
-                        {validando ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Analizando…</>
-                        ) : (
-                          <><Eye className="h-4 w-4" /> Generar y Analizar Word</>
-                        )}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {notariaIncompletaGlobal && (
-                    <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-destructive/40 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
-                      <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
-                      <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              );
-
-              const AprobarBtn = (
-                <Tooltip key="aprobar-btn">
-                  <TooltipTrigger asChild>
-                    <span tabIndex={0}>
-                      <Button
-                        type="button"
-                        variant={noAnalizado ? "outline" : "default"}
-                        onClick={handleSave}
-                        disabled={noAnalizado ? true : (saving || savingDraft)}
-                        className={
-                          noAnalizado
-                            ? "h-9 gap-2 border border-white/10 bg-transparent text-white/40 cursor-not-allowed opacity-50"
-                            : "h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60"
-                        }
-                      >
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                        Aprobar Escritura
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
-                    {noAnalizado
-                      ? "Primero debes generar y analizar el documento para poder aprobar la escritura."
-                      : "Finalizar verificación de la escritura."}
-                  </TooltipContent>
-                </Tooltip>
-              );
-
               return (
                 <div className="flex items-center gap-3">
                   {noAnalizado ? (
-                    <>{AprobarBtn}{AnalizarBtn}</>
+                    <>
+                      {/* Aprobar Escritura — atenuado a la izquierda */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled
+                              className="h-9 gap-2 border border-white/10 bg-transparent text-white/40 cursor-not-allowed opacity-50 min-w-[185px] justify-center"
+                            >
+                              <CheckCircle2 className="h-4 w-4" /> Aprobar Escritura
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                          Primero debes generar y analizar el documento para poder aprobar la escritura.
+                        </TooltipContent>
+                      </Tooltip>
+
+                      {/* Generar y Analizar Word — dorado principal a la derecha */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={validando || notariaIncompletaGlobal ? 0 : undefined} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                            <Button
+                              type="button"
+                              onClick={handlePrevisualizar}
+                              disabled={validando || notariaIncompletaGlobal}
+                              className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60 min-w-[185px] justify-center"
+                            >
+                              {validando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                              {validando ? "Analizando…" : "Generar y Analizar Word"}
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[280px]">
+                          {notariaIncompletaGlobal ? (
+                            <>
+                              <p className="font-semibold text-destructive mb-0.5">Datos de notaría incompletos</p>
+                              <p className="opacity-90">Faltan: {camposCriticosFaltantesGlobal.join(", ")}.</p>
+                            </>
+                          ) : (
+                            "Verificar inconsistencias y tags vacíos en la plantilla."
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </>
                   ) : (
-                    <>{AnalizarBtn}{AprobarBtn}</>
+                    <>
+                      {/* Analizar Documento — outline secundario a la izquierda */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handlePrevisualizar}
+                            disabled={validando || notariaIncompletaGlobal}
+                            className="h-9 gap-2 border border-notarial-gold/60 bg-transparent text-notarial-gold hover:bg-notarial-gold/10 hover:text-notarial-gold disabled:opacity-60 min-w-[185px] justify-center"
+                          >
+                            {validando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                            {validando ? "Analizando…" : "Analizar Documento"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                          Volver a verificar inconsistencias.
+                        </TooltipContent>
+                      </Tooltip>
+
+                      {/* Aprobar Escritura — dorado principal activo a la derecha */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={saving || savingDraft ? 0 : undefined} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                            <Button
+                              type="button"
+                              onClick={handleSave}
+                              disabled={saving || savingDraft}
+                              className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium disabled:opacity-60 min-w-[185px] justify-center"
+                            >
+                              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                              Aprobar Escritura
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                          Finalizar verificación y aprobar la escritura en el sistema.
+                        </TooltipContent>
+                      </Tooltip>
+                    </>
                   )}
                 </div>
               );
