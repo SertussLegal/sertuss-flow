@@ -3362,6 +3362,7 @@ const Validacion = () => {
         </div>
       </footer>
 
+      <PreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         vendedores={vendedores}
