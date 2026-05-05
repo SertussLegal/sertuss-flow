@@ -631,11 +631,31 @@ function TagCatalogView({
   sections,
   filter,
   toast,
+  emptyReason,
 }: {
   sections: TagSection[];
   filter: string;
   toast: ReturnType<typeof useToast>["toast"];
+  emptyReason?: "no-payload";
 }) {
+  if (emptyReason === "no-payload" || sections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-16 px-8 gap-4 min-h-[320px]">
+        <div className="rounded-full bg-white/5 border border-white/10 p-6">
+          <FileText className="h-12 w-12 text-muted-foreground/40" strokeWidth={1.5} />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground">
+          Aún no hay datos de la plantilla
+        </h3>
+        <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
+          Para activar la guía interactiva, clasificar los tags y ver sus valores
+          de ejemplo en tiempo real, primero genera una previsualización o descarga
+          el Word de este trámite.
+        </p>
+      </div>
+    );
+  }
+
   // Filtrado: una sección se muestra si tiene al menos un block que matchee.
   const filtered = sections
     .map((sec) => {
