@@ -56,8 +56,14 @@ const formatValue = (v: unknown, max = 120): string => {
 export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
   const { toast } = useToast();
   const { profile } = useAuth();
-  const canExport = profile?.role === "owner" || profile?.role === "admin";
+  const isAdvanced = profile?.role === "owner" || profile?.role === "admin";
+  const canExport = isAdvanced;
   const [filter, setFilter] = useState("");
+
+  const tagSections = useMemo<TagSection[]>(() => {
+    if (!payload) return [];
+    return buildTagCatalog(payload.tags, payload.flat, payload.diff);
+  }, [payload]);
 
   const allEntries = useMemo<FlatEntry[]>(
     () => (payload ? Object.values(payload.flat) : []),
