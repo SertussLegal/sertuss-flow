@@ -118,15 +118,25 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
       <DialogContent className="max-w-5xl max-h-[88vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Bug className="h-5 w-5 text-primary" />
-            Auditoría de variables del .docx
+            {isAdvanced ? (
+              <Bug className="h-5 w-5 text-primary" />
+            ) : (
+              <BookOpen className="h-5 w-5 text-notarial-gold" />
+            )}
+            {isAdvanced ? "Auditoría de variables del .docx" : "Guía de tags de tu plantilla Word"}
           </DialogTitle>
           <DialogDescription>
-            Trámite{" "}
-            <span className="font-mono text-xs">
-              {payload.tramiteId.slice(0, 8)}…
-            </span>{" "}
-            · {payload.template} · render {payload.renderMs ?? "?"} ms
+            {isAdvanced ? (
+              <>
+                Trámite{" "}
+                <span className="font-mono text-xs">
+                  {payload.tramiteId.slice(0, 8)}…
+                </span>{" "}
+                · {payload.template} · render {payload.renderMs ?? "?"} ms
+              </>
+            ) : (
+              <>Copia los <code className="font-mono">{"{{tags}}"}</code> y pégalos en tu plantilla de Word donde quieras que aparezca cada dato.</>
+            )}
           </DialogDescription>
         </DialogHeader>
 
