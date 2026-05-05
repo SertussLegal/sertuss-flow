@@ -240,99 +240,125 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
           )}
         </div>
 
-        <Tabs defaultValue="all" className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-7 w-full">
-            <TabsTrigger value="all">
-              Todas <Badge variant="secondary" className="ml-1">{allRows.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="mapped">
-              Mapeados <Badge variant="secondary" className="ml-1">{mapped.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="scoped">
-              Por loop <Badge variant="secondary" className="ml-1">{scoped.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="empty">
-              Vacíos <Badge variant="secondary" className="ml-1">{empty.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="missing">
-              Missing <Badge variant="destructive" className="ml-1">{missing.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="unused">
-              Sin uso <Badge variant="secondary" className="ml-1">{unused.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="rescued">
-              Rescatados{" "}
-              <Badge
-                variant={payload.counts.rescued > 0 ? "default" : "secondary"}
-                className="ml-1"
-              >
-                {payload.counts.rescued}
+        <Tabs
+          defaultValue={isAdvanced ? "all" : "guia"}
+          className="flex-1 overflow-hidden flex flex-col"
+        >
+          <TabsList
+            className={cn(
+              "w-full grid",
+              isAdvanced ? "grid-cols-8" : "grid-cols-1",
+            )}
+          >
+            <TabsTrigger value="guia" className="gap-1.5">
+              <BookOpen className="h-3.5 w-3.5" />
+              Guía
+              <Badge variant="secondary" className="ml-1">
+                {tagSections.reduce((n, s) => n + s.blocks.length, 0)}
               </Badge>
             </TabsTrigger>
+            {isAdvanced && (
+              <>
+                <TabsTrigger value="all">
+                  Todas <Badge variant="secondary" className="ml-1">{allRows.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="mapped">
+                  Mapeados <Badge variant="secondary" className="ml-1">{mapped.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="scoped">
+                  Por loop <Badge variant="secondary" className="ml-1">{scoped.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="empty">
+                  Vacíos <Badge variant="secondary" className="ml-1">{empty.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="missing">
+                  Missing <Badge variant="destructive" className="ml-1">{missing.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="unused">
+                  Sin uso <Badge variant="secondary" className="ml-1">{unused.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="rescued">
+                  Rescatados{" "}
+                  <Badge
+                    variant={payload.counts.rescued > 0 ? "default" : "secondary"}
+                    className="ml-1"
+                  >
+                    {payload.counts.rescued}
+                  </Badge>
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
           <ScrollArea className="flex-1 mt-2 border rounded-md">
-            <TabsContent value="all" className="m-0">
-              <DataTable rows={allRows} />
+            <TabsContent value="guia" className="m-0">
+              <TagCatalogView sections={tagSections} filter={filter} toast={toast} />
             </TabsContent>
-            <TabsContent value="mapped" className="m-0">
-              <TagList items={mapped} hint="Tag de la plantilla con valor utilizable (incluye los resueltos por loop scoped)." />
-            </TabsContent>
-            <TabsContent value="scoped" className="m-0">
-              <div className="p-3 space-y-3">
-                <p className="text-xs text-muted-foreground italic">
-                  Tags resueltos dentro de un loop <code>{"{#sección}…{/sección}"}</code>.
-                  Docxtemplater los lee del scope local de cada item del array.
-                </p>
-                {Object.keys(sectionsResolved).length === 0 ? (
-                  <div className="text-sm text-muted-foreground py-4 text-center">
-                    Sin loops detectados.
+            {isAdvanced && (
+              <>
+                <TabsContent value="all" className="m-0">
+                  <DataTable rows={allRows} />
+                </TabsContent>
+                <TabsContent value="mapped" className="m-0">
+                  <TagList items={mapped} hint="Tag de la plantilla con valor utilizable (incluye los resueltos por loop scoped)." />
+                </TabsContent>
+                <TabsContent value="scoped" className="m-0">
+                  <div className="p-3 space-y-3">
+                    <p className="text-xs text-muted-foreground italic">
+                      Tags resueltos dentro de un loop <code>{"{#sección}…{/sección}"}</code>.
+                      Docxtemplater los lee del scope local de cada item del array.
+                    </p>
+                    {Object.keys(sectionsResolved).length === 0 ? (
+                      <div className="text-sm text-muted-foreground py-4 text-center">
+                        Sin loops detectados.
+                      </div>
+                    ) : (
+                      Object.entries(sectionsResolved).map(([section, keys]) => (
+                        <div key={section} className="space-y-1.5">
+                          <div className="text-xs font-semibold text-emerald-500">
+                            {"{#"}{section}{"}"} <span className="text-muted-foreground font-normal">({keys.length} sub-tags)</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {keys.map((k) => (
+                              <code
+                                key={`${section}-${k}`}
+                                className="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-500 bg-background/40"
+                              >
+                                {k}
+                              </code>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                ) : (
-                  Object.entries(sectionsResolved).map(([section, keys]) => (
-                    <div key={section} className="space-y-1.5">
-                      <div className="text-xs font-semibold text-emerald-500">
-                        {"{#"}{section}{"}"} <span className="text-muted-foreground font-normal">({keys.length} sub-tags)</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {keys.map((k) => (
-                          <code
-                            key={`${section}-${k}`}
-                            className="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-500 bg-background/40"
-                          >
-                            {k}
-                          </code>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-            <TabsContent value="empty" className="m-0">
-              <TagList
-                items={empty}
-                tone="warning"
-                hint="Tag presente pero su valor está vacío o es ___________"
-              />
-            </TabsContent>
-            <TabsContent value="missing" className="m-0">
-              <TagList
-                items={missing}
-                tone="danger"
-                hint="La plantilla espera este tag pero no existe en structuredData → renderiza ___________"
-              />
-            </TabsContent>
-            <TabsContent value="unused" className="m-0">
-              <TagList
-                items={unused}
-                tone="muted"
-                hint="Clave enviada en structuredData que ningún tag de la plantilla consume (alias muerto o redundante)"
-              />
-            </TabsContent>
-            <TabsContent value="rescued" className="m-0">
-              <RescuedList items={payload.rescued} />
-            </TabsContent>
+                </TabsContent>
+                <TabsContent value="empty" className="m-0">
+                  <TagList
+                    items={empty}
+                    tone="warning"
+                    hint="Tag presente pero su valor está vacío o es ___________"
+                  />
+                </TabsContent>
+                <TabsContent value="missing" className="m-0">
+                  <TagList
+                    items={missing}
+                    tone="danger"
+                    hint="La plantilla espera este tag pero no existe en structuredData → renderiza ___________"
+                  />
+                </TabsContent>
+                <TabsContent value="unused" className="m-0">
+                  <TagList
+                    items={unused}
+                    tone="muted"
+                    hint="Clave enviada en structuredData que ningún tag de la plantilla consume (alias muerto o redundante)"
+                  />
+                </TabsContent>
+                <TabsContent value="rescued" className="m-0">
+                  <RescuedList items={payload.rescued} />
+                </TabsContent>
+              </>
+            )}
           </ScrollArea>
         </Tabs>
       </DialogContent>
