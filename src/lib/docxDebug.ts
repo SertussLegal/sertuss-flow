@@ -351,6 +351,7 @@ export function buildAuditPayload(args: {
       missing: diff.missing.length,
       unused: diff.unused.length,
       empty: diff.empty.length,
+      scoped: diff.scoped.length,
       rescued: rescued.length,
       crossParagraph: crossParagraph.length,
     },
