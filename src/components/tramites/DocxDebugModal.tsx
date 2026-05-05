@@ -269,7 +269,8 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
         </div>
 
         <Tabs
-          defaultValue={isAdvanced ? "all" : "guia"}
+          key={`${open}-${resolvedInitialTab}`}
+          defaultValue={resolvedInitialTab}
           className="flex-1 overflow-hidden flex flex-col"
         >
           <TabsList
