@@ -179,28 +179,47 @@ export default function DocxDebugModal({ open, onOpenChange, payload }: Props) {
         )}
 
         <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <Input
             placeholder="Filtrar por nombre de variable…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="h-9"
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopyJson}
-          >
-            <Copy className="h-4 w-4 mr-1" /> Copiar JSON
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleDownloadJson}
-          >
-            <Download className="h-4 w-4 mr-1" /> Descargar
-          </Button>
+          {canExport && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleCopyJson}
+                    aria-label="Copiar JSON de auditoría"
+                    className="h-9 w-9 shrink-0"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Copiar JSON</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleDownloadJson}
+                    aria-label="Descargar reporte de auditoría"
+                    className="h-9 w-9 shrink-0"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Descargar reporte</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
 
         <Tabs defaultValue="all" className="flex-1 overflow-hidden flex flex-col">
