@@ -247,6 +247,8 @@ const Validacion = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [showDocPanel, setShowDocPanel] = useState(false);
   const [confianzaFields, setConfianzaFields] = useState<Map<string, NivelConfianza>>(new Map());
@@ -737,6 +739,7 @@ const Validacion = () => {
     setActos(localActos);
 
     setSyncStatus("saved");
+    setLastSavedAt(new Date());
     setIsDirty(false);
   };
 
@@ -927,6 +930,7 @@ const Validacion = () => {
 
       setIsDirty(false);
       setSyncStatus("saved");
+      setLastSavedAt(new Date());
     } catch {
       setSyncStatus("unsaved");
     }
@@ -1714,6 +1718,7 @@ const Validacion = () => {
 
       setIsDirty(false);
       setSyncStatus("saved");
+      setLastSavedAt(new Date());
       toast({ title: "Trámite guardado", description: "Estado actualizado a Validado." });
     } catch (err: any) {
       setSyncStatus("unsaved");
@@ -2407,6 +2412,7 @@ const Validacion = () => {
       await refreshCredits();
       setIsDirty(false);
       setSyncStatus("saved");
+      setLastSavedAt(new Date());
       toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
       console.error("[generate-docx] fallo en handleConfirmGenerate", err);
@@ -2456,37 +2462,32 @@ const Validacion = () => {
     }
   };
 
-  const syncIndicator = () => {
-    let Icon: typeof Cloud = Cloud;
-    let label = "Sin cambios pendientes";
-    let className = "text-white/60";
-    let spin = false;
-    if (syncStatus === "saving") {
-      Icon = Loader2;
-      label = "Guardando…";
-      className = "text-white/80";
-      spin = true;
+  const SyncMicroText = () => {
+    let label = "";
+    let cls = "text-xs text-muted-foreground";
+    if (syncStatus === "saving" || (syncStatus === "idle" && isDirty)) {
+      label = "Sincronizando…";
     } else if (syncStatus === "saved") {
-      Icon = Check;
-      label = "Guardado · hace un momento";
-      className = "text-notarial-green";
+      label = "Cambios guardados";
     } else if (syncStatus === "unsaved") {
-      Icon = CloudOff;
-      label = "Sin guardar";
-      className = "text-notarial-gold";
+      label = "Cambios sin guardar";
+      cls = "text-xs text-notarial-gold";
+    } else {
+      return null;
     }
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md ${className}`} aria-label={label}>
-            <Icon className={`h-4 w-4 ${spin ? "animate-spin" : ""}`} />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
-          {label}
-        </TooltipContent>
-      </Tooltip>
-    );
+    return <span className={cls} aria-live="polite">{label}</span>;
+  };
+
+  const handleSaveDraft = async () => {
+    setSavingDraft(true);
+    try {
+      await handleAutoSave();
+      toast({ title: "Borrador guardado con éxito" });
+    } catch (e: any) {
+      toast({ title: "Error al guardar borrador", description: e?.message ?? String(e), variant: "destructive" });
+    } finally {
+      setSavingDraft(false);
+    }
   };
 
   const renderTabs = () => {
@@ -3077,6 +3078,7 @@ const Validacion = () => {
                     } else {
                       setRadicado(trimmed);
                       setSyncStatus("saved");
+                      setLastSavedAt(new Date());
                     }
                   }}
                   placeholder="2026-0001"
@@ -3136,27 +3138,8 @@ const Validacion = () => {
                 </TooltipContent>
               </Tooltip>
 
-              {/* Sync */}
-              {syncIndicator()}
-
-              {/* Guardar */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost-dark"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleSave}
-                    disabled={saving}
-                    aria-label="Guardar borrador"
-                  >
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
-                  Guardar borrador ahora
-                </TooltipContent>
-              </Tooltip>
+              {/* Sync silencioso */}
+              <SyncMicroText />
 
               {/* Re-descarga sin créditos (solo si ya hay docx generado) */}
               {docxPath && (
@@ -3305,7 +3288,7 @@ const Validacion = () => {
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={35} className="min-h-0 overflow-hidden">
             <ScrollArea className="h-full" style={{ overscrollBehavior: 'contain' }}>
-              <div className="container max-w-2xl py-6">
+              <div className="container max-w-2xl py-6 pb-24">
                 {renderTabs()}
               </div>
             </ScrollArea>
@@ -3315,7 +3298,7 @@ const Validacion = () => {
 
       {/* Mobile: stacked column */}
       <div className="flex-1 flex flex-col lg:hidden overflow-auto">
-        <div className="container max-w-2xl py-6 pb-20">
+        <div className="container max-w-2xl py-6 pb-28">
           {renderTabs()}
         </div>
         {/* Floating preview button for mobile */}
@@ -3353,6 +3336,31 @@ const Validacion = () => {
           </SheetContent>
         </Sheet>
       </div>
+
+      {/* Footer flotante de acciones */}
+      <footer className="fixed bottom-0 inset-x-0 z-40 border-t border-white/10 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || saving}
+            className="h-9 gap-2 border-white/15 bg-white/5 text-white hover:bg-white/10"
+          >
+            {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Guardar borrador
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || savingDraft}
+            className="h-9 gap-2 bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90 font-medium"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Finalizar y validar
+          </Button>
+        </div>
+      </footer>
 
       <PreviewModal
         open={previewOpen}
