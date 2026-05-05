@@ -81,6 +81,35 @@ export async function fetchAiGateway(
           await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
           continue;
         }
+
+        // Detect upstream provider errors smuggled inside a 200 response.
+        // Google sometimes returns choices[0].error = { code, message } with
+        // no tool_calls and finish_reason=null ("Network connection lost").
+        // These are transient and should be retried like a 502.
+        try {
+          const peek = JSON.parse(buffered);
+          const choice = peek?.choices?.[0];
+          const innerErr = choice?.error;
+          const hasToolCalls = Array.isArray(choice?.message?.tool_calls) && choice.message.tool_calls.length > 0;
+          const hasContent = typeof choice?.message?.content === "string" && choice.message.content.length > 0;
+          if (innerErr || (!hasToolCalls && !hasContent && choice?.finish_reason == null)) {
+            const errCode = Number(innerErr?.code) || 502;
+            const errMsg = innerErr?.message || "Provider returned empty choice";
+            console.error(
+              `[${tag}] AI gateway 200 with provider error code=${errCode} msg=${errMsg} attempt=${attempt + 1}/${totalAttempts}`,
+            );
+            const retryable = errCode === 502 || errCode === 503 || errCode === 429 || errCode === 500;
+            if (retryable && attempt < totalAttempts - 1) {
+              await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
+              continue;
+            }
+            throw new AiGatewayError(errCode === 200 ? 502 : errCode, buffered, errMsg, tag);
+          }
+        } catch (peekErr) {
+          if (peekErr instanceof AiGatewayError) throw peekErr;
+          // JSON parse failed → fall through and let downstream parser handle it.
+        }
+
         // Re-wrap so downstream `.json()` / `.text()` keeps working.
         return new Response(buffered, {
           status: response.status,
