@@ -162,7 +162,9 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
             {isAdvanced ? "Auditoría de variables del .docx" : "Guía de tags de tu plantilla Word"}
           </DialogTitle>
           <DialogDescription>
-            {isAdvanced ? (
+            {!payload ? (
+              <span className="italic text-muted-foreground">Sin documento generado todavía</span>
+            ) : isAdvanced ? (
               <>
                 Trámite{" "}
                 <span className="font-mono text-xs">
