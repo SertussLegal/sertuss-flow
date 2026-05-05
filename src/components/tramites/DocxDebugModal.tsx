@@ -20,7 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Bug, Copy, Download } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import type { DocxAuditPayload, FlatEntry, RescuedTagEntry } from "@/lib/docxDebug";
 
 interface Props {
