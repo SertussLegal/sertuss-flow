@@ -343,10 +343,10 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
                 <TabsTrigger value="rescued">
                   Rescatados{" "}
                   <Badge
-                    variant={payload.counts.rescued > 0 ? "default" : "secondary"}
+                    variant={counts.rescued > 0 ? "default" : "secondary"}
                     className="ml-1"
                   >
-                    {payload.counts.rescued}
+                    {counts.rescued}
                   </Badge>
                 </TabsTrigger>
               </>
