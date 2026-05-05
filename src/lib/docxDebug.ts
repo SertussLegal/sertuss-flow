@@ -326,6 +326,8 @@ export interface DocxAuditPayload {
   flat: Record<string, FlatEntry>;
   rescued: RescuedTagEntry[];
   crossParagraph: CrossParagraphEntry[];
+  /** Lista de tags extraídos de la plantilla Word (sin llaves). */
+  tags: string[];
 }
 
 export function buildAuditPayload(args: {
