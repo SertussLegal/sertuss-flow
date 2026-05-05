@@ -2462,37 +2462,32 @@ const Validacion = () => {
     }
   };
 
-  const syncIndicator = () => {
-    let Icon: typeof Cloud = Cloud;
-    let label = "Sin cambios pendientes";
-    let className = "text-white/60";
-    let spin = false;
-    if (syncStatus === "saving") {
-      Icon = Loader2;
-      label = "Guardando…";
-      className = "text-white/80";
-      spin = true;
+  const SyncMicroText = () => {
+    let label = "";
+    let cls = "text-xs text-muted-foreground";
+    if (syncStatus === "saving" || (syncStatus === "idle" && isDirty)) {
+      label = "Sincronizando…";
     } else if (syncStatus === "saved") {
-      Icon = Check;
-      label = "Guardado · hace un momento";
-      className = "text-notarial-green";
+      label = "Cambios guardados";
     } else if (syncStatus === "unsaved") {
-      Icon = CloudOff;
-      label = "Sin guardar";
-      className = "text-notarial-gold";
+      label = "Cambios sin guardar";
+      cls = "text-xs text-notarial-gold";
+    } else {
+      return null;
     }
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md ${className}`} aria-label={label}>
-            <Icon className={`h-4 w-4 ${spin ? "animate-spin" : ""}`} />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
-          {label}
-        </TooltipContent>
-      </Tooltip>
-    );
+    return <span className={cls} aria-live="polite">{label}</span>;
+  };
+
+  const handleSaveDraft = async () => {
+    setSavingDraft(true);
+    try {
+      await handleAutoSave();
+      toast({ title: "Borrador guardado con éxito" });
+    } catch (e: any) {
+      toast({ title: "Error al guardar borrador", description: e?.message ?? String(e), variant: "destructive" });
+    } finally {
+      setSavingDraft(false);
+    }
   };
 
   const renderTabs = () => {
