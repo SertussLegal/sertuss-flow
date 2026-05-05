@@ -314,6 +314,7 @@ export interface DocxAuditPayload {
     missing: number;
     unused: number;
     empty: number;
+    scoped: number;
     rescued: number;
     crossParagraph: number;
   };
