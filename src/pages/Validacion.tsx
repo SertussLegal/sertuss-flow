@@ -288,6 +288,7 @@ const Validacion = () => {
   const [debugDocxOn, setDebugDocxOn] = useState<boolean>(() => isDebugDocxEnabled());
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const [debugAuditPayload, setDebugAuditPayload] = useState<DocxAuditPayload | null>(null);
+  const [debugInitialTab, setDebugInitialTab] = useState<string | undefined>(undefined);
   const isLoadingRef = useRef(false);
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
