@@ -81,7 +81,11 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
 
   const tagSections = useMemo<TagSection[]>(() => {
     if (!payload) return [];
-    return buildTagCatalog(payload.tags, payload.flat, payload.diff);
+    try {
+      return buildTagCatalog(payload.tags ?? [], payload.flat ?? {}, payload.diff);
+    } catch {
+      return [];
+    }
   }, [payload]);
 
   const allEntries = useMemo<FlatEntry[]>(
@@ -124,39 +128,26 @@ export default function DocxDebugModal({ open, onOpenChange, payload, initialTab
 
   const resolvedInitialTab = initialTab ?? (isAdvanced ? "all" : "guia");
 
-  if (!payload) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-notarial-gold" />
-              {isAdvanced ? "Auditoría de variables del .docx" : "Guía de tags de tu plantilla Word"}
-            </DialogTitle>
-            <DialogDescription className="pt-2 text-white/70">
-              Aún no se ha generado ningún documento en esta sesión. Genera el .docx
-              (Previsualizar o Descargar Word) para auditar las variables y ver la guía
-              completa de tags.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end pt-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Entendido
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-
-  const mapped = filterStrings(payload.diff.mapped);
-  const empty = filterStrings(payload.diff.empty);
-  const missing = filterStrings(payload.diff.missing);
-  const unused = filterStrings(payload.diff.unused);
-  const scoped = filterStrings(payload.diff.scoped ?? []);
-  const sectionsResolved = payload.diff.sectionsResolved ?? {};
+  const mapped = filterStrings(payload?.diff.mapped ?? []);
+  const empty = filterStrings(payload?.diff.empty ?? []);
+  const missing = filterStrings(payload?.diff.missing ?? []);
+  const unused = filterStrings(payload?.diff.unused ?? []);
+  const scoped = filterStrings(payload?.diff.scoped ?? []);
+  const sectionsResolved = payload?.diff.sectionsResolved ?? {};
   const allRows = filtered(allEntries);
+  const counts = payload?.counts ?? {
+    tags: 0,
+    flatKeys: 0,
+    mapped: 0,
+    scoped: 0,
+    empty: 0,
+    missing: 0,
+    unused: 0,
+    rescued: 0,
+    crossParagraph: 0,
+  };
+  const crossParagraph = payload?.crossParagraph ?? [];
+  const rescued = payload?.rescued ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
