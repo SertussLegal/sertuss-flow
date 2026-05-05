@@ -739,6 +739,7 @@ const Validacion = () => {
     setActos(localActos);
 
     setSyncStatus("saved");
+    setLastSavedAt(new Date());
     setIsDirty(false);
   };
 
@@ -929,6 +930,7 @@ const Validacion = () => {
 
       setIsDirty(false);
       setSyncStatus("saved");
+      setLastSavedAt(new Date());
     } catch {
       setSyncStatus("unsaved");
     }
@@ -1716,6 +1718,7 @@ const Validacion = () => {
 
       setIsDirty(false);
       setSyncStatus("saved");
+      setLastSavedAt(new Date());
       toast({ title: "Trámite guardado", description: "Estado actualizado a Validado." });
     } catch (err: any) {
       setSyncStatus("unsaved");
@@ -2409,6 +2412,7 @@ const Validacion = () => {
       await refreshCredits();
       setIsDirty(false);
       setSyncStatus("saved");
+      setLastSavedAt(new Date());
       toast({ title: "¡Éxito!", description: "Documento generado. Revisa las sugerencias de la IA en el visor." });
     } catch (err: any) {
       console.error("[generate-docx] fallo en handleConfirmGenerate", err);
@@ -3079,6 +3083,7 @@ const Validacion = () => {
                     } else {
                       setRadicado(trimmed);
                       setSyncStatus("saved");
+                      setLastSavedAt(new Date());
                     }
                   }}
                   placeholder="2026-0001"
