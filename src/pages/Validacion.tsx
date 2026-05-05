@@ -3182,23 +3182,30 @@ const Validacion = () => {
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
-                      variant={debugDocxOn ? "default" : "outline"}
-                      size="sm"
+                      variant="outline"
+                      size="icon"
                       onClick={() => {
                         const next = !debugDocxOn;
                         setDebugDocx(next);
                         setDebugDocxOn(next);
                         sonnerToast.success(next ? "Depuración .docx ON" : "Depuración .docx OFF");
                       }}
-                      className="h-9 px-3"
-                      aria-label="Modo depuración variables del .docx"
+                      className={
+                        debugDocxOn
+                          ? "h-9 w-9 shrink-0 bg-notarial-gold/15 border-notarial-gold/50 text-notarial-gold hover:bg-notarial-gold/25 hover:text-notarial-gold"
+                          : "h-9 w-9 shrink-0 border-white/15 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white hover:border-notarial-gold/40"
+                      }
+                      aria-label={debugDocxOn ? "Desactivar depuración .docx" : "Activar depuración .docx"}
+                      aria-pressed={debugDocxOn}
                     >
-                      <span className="text-base mr-1">🐞</span>
-                      <span className="text-xs hidden sm:inline">{debugDocxOn ? "Debug ON" : "Debug"}</span>
+                      <Bug className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
-                    Audita las variables enviadas al .docx (mapeadas, vacías, missing, sin uso) tras generar.
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5 max-w-[260px]">
+                    <div className="font-semibold">
+                      Depuración .docx · <span className={debugDocxOn ? "text-notarial-gold" : "text-white/60"}>{debugDocxOn ? "ON" : "OFF"}</span>
+                    </div>
+                    <div className="text-white/70 mt-0.5">Audita variables del .docx tras generar.</div>
                   </TooltipContent>
                 </Tooltip>
               )}
