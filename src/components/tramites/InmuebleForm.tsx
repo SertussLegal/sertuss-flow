@@ -349,6 +349,15 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
   const confBadge = (field: string) => {
     const conf = confianzaFields?.get(field);
     if (conf !== "baja") return null;
+    return null as any;
+  };
+  const inlineDotInm = (key: string) => {
+    const v = inlineBadges?.get(key);
+    if (!v) return null;
+    return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+  };
+  const _confBadgeReal = (field: string) => {
+    const conf = confianzaFields?.get(field);
     return (
       <Tooltip>
         <TooltipTrigger asChild>
