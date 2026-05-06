@@ -271,13 +271,25 @@ FORMATO DE RESPUESTA OBLIGATORIO:
       "campo": "[ruta del campo afectado]",
       "campos_relacionados": ["[otros campos involucrados]"],
       "valor_actual": "[valor encontrado]",
-      "valor_sugerido": "[valor corregido, solo si auto_corregible]",
-      "explicacion": "[explicación clara en español de por qué está mal y qué hacer]",
-      "auto_corregible": true | false
+      "valor_sugerido": "[valor corregido, solo si auto_corregible, MÁXIMO 80 caracteres]",
+      "explicacion": "[explicación clara en español, MÁXIMO 220 caracteres]",
+      "auto_corregible": true | false,
+      "ui_target": "modal_bloqueante" | "side_panel_audit" | "field_inline_badge",
+      "priority": "high" | "medium" | "low"
     }
   ],
   "retroalimentacion_general": "[resumen ejecutivo del estado del trámite, en 2-3 oraciones máximo]"
 }
+
+REGLAS DE METADATOS UI (ui_target + priority — OBLIGATORIO en cada validación):
+- Errores críticos que afecten múltiples campos relacionados (campos_relacionados.length > 1) o que impidan cerrar el trámite → "ui_target": "modal_bloqueante", "priority": "high".
+- Errores puntuales sobre un único campo (formato de cédula, fecha mal escrita, etc.) → "ui_target": "field_inline_badge", "priority": "high".
+- Advertencias generales de coherencia (notaría origen vs destino, datos inconsistentes entre documentos) → "ui_target": "side_panel_audit", "priority": "medium".
+- Sugerencias de mejora, datos de notaría detectados en documentos, observaciones no críticas → "ui_target": "side_panel_audit", "priority": "low".
+
+LÍMITES DE TEXTO (estricto):
+- "explicacion" ≤ 220 caracteres. Si no cabe, sé conciso; el panel lateral mide 380px.
+- "valor_sugerido" ≤ 80 caracteres. Solo datos atómicos.
 
 REGLAS ADICIONALES PARA LA RESPUESTA:
 - Si no hay ningún problema, devuelve estado "aprobado" con puntuacion 100 y validaciones vacías.
