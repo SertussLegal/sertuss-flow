@@ -128,6 +128,10 @@ serve(async (req) => {
     // Fase 1: sanitización defensiva de todos los strings devueltos por Claude.
     respuestaParsed = sanitizeAiJson(respuestaParsed);
 
+    // Fase 3: enforce UI contract (ui_target, priority, text length limits).
+    const uiContract = enforceUiContract(respuestaParsed.validaciones || []);
+    respuestaParsed.validaciones = uiContract.validaciones;
+
     // 7. Guardar en historial
     const tiempoRespuesta = Date.now() - startTime;
     const tokensInput = claudeData.usage?.input_tokens || 0;
@@ -155,7 +159,7 @@ serve(async (req) => {
       costo_estimado_usd: costoEstimado,
     });
 
-    // Fase 2: evento de telemetría para medir costo/tokens y mix de severidades por llamada.
+    // Fase 3: telemetría extendida con desglose UI y métrica de truncations.
     try {
       await supabase.from("system_events").insert({
         evento: "validar-con-claude",
@@ -165,7 +169,7 @@ serve(async (req) => {
         organization_id: payload.organization_id,
         tramite_id: payload.tramite_id,
         detalle: {
-          phase: "fase_2",
+          phase: "fase_3",
           modo: payload.modo,
           tipo_acto: payload.tipo_acto,
           tokens_input: tokensInput,
@@ -175,6 +179,9 @@ serve(async (req) => {
           total_advertencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "advertencia").length || 0,
           total_sugerencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "sugerencia").length || 0,
           puntuacion: respuestaParsed.puntuacion ?? null,
+          ui_targets_breakdown: uiContract.stats.ui_targets,
+          priorities_breakdown: uiContract.stats.priorities,
+          truncations: uiContract.stats.truncations,
         },
       });
     } catch { /* never break main flow */ }
