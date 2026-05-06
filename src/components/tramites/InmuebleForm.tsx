@@ -14,6 +14,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
+import { InlineBadgeDot } from "./InlineBadgeDot";
+import type { Validacion } from "@/services/validacionClaude";
 
 export interface ExtractedPersona {
   nombre_completo: string;
@@ -46,11 +48,12 @@ interface InmuebleFormProps {
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
   metadata?: Record<string, any> | null;
+  inlineBadges?: Map<string, Validacion>;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
-const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange, metadata }: InmuebleFormProps) => {
+const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange, metadata, inlineBadges }: InmuebleFormProps) => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
@@ -358,13 +361,19 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
     );
   };
 
+  const inlineDotInm = (key: string) => {
+    const v = inlineBadges?.get(key);
+    if (!v) return null;
+    return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+  };
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Inmueble</h3>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>Matrícula Inmobiliaria {ocr("matricula_inmobiliaria")} {confBadge("matricula_inmobiliaria")}</Label>
+          <Label>Matrícula Inmobiliaria {ocr("matricula_inmobiliaria")} {confBadge("matricula_inmobiliaria")} {inlineDotInm("matricula_inmobiliaria")}</Label>
           {wrapWithSuggestion("matricula_inmobiliaria",
             <Input data-field-input="matricula_inmobiliaria" className={fieldClassName("matricula_inmobiliaria")} value={inmueble.matricula_inmobiliaria} onChange={(e) => update("matricula_inmobiliaria", e.target.value)} />
           )}
@@ -383,7 +392,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
 
         <div className="space-y-2 sm:col-span-2">
           <Label>
-            Identificador Predial * {ocr("identificador_predial")} {confBadge("identificador_predial")}
+            Identificador Predial * {ocr("identificador_predial")} {confBadge("identificador_predial")} {inlineDotInm("identificador_predial")}
             {inmueble.tipo_identificador_predial === "chip" && (
               <span className="ml-2 text-xs text-muted-foreground">(Formato: AAA0000AAAA)</span>
             )}
@@ -404,21 +413,21 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         </div>
 
         <div className="space-y-2">
-          <Label>Departamento {ocr("departamento")} {confBadge("departamento")}</Label>
+          <Label>Departamento {ocr("departamento")} {confBadge("departamento")} {inlineDotInm("departamento")}</Label>
           {wrapWithSuggestion("departamento",
             <Input data-field-input="departamento" className={fieldClassName("departamento")} value={inmueble.departamento} onChange={(e) => update("departamento", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Municipio {ocr("municipio")} {confBadge("municipio")}</Label>
+          <Label>Municipio {ocr("municipio")} {confBadge("municipio")} {inlineDotInm("municipio")}</Label>
           {wrapWithSuggestion("municipio",
             <Input data-field-input="municipio" className={fieldClassName("municipio")} value={inmueble.municipio} onChange={(e) => update("municipio", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Oficina de Registro (ORIP) {ocr("codigo_orip")} {confBadge("codigo_orip")}</Label>
+          <Label>Oficina de Registro (ORIP) {ocr("codigo_orip")} {confBadge("codigo_orip")} {inlineDotInm("codigo_orip")}</Label>
           {wrapWithSuggestion("codigo_orip",
             <Input data-field-input="codigo_orip" className={fieldClassName("codigo_orip")} value={inmueble.codigo_orip} onChange={(e) => update("codigo_orip", e.target.value)} placeholder="Ej: Oficina de Registro de Instrumentos Públicos de Bogotá Zona Norte" />
           )}
@@ -436,28 +445,28 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
         </div>
 
         <div className="space-y-2">
-          <Label>Dirección {ocr("direccion")} {confBadge("direccion")}</Label>
+          <Label>Dirección {ocr("direccion")} {confBadge("direccion")} {inlineDotInm("direccion_inmueble")}</Label>
           {wrapWithSuggestion("direccion",
             <Input data-field-input="direccion_inmueble" className={fieldClassName("direccion")} value={inmueble.direccion} onChange={(e) => update("direccion", e.target.value)} />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Área Construida (m²) {ocr("area_construida")} {confBadge("area_construida")}</Label>
+          <Label>Área Construida (m²) {ocr("area_construida")} {confBadge("area_construida")} {inlineDotInm("area_construida")}</Label>
           {wrapWithSuggestion("area_construida",
             <Input data-field-input="area_construida" className={fieldClassName("area_construida")} value={inmueble.area_construida} onChange={(e) => update("area_construida", e.target.value)} placeholder="Ej: 269.18" />
           )}
         </div>
 
         <div className="space-y-2">
-          <Label>Área Privada (m²) {ocr("area_privada")} {confBadge("area_privada")}</Label>
+          <Label>Área Privada (m²) {ocr("area_privada")} {confBadge("area_privada")} {inlineDotInm("area_privada")}</Label>
           {wrapWithSuggestion("area_privada",
             <Input data-field-input="area_privada" className={fieldClassName("area_privada")} value={inmueble.area_privada} onChange={(e) => update("area_privada", e.target.value)} placeholder="Ej: 243.65" />
           )}
         </div>
 
         <div className="space-y-2 sm:col-span-2">
-          <Label>Avalúo Catastral (COP) {ocr("avaluo_catastral")} {confBadge("avaluo_catastral")}</Label>
+          <Label>Avalúo Catastral (COP) {ocr("avaluo_catastral")} {confBadge("avaluo_catastral")} {inlineDotInm("avaluo_catastral")}</Label>
           {wrapWithSuggestion("avaluo_catastral",
             <Input data-field-input="avaluo_catastral" className={fieldClassName("avaluo_catastral")} value={inmueble.avaluo_catastral} onChange={(e) => update("avaluo_catastral", e.target.value)} placeholder="Valor del avalúo catastral" />
           )}
@@ -465,7 +474,7 @@ const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtr
       </div>
 
       <div className="space-y-2">
-        <Label>Linderos {ocr("linderos")} {confBadge("linderos")}</Label>
+        <Label>Linderos {ocr("linderos")} {confBadge("linderos")} {inlineDotInm("linderos")}</Label>
         {wrapWithSuggestion("linderos",
           <Textarea
             data-field-input="linderos"

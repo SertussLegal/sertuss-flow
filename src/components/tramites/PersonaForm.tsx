@@ -11,6 +11,8 @@ import type { Persona, NivelConfianza } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
+import { InlineBadgeDot } from "./InlineBadgeDot";
+import type { Validacion } from "@/services/validacionClaude";
 
 interface PersonaFormProps {
   title: string;
@@ -19,9 +21,10 @@ interface PersonaFormProps {
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
   hasEscrituraProcessed?: boolean;
+  inlineBadges?: Map<string, Validacion>;
 }
 
-const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
+const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed, inlineBadges }: PersonaFormProps) => {
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
 
@@ -129,6 +132,15 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
     );
   };
 
+  const rolePrefix = title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador";
+  const inlineDot = (index: number, field: string) => {
+    if (!inlineBadges) return null;
+    const key = `${rolePrefix}_${index}_${field}`;
+    const v = inlineBadges.get(key);
+    if (!v) return null;
+    return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -211,32 +223,32 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Nombre Completo {ocr(index, "nombre_completo")} {confBadge(index, "nombre_completo")}</Label>
+                <Label>Nombre Completo {ocr(index, "nombre_completo")} {confBadge(index, "nombre_completo")} {inlineDot(index, "nombre_completo")}</Label>
                 {wrapWithSuggestion(index, "nombre_completo",
-                  <Input data-field-input={`${title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador"}_${index}_nombre_completo`} className={fieldClassName(index, "nombre_completo")} value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
+                  <Input data-field-input={`${rolePrefix}_${index}_nombre_completo`} className={fieldClassName(index, "nombre_completo")} value={persona.nombre_completo} onChange={(e) => updatePersona(index, "nombre_completo", e.target.value)} />
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Número de Cédula {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")}</Label>
+                <Label>Número de Cédula {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")} {inlineDot(index, "numero_cedula")}</Label>
                 {wrapWithSuggestion(index, "numero_cedula",
-                  <Input data-field-input={`${title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador"}_${index}_numero_cedula`} className={fieldClassName(index, "numero_cedula")} value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
+                  <Input data-field-input={`${rolePrefix}_${index}_numero_cedula`} className={fieldClassName(index, "numero_cedula")} value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Estado Civil</Label>
-                <Input data-field-input={`${title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador"}_${index}_estado_civil`} value={persona.estado_civil} onChange={(e) => updatePersona(index, "estado_civil", e.target.value)} />
+                <Label>Estado Civil {inlineDot(index, "estado_civil")}</Label>
+                <Input data-field-input={`${rolePrefix}_${index}_estado_civil`} value={persona.estado_civil} onChange={(e) => updatePersona(index, "estado_civil", e.target.value)} />
                 {persona.nombre_completo && persona.numero_cedula && !persona.estado_civil && (
                   <span className="text-xs text-muted-foreground italic">ⓘ Se extrae de la escritura antecedente</span>
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")} {confBadge(index, "municipio_domicilio")}</Label>
+                <Label>Municipio de Domicilio {ocr(index, "municipio_domicilio")} {confBadge(index, "municipio_domicilio")} {inlineDot(index, "municipio_domicilio")}</Label>
                 {wrapWithSuggestion(index, "municipio_domicilio",
-                  <Input data-field-input={`${title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador"}_${index}_municipio_domicilio`} className={fieldClassName(index, "municipio_domicilio")} value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
+                  <Input data-field-input={`${rolePrefix}_${index}_municipio_domicilio`} className={fieldClassName(index, "municipio_domicilio")} value={persona.municipio_domicilio} onChange={(e) => updatePersona(index, "municipio_domicilio", e.target.value)} />
                 )}
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Dirección</Label>
+                <Label>Dirección {inlineDot(index, "direccion")}</Label>
                 <Input data-field-input={`${title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador"}_${index}_direccion`} value={persona.direccion} onChange={(e) => updatePersona(index, "direccion", e.target.value)} />
                 {persona.nombre_completo && persona.numero_cedula && !persona.direccion && (
                   <span className="text-xs text-muted-foreground italic">ⓘ Se extrae de la escritura antecedente</span>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,8 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import { validarConClaude, tieneErroresCriticos, contarPorNivel, obtenerBloqueantes, obtenerSidePanel, type Validacion as ClaudeValidacion } from "@/services/validacionClaude";
+import { validarConClaude, tieneErroresCriticos, contarPorNivel, obtenerBloqueantes, obtenerSidePanel, obtenerInlineBadges, type Validacion as ClaudeValidacion } from "@/services/validacionClaude";
+import { InlineBadgeDot } from "@/components/tramites/InlineBadgeDot";
 import { toast as sonnerToast } from "sonner";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
@@ -850,6 +851,33 @@ const Validacion = () => {
       }, 100);
     });
   }, []);
+
+  // ─── Fase 3.5: mapa de inline-badges indexado por data-field-input ───
+  const inlineBadgeMap = useMemo(() => {
+    const map = new Map<string, ClaudeValidacion>();
+    if (!validacionCampos?.validaciones?.length) return map;
+    const inline = obtenerInlineBadges(validacionCampos.validaciones as ClaudeValidacion[]);
+    const resolveKey = (raw: string): string => {
+      if (!raw) return raw;
+      if (FIELD_ALIAS[raw]) return FIELD_ALIAS[raw];
+      if (FIELD_TO_INMUEBLE[raw]) return raw; // ya coincide con data-field-input
+      if (FIELD_TO_ACTOS[raw]) return raw;
+      // soporta claves "actos.valor_compraventa", "inmueble.matricula"
+      const stripped = raw.replace(/^(inmueble|actos|apoderado_banco|notaria_tramite|notaria)\./, "");
+      if (FIELD_ALIAS[raw]) return FIELD_ALIAS[raw];
+      return stripped || raw;
+    };
+    for (const v of inline) {
+      const keys = [v.campo, ...(v.campos_relacionados || [])].filter(Boolean);
+      for (const k of keys) {
+        const resolved = resolveKey(k);
+        if (resolved && !map.has(resolved)) map.set(resolved, v);
+        // También indexamos la clave original por si ya coincide
+        if (k && !map.has(k)) map.set(k, v);
+      }
+    }
+    return map;
+  }, [validacionCampos]);
 
   const calculateProgress = () => {
     const personaFields: (keyof Persona)[] = ["nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio"];
@@ -2506,9 +2534,30 @@ const Validacion = () => {
       return { nivel: top.nivel, explicacion: top.explicacion, count: matches.length };
     };
 
+    // Detecta si una pestaña tiene inline-badges (Fase 3.5)
+    const hasTabInlineBadges = (tabKey: string): { v: ClaudeValidacion } | null => {
+      if (!inlineBadgeMap.size) return null;
+      const prefixes: string[] =
+        tabKey === "vendedores" ? ["vendedor_"] :
+        tabKey === "compradores" ? ["comprador_"] :
+        tabKey === "inmueble" ? ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "codigo_orip", "direccion_inmueble", "area_construida", "area_privada", "avaluo_catastral", "linderos", "tipo_predio", "tipo_identificador_predial"] :
+        tabKey === "actos" ? ["valor_compraventa", "valor_hipoteca", "entidad_bancaria", "entidad_nit", "entidad_domicilio", "pago_inicial", "saldo_financiado", "fecha_credito", "tipo_acto", "apoderado_"] :
+        [];
+      for (const [k, v] of inlineBadgeMap) {
+        if (prefixes.some(p => k.startsWith(p) || k === p)) return { v };
+      }
+      return null;
+    };
+
     const renderTabIcon = (tabKey: string) => {
       const sev = getTabSeverity(tabKey);
-      if (!sev) return null;
+      if (!sev) {
+        const inline = hasTabInlineBadges(tabKey);
+        if (inline) {
+          return <InlineBadgeDot explicacion={inline.v.explicacion} nivel={inline.v.nivel} className="ml-1.5" />;
+        }
+        return null;
+      }
       const Icon = sev.nivel === "error" ? AlertCircle : sev.nivel === "advertencia" ? AlertTriangle : Info;
       const colorCls = sev.nivel === "error" ? "text-destructive" : sev.nivel === "advertencia" ? "text-accent" : "text-primary";
       return (
@@ -2749,6 +2798,12 @@ const Validacion = () => {
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">Datos de la Notaría</span>
+            {(() => {
+              const notariaInline = Array.from(inlineBadgeMap.entries()).find(([k]) => k.startsWith("notaria_"));
+              if (!notariaInline) return null;
+              const [, v] = notariaInline;
+              return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1" />;
+            })()}
             <span className="text-xs text-muted-foreground">
               ({camposLlenos}/{NOTARIA_FIELDS.length} campos)
             </span>
@@ -2917,7 +2972,16 @@ const Validacion = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {OTROS_NOTARIA_FIELDS.map(key => (
                 <div key={key} className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">{NOTARIA_LABELS[key]}</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {NOTARIA_LABELS[key]}
+                    {(() => {
+                      const attr = NOTARIA_INPUT_ATTR[key];
+                      if (!attr) return null;
+                      const v = inlineBadgeMap.get(attr);
+                      if (!v) return null;
+                      return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+                    })()}
+                  </label>
                   {renderNotariaInput(key)}
                 </div>
               ))}
@@ -2999,10 +3063,10 @@ const Validacion = () => {
       )}
 
       <TabsContent value="vendedores">
-        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} />
+        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
       </TabsContent>
       <TabsContent value="compradores">
-        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} />
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
       </TabsContent>
       <TabsContent value="inmueble">
         <InmuebleForm
@@ -3015,10 +3079,11 @@ const Validacion = () => {
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
           metadata={tramiteMetadata}
+          inlineBadges={inlineBadgeMap}
         />
       </TabsContent>
       <TabsContent value="actos">
-        <ActosForm actos={actos} onChange={setActos} />
+        <ActosForm actos={actos} onChange={setActos} inlineBadges={inlineBadgeMap} />
       </TabsContent>
     </Tabs>
     );
