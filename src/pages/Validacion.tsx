@@ -3483,6 +3483,27 @@ const Validacion = () => {
                     )}
                     <p className="text-sm">{validacionResultado.retroalimentacion_general}</p>
 
+                    {/* Fase 3: banner bloqueante destacado (no inhabilita el botón Confirmar) */}
+                    {(() => {
+                      const bloqueantes = obtenerBloqueantes(validacionResultado.validaciones as ClaudeValidacion[]);
+                      if (bloqueantes.length === 0) return null;
+                      return (
+                        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 space-y-1.5">
+                          <p className="text-sm font-semibold text-destructive flex items-center gap-1.5">
+                            <AlertCircle className="h-4 w-4" />
+                            Atención: {bloqueantes.length} hallazgo{bloqueantes.length !== 1 ? "s" : ""} crítico{bloqueantes.length !== 1 ? "s" : ""} multi-campo
+                          </p>
+                          <ul className="space-y-1">
+                            {bloqueantes.map((v, i) => (
+                              <li key={i} className="text-xs text-foreground">
+                                <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()}
+
                     {/* Errores */}
                     {validacionResultado.validaciones.filter(v => v.nivel === "error").length > 0 && (
                       <div className="space-y-1">
