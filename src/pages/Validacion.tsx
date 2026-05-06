@@ -852,7 +852,34 @@ const Validacion = () => {
     });
   }, []);
 
-  const calculateProgress = () => {
+  // ─── Fase 3.5: mapa de inline-badges indexado por data-field-input ───
+  const inlineBadgeMap = useMemo(() => {
+    const map = new Map<string, ClaudeValidacion>();
+    if (!validacionCampos?.validaciones?.length) return map;
+    const inline = obtenerInlineBadges(validacionCampos.validaciones as ClaudeValidacion[]);
+    const resolveKey = (raw: string): string => {
+      if (!raw) return raw;
+      if (FIELD_ALIAS[raw]) return FIELD_ALIAS[raw];
+      if (FIELD_TO_INMUEBLE[raw]) return raw; // ya coincide con data-field-input
+      if (FIELD_TO_ACTOS[raw]) return raw;
+      // soporta claves "actos.valor_compraventa", "inmueble.matricula"
+      const stripped = raw.replace(/^(inmueble|actos|apoderado_banco|notaria_tramite|notaria)\./, "");
+      if (FIELD_ALIAS[raw]) return FIELD_ALIAS[raw];
+      return stripped || raw;
+    };
+    for (const v of inline) {
+      const keys = [v.campo, ...(v.campos_relacionados || [])].filter(Boolean);
+      for (const k of keys) {
+        const resolved = resolveKey(k);
+        if (resolved && !map.has(resolved)) map.set(resolved, v);
+        // También indexamos la clave original por si ya coincide
+        if (k && !map.has(k)) map.set(k, v);
+      }
+    }
+    return map;
+  }, [validacionCampos]);
+
+
     const personaFields: (keyof Persona)[] = ["nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio"];
     const inmuebleFields: (keyof Inmueble)[] = ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "direccion", "area", "linderos", "avaluo_catastral"];
     const actosBaseFields: (keyof Actos)[] = ["tipo_acto", "valor_compraventa"];
