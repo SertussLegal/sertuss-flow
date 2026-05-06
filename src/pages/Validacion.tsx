@@ -3030,7 +3030,7 @@ const Validacion = () => {
         <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
       </TabsContent>
       <TabsContent value="compradores">
-        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} />
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
       </TabsContent>
       <TabsContent value="inmueble">
         <InmuebleForm
