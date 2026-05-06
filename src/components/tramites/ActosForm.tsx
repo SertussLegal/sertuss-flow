@@ -40,6 +40,11 @@ const ActosForm = ({ actos, onChange, inlineBadges }: ActosFormProps) => {
   };
 
   const ocr = (field: string) => ocrFields.has(field) ? <OcrBadge /> : null;
+  const inlineDot = (field: string) => {
+    const v = inlineBadges?.get(field);
+    if (!v) return null;
+    return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+  };
 
   const wrapWithSuggestion = (field: string, input: React.ReactNode) => {
     const suggested = suggestions.get(field);
