@@ -18,7 +18,10 @@ interface ValidacionParams {
   textoPreview?: string;
 }
 
-interface Validacion {
+export type UiTarget = "modal_bloqueante" | "side_panel_audit" | "field_inline_badge";
+export type Priority = "high" | "medium" | "low";
+
+export interface Validacion {
   nivel: "error" | "advertencia" | "sugerencia";
   codigo_regla: string;
   campo: string;
@@ -27,9 +30,12 @@ interface Validacion {
   valor_sugerido?: string;
   explicacion: string;
   auto_corregible: boolean;
+  // Fase 3 — UI contract (opcionales para retrocompatibilidad)
+  ui_target?: UiTarget;
+  priority?: Priority;
 }
 
-interface ValidacionResultado {
+export interface ValidacionResultado {
   estado: "aprobado" | "requiere_revision" | "errores_criticos" | "error_sistema";
   puntuacion?: number;
   validaciones: Validacion[];
