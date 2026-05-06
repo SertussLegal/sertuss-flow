@@ -74,6 +74,84 @@ export function sanitizeAiOutput(text: string): string {
   return out.trim();
 }
 
+// ============================================================
+// Fase 3 — UI Contract enforcement
+// ============================================================
+// Server-side guarantees that every Claude validation has a valid
+// `ui_target` + `priority` and that text fields fit the side panel.
+// The UI never sees malformed payloads even if the model misbehaves.
+
+export const MAX_EXPLICACION = 220;
+export const MAX_VALOR_SUGERIDO = 80;
+
+const VALID_UI_TARGETS = new Set([
+  "modal_bloqueante",
+  "side_panel_audit",
+  "field_inline_badge",
+]);
+const VALID_PRIORITIES = new Set(["high", "medium", "low"]);
+
+function truncate(value: unknown, max: number): { value: string; truncated: boolean } {
+  if (typeof value !== "string") return { value: value == null ? "" : String(value), truncated: false };
+  if (value.length <= max) return { value, truncated: false };
+  return { value: value.slice(0, max - 1).trimEnd() + "…", truncated: true };
+}
+
+function priorityFromNivel(nivel: unknown): "high" | "medium" | "low" {
+  if (nivel === "error") return "high";
+  if (nivel === "advertencia") return "medium";
+  return "low";
+}
+
+export interface UiContractStats {
+  truncations: number;
+  ui_targets: { modal_bloqueante: number; side_panel_audit: number; field_inline_badge: number };
+  priorities: { high: number; medium: number; low: number };
+}
+
+/**
+ * Enforce the UI contract for an array of Claude validations.
+ * - Truncates `explicacion` and `valor_sugerido` to safe lengths.
+ * - Defaults `ui_target` to `side_panel_audit` if missing or invalid.
+ * - Defaults `priority` based on `nivel` if missing or invalid.
+ */
+export function enforceUiContract(
+  validaciones: any[],
+): { validaciones: any[]; stats: UiContractStats } {
+  const stats: UiContractStats = {
+    truncations: 0,
+    ui_targets: { modal_bloqueante: 0, side_panel_audit: 0, field_inline_badge: 0 },
+    priorities: { high: 0, medium: 0, low: 0 },
+  };
+
+  if (!Array.isArray(validaciones)) return { validaciones: [], stats };
+
+  const out = validaciones.map((v) => {
+    if (!v || typeof v !== "object") return v;
+
+    const explic = truncate(v.explicacion, MAX_EXPLICACION);
+    const sugerido = truncate(v.valor_sugerido, MAX_VALOR_SUGERIDO);
+    if (explic.truncated) stats.truncations += 1;
+    if (sugerido.truncated) stats.truncations += 1;
+
+    const ui_target = VALID_UI_TARGETS.has(v.ui_target) ? v.ui_target : "side_panel_audit";
+    const priority = VALID_PRIORITIES.has(v.priority) ? v.priority : priorityFromNivel(v.nivel);
+
+    stats.ui_targets[ui_target as keyof typeof stats.ui_targets] += 1;
+    stats.priorities[priority as keyof typeof stats.priorities] += 1;
+
+    return {
+      ...v,
+      explicacion: explic.value,
+      valor_sugerido: v.valor_sugerido != null ? sugerido.value : v.valor_sugerido,
+      ui_target,
+      priority,
+    };
+  });
+
+  return { validaciones: out, stats };
+}
+
 /**
  * Recursively sanitize every string field of a JSON-like object.
  * Useful for Claude's structured response (validaciones[].explicacion etc.).
