@@ -3043,10 +3043,11 @@ const Validacion = () => {
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
           metadata={tramiteMetadata}
+          inlineBadges={inlineBadgeMap}
         />
       </TabsContent>
       <TabsContent value="actos">
-        <ActosForm actos={actos} onChange={setActos} />
+        <ActosForm actos={actos} onChange={setActos} inlineBadges={inlineBadgeMap} />
       </TabsContent>
     </Tabs>
     );
