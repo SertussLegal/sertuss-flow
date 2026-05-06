@@ -16,7 +16,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import { validarConClaude, tieneErroresCriticos, contarPorNivel } from "@/services/validacionClaude";
+import { validarConClaude, tieneErroresCriticos, contarPorNivel, obtenerBloqueantes, obtenerSidePanel, type Validacion as ClaudeValidacion } from "@/services/validacionClaude";
 import { toast as sonnerToast } from "sonner";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
@@ -2969,19 +2969,30 @@ const Validacion = () => {
           </div>
           {bannerExpanded && (
             <ul className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
-              {validacionCampos.validaciones.map((v, idx) => {
-                const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
-                const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
-                return (
-                  <li key={idx} className="flex items-start gap-2 text-xs">
-                    <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
-                    <div className="flex-1">
-                      <span className="font-medium text-foreground">{v.campo}</span>
-                      <span className="text-muted-foreground"> · {v.explicacion}</span>
-                    </div>
-                  </li>
-                );
-              })}
+              {(() => {
+                // Fase 3: side panel ordenado por prioridad. Si la validación no
+                // trae ui_target (respuesta vieja), entra al panel lateral por default.
+                const sidePanelItems = obtenerSidePanel(validacionCampos.validaciones as ClaudeValidacion[]);
+                const items = sidePanelItems.length > 0 ? sidePanelItems : (validacionCampos.validaciones as ClaudeValidacion[]);
+                return items.map((v, idx) => {
+                  const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
+                  const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
+                  const prio = v.priority ?? (v.nivel === "error" ? "high" : v.nivel === "advertencia" ? "medium" : "low");
+                  const bgCls =
+                    prio === "high" ? "bg-destructive/10 border-l-2 border-destructive/60" :
+                    prio === "medium" ? "bg-accent/10 border-l-2 border-accent/60" :
+                    "bg-notarial-gold/5 border-l-2 border-notarial-gold/40";
+                  return (
+                    <li key={idx} className={`flex items-start gap-2 text-xs rounded-sm pl-2 py-1 pr-1 ${bgCls}`}>
+                      <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
+                      <div className="flex-1">
+                        <span className="font-medium text-foreground">{v.campo}</span>
+                        <span className="text-muted-foreground"> · {v.explicacion}</span>
+                      </div>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           )}
         </div>
@@ -3471,6 +3482,27 @@ const Validacion = () => {
                       </p>
                     )}
                     <p className="text-sm">{validacionResultado.retroalimentacion_general}</p>
+
+                    {/* Fase 3: banner bloqueante destacado (no inhabilita el botón Confirmar) */}
+                    {(() => {
+                      const bloqueantes = obtenerBloqueantes(validacionResultado.validaciones as ClaudeValidacion[]);
+                      if (bloqueantes.length === 0) return null;
+                      return (
+                        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 space-y-1.5">
+                          <p className="text-sm font-semibold text-destructive flex items-center gap-1.5">
+                            <AlertCircle className="h-4 w-4" />
+                            Atención: {bloqueantes.length} hallazgo{bloqueantes.length !== 1 ? "s" : ""} crítico{bloqueantes.length !== 1 ? "s" : ""} multi-campo
+                          </p>
+                          <ul className="space-y-1">
+                            {bloqueantes.map((v, i) => (
+                              <li key={i} className="text-xs text-foreground">
+                                <span className="font-medium">{v.campo}</span>: {v.explicacion}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()}
 
                     {/* Errores */}
                     {validacionResultado.validaciones.filter(v => v.nivel === "error").length > 0 && (

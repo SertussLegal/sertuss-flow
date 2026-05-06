@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { STRICT_OUTPUT_RULES, sanitizeAiJson } from "../_shared/aiOutputRules.ts";
+import { STRICT_OUTPUT_RULES, sanitizeAiJson, enforceUiContract } from "../_shared/aiOutputRules.ts";
 
 const CLAUDE_API_KEY = Deno.env.get("CLAUDE_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -128,6 +128,10 @@ serve(async (req) => {
     // Fase 1: sanitización defensiva de todos los strings devueltos por Claude.
     respuestaParsed = sanitizeAiJson(respuestaParsed);
 
+    // Fase 3: enforce UI contract (ui_target, priority, text length limits).
+    const uiContract = enforceUiContract(respuestaParsed.validaciones || []);
+    respuestaParsed.validaciones = uiContract.validaciones;
+
     // 7. Guardar en historial
     const tiempoRespuesta = Date.now() - startTime;
     const tokensInput = claudeData.usage?.input_tokens || 0;
@@ -155,7 +159,7 @@ serve(async (req) => {
       costo_estimado_usd: costoEstimado,
     });
 
-    // Fase 2: evento de telemetría para medir costo/tokens y mix de severidades por llamada.
+    // Fase 3: telemetría extendida con desglose UI y métrica de truncations.
     try {
       await supabase.from("system_events").insert({
         evento: "validar-con-claude",
@@ -165,7 +169,7 @@ serve(async (req) => {
         organization_id: payload.organization_id,
         tramite_id: payload.tramite_id,
         detalle: {
-          phase: "fase_2",
+          phase: "fase_3",
           modo: payload.modo,
           tipo_acto: payload.tipo_acto,
           tokens_input: tokensInput,
@@ -175,6 +179,9 @@ serve(async (req) => {
           total_advertencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "advertencia").length || 0,
           total_sugerencias: respuestaParsed.validaciones?.filter((v: any) => v.nivel === "sugerencia").length || 0,
           puntuacion: respuestaParsed.puntuacion ?? null,
+          ui_targets_breakdown: uiContract.stats.ui_targets,
+          priorities_breakdown: uiContract.stats.priorities,
+          truncations: uiContract.stats.truncations,
         },
       });
     } catch { /* never break main flow */ }
@@ -264,13 +271,25 @@ FORMATO DE RESPUESTA OBLIGATORIO:
       "campo": "[ruta del campo afectado]",
       "campos_relacionados": ["[otros campos involucrados]"],
       "valor_actual": "[valor encontrado]",
-      "valor_sugerido": "[valor corregido, solo si auto_corregible]",
-      "explicacion": "[explicación clara en español de por qué está mal y qué hacer]",
-      "auto_corregible": true | false
+      "valor_sugerido": "[valor corregido, solo si auto_corregible, MÁXIMO 80 caracteres]",
+      "explicacion": "[explicación clara en español, MÁXIMO 220 caracteres]",
+      "auto_corregible": true | false,
+      "ui_target": "modal_bloqueante" | "side_panel_audit" | "field_inline_badge",
+      "priority": "high" | "medium" | "low"
     }
   ],
   "retroalimentacion_general": "[resumen ejecutivo del estado del trámite, en 2-3 oraciones máximo]"
 }
+
+REGLAS DE METADATOS UI (ui_target + priority — OBLIGATORIO en cada validación):
+- Errores críticos que afecten múltiples campos relacionados (campos_relacionados.length > 1) o que impidan cerrar el trámite → "ui_target": "modal_bloqueante", "priority": "high".
+- Errores puntuales sobre un único campo (formato de cédula, fecha mal escrita, etc.) → "ui_target": "field_inline_badge", "priority": "high".
+- Advertencias generales de coherencia (notaría origen vs destino, datos inconsistentes entre documentos) → "ui_target": "side_panel_audit", "priority": "medium".
+- Sugerencias de mejora, datos de notaría detectados en documentos, observaciones no críticas → "ui_target": "side_panel_audit", "priority": "low".
+
+LÍMITES DE TEXTO (estricto):
+- "explicacion" ≤ 220 caracteres. Si no cabe, sé conciso; el panel lateral mide 380px.
+- "valor_sugerido" ≤ 80 caracteres. Solo datos atómicos.
 
 REGLAS ADICIONALES PARA LA RESPUESTA:
 - Si no hay ningún problema, devuelve estado "aprobado" con puntuacion 100 y validaciones vacías.
