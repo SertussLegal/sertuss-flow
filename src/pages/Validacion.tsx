@@ -2798,6 +2798,12 @@ const Validacion = () => {
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">Datos de la Notaría</span>
+            {(() => {
+              const notariaInline = Array.from(inlineBadgeMap.entries()).find(([k]) => k.startsWith("notaria_"));
+              if (!notariaInline) return null;
+              const [, v] = notariaInline;
+              return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1" />;
+            })()}
             <span className="text-xs text-muted-foreground">
               ({camposLlenos}/{NOTARIA_FIELDS.length} campos)
             </span>
@@ -2966,7 +2972,16 @@ const Validacion = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {OTROS_NOTARIA_FIELDS.map(key => (
                 <div key={key} className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">{NOTARIA_LABELS[key]}</label>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {NOTARIA_LABELS[key]}
+                    {(() => {
+                      const attr = NOTARIA_INPUT_ATTR[key];
+                      if (!attr) return null;
+                      const v = inlineBadgeMap.get(attr);
+                      if (!v) return null;
+                      return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+                    })()}
+                  </label>
                   {renderNotariaInput(key)}
                 </div>
               ))}
