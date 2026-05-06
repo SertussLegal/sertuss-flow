@@ -14,6 +14,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
+import { InlineBadgeDot } from "./InlineBadgeDot";
+import type { Validacion } from "@/services/validacionClaude";
 
 export interface ExtractedPersona {
   nombre_completo: string;
@@ -46,11 +48,12 @@ interface InmuebleFormProps {
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
   metadata?: Record<string, any> | null;
+  inlineBadges?: Map<string, Validacion>;
 }
 
 type ScanType = "certificado_tradicion" | "predial" | "escritura_antecedente";
 
-const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange, metadata }: InmuebleFormProps) => {
+const InmuebleForm = ({ inmueble, onChange, onPersonasExtracted, onDocumentoExtracted, onPredialExtracted, onActosExtracted, confianzaFields, onConfianzaChange, metadata, inlineBadges }: InmuebleFormProps) => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [scanning, setScanning] = useState<ScanType | null>(null);
