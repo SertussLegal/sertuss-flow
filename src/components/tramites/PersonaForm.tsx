@@ -11,6 +11,8 @@ import type { Persona, NivelConfianza } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
+import { InlineBadgeDot } from "./InlineBadgeDot";
+import type { Validacion } from "@/services/validacionClaude";
 
 interface PersonaFormProps {
   title: string;
@@ -19,9 +21,10 @@ interface PersonaFormProps {
   confianzaFields?: Map<string, NivelConfianza>;
   onConfianzaChange?: (field: string, confianza: NivelConfianza) => void;
   hasEscrituraProcessed?: boolean;
+  inlineBadges?: Map<string, Validacion>;
 }
 
-const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed }: PersonaFormProps) => {
+const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaChange, hasEscrituraProcessed, inlineBadges }: PersonaFormProps) => {
   const [ocrFields, setOcrFields] = useState<Map<number, Set<string>>>(new Map());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
 
