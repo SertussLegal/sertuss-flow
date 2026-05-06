@@ -879,7 +879,7 @@ const Validacion = () => {
     return map;
   }, [validacionCampos]);
 
-
+  const calculateProgress = () => {
     const personaFields: (keyof Persona)[] = ["nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio"];
     const inmuebleFields: (keyof Inmueble)[] = ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "direccion", "area", "linderos", "avaluo_catastral"];
     const actosBaseFields: (keyof Actos)[] = ["tipo_acto", "valor_compraventa"];
