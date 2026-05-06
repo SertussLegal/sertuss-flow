@@ -132,6 +132,15 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
     );
   };
 
+  const rolePrefix = title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador";
+  const inlineDot = (index: number, field: string) => {
+    if (!inlineBadges) return null;
+    const key = `${rolePrefix}_${index}_${field}`;
+    const v = inlineBadges.get(key);
+    if (!v) return null;
+    return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
