@@ -2969,19 +2969,30 @@ const Validacion = () => {
           </div>
           {bannerExpanded && (
             <ul className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
-              {validacionCampos.validaciones.map((v, idx) => {
-                const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
-                const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
-                return (
-                  <li key={idx} className="flex items-start gap-2 text-xs">
-                    <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
-                    <div className="flex-1">
-                      <span className="font-medium text-foreground">{v.campo}</span>
-                      <span className="text-muted-foreground"> · {v.explicacion}</span>
-                    </div>
-                  </li>
-                );
-              })}
+              {(() => {
+                // Fase 3: side panel ordenado por prioridad. Si la validación no
+                // trae ui_target (respuesta vieja), entra al panel lateral por default.
+                const sidePanelItems = obtenerSidePanel(validacionCampos.validaciones as ClaudeValidacion[]);
+                const items = sidePanelItems.length > 0 ? sidePanelItems : (validacionCampos.validaciones as ClaudeValidacion[]);
+                return items.map((v, idx) => {
+                  const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
+                  const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
+                  const prio = v.priority ?? (v.nivel === "error" ? "high" : v.nivel === "advertencia" ? "medium" : "low");
+                  const bgCls =
+                    prio === "high" ? "bg-destructive/10 border-l-2 border-destructive/60" :
+                    prio === "medium" ? "bg-accent/10 border-l-2 border-accent/60" :
+                    "bg-notarial-gold/5 border-l-2 border-notarial-gold/40";
+                  return (
+                    <li key={idx} className={`flex items-start gap-2 text-xs rounded-sm pl-2 py-1 pr-1 ${bgCls}`}>
+                      <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
+                      <div className="flex-1">
+                        <span className="font-medium text-foreground">{v.campo}</span>
+                        <span className="text-muted-foreground"> · {v.explicacion}</span>
+                      </div>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           )}
         </div>
