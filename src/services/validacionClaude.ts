@@ -116,3 +116,41 @@ export function contarPorNivel(resultado: ValidacionResultado): {
     sugerencias: resultado.validaciones.filter((v) => v.nivel === "sugerencia").length,
   };
 }
+
+// ============================================================
+// Fase 3 — Selectores por destino UI
+// ============================================================
+
+const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+
+function priorityFromNivel(nivel: Validacion["nivel"]): Priority {
+  if (nivel === "error") return "high";
+  if (nivel === "advertencia") return "medium";
+  return "low";
+}
+
+function getUiTarget(v: Validacion): UiTarget {
+  return v.ui_target ?? "side_panel_audit";
+}
+
+function getPriority(v: Validacion): Priority {
+  return v.priority ?? priorityFromNivel(v.nivel);
+}
+
+/** Validaciones críticas que deben mostrarse en un banner bloqueante (no inhabilita el botón). */
+export function obtenerBloqueantes(validaciones: Validacion[]): Validacion[] {
+  return validaciones.filter((v) => getUiTarget(v) === "modal_bloqueante");
+}
+
+/** Validaciones que deben mostrarse como dot inline junto al input afectado. */
+export function obtenerInlineBadges(validaciones: Validacion[]): Validacion[] {
+  return validaciones.filter((v) => getUiTarget(v) === "field_inline_badge");
+}
+
+/** Validaciones para el panel lateral, ordenadas por prioridad descendente. */
+export function obtenerSidePanel(validaciones: Validacion[]): Validacion[] {
+  return validaciones
+    .filter((v) => getUiTarget(v) === "side_panel_audit")
+    .slice()
+    .sort((a, b) => PRIORITY_ORDER[getPriority(a)] - PRIORITY_ORDER[getPriority(b)]);
+}
