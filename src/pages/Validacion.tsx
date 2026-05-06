@@ -2534,9 +2534,30 @@ const Validacion = () => {
       return { nivel: top.nivel, explicacion: top.explicacion, count: matches.length };
     };
 
+    // Detecta si una pestaña tiene inline-badges (Fase 3.5)
+    const hasTabInlineBadges = (tabKey: string): { v: ClaudeValidacion } | null => {
+      if (!inlineBadgeMap.size) return null;
+      const prefixes: string[] =
+        tabKey === "vendedores" ? ["vendedor_"] :
+        tabKey === "compradores" ? ["comprador_"] :
+        tabKey === "inmueble" ? ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "codigo_orip", "direccion_inmueble", "area_construida", "area_privada", "avaluo_catastral", "linderos", "tipo_predio", "tipo_identificador_predial"] :
+        tabKey === "actos" ? ["valor_compraventa", "valor_hipoteca", "entidad_bancaria", "entidad_nit", "entidad_domicilio", "pago_inicial", "saldo_financiado", "fecha_credito", "tipo_acto", "apoderado_"] :
+        [];
+      for (const [k, v] of inlineBadgeMap) {
+        if (prefixes.some(p => k.startsWith(p) || k === p)) return { v };
+      }
+      return null;
+    };
+
     const renderTabIcon = (tabKey: string) => {
       const sev = getTabSeverity(tabKey);
-      if (!sev) return null;
+      if (!sev) {
+        const inline = hasTabInlineBadges(tabKey);
+        if (inline) {
+          return <InlineBadgeDot explicacion={inline.v.explicacion} nivel={inline.v.nivel} className="ml-1.5" />;
+        }
+        return null;
+      }
       const Icon = sev.nivel === "error" ? AlertCircle : sev.nivel === "advertencia" ? AlertTriangle : Info;
       const colorCls = sev.nivel === "error" ? "text-destructive" : sev.nivel === "advertencia" ? "text-accent" : "text-primary";
       return (
