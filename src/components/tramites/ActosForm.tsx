@@ -5,13 +5,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Actos } from "@/lib/types";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
+import { InlineBadgeDot } from "./InlineBadgeDot";
+import type { Validacion } from "@/services/validacionClaude";
 
 interface ActosFormProps {
   actos: Actos;
   onChange: (actos: Actos) => void;
+  inlineBadges?: Map<string, Validacion>;
 }
 
-const ActosForm = ({ actos, onChange }: ActosFormProps) => {
+const ActosForm = ({ actos, onChange, inlineBadges }: ActosFormProps) => {
   const [ocrFields, setOcrFields] = useState<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<Map<string, string>>(new Map());
 
