@@ -10,6 +10,7 @@ import VariableEditPopover from "./VariableEditPopover";
 import InlineEditToolbar from "./InlineEditToolbar";
 import DOMPurify from "dompurify";
 import mammoth from "mammoth";
+import { escrituraProsa, montoProsa } from "@/lib/legalProse";
 
 // ── Pase C: Colapso adaptativo estructural ───────────────────────────────
 // Elimina <p> que solo contienen blanks + conectores. Protege encabezados
@@ -17,7 +18,7 @@ import mammoth from "mammoth";
 const PROTECTED_HEADERS = /\b(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|SEPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO|PRECIO|OBJETO|COMPRAVENTA|HIPOTECA)\b/i;
 const FILLER_ONLY = /^[\s_()de\sdellaenyo,.\-–—]*$/i;
 
-function adaptiveCollapse(html: string, esPH: boolean): string {
+export function adaptiveCollapse(html: string, esPH: boolean): string {
   if (typeof window === "undefined" || typeof DOMParser === "undefined") return html;
   try {
     const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
@@ -629,6 +630,21 @@ const DocxPreview = ({
     const rphData = parseEscrituraString(inmueble.escritura_ph);
     const rphReformas = parseEscrituraString(inmueble.reformas_ph);
 
+    // Prosa unificada (Fase 3.5): una sola cadena para escrituras de PH y antecedentes.
+    const rphProsa = escrituraProsa({
+      numero: (inmueble as any).escritura_ph_numero ?? rphData.numero ?? null,
+      fecha: (inmueble as any).escritura_ph_fecha ?? null,
+      notariaNumero: (inmueble as any).escritura_ph_notaria_numero ?? null,
+      circulo: (inmueble as any).escritura_ph_ciudad ?? null,
+    });
+    const _antTit: any = extractedDocumento?.titulo_antecedente ?? {};
+    const antProsa = escrituraProsa({
+      numero: _antTit.numero_documento ?? extractedDocumento?.numero_escritura ?? null,
+      fecha: _antTit.fecha_documento ?? extractedDocumento?.fecha_documento ?? null,
+      notariaNumero: _antTit.notaria_documento ?? extractedDocumento?.notaria_origen ?? null,
+      circulo: _antTit.ciudad_documento ?? null,
+    });
+
     // Parse fecha_poder for apoderado banco date components
     const poderFechaParsed = parseEscrituraString((actos as any).apoderado_fecha_poder ? `DEL ${(actos as any).apoderado_fecha_poder}` : undefined);
 
@@ -686,10 +702,10 @@ const DocxPreview = ({
       "inmueble.estrato": inmueble.estrato || "___________",
       // Actos — with number→words conversion
       "tipo_acto": actos.tipo_acto || "___________",
-      "valor_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
-      "actos.cuantia_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
+      "valor_compraventa_letras": montoProsa(actos.valor_compraventa || "") || "___________",
+      "actos.cuantia_compraventa_letras": montoProsa(actos.valor_compraventa || "") || "___________",
       "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
-      "actos.cuantia_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
+      "actos.cuantia_hipoteca_letras": montoProsa(actos.valor_hipoteca || "") || "___________",
       "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
@@ -705,8 +721,8 @@ const DocxPreview = ({
         const bank = lookupBank(actos.entidad_bancaria || "");
         return bank?.nit || "___________";
       })(),
-      "valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
-      "actos.valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
+      "valor_hipoteca_letras": montoProsa(actos.valor_hipoteca || "") || "___________",
+      "actos.valor_hipoteca_letras": montoProsa(actos.valor_hipoteca || "") || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
       "actos.fecha_escritura_letras": "___________",
       // Pago inicial / saldo financiado
@@ -731,14 +747,14 @@ const DocxPreview = ({
       "inmueble.admin_fecha": "___________",
       "inmueble.admin_vigencia": "___________",
       // RPH (propiedad horizontal) — prefer structured OCR fields, fallback to parsed string
-      "rph.escritura": inmueble.escritura_ph || "___________",
-      "rph.escritura_num_letras": (inmueble as any).escritura_ph_numero ? `(${(inmueble as any).escritura_ph_numero})` : rphData.numero ? `(${rphData.numero})` : "___________",
-      "rph.escritura_num_numero": (inmueble as any).escritura_ph_numero || rphData.numero || "___________",
-      "rph.escritura_dia_letras": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })(),
-      "rph.escritura_dia_num": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })(),
-      "rph.escritura_mes": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.mes || "___________"; } return rphData.mes || "___________"; })(),
-      "rph.escritura_anio_letras": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })(),
-      "rph.escritura_anio_num": (() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })(),
+      "rph.escritura": rphProsa || inmueble.escritura_ph || "___________",
+      "rph.escritura_num_letras": rphProsa ? "" : ((inmueble as any).escritura_ph_numero ? `(${(inmueble as any).escritura_ph_numero})` : rphData.numero ? `(${rphData.numero})` : "___________"),
+      "rph.escritura_num_numero": rphProsa ? "" : ((inmueble as any).escritura_ph_numero || rphData.numero || "___________"),
+      "rph.escritura_dia_letras": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })()),
+      "rph.escritura_dia_num": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })()),
+      "rph.escritura_mes": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.mes || "___________"; } return rphData.mes || "___________"; })()),
+      "rph.escritura_anio_letras": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })()),
+      "rph.escritura_anio_num": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })()),
       "rph.notaria": (inmueble as any).escritura_ph_notaria || rphData.notaria || notariaConfig?.nombre_notaria || "___________",
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "rph.notaria_ciudad": (inmueble as any).escritura_ph_ciudad || notariaConfig?.ciudad || "___________",
@@ -751,14 +767,14 @@ const DocxPreview = ({
       "antecedentes.modo": extractedDocumento?.titulo_antecedente?.tipo_documento || extractedDocumento?.modo_adquisicion || "___________",
       "antecedentes.modo_adquisicion": extractedDocumento?.titulo_antecedente?.tipo_documento || extractedDocumento?.modo_adquisicion || "___________",
       "antecedentes.adquirido_de": extractedDocumento?.titulo_antecedente?.adquirido_de || extractedDocumento?.adquirido_de || "___________",
-      "antecedentes.escritura": extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || "___________",
-      "antecedentes.escritura_num_letras": (() => { const n = extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura; return n ? `(${n})` : "___________"; })(),
-      "antecedentes.escritura_num_numero": extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || "___________",
-      "antecedentes.escritura_dia_letras": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.dia || "___________"; })(),
-      "antecedentes.escritura_dia_num": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.dia || "___________"; })(),
-      "antecedentes.escritura_mes": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.mes || "___________"; })(),
-      "antecedentes.escritura_anio_letras": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.anio || "___________"; })(),
-      "antecedentes.escritura_anio_num": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.anio || "___________"; })(),
+      "antecedentes.escritura": antProsa || extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || "___________",
+      "antecedentes.escritura_num_letras": antProsa ? "" : ((() => { const n = extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura; return n ? `(${n})` : "___________"; })()),
+      "antecedentes.escritura_num_numero": antProsa ? "" : (extractedDocumento?.titulo_antecedente?.numero_documento || extractedDocumento?.numero_escritura || "___________"),
+      "antecedentes.escritura_dia_letras": antProsa ? "" : ((() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.dia || "___________"; })()),
+      "antecedentes.escritura_dia_num": antProsa ? "" : ((() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.dia || "___________"; })()),
+      "antecedentes.escritura_mes": antProsa ? "" : ((() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.mes || "___________"; })()),
+      "antecedentes.escritura_anio_letras": antProsa ? "" : ((() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.anio || "___________"; })()),
+      "antecedentes.escritura_anio_num": antProsa ? "" : ((() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; if (!f) return "___________"; const p = parseFechaDoc(f); return p.anio || "___________"; })()),
       "antecedentes.fecha_legal": (() => { const f = extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento; return f ? formatFechaLegal(f) : "___________"; })(),
       "antecedentes.notaria": extractedDocumento?.titulo_antecedente?.notaria_documento || extractedDocumento?.notaria_origen || "___________",
       "antecedentes.notaria_previa_numero": extractedDocumento?.titulo_antecedente?.notaria_documento || extractedDocumento?.notaria_origen || "___________",
