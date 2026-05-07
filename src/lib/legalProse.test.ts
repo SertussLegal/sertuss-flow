@@ -82,3 +82,23 @@ describe("clausulaBuilder — buildParagrafoRegimenPH", () => {
     expect(out).toContain("(222)");
   });
 });
+
+import { adaptiveCollapse } from "@/components/tramites/DocxPreview";
+
+describe("DocxPreview — adaptiveCollapse", () => {
+  it("elimina párrafos compuestos solo de blanks y conectores", () => {
+    const html =
+      "<p>___________ de ___________ y ___________</p>" +
+      "<p>Texto válido que debe permanecer.</p>";
+    const out = adaptiveCollapse(html, true);
+    expect(out).toContain("Texto válido que debe permanecer.");
+    expect(out).not.toContain("___________");
+  });
+
+  it("preserva encabezados de cláusula protegidos aunque tengan blanks", () => {
+    const html = "<p>CUARTO.- PRECIO ___________</p>";
+    const out = adaptiveCollapse(html, true);
+    expect(out).toContain("CUARTO");
+    expect(out).toContain("PRECIO");
+  });
+});
