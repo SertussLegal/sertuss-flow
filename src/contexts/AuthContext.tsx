@@ -17,6 +17,7 @@ interface Organization {
   nit: string | null;
   address: string | null;
   credit_balance: number;
+  debug_tools_enabled?: boolean;
 }
 
 export interface MembershipEntry {
