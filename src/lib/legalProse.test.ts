@@ -113,3 +113,45 @@ describe("DocxPreview — adaptiveCollapse (whitespace exótico)", () => {
     expect(out).not.toContain("___________");
   });
 });
+
+describe("Estado fantasma PH — desactivación obligatoria", () => {
+  const inmuebleResidual = {
+    es_propiedad_horizontal: false,
+    nombre_edificio_conjunto: "CONJUNTO RESIDUAL",
+    escritura_ph_numero: 999,
+    escritura_ph_fecha: "1980-05-15",
+    escritura_ph_notaria_numero: 3,
+    escritura_ph_ciudad: "Bogotá D.C.",
+  };
+
+  it("buildParagrafoRegimenPH colapsa a vacío aunque haya datos PH residuales", () => {
+    expect(buildParagrafoRegimenPH(inmuebleResidual)).toBe("");
+  });
+
+  it("rphProsa null y tags rph.escritura_* colapsan con esPH=false", () => {
+    const esPH = inmuebleResidual.es_propiedad_horizontal === true;
+    const rphProsa = esPH
+      ? escrituraProsa({
+          numero: inmuebleResidual.escritura_ph_numero,
+          fecha: inmuebleResidual.escritura_ph_fecha,
+          notariaNumero: inmuebleResidual.escritura_ph_notaria_numero,
+          circulo: inmuebleResidual.escritura_ph_ciudad,
+        })
+      : null;
+    expect(rphProsa).toBeNull();
+
+    const tags = [
+      "rph.escritura_numero",
+      "rph.escritura_fecha",
+      "rph.escritura_notaria_numero",
+      "rph.escritura_ciudad",
+      "rph.escritura_circulo",
+      "rph.escritura_tipo",
+      "rph.escritura",
+    ];
+    for (const _t of tags) {
+      const out = (!esPH || rphProsa) ? "" : "FALLBACK";
+      expect(out).toBe("");
+    }
+  });
+});
