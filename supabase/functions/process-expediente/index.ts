@@ -69,12 +69,27 @@ serve(async (req) => {
       }
     }
 
-    // 5. Build Súper-JSON
+    // 5. Build Súper-JSON con DEEP MERGE de overrides manuales del usuario
+    //    Prioridad: Edición Manual (manualFieldOverrides) > OCR/BD.
+    const overrides = (metadata.manualFieldOverrides as Record<string, unknown>) || {};
+    const applyOverrides = <T extends Record<string, any>>(base: T, prefix: string): T => {
+      const out: Record<string, any> = { ...base };
+      for (const [k, v] of Object.entries(overrides)) {
+        if (typeof v !== "string" || !v.trim()) continue;
+        // Soporta tanto "inmueble.matricula" como "matricula".
+        if (k.startsWith(`${prefix}.`)) out[k.slice(prefix.length + 1)] = v;
+        else if (k in out) out[k] = v;
+      }
+      return out as T;
+    };
+    const inmuebleMerged = applyOverrides(inmuebleRes.data || {}, "inmueble");
+    const actosMerged = applyOverrides(actosRes.data || {}, "actos");
+
     const superJson = {
       vendedores,
       compradores,
-      inmueble: inmuebleRes.data || {},
-      actos: actosRes.data || {},
+      inmueble: inmuebleMerged,
+      actos: actosMerged,
       estilo_notaria: estiloNotaria ? {
         nombre_notaria: estiloNotaria.nombre_notaria,
         ciudad: estiloNotaria.ciudad,
@@ -86,12 +101,16 @@ serve(async (req) => {
       campos_obligatorios: camposObligatorios,
     };
 
+    // 5.b Pre-cómputo `prosa_helpers`: strings ya formateados que el modelo
+    // debe embeber LITERALMENTE (sin alterar palabra ni puntuación).
+    const prosaHelpers = buildProsaHelpers(inmuebleMerged, actosMerged, vendedores);
+
     // 6. Call SERTUSS-EDITOR-PRO via AI gateway
     const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria, camposObligatorios);
     // Defensa server-side: hidratamos derivados si vienen vacíos del cliente.
     const hydratedNotaria = hydrateNotariaDerivados(notaria_tramite);
     const notariaBlock = buildNotariaBlock(hydratedNotaria);
-    const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
+    const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\nPROSA HELPERS PRECOMPUTADA (USAR LITERALMENTE, sin alterar palabra ni puntuación):\n${JSON.stringify(prosaHelpers, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
 
     const tools = [
       {
