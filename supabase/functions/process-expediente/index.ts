@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { fetchAiGateway, aiGatewayErrorResponse, parseToolCallArguments } from "../_shared/aiFetch.ts";
 import { STRICT_OUTPUT_RULES, sanitizeAiOutput, sanitizeAiJson } from "../_shared/aiOutputRules.ts";
+import { escrituraProsa, montoProsa, fechaProsa } from "./legalProse.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,12 +69,27 @@ serve(async (req) => {
       }
     }
 
-    // 5. Build Súper-JSON
+    // 5. Build Súper-JSON con DEEP MERGE de overrides manuales del usuario
+    //    Prioridad: Edición Manual (manualFieldOverrides) > OCR/BD.
+    const overrides = (metadata.manualFieldOverrides as Record<string, unknown>) || {};
+    const applyOverrides = <T extends Record<string, any>>(base: T, prefix: string): T => {
+      const out: Record<string, any> = { ...base };
+      for (const [k, v] of Object.entries(overrides)) {
+        if (typeof v !== "string" || !v.trim()) continue;
+        // Soporta tanto "inmueble.matricula" como "matricula".
+        if (k.startsWith(`${prefix}.`)) out[k.slice(prefix.length + 1)] = v;
+        else if (k in out) out[k] = v;
+      }
+      return out as T;
+    };
+    const inmuebleMerged = applyOverrides(inmuebleRes.data || {}, "inmueble");
+    const actosMerged = applyOverrides(actosRes.data || {}, "actos");
+
     const superJson = {
       vendedores,
       compradores,
-      inmueble: inmuebleRes.data || {},
-      actos: actosRes.data || {},
+      inmueble: inmuebleMerged,
+      actos: actosMerged,
       estilo_notaria: estiloNotaria ? {
         nombre_notaria: estiloNotaria.nombre_notaria,
         ciudad: estiloNotaria.ciudad,
@@ -85,12 +101,16 @@ serve(async (req) => {
       campos_obligatorios: camposObligatorios,
     };
 
+    // 5.b Pre-cómputo `prosa_helpers`: strings ya formateados que el modelo
+    // debe embeber LITERALMENTE (sin alterar palabra ni puntuación).
+    const prosaHelpers = buildProsaHelpers(inmuebleMerged, actosMerged, vendedores);
+
     // 6. Call SERTUSS-EDITOR-PRO via AI gateway
     const systemPrompt = buildEditorProPrompt(superJson.estilo_notaria, camposObligatorios);
     // Defensa server-side: hidratamos derivados si vienen vacíos del cliente.
     const hydratedNotaria = hydrateNotariaDerivados(notaria_tramite);
     const notariaBlock = buildNotariaBlock(hydratedNotaria);
-    const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
+    const userPrompt = `Datos del expediente notarial:\n\n${JSON.stringify(superJson, null, 2)}\n\nPROSA HELPERS PRECOMPUTADA (USAR LITERALMENTE, sin alterar palabra ni puntuación):\n${JSON.stringify(prosaHelpers, null, 2)}\n\n${notariaBlock}\n\nRedacta la escritura pública completa y señala discrepancias o ajustes de estilo.`;
 
     const tools = [
       {
@@ -289,7 +309,16 @@ Sugerencias permitidas (campo "sugerencias_ia"):
 - SOLO de tipo "estilo": concordancia de género, formato de linderos, protocolo notarial, ortografía.
 - PROHIBIDO emitir sugerencias de tipo "discrepancia", "validación legal", "campos requeridos" o "cumplimiento". Esas las hace el auditor.
 - "texto_original" debe existir literalmente en "texto_final_word".
-- "campo" debe mapear al campo del formulario cuando aplique.`;
+- "campo" debe mapear al campo del formulario cuando aplique.
+
+REGLA DE COLAPSO ADAPTATIVO (CRÍTICA — emula "minuta_correcta.doc"):
+- PROHIBIDO escribir "[___]", "___________" o paréntesis vacíos para datos que SÍ tienes en el JSON.
+- Si una sección OPCIONAL carece de datos críticos, OMÍTELA POR COMPLETO (no dejes líneas en blanco).
+  Secciones colapsables: Régimen de Propiedad Horizontal, Hipoteca, Afectación a Vivienda Familiar, Apoderado.
+- Para escrituras públicas, fechas y montos DEBES usar el formato letras-y-número combinado:
+  · "Escritura Pública número doscientos veintidós (222) de fecha veintinueve (29) de enero de mil novecientos setenta y uno (1971) otorgada en la Notaría séptima (7) del Círculo de Bogotá D.C."
+  · "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)"
+- Cuando recibas el bloque "PROSA HELPERS PRECOMPUTADA", DEBES embeber esos strings literalmente, sin alterar ninguna palabra ni signo de puntuación.`;
 
   if (camposObligatorios.length > 0) {
     base += `\n\nCAMPOS OBLIGATORIOS para este tipo de acto: ${camposObligatorios.join(", ")}.
@@ -400,6 +429,48 @@ function hydrateNotariaDerivados(nt: any): any {
     if (!out.numero_ordinal || !out.numero_ordinal.toString().trim()) {
       out.numero_ordinal = numeroToOrdinalAbbrServer(num);
     }
+  }
+  return out;
+}
+
+// Pre-cómputo de strings de prosa notarial. Estos textos se embeben
+// LITERALMENTE en la salida del modelo, eliminando el principal vector
+// de error (formateo inconsistente de letras+número).
+function buildProsaHelpers(inmueble: any, actos: any, vendedores: any[]): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  // Escritura constitutiva de PH
+  if (inmueble?.es_propiedad_horizontal) {
+    const ph = escrituraProsa({
+      numero: inmueble.escritura_ph_numero,
+      fecha: inmueble.escritura_ph_fecha,
+      notariaNumero: inmueble.escritura_ph_notaria_numero,
+      circulo: inmueble.escritura_ph_ciudad,
+    });
+    if (ph) out.escritura_ph = ph;
+  }
+
+  // Antecedente / procedencia
+  const titulo = (inmueble?.titulo_antecedente as Record<string, any>) || {};
+  const proc = escrituraProsa({
+    numero: titulo.numero_documento ?? titulo.numero_escritura,
+    fecha: titulo.fecha_documento ?? titulo.fecha,
+    notariaNumero: titulo.notaria_numero ?? titulo.notaria_documento,
+    circulo: titulo.ciudad_documento ?? titulo.circulo,
+  });
+  if (proc) out.escritura_procedencia = proc;
+  if (vendedores?.[0]?.nombre_completo) out.vendedor_principal = String(vendedores[0].nombre_completo);
+
+  // Montos
+  if (actos?.valor_compraventa) out.monto_compraventa = montoProsa(String(actos.valor_compraventa));
+  if (actos?.valor_hipoteca) out.monto_hipoteca = montoProsa(String(actos.valor_hipoteca));
+  if (actos?.pago_inicial) out.monto_pago_inicial = montoProsa(String(actos.pago_inicial));
+  if (actos?.saldo_financiado) out.monto_saldo_financiado = montoProsa(String(actos.saldo_financiado));
+
+  // Fecha de crédito (informativa)
+  if (actos?.fecha_credito) {
+    const f = fechaProsa(String(actos.fecha_credito));
+    if (f) out.fecha_credito = f;
   }
   return out;
 }

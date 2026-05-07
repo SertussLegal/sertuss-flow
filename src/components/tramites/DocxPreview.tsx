@@ -11,6 +11,57 @@ import InlineEditToolbar from "./InlineEditToolbar";
 import DOMPurify from "dompurify";
 import mammoth from "mammoth";
 
+// ── Pase C: Colapso adaptativo estructural ───────────────────────────────
+// Elimina <p> que solo contienen blanks + conectores. Protege encabezados
+// obligatorios. Si el inmueble NO es PH, remueve el parágrafo de Régimen.
+const PROTECTED_HEADERS = /\b(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|SEPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO|PRECIO|OBJETO|COMPRAVENTA|HIPOTECA)\b/i;
+const FILLER_ONLY = /^[\s_()de\sdellaenyo,.\-–—]*$/i;
+
+function adaptiveCollapse(html: string, esPH: boolean): string {
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") return html;
+  try {
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+    const body = doc.body;
+
+    // 1) Si NO es PH, eliminar el parágrafo "PARÁGRAFO PRIMERO.- RÉGIMEN DE PROPIEDAD HORIZONTAL"
+    //    y los siguientes hasta el próximo encabezado de cláusula.
+    if (!esPH) {
+      const ps = Array.from(body.querySelectorAll("p"));
+      let removing = false;
+      for (const p of ps) {
+        const t = (p.textContent || "").trim();
+        if (!removing && /PAR[ÁA]GRAFO\s+PRIMERO.*R[ÉE]GIMEN\s+DE\s+PROPIEDAD\s+HORIZONTAL/i.test(t)) {
+          removing = true;
+          p.remove();
+          continue;
+        }
+        if (removing) {
+          if (PROTECTED_HEADERS.test(t) || /PAR[ÁA]GRAFO\s+SEGUNDO/i.test(t)) {
+            removing = false;
+          } else {
+            p.remove();
+          }
+        }
+      }
+    }
+
+    // 2) Eliminar <p> con solo blanks/conectores (whitelist de encabezados protegidos).
+    for (const p of Array.from(body.querySelectorAll("p"))) {
+      const t = (p.textContent || "").replace(/\u00A0/g, " ").trim();
+      if (!t) continue;
+      if (PROTECTED_HEADERS.test(t)) continue;
+      const stripped = t.replace(/_{6,}/g, "").trim();
+      if (!stripped || FILLER_ONLY.test(t.replace(/_{6,}/g, ""))) {
+        p.remove();
+      }
+    }
+    return body.innerHTML;
+  } catch {
+    return html;
+  }
+}
+
+
 // Whitelist de campos con destino real en el formulario lateral.
 // Solo estos muestran el atajo "Ir al formulario" en el popover de edición.
 const FORM_FIELDS = new Set<string>([
@@ -828,6 +879,7 @@ const DocxPreview = ({
         result = applySugerenciaHighlights(result, sugerenciasIA);
       }
 
+      result = adaptiveCollapse(result, inmueble?.es_propiedad_horizontal === true);
       setHtml(sanitize(result));
       return;
     }
