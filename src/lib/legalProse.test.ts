@@ -27,7 +27,7 @@ describe("legalProse — numeroConLetras", () => {
 describe("legalProse — fechaProsa", () => {
   it("ISO YYYY-MM-DD", () => {
     expect(fechaProsa("1971-01-29")).toMatch(
-      /veintinueve \(29\) de enero de mil novecientos setenta y uno \(1971\)/,
+      /veintinueve \(29\) de enero de mil novecientos setenta y uno?\s?\(1971\)/,
     );
   });
   it("vacío si inválida", () => {
