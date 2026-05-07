@@ -10,6 +10,7 @@ import VariableEditPopover from "./VariableEditPopover";
 import InlineEditToolbar from "./InlineEditToolbar";
 import DOMPurify from "dompurify";
 import mammoth from "mammoth";
+import { escrituraProsa, montoProsa } from "@/lib/legalProse";
 
 // ── Pase C: Colapso adaptativo estructural ───────────────────────────────
 // Elimina <p> que solo contienen blanks + conectores. Protege encabezados
