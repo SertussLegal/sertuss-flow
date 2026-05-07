@@ -309,7 +309,16 @@ Sugerencias permitidas (campo "sugerencias_ia"):
 - SOLO de tipo "estilo": concordancia de género, formato de linderos, protocolo notarial, ortografía.
 - PROHIBIDO emitir sugerencias de tipo "discrepancia", "validación legal", "campos requeridos" o "cumplimiento". Esas las hace el auditor.
 - "texto_original" debe existir literalmente en "texto_final_word".
-- "campo" debe mapear al campo del formulario cuando aplique.`;
+- "campo" debe mapear al campo del formulario cuando aplique.
+
+REGLA DE COLAPSO ADAPTATIVO (CRÍTICA — emula "minuta_correcta.doc"):
+- PROHIBIDO escribir "[___]", "___________" o paréntesis vacíos para datos que SÍ tienes en el JSON.
+- Si una sección OPCIONAL carece de datos críticos, OMÍTELA POR COMPLETO (no dejes líneas en blanco).
+  Secciones colapsables: Régimen de Propiedad Horizontal, Hipoteca, Afectación a Vivienda Familiar, Apoderado.
+- Para escrituras públicas, fechas y montos DEBES usar el formato letras-y-número combinado:
+  · "Escritura Pública número doscientos veintidós (222) de fecha veintinueve (29) de enero de mil novecientos setenta y uno (1971) otorgada en la Notaría séptima (7) del Círculo de Bogotá D.C."
+  · "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)"
+- Cuando recibas el bloque "PROSA HELPERS PRECOMPUTADA", DEBES embeber esos strings literalmente, sin alterar ninguna palabra ni signo de puntuación.`;
 
   if (camposObligatorios.length > 0) {
     base += `\n\nCAMPOS OBLIGATORIOS para este tipo de acto: ${camposObligatorios.join(", ")}.
