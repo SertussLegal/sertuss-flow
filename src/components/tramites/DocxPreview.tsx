@@ -16,7 +16,9 @@ import { escrituraProsa, montoProsa } from "@/lib/legalProse";
 // Elimina <p> que solo contienen blanks + conectores. Protege encabezados
 // obligatorios. Si el inmueble NO es PH, remueve el parágrafo de Régimen.
 const PROTECTED_HEADERS = /\b(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|SEPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO|PRECIO|OBJETO|COMPRAVENTA|HIPOTECA)\b/i;
-const FILLER_ONLY = /^[\s_()de\sdellaenyo,.\-–—]*$/i;
+// Whitelist de tokens conectores notariales. Tras retirar los blanks
+// (_{6,}) y normalizar whitespace exótico, si solo queda esto → vaciar.
+const FILLER_ONLY = /^(?:\s|de|del|la|el|los|las|en|y|o|a|por|con|al|un|una|que|,|\.|;|:|\(|\)|-|–|—)*$/i;
 
 export function adaptiveCollapse(html: string, esPH: boolean): string {
   if (typeof window === "undefined" || typeof DOMParser === "undefined") return html;
