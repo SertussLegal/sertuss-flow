@@ -282,6 +282,11 @@ const Admin = () => {
                       <TableHead>NIT</TableHead>
                       <TableHead>Créditos</TableHead>
                       <TableHead>Estado</TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1">
+                          <Bug className="h-3.5 w-3.5" /> Auditoría .docx
+                        </span>
+                      </TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -292,6 +297,18 @@ const Admin = () => {
                         <TableCell>{o.nit ?? "—"}</TableCell>
                         <TableCell>{o.credit_balance}</TableCell>
                         <TableCell>{getStatusBadge(o.credit_balance)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={!!o.debug_tools_enabled}
+                              onCheckedChange={(v) => handleToggleDebug(o, v)}
+                              aria-label="Activar auditoría de variables"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {o.debug_tools_enabled ? "Activa" : "Oculta"}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right space-x-2">
                           <Button variant="outline" size="sm" onClick={() => navigate(`/admin/entidad/${o.id}`)}>
                             <Settings className="mr-1 h-3 w-3" /> Configurar
@@ -304,7 +321,7 @@ const Admin = () => {
                     ))}
                     {!loading && filtered.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No se encontraron organizaciones</TableCell>
+                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No se encontraron organizaciones</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
