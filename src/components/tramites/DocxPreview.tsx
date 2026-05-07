@@ -18,7 +18,7 @@ import { escrituraProsa, montoProsa } from "@/lib/legalProse";
 const PROTECTED_HEADERS = /\b(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|SEPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO|PRECIO|OBJETO|COMPRAVENTA|HIPOTECA)\b/i;
 const FILLER_ONLY = /^[\s_()de\sdellaenyo,.\-–—]*$/i;
 
-function adaptiveCollapse(html: string, esPH: boolean): string {
+export function adaptiveCollapse(html: string, esPH: boolean): string {
   if (typeof window === "undefined" || typeof DOMParser === "undefined") return html;
   try {
     const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
