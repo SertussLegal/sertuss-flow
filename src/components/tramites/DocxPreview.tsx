@@ -721,8 +721,8 @@ const DocxPreview = ({
         const bank = lookupBank(actos.entidad_bancaria || "");
         return bank?.nit || "___________";
       })(),
-      "valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
-      "actos.valor_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
+      "valor_hipoteca_letras": montoProsa(actos.valor_hipoteca || "") || "___________",
+      "actos.valor_hipoteca_letras": montoProsa(actos.valor_hipoteca || "") || "___________",
       "actos.valor_hipoteca_numero": actos.valor_hipoteca || "___________",
       "actos.fecha_escritura_letras": "___________",
       // Pago inicial / saldo financiado
