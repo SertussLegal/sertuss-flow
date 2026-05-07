@@ -432,3 +432,45 @@ function hydrateNotariaDerivados(nt: any): any {
   }
   return out;
 }
+
+// Pre-cómputo de strings de prosa notarial. Estos textos se embeben
+// LITERALMENTE en la salida del modelo, eliminando el principal vector
+// de error (formateo inconsistente de letras+número).
+function buildProsaHelpers(inmueble: any, actos: any, vendedores: any[]): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  // Escritura constitutiva de PH
+  if (inmueble?.es_propiedad_horizontal) {
+    const ph = escrituraProsa({
+      numero: inmueble.escritura_ph_numero,
+      fecha: inmueble.escritura_ph_fecha,
+      notariaNumero: inmueble.escritura_ph_notaria_numero,
+      circulo: inmueble.escritura_ph_ciudad,
+    });
+    if (ph) out.escritura_ph = ph;
+  }
+
+  // Antecedente / procedencia
+  const titulo = (inmueble?.titulo_antecedente as Record<string, any>) || {};
+  const proc = escrituraProsa({
+    numero: titulo.numero_documento ?? titulo.numero_escritura,
+    fecha: titulo.fecha_documento ?? titulo.fecha,
+    notariaNumero: titulo.notaria_numero ?? titulo.notaria_documento,
+    circulo: titulo.ciudad_documento ?? titulo.circulo,
+  });
+  if (proc) out.escritura_procedencia = proc;
+  if (vendedores?.[0]?.nombre_completo) out.vendedor_principal = String(vendedores[0].nombre_completo);
+
+  // Montos
+  if (actos?.valor_compraventa) out.monto_compraventa = montoProsa(String(actos.valor_compraventa));
+  if (actos?.valor_hipoteca) out.monto_hipoteca = montoProsa(String(actos.valor_hipoteca));
+  if (actos?.pago_inicial) out.monto_pago_inicial = montoProsa(String(actos.pago_inicial));
+  if (actos?.saldo_financiado) out.monto_saldo_financiado = montoProsa(String(actos.saldo_financiado));
+
+  // Fecha de crédito (informativa)
+  if (actos?.fecha_credito) {
+    const f = fechaProsa(String(actos.fecha_credito));
+    if (f) out.fecha_credito = f;
+  }
+  return out;
+}
