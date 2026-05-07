@@ -828,6 +828,7 @@ const DocxPreview = ({
         result = applySugerenciaHighlights(result, sugerenciasIA);
       }
 
+      result = adaptiveCollapse(result, inmueble?.es_propiedad_horizontal === true);
       setHtml(sanitize(result));
       return;
     }
