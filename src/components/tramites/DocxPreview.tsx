@@ -16,7 +16,9 @@ import { escrituraProsa, montoProsa } from "@/lib/legalProse";
 // Elimina <p> que solo contienen blanks + conectores. Protege encabezados
 // obligatorios. Si el inmueble NO es PH, remueve el parágrafo de Régimen.
 const PROTECTED_HEADERS = /\b(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|SEPTIMO|OCTAVO|NOVENO|DÉCIMO|DECIMO|PRECIO|OBJETO|COMPRAVENTA|HIPOTECA)\b/i;
-const FILLER_ONLY = /^[\s_()de\sdellaenyo,.\-–—]*$/i;
+// Whitelist de tokens conectores notariales. Tras retirar los blanks
+// (_{6,}) y normalizar whitespace exótico, si solo queda esto → vaciar.
+const FILLER_ONLY = /^(?:\s|de|del|la|el|los|las|en|y|o|a|por|con|al|un|una|que|,|\.|;|:|\(|\)|-|–|—)*$/i;
 
 export function adaptiveCollapse(html: string, esPH: boolean): string {
   if (typeof window === "undefined" || typeof DOMParser === "undefined") return html;
@@ -48,7 +50,11 @@ export function adaptiveCollapse(html: string, esPH: boolean): string {
 
     // 2) Eliminar <p> con solo blanks/conectores (whitelist de encabezados protegidos).
     for (const p of Array.from(body.querySelectorAll("p"))) {
-      const t = (p.textContent || "").replace(/\u00A0/g, " ").trim();
+      const t = (p.textContent || "")
+        .replace(/[\u00A0\u202F\u2007]/g, " ")
+        .replace(/[\t\r\n\f\v]/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
       if (!t) continue;
       if (PROTECTED_HEADERS.test(t)) continue;
       const stripped = t.replace(/_{6,}/g, "").trim();
@@ -631,12 +637,15 @@ const DocxPreview = ({
     const rphReformas = parseEscrituraString(inmueble.reformas_ph);
 
     // Prosa unificada (Fase 3.5): una sola cadena para escrituras de PH y antecedentes.
-    const rphProsa = escrituraProsa({
-      numero: (inmueble as any).escritura_ph_numero ?? rphData.numero ?? null,
-      fecha: (inmueble as any).escritura_ph_fecha ?? null,
-      notariaNumero: (inmueble as any).escritura_ph_notaria_numero ?? null,
-      circulo: (inmueble as any).escritura_ph_ciudad ?? null,
-    });
+    const esPH = inmueble.es_propiedad_horizontal === true;
+    const rphProsa = esPH
+      ? escrituraProsa({
+          numero: (inmueble as any).escritura_ph_numero ?? rphData.numero ?? null,
+          fecha: (inmueble as any).escritura_ph_fecha ?? null,
+          notariaNumero: (inmueble as any).escritura_ph_notaria_numero ?? null,
+          circulo: (inmueble as any).escritura_ph_ciudad ?? null,
+        })
+      : null;
     const _antTit: any = extractedDocumento?.titulo_antecedente ?? {};
     const antProsa = escrituraProsa({
       numero: _antTit.numero_documento ?? extractedDocumento?.numero_escritura ?? null,
@@ -747,14 +756,14 @@ const DocxPreview = ({
       "inmueble.admin_fecha": "___________",
       "inmueble.admin_vigencia": "___________",
       // RPH (propiedad horizontal) — prefer structured OCR fields, fallback to parsed string
-      "rph.escritura": rphProsa || inmueble.escritura_ph || "___________",
-      "rph.escritura_num_letras": rphProsa ? "" : ((inmueble as any).escritura_ph_numero ? `(${(inmueble as any).escritura_ph_numero})` : rphData.numero ? `(${rphData.numero})` : "___________"),
-      "rph.escritura_num_numero": rphProsa ? "" : ((inmueble as any).escritura_ph_numero || rphData.numero || "___________"),
-      "rph.escritura_dia_letras": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })()),
-      "rph.escritura_dia_num": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })()),
-      "rph.escritura_mes": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.mes || "___________"; } return rphData.mes || "___________"; })()),
-      "rph.escritura_anio_letras": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })()),
-      "rph.escritura_anio_num": rphProsa ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })()),
+      "rph.escritura": !esPH ? "" : (rphProsa || inmueble.escritura_ph || "___________"),
+      "rph.escritura_num_letras": (!esPH || rphProsa) ? "" : ((inmueble as any).escritura_ph_numero ? `(${(inmueble as any).escritura_ph_numero})` : rphData.numero ? `(${rphData.numero})` : "___________"),
+      "rph.escritura_num_numero": (!esPH || rphProsa) ? "" : ((inmueble as any).escritura_ph_numero || rphData.numero || "___________"),
+      "rph.escritura_dia_letras": (!esPH || rphProsa) ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })()),
+      "rph.escritura_dia_num": (!esPH || rphProsa) ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.dia || "___________"; } return rphData.dia || "___________"; })()),
+      "rph.escritura_mes": (!esPH || rphProsa) ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.mes || "___________"; } return rphData.mes || "___________"; })()),
+      "rph.escritura_anio_letras": (!esPH || rphProsa) ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })()),
+      "rph.escritura_anio_num": (!esPH || rphProsa) ? "" : ((() => { const f = (inmueble as any).escritura_ph_fecha; if (f) { const p = parseFechaDoc(f); return p.anio || "___________"; } return rphData.anio || "___________"; })()),
       "rph.notaria": (inmueble as any).escritura_ph_notaria || rphData.notaria || notariaConfig?.nombre_notaria || "___________",
       "rph.notaria_numero": notariaConfig?.numero_notaria?.toString() || "___________",
       "rph.notaria_ciudad": (inmueble as any).escritura_ph_ciudad || notariaConfig?.ciudad || "___________",

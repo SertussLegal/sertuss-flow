@@ -102,3 +102,14 @@ describe("DocxPreview — adaptiveCollapse", () => {
     expect(out).toContain("PRECIO");
   });
 });
+
+describe("DocxPreview — adaptiveCollapse (whitespace exótico)", () => {
+  it("limpia párrafos con NBSP, tabs y espacios múltiples", () => {
+    const html =
+      "<p>\u00A0 ___________ \t  de  \u00A0 ___________ \n y ___________ </p>" +
+      "<p>Contenido real preservado.</p>";
+    const out = adaptiveCollapse(html, true);
+    expect(out).toContain("Contenido real preservado.");
+    expect(out).not.toContain("___________");
+  });
+});
