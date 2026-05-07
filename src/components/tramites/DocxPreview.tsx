@@ -50,7 +50,11 @@ export function adaptiveCollapse(html: string, esPH: boolean): string {
 
     // 2) Eliminar <p> con solo blanks/conectores (whitelist de encabezados protegidos).
     for (const p of Array.from(body.querySelectorAll("p"))) {
-      const t = (p.textContent || "").replace(/\u00A0/g, " ").trim();
+      const t = (p.textContent || "")
+        .replace(/[\u00A0\u202F\u2007]/g, " ")
+        .replace(/[\t\r\n\f\v]/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
       if (!t) continue;
       if (PROTECTED_HEADERS.test(t)) continue;
       const stripped = t.replace(/_{6,}/g, "").trim();
