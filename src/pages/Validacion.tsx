@@ -3235,34 +3235,29 @@ const Validacion = () => {
                 </Tooltip>
               )}
 
-              {/* Único disparador del DocxDebugModal — solo icono */}
-              {(() => {
-                const isAdmin = profile?.role === "owner" || profile?.role === "admin";
-                const Icon = isAdmin ? Bug : BookOpen;
-                const label = isAdmin ? "Auditar variables de plantilla" : "Ver Guía de Tags";
-                return (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => {
-                          setDebugInitialTab(isAdmin ? "all" : "guia");
-                          setDebugModalOpen(true);
-                        }}
-                        className="h-9 w-9 shrink-0 border-notarial-gold/30 bg-transparent hover:bg-notarial-gold/10 text-notarial-gold hover:text-notarial-gold hover:border-notarial-gold/60"
-                        aria-label={label}
-                      >
-                        <Icon className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
-                      {label}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })()}
+              {/* Herramienta interna Sertuss — solo visible para owner cuando Sertuss activa el flag por organización */}
+              {profile?.role === "owner" && organization?.debug_tools_enabled && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setDebugInitialTab("all");
+                        setDebugModalOpen(true);
+                      }}
+                      className="h-9 w-9 shrink-0 border-notarial-gold/30 bg-transparent hover:bg-notarial-gold/10 text-notarial-gold hover:text-notarial-gold hover:border-notarial-gold/60"
+                      aria-label="Auditar variables de plantilla"
+                    >
+                      <Bug className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="bg-notarial-dark/95 border-white/10 text-white text-xs px-2.5 py-1.5">
+                    Auditar variables de plantilla (Sertuss)
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
               {/* "Generar y Analizar Word" y "Finalizar y validar" se trasladaron al footer flotante */}
             </div>
