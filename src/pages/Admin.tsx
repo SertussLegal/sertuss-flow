@@ -109,6 +109,23 @@ const Admin = () => {
     }
   };
 
+  const handleToggleDebug = async (org: Org, enabled: boolean) => {
+    setOrgs((prev) => prev.map((o) => (o.id === org.id ? { ...o, debug_tools_enabled: enabled } : o)));
+    const { error } = await supabase.rpc("admin_set_debug_tools" as any, {
+      target_org_id: org.id,
+      enabled,
+    });
+    if (error) {
+      setOrgs((prev) => prev.map((o) => (o.id === org.id ? { ...o, debug_tools_enabled: !enabled } : o)));
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({
+        title: enabled ? "Auditoría activada" : "Auditoría desactivada",
+        description: `${org.name}: herramientas internas Sertuss ${enabled ? "visibles" : "ocultas"} para el owner.`,
+      });
+    }
+  };
+
   const handleTestClaude = async () => {
     setTestingClaude(true);
     setClaudeResult(null);
