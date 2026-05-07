@@ -630,6 +630,21 @@ const DocxPreview = ({
     const rphData = parseEscrituraString(inmueble.escritura_ph);
     const rphReformas = parseEscrituraString(inmueble.reformas_ph);
 
+    // Prosa unificada (Fase 3.5): una sola cadena para escrituras de PH y antecedentes.
+    const rphProsa = escrituraProsa({
+      numero: (inmueble as any).escritura_ph_numero ?? rphData.numero ?? null,
+      fecha: (inmueble as any).escritura_ph_fecha ?? null,
+      notariaNumero: (inmueble as any).escritura_ph_notaria_numero ?? null,
+      circulo: (inmueble as any).escritura_ph_ciudad ?? null,
+    });
+    const _antTit: any = extractedDocumento?.titulo_antecedente ?? {};
+    const antProsa = escrituraProsa({
+      numero: _antTit.numero_documento ?? extractedDocumento?.numero_escritura ?? null,
+      fecha: _antTit.fecha_documento ?? extractedDocumento?.fecha_documento ?? null,
+      notariaNumero: _antTit.notaria_documento ?? extractedDocumento?.notaria_origen ?? null,
+      circulo: _antTit.ciudad_documento ?? null,
+    });
+
     // Parse fecha_poder for apoderado banco date components
     const poderFechaParsed = parseEscrituraString((actos as any).apoderado_fecha_poder ? `DEL ${(actos as any).apoderado_fecha_poder}` : undefined);
 
