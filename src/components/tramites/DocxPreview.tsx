@@ -703,9 +703,9 @@ const DocxPreview = ({
       // Actos — with number→words conversion
       "tipo_acto": actos.tipo_acto || "___________",
       "valor_compraventa_letras": montoProsa(actos.valor_compraventa || "") || "___________",
-      "actos.cuantia_compraventa_letras": valorCompraventaLetras || actos.valor_compraventa || "___________",
+      "actos.cuantia_compraventa_letras": montoProsa(actos.valor_compraventa || "") || "___________",
       "actos.cuantia_compraventa_numero": actos.valor_compraventa || "___________",
-      "actos.cuantia_hipoteca_letras": valorHipotecaLetras || actos.valor_hipoteca || "___________",
+      "actos.cuantia_hipoteca_letras": montoProsa(actos.valor_hipoteca || "") || "___________",
       "actos.cuantia_hipoteca_numero": actos.valor_hipoteca || "___________",
       "entidad_bancaria": actos.entidad_bancaria || "___________",
       "actos.entidad_bancaria": actos.entidad_bancaria || "___________",
