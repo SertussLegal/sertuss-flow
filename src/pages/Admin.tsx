@@ -11,7 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity } from "lucide-react";
+import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity, Bug } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SystemMonitor from "@/components/admin/SystemMonitor";
 
@@ -21,6 +22,7 @@ interface Org {
   nit: string | null;
   address: string | null;
   credit_balance: number;
+  debug_tools_enabled: boolean;
   created_at: string;
 }
 
@@ -104,6 +106,23 @@ const Admin = () => {
       toast({ title: "Créditos actualizados", description: `${editOrg.name} → ${newBalance} créditos` });
       setEditOrg(null);
       fetchOrgs();
+    }
+  };
+
+  const handleToggleDebug = async (org: Org, enabled: boolean) => {
+    setOrgs((prev) => prev.map((o) => (o.id === org.id ? { ...o, debug_tools_enabled: enabled } : o)));
+    const { error } = await supabase.rpc("admin_set_debug_tools" as any, {
+      target_org_id: org.id,
+      enabled,
+    });
+    if (error) {
+      setOrgs((prev) => prev.map((o) => (o.id === org.id ? { ...o, debug_tools_enabled: !enabled } : o)));
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({
+        title: enabled ? "Auditoría activada" : "Auditoría desactivada",
+        description: `${org.name}: herramientas internas Sertuss ${enabled ? "visibles" : "ocultas"} para el owner.`,
+      });
     }
   };
 
@@ -263,6 +282,11 @@ const Admin = () => {
                       <TableHead>NIT</TableHead>
                       <TableHead>Créditos</TableHead>
                       <TableHead>Estado</TableHead>
+                      <TableHead className="whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1">
+                          <Bug className="h-3.5 w-3.5" /> Auditoría .docx
+                        </span>
+                      </TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -273,6 +297,18 @@ const Admin = () => {
                         <TableCell>{o.nit ?? "—"}</TableCell>
                         <TableCell>{o.credit_balance}</TableCell>
                         <TableCell>{getStatusBadge(o.credit_balance)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={!!o.debug_tools_enabled}
+                              onCheckedChange={(v) => handleToggleDebug(o, v)}
+                              aria-label="Activar auditoría de variables"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {o.debug_tools_enabled ? "Activa" : "Oculta"}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right space-x-2">
                           <Button variant="outline" size="sm" onClick={() => navigate(`/admin/entidad/${o.id}`)}>
                             <Settings className="mr-1 h-3 w-3" /> Configurar
@@ -285,7 +321,7 @@ const Admin = () => {
                     ))}
                     {!loading && filtered.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No se encontraron organizaciones</TableCell>
+                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No se encontraron organizaciones</TableCell>
                       </TableRow>
                     )}
                   </TableBody>

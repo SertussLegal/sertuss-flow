@@ -1018,6 +1018,7 @@ export type Database = {
           address: string
           created_at: string
           credit_balance: number
+          debug_tools_enabled: boolean
           id: string
           name: string
           nit: string
