@@ -605,6 +605,7 @@ export type Database = {
           address: string | null
           created_at: string
           credit_balance: number
+          debug_tools_enabled: boolean
           id: string
           name: string
           nit: string | null
@@ -613,6 +614,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           credit_balance?: number
+          debug_tools_enabled?: boolean
           id?: string
           name: string
           nit?: string | null
@@ -621,6 +623,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           credit_balance?: number
+          debug_tools_enabled?: boolean
           id?: string
           name?: string
           nit?: string | null
@@ -982,6 +985,10 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { p_invitation_id: string }; Returns: string }
+      admin_set_debug_tools: {
+        Args: { enabled: boolean; target_org_id: string }
+        Returns: undefined
+      }
       admin_update_credits: {
         Args: { new_balance: number; reason: string; target_org_id: string }
         Returns: undefined
