@@ -47,11 +47,12 @@ describe("generateFinalData — pipeline orchestrator", () => {
     const input = baseInput();
     // Override sobre el alias declarado del tag canónico de letras.
     input.manualFieldOverrides = {
-      cuantia_compraventa_letras: "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
+      valor_compraventa_letras: "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
     };
     const { data } = generateFinalData(input, { tramiteId: "t-1" });
     const actos = data.actos as unknown as Record<string, string>;
-    // El override sobrevive a hydrateProsa (que solo rellena vacíos) y a placeholders.
+    // El override propaga al tag canónico (actos.cuantia_compraventa_letras)
+    // y sobrevive a hydrateProsa (solo rellena vacíos) y a placeholders.
     expect(actos.cuantia_compraventa_letras).toBe(
       "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
     );
