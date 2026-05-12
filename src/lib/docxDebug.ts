@@ -263,14 +263,13 @@ export function diffTagsVsData(
     missing.push(tag);
   }
 
-  // (d) Aliases sin uso: claves no consumidas por ningún tag (root o scoped).
-  const unused: string[] = [];
+  // (d) Candidatos a unused: claves no consumidas por ningún tag (root o scoped).
+  const rawUnused: string[] = [];
   for (const key of flatKeys) {
     if (tagSet.has(key)) continue;
-    const root = key.split(/[.[]/)[0];
-    if (tagSet.has(root)) continue;
+    const rootKey = key.split(/[.[]/)[0];
+    if (tagSet.has(rootKey)) continue;
     if (tags.some((t) => t.startsWith(`${key}.`))) continue;
-    // ¿Alguna ventana de scope produce un local que es un tag?
     const scopes = deriveScopes(key);
     const consumedByScope = scopes.some(({ local }) => {
       if (!local) return false;
@@ -279,12 +278,45 @@ export function diffTagsVsData(
       return !!first && tagSet.has(first);
     });
     if (consumedByScope) continue;
+    rawUnused.push(key);
+  }
+
+  // (e) Reclasificación: ignored (metadata/flags) → aliased (sinónimo de un mapped) → unused real.
+  const mappedSet = new Set(mapped);
+  const valueSignature = (v: unknown): string | null => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "object") return null;
+    const s = String(v).trim();
+    if (!s || s === PLACEHOLDER) return null;
+    return s;
+  };
+  const mappedValues = new Set<string>();
+  for (const tag of mappedSet) {
+    const sig = valueSignature(flat[tag]?.value);
+    if (sig) mappedValues.add(sig);
+  }
+
+  const ignored: string[] = [];
+  const aliased: string[] = [];
+  const unused: string[] = [];
+  for (const key of rawUnused) {
+    if (IGNORED_KEY_RE.test(key)) {
+      ignored.push(key);
+      continue;
+    }
+    const sig = valueSignature(flat[key]?.value);
+    if (sig && mappedValues.has(sig)) {
+      aliased.push(key);
+      continue;
+    }
     unused.push(key);
   }
 
   return {
     missing: missing.sort(),
     unused: unused.sort(),
+    aliased: aliased.sort(),
+    ignored: ignored.sort(),
     empty: Array.from(new Set(empty)).sort(),
     mapped: Array.from(new Set(mapped)).sort(),
     scoped: Array.from(new Set(scoped)).sort(),
