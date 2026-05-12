@@ -20,6 +20,7 @@ import {
   applyManualOverrides,
   injectAuditMetadata,
   ensurePlaceholders,
+  materializeDocxRenderData,
   type ConsolidatedDocxData,
   type ConsolidationInput,
   type PersonaDocxData,
