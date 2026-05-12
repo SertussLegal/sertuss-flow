@@ -84,24 +84,17 @@ function runIntegrityCheck(
   check("Matrícula", ui.inmueble.matricula_inmobiliaria, data.matricula_inmobiliaria);
   check("Cédula Catastral", ui.inmueble.identificador_predial, data.cedula_catastral);
   check("Dirección del inmueble", ui.inmueble.direccion, data.direccion_inmueble);
+  const actosPipe = data.actos as unknown as Record<string, unknown> | undefined;
   check(
     "Valor Compraventa",
     ui.actos.valor_compraventa,
-    (data.actos as Record<string, unknown>)?.cuantia_compraventa_numero,
+    actosPipe?.cuantia_compraventa_numero,
   );
 
   // 2. Hipoteca (condicional).
   if (ui.actos.es_hipoteca) {
-    check(
-      "Entidad Bancaria",
-      ui.actos.entidad_bancaria,
-      (data.actos as Record<string, unknown>)?.entidad_bancaria,
-    );
-    check(
-      "Valor Hipoteca",
-      ui.actos.valor_hipoteca,
-      (data.actos as Record<string, unknown>)?.cuantia_hipoteca_numero,
-    );
+    check("Entidad Bancaria", ui.actos.entidad_bancaria, actosPipe?.entidad_bancaria);
+    check("Valor Hipoteca", ui.actos.valor_hipoteca, actosPipe?.cuantia_hipoteca_numero);
   }
 
   // 3. Arrays personas — mismatch de longitud + chequeo por índice.
