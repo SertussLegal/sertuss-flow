@@ -137,12 +137,19 @@ export function flattenStructuredData(
 export interface DocxDiff {
   missing: string[];
   unused: string[];
+  /** Claves no consumidas directamente pero cuyo valor coincide con un tag mapped (sinónimos). */
+  aliased: string[];
+  /** Metadata interna o flags no usados por el template (ruido cosmético). */
+  ignored: string[];
   empty: string[];
   mapped: string[];
   scoped: string[];
   /** Mapa sección → sub-tags consumidos por el loop (incluye anidados). */
   sectionsResolved: Record<string, string[]>;
 }
+
+/** Claves que nunca deben contar como `unused` (metadata + flags condicionales). */
+const IGNORED_KEY_RE = /^(__sertuss_|has_)/;
 
 interface SectionInfo {
   /** Local paths (arrays stripped) que existen como datos dentro de la sección. */
