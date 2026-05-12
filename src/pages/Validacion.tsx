@@ -2251,6 +2251,21 @@ const Validacion = () => {
         .from("tramites")
         .update({ status: "word_generado", ...(uploadedPath ? { docx_path: uploadedPath } : {}) })
         .eq("id", tramiteId);
+
+      // Snapshot final del pipeline en logs_extraccion.data_final.
+      // Guardamos el objeto CON placeholders para que coincida 1:1 con el .docx descargado.
+      try {
+        await supabase
+          .from("logs_extraccion")
+          .update({
+            data_final: finalData as unknown as Record<string, unknown>,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("tramite_id", tramiteId);
+      } catch (snapErr) {
+        console.warn("[generate-docx] no se pudo persistir snapshot data_final", snapErr);
+      }
+
       if (uploadedPath) {
         setDocxPath(uploadedPath);
         setShowFinalView(true);
