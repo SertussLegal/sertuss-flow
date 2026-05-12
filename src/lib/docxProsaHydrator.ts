@@ -205,13 +205,16 @@ export function hydrateProsa(data: ConsolidatedDocxData): ConsolidatedDocxData {
   }
 
   // ── Fecha legal larga (fecha_escritura_letras) ─────────────────
+  // Fallback en cascada: override raw → fecha_escritura_corta del modelo
+  // → fecha de hoy (es-CO). Garantiza que el tag jamás salga con líneas.
   if (actos && isBlank(actos.fecha_escritura_letras)) {
-    // Si el trámite tiene fecha en raw, convertir. No siempre la tenemos.
-    const fechaRaw = (out as Record<string, unknown>).__fecha_escritura_raw;
-    if (typeof fechaRaw === "string" && fechaRaw) {
-      const txt = fechaProsa(fechaRaw);
-      if (txt) actos.fecha_escritura_letras = txt;
-    }
+    const root = out as Record<string, unknown>;
+    const fechaRaw =
+      (typeof root.__fecha_escritura_raw === "string" && root.__fecha_escritura_raw) ||
+      (typeof root.fecha_escritura_corta === "string" && root.fecha_escritura_corta) ||
+      new Date().toLocaleDateString("es-CO");
+    const txt = fechaProsa(String(fechaRaw));
+    if (txt) actos.fecha_escritura_letras = txt;
   }
 
   return out;
