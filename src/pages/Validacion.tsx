@@ -52,6 +52,8 @@ import {
   type DocxAuditPayload,
 } from "@/lib/docxDebug";
 import { normalizeDocxRuns } from "@/lib/docxRunNormalizer";
+import { generateFinalData } from "@/lib/docxPipeline";
+import { resolveCartaCredito } from "@/lib/docxConsolidation";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -1974,253 +1976,69 @@ const Validacion = () => {
       });
       let doc = buildDoc(false);
 
-      // Helper to parse fecha for template date fields
-      const parseFechaFields = (fecha: string) => {
-        if (!fecha) return { dia_letras: "___________", dia_num: "___________", mes: "___________", anio_letras: "___________", anio_num: "___________" };
-        const match = fecha.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})$/) || fecha.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
-        if (!match) return { dia_letras: "___________", dia_num: "___________", mes: "___________", anio_letras: "___________", anio_num: "___________" };
-        const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-        let d: number, m: number, y: number;
-        if (parseInt(match[1]) > 31) { y = parseInt(match[1]); m = parseInt(match[2]); d = parseInt(match[3]); }
-        else { d = parseInt(match[1]); m = parseInt(match[2]); y = parseInt(match[3]); }
-        return { dia_letras: "___________", dia_num: String(d), mes: meses[m-1] || "___________", anio_letras: "___________", anio_num: String(y) };
+      // ── Pipeline maestro v3.1 (consolida → overrides → prosa → audit → integridad → placeholders) ──
+      // El metadata.extracted_carta_credito es la fuente autoritativa para datos bancarios vigentes.
+      const metadataForPipeline: Record<string, unknown> = {
+        extracted_carta_credito:
+          (extractedDocumento as Record<string, unknown> | null)?.carta_credito ??
+          (extractedDocumento as Record<string, unknown> | null)?.aprobacion_credito ??
+          null,
       };
+      const cartaCredito = resolveCartaCredito(metadataForPipeline);
 
-      const _ = "___________";
-      const mapPersona = (p: typeof vendedores[0]) => {
-        // Red de seguridad final: aunque el dato venga de un borrador antiguo o
-        // de una edición previa al refuerzo de sanitizadores, garantizamos que
-        // al .docx solo llegue dirección postal/rural válida y estado civil atómico.
-        const cleanDir = sanitizeDireccion(p.direccion || "");
-        const cleanEstado = sanitizeEstadoCivil(p.estado_civil || "", p.nombre_completo || "");
-        return {
-          nombre: p.nombre_completo || _,
-          cedula: p.numero_cedula ? formatCedulaLegal(p.numero_cedula) : _,
-          expedida_en: p.lugar_expedicion || _,
-          estado_civil: cleanEstado || _,
-          domicilio: p.municipio_domicilio || _,
-          direccion_residencia: cleanDir || _,
-          telefono: _,
-          actividad_economica: _,
-          email: _,
-          es_pep: p.es_pep,
-          acepta_notificaciones: true,
-        };
-      };
-
-      // Parse titulo antecedente dates
-      const antFecha = parseFechaFields(extractedDocumento?.titulo_antecedente?.fecha_documento || extractedDocumento?.fecha_documento || "");
-      // Parse RPH dates
-      const rphFecha = parseFechaFields(inmueble.escritura_ph_fecha || "");
-      // Parse credito dates
-      const creditoFecha = parseFechaFields(actos.fecha_credito || "");
-
-      // ===== Jerarquía jurídica de fuentes =====
-      // Carta de aprobación de crédito (documento vigente) > campos manuales > certificado de tradición (gravamen histórico)
-      const cartaCredito = (extractedDocumento as any)?.carta_credito || (extractedDocumento as any)?.aprobacion_credito || null;
-      const certificadoBanco = (extractedDocumento as any)?.acreedor_hipotecario || (extractedDocumento as any)?.banco_certificado || null;
-      const resolveBancoData = () => {
-        const banco = cartaCredito?.banco || cartaCredito?.entidad || actos.entidad_bancaria || certificadoBanco?.nombre || certificadoBanco || "";
-        const nit = cartaCredito?.nit || actos.entidad_nit || certificadoBanco?.nit || "";
-        const valor = cartaCredito?.valor_aprobado || cartaCredito?.valor || actos.valor_hipoteca || "";
-        const fecha = cartaCredito?.fecha_aprobacion || cartaCredito?.fecha || actos.fecha_credito || "";
-        const domicilio = cartaCredito?.domicilio || actos.entidad_domicilio || "";
-        return {
-          entidad_bancaria: typeof banco === "string" ? banco : "",
-          entidad_nit: typeof nit === "string" ? nit : "",
-          entidad_domicilio: typeof domicilio === "string" ? domicilio : "",
-          valor_credito: typeof valor === "string" ? valor : (valor ? String(valor) : ""),
-          fecha_credito: typeof fecha === "string" ? fecha : "",
-        };
-      };
-      const banco = resolveBancoData();
-      const creditoFechaResolved = parseFechaFields(banco.fecha_credito || actos.fecha_credito || "");
-
-      // Sanitización defensiva: limpia subrayados/strings residuales antes de inyectar al .docx
-      const _safe = (v: unknown): string => {
-        if (v === null || v === undefined) return "";
-        let s = String(v).trim();
-        if (!s) return "";
-        // Strip placeholders heredados de borradores antiguos
-        s = s.replace(/_{3,}/g, "").trim();
-        if (!s) return "";
-        return s;
-      };
-      const orBlank = (v: unknown) => _safe(v) || _;
-
-      // Linderos: priorizar separación; si solo hay un bloque, va a "especiales"
-      const linderosEspeciales = _safe(inmueble.linderos_especiales) || _safe(inmueble.linderos);
-      const linderosGenerales = _safe(inmueble.linderos_generales);
-      const coefLetras = coeficienteToLetras(inmueble.coeficiente_copropiedad);
-
-      const structuredData = {
-        // ===== Root-level: notaría =====
-        escritura_numero: _,
-        fecha_escritura_corta: new Date().toLocaleDateString("es-CO"),
-        notario_nombre: orBlank(notariaTramite.nombre_notario),
-        notario_decreto: orBlank(notariaTramite.decreto_nombramiento),
-        notario_tipo: notariaTramite.tipo_notario || "",
-        notaria_numero: orBlank(notariaTramite.numero_notaria),
-        notaria_numero_letras: notariaTramite.numero_notaria_letras
-          || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : _),
-        notaria_numero_letras_lower: (() => {
-          const base = notariaTramite.numero_notaria_letras
-            || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
-          return base ? base.toLowerCase() : _;
-        })(),
-        notaria_numero_letras_femenino: (() => {
-          const base = notariaTramite.numero_notaria_letras
-            || (notariaTramite.numero_notaria ? numeroNotariaToLetras(notariaTramite.numero_notaria) : "");
-          if (!base) return _;
-          const upper = base.toUpperCase();
-          return upper.endsWith("O") ? upper.slice(0, -1) + "A" : upper;
-        })(),
-        notaria_ordinal: notariaTramite.numero_ordinal
-          || (notariaTramite.numero_notaria ? numeroToOrdinalAbbr(notariaTramite.numero_notaria, formatoOrdinalNotaria) : _),
-        notaria_circulo: orBlank(notariaTramite.circulo),
-        notaria_circulo_proper: notariaTramite.circulo
-          ? notariaTramite.circulo.toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase())
-          : _,
-        notaria_departamento: orBlank(notariaTramite.departamento),
-
-        // ===== Flags booleanos para bloques dinámicos {#has_X}…{/has_X} =====
-        has_ph: !!inmueble.es_propiedad_horizontal,
-        has_linderos: !!(linderosEspeciales),
-        has_linderos_especiales: !!linderosEspeciales,
-        has_linderos_generales: !!linderosGenerales,
-        has_hipoteca: !!actos.es_hipoteca,
-        has_credito: !!(banco.valor_credito || banco.entidad_bancaria),
-        has_apoderado_banco: !!(actos.apoderado_nombre && actos.apoderado_cedula),
-        has_antecedente: !!(extractedDocumento?.titulo_antecedente?.numero_documento || (extractedDocumento as any)?.numero_escritura),
-        has_afectacion_familiar: !!actos.afectacion_vivienda_familiar,
-        has_predial: !!extractedPredial?.numero_recibo,
-        has_coeficiente: !!inmueble.coeficiente_copropiedad,
-        has_carta_credito: !!cartaCredito,
-        // Compat anterior
-        tiene_hipoteca: actos.es_hipoteca,
-        afectacion_vivienda: actos.afectacion_vivienda_familiar || false,
-
-        // ===== Personas =====
-        vendedores: vendedores.map(mapPersona),
-        compradores: compradores.map(mapPersona),
-
-        // ===== ROOT-LEVEL aliases del inmueble =====
-        // (la mayoría de plantillas notariales usan tags root como {ubicacion_predio})
-        ubicacion_predio: orBlank(inmueble.direccion),
-        ubicacion_inmueble: orBlank(inmueble.direccion),
-        direccion_inmueble: orBlank(inmueble.direccion),
-        matricula_inmobiliaria: orBlank(inmueble.matricula_inmobiliaria),
-        cedula_catastral: orBlank(inmueble.identificador_predial),
-        chip: orBlank(inmueble.identificador_predial),
-        identificador_predial: orBlank(inmueble.identificador_predial),
-        inmueble_nombre: orBlank(inmueble.nombre_edificio_conjunto),
-        nombre_edificio_conjunto: orBlank(inmueble.nombre_edificio_conjunto),
-        linderos_especiales: linderosEspeciales || _,
-        linderos_generales: linderosGenerales || _,
-        coeficiente_letras: coefLetras || _,
-        coeficiente_numero: orBlank(inmueble.coeficiente_copropiedad),
-        coeficiente_copropiedad: orBlank(inmueble.coeficiente_copropiedad),
-        municipio_inmueble: orBlank(inmueble.municipio),
-        departamento_inmueble: orBlank(inmueble.departamento),
-        orip_ciudad: orBlank(inmueble.codigo_orip),
-
-        // ===== ROOT-LEVEL aliases del banco/crédito (jerarquía aplicada) =====
-        entidad_bancaria: orBlank(banco.entidad_bancaria),
-        entidad_nit: orBlank(banco.entidad_nit),
-        entidad_domicilio: orBlank(banco.entidad_domicilio),
-        banco_nombre: orBlank(banco.entidad_bancaria),
-        banco_nit: orBlank(banco.entidad_nit),
-
-        // ===== Inmueble nested (compat con tags {inmueble.X} ya existentes) =====
-        inmueble: {
-          matricula: orBlank(inmueble.matricula_inmobiliaria),
-          matricula_inmobiliaria: orBlank(inmueble.matricula_inmobiliaria),
-          cedula_catastral: orBlank(inmueble.identificador_predial),
-          chip: orBlank(inmueble.identificador_predial),
-          ubicacion: orBlank(inmueble.direccion),
-          direccion: orBlank(inmueble.direccion),
-          nombre_edificio_conjunto: orBlank(inmueble.nombre_edificio_conjunto),
-          inmueble_nombre: orBlank(inmueble.nombre_edificio_conjunto),
-          linderos_especiales: linderosEspeciales || _,
-          linderos_generales: linderosGenerales || _,
-          orip_ciudad: orBlank(inmueble.codigo_orip),
-          orip_zona: _,
-          coeficiente_letras: coefLetras || _,
-          coeficiente_numero: orBlank(inmueble.coeficiente_copropiedad),
-          nupre: orBlank(inmueble.nupre),
-          estrato: orBlank(inmueble.estrato),
-          es_rph: inmueble.es_propiedad_horizontal,
-          predial_anio: orBlank(extractedPredial?.anio_gravable),
-          predial_num: orBlank(extractedPredial?.numero_recibo),
-          predial_valor: extractedPredial?.valor_pagado ? formatMonedaLegal(extractedPredial.valor_pagado) : _,
-          idu_num: _, idu_fecha: _, idu_vigencia: _,
-          admin_fecha: _, admin_vigencia: _,
+      const { data: finalData, diagnostics } = generateFinalData(
+        {
+          manualFieldOverrides,
+          ui: {
+            vendedores,
+            compradores,
+            inmueble,
+            actos,
+            notariaTramite,
+          },
+          templateData: result?.templateData ?? null,
+          cartaCredito,
+          ocr: {
+            extractedDocumento: extractedDocumento as Record<string, unknown> | null,
+            extractedPredial: extractedPredial as Record<string, unknown> | null,
+          },
+          formatoOrdinalNotaria,
         },
+        { tramiteId, userId: user?.id },
+      );
 
-        // ===== Actos nested (con jerarquía bancaria) =====
-        actos: {
-          cuantia_compraventa_letras: actos.valor_compraventa ? formatMonedaLegal(actos.valor_compraventa).split("($")[0]?.trim() || _ : _,
-          cuantia_compraventa_numero: actos.valor_compraventa ? formatMonedaLegal(actos.valor_compraventa) : _,
-          cuantia_hipoteca_letras: banco.valor_credito ? formatMonedaLegal(banco.valor_credito).split("($")[0]?.trim() || _ : _,
-          cuantia_hipoteca_numero: banco.valor_credito ? formatMonedaLegal(banco.valor_credito) : _,
-          fecha_escritura_letras: _,
-          entidad_bancaria: orBlank(banco.entidad_bancaria),
-          entidad_nit: orBlank(banco.entidad_nit),
-          entidad_domicilio: orBlank(banco.entidad_domicilio),
-          pago_inicial_letras: actos.pago_inicial ? formatMonedaLegal(actos.pago_inicial).split("($")[0]?.trim() || _ : _,
-          pago_inicial_numero: actos.pago_inicial ? formatMonedaLegal(actos.pago_inicial) : _,
-          saldo_financiado_letras: actos.saldo_financiado ? formatMonedaLegal(actos.saldo_financiado).split("($")[0]?.trim() || _ : _,
-          saldo_financiado_numero: actos.saldo_financiado ? formatMonedaLegal(actos.saldo_financiado) : _,
-          credito_dia_letras: creditoFechaResolved.dia_letras,
-          credito_dia_num: creditoFechaResolved.dia_num,
-          credito_mes: creditoFechaResolved.mes,
-          credito_anio_letras: creditoFechaResolved.anio_letras,
-          credito_anio_num: creditoFechaResolved.anio_num,
-          redam_resultado: _,
-          afectacion_vivienda: actos.afectacion_vivienda_familiar || false,
-        },
+      // ── Bloqueo duro: integridad UI ↔ pipeline ──
+      // Si la UI tiene un dato pero el pipeline lo perdió, no se genera el .docx.
+      // Esto previene escrituras incompletas que serían nulas legalmente.
+      if (diagnostics.integrityFailures.length > 0) {
+        const labels = diagnostics.integrityFailures
+          .map((f) => f.label)
+          .slice(0, 5)
+          .join(", ");
+        const moreLabel =
+          diagnostics.integrityFailures.length > 5
+            ? ` y ${diagnostics.integrityFailures.length - 5} más`
+            : "";
+        toast({
+          title: "ERROR DE INTEGRIDAD",
+          description: `Los datos [${labels}${moreLabel}] no se transfirieron al documento. Generación cancelada.`,
+          variant: "destructive",
+          duration: 14000,
+        });
+        console.error("[generate-docx] Pipeline Diagnostics:", diagnostics.integrityFailures);
+        return;
+      }
 
-        // ===== Antecedentes =====
-        antecedentes: {
-          modo: orBlank(extractedDocumento?.modo_adquisicion),
-          adquirido_de: orBlank(extractedDocumento?.adquirido_de),
-          escritura_num_letras: _,
-          escritura_num_numero: orBlank(extractedDocumento?.titulo_antecedente?.numero_documento || (extractedDocumento as any)?.numero_escritura),
-          escritura_dia_letras: antFecha.dia_letras,
-          escritura_dia_num: antFecha.dia_num,
-          escritura_mes: antFecha.mes,
-          escritura_anio_letras: antFecha.anio_letras,
-          escritura_anio_num: antFecha.anio_num,
-          notaria_previa_numero: orBlank(extractedDocumento?.titulo_antecedente?.notaria_documento || (extractedDocumento as any)?.notaria_origen),
-          notaria_previa_circulo: orBlank(extractedDocumento?.titulo_antecedente?.ciudad_documento),
-        },
+      // Advertencia preventiva (no bloquea; el modal de críticos queda en la UI principal).
+      if (diagnostics.missingCritical.length > 0) {
+        console.warn(
+          "[generate-docx] Campos críticos vacíos:",
+          diagnostics.missingCritical.map((m) => m.label),
+        );
+      }
 
-        // ===== RPH =====
-        rph: {
-          escritura_num_letras: _,
-          escritura_num_numero: orBlank(inmueble.escritura_ph_numero),
-          escritura_dia_letras: rphFecha.dia_letras,
-          escritura_dia_num: rphFecha.dia_num,
-          escritura_mes: rphFecha.mes,
-          escritura_anio_letras: rphFecha.anio_letras,
-          escritura_anio_num: rphFecha.anio_num,
-          notaria_numero: orBlank(inmueble.escritura_ph_notaria),
-          notaria_ciudad: orBlank(inmueble.escritura_ph_ciudad),
-          matricula_matriz: orBlank(inmueble.matricula_matriz),
-        },
+      const structuredData = finalData;
 
-        // ===== Apoderado banco =====
-        apoderado_banco: {
-          nombre: orBlank(actos.apoderado_nombre),
-          cedula: actos.apoderado_cedula ? formatCedulaLegal(actos.apoderado_cedula) : _,
-          expedida_en: orBlank(actos.apoderado_expedida_en),
-          escritura_poder_num: orBlank(actos.apoderado_escritura_poder),
-          poder_dia_letras: _, poder_dia_num: _, poder_mes: _, poder_anio_letras: _, poder_anio_num: _,
-          notaria_poder_num: orBlank(actos.apoderado_notaria_poder),
-          notaria_poder_ciudad: orBlank(actos.apoderado_notaria_ciudad),
-          email: orBlank(actos.apoderado_email),
-        },
-      };
 
       // ── Instrumentación de auditoría de variables (siempre activa para system_events;
       //    el modal/console.log solo aparecen si el toggle de depuración está ON) ──
@@ -2433,6 +2251,21 @@ const Validacion = () => {
         .from("tramites")
         .update({ status: "word_generado", ...(uploadedPath ? { docx_path: uploadedPath } : {}) })
         .eq("id", tramiteId);
+
+      // Snapshot final del pipeline en logs_extraccion.data_final.
+      // Guardamos el objeto CON placeholders para que coincida 1:1 con el .docx descargado.
+      try {
+        await supabase
+          .from("logs_extraccion")
+          .update({
+            data_final: finalData as never,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("tramite_id", tramiteId);
+      } catch (snapErr) {
+        console.warn("[generate-docx] no se pudo persistir snapshot data_final", snapErr);
+      }
+
       if (uploadedPath) {
         setDocxPath(uploadedPath);
         setShowFinalView(true);

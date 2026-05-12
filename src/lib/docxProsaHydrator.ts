@@ -129,6 +129,20 @@ export function hydrateProsa(data: ConsolidatedDocxData): ConsolidatedDocxData {
       const m = hydrateMonto(raw.replace(/\./g, "").replace(/,\d{2}$/, ""));
       actos.cuantia_hipoteca_letras = m.letras;
     }
+    // Pago inicial: si vino numérico pero falta letras, hidrata.
+    const piNum = actos.pago_inicial_numero;
+    if (!isBlank(piNum) && isBlank(actos.pago_inicial_letras)) {
+      const raw = String(piNum).match(/\$([\d.,]+)/)?.[1] ?? String(piNum);
+      const m = hydrateMonto(raw.replace(/\./g, "").replace(/,\d{2}$/, ""));
+      actos.pago_inicial_letras = m.letras;
+    }
+    // Saldo financiado: idem.
+    const sfNum = actos.saldo_financiado_numero;
+    if (!isBlank(sfNum) && isBlank(actos.saldo_financiado_letras)) {
+      const raw = String(sfNum).match(/\$([\d.,]+)/)?.[1] ?? String(sfNum);
+      const m = hydrateMonto(raw.replace(/\./g, "").replace(/,\d{2}$/, ""));
+      actos.saldo_financiado_letras = m.letras;
+    }
 
     hydrateFechaBlock({
       get dia_letras() { return actos.credito_dia_letras; },
