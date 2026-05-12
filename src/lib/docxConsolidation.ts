@@ -30,8 +30,10 @@ import {
 } from "@/lib/legalFormatters";
 import { sanitizeDireccion, sanitizeEstadoCivil } from "@/lib/reconcileData";
 import { lookupBank } from "@/lib/bankDirectory";
+import { DOCX_FIELD_MAP } from "@/lib/docxFieldMap";
 
-const PLACEHOLDER = "___________";
+/** Placeholder visible en el Word cuando no hay dato. */
+export const PLACEHOLDER = "___________";
 
 // ── Carta de crédito ───────────────────────────────────────────────────
 
