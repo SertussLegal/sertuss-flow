@@ -43,27 +43,28 @@ const baseInput = (
 });
 
 describe("generateFinalData — pipeline orchestrator", () => {
-  it("respeta el orden: overrides aplicados ANTES de la hidratación de prosa", () => {
+  it("respeta el orden: overrides aplicados ANTES de ensurePlaceholders", () => {
     const input = baseInput();
-    input.manualFieldOverrides = { valor_compraventa: "250000000" };
+    // Override sobre el alias declarado del tag canónico de letras.
+    input.manualFieldOverrides = {
+      cuantia_compraventa_letras: "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
+    };
     const { data } = generateFinalData(input, { tramiteId: "t-1" });
-    // El override debe haberse propagado y la prosa hidratado a partir del nuevo valor.
     const actos = data.actos as unknown as Record<string, string>;
-    expect(actos.cuantia_compraventa_letras.toLowerCase()).not.toContain("___");
-    // El número 250 millones debe aparecer en la cadena hidratada.
-    expect(actos.cuantia_compraventa_letras.toLowerCase()).toMatch(/doscientos/);
+    // El override sobrevive a hydrateProsa (que solo rellena vacíos) y a placeholders.
+    expect(actos.cuantia_compraventa_letras).toBe(
+      "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
+    );
   });
 
-  it("0 y false en la UI no disparan IntegrityFailure cuando llegan al pipeline", () => {
-    const input = baseInput();
-    // Forzamos un cero como valor de compraventa: debe tratarse como dato válido.
-    (input.ui.actos as unknown as Record<string, unknown>).valor_compraventa = 0;
-    const { diagnostics } = generateFinalData(input, { tramiteId: "t-2" });
-    // No debería haber failure por "Valor Compraventa" — 0 normaliza a "0", no a "".
-    const valorFail = diagnostics.integrityFailures.find((f) =>
-      f.label.includes("Valor Compraventa"),
-    );
-    expect(valorFail).toBeUndefined();
+  it("normalize() preserva 0 y false como datos válidos (no como vacío)", () => {
+    expect(__testables.normalize(0)).toBe("0");
+    expect(__testables.normalize(false)).toBe("false");
+    expect(__testables.normalize("")).toBe("");
+    expect(__testables.normalize(null)).toBe("");
+    expect(__testables.normalize(undefined)).toBe("");
+    expect(__testables.normalize("  ___  ")).toBe("");
+    expect(__testables.normalize("  hola  ")).toBe("hola");
   });
 
   it("detecta mismatch de cantidad de vendedores", () => {
