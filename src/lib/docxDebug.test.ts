@@ -24,9 +24,35 @@ describe("diffTagsVsData — tags planos", () => {
   });
 
   it("marca claves sin uso como unused", () => {
-    const data = { matricula: "x", aliasMuerto: "y" };
+    const data = { matricula: "x", aliasMuerto: "z" };
     const d = diffTagsVsData(["matricula"], flat(data));
     expect(d.unused).toEqual(["aliasMuerto"]);
+    expect(d.aliased).toEqual([]);
+    expect(d.ignored).toEqual([]);
+  });
+
+  it("reclasifica como aliased cuando el valor coincide con un mapped", () => {
+    const data = { matricula: "50C-123", inmueble_matricula_alias: "50C-123" };
+    const d = diffTagsVsData(["matricula"], flat(data));
+    expect(d.aliased).toContain("inmueble_matricula_alias");
+    expect(d.unused).not.toContain("inmueble_matricula_alias");
+  });
+
+  it("filtra metadata __sertuss_* y flags has_* como ignored", () => {
+    const data = {
+      matricula: "x",
+      __sertuss_tramite_id: "abc",
+      __sertuss_pipeline_version: "v3.2",
+      has_hipoteca: true,
+      basuraReal: "z",
+    };
+    const d = diffTagsVsData(["matricula"], flat(data));
+    expect(d.ignored).toEqual([
+      "__sertuss_pipeline_version",
+      "__sertuss_tramite_id",
+      "has_hipoteca",
+    ]);
+    expect(d.unused).toEqual(["basuraReal"]);
   });
 });
 
