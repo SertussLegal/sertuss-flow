@@ -51,7 +51,7 @@ export interface PipelineCtx {
   pipelineVersion?: string;
 }
 
-const PIPELINE_VERSION = "v3.1.integrity";
+const PIPELINE_VERSION = "v3.2.materialize";
 
 /**
  * Normaliza un valor para comparación de integridad.
@@ -64,38 +64,94 @@ const normalize = (v: unknown): string => {
 };
 
 /**
+ * Lee una ruta dotted del modelo, probando primero la clave literal con
+ * punto en raíz (clave materializada) y luego la ruta anidada.
+ * Esto refleja exactamente cómo el render de Word resuelve `{a.b.c}`.
+ */
+const readDotted = (data: Record<string, unknown>, path: string): unknown => {
+  if (path in data) return data[path];
+  const parts = path.split(".");
+  let cur: unknown = data;
+  for (const p of parts) {
+    if (cur && typeof cur === "object") {
+      cur = (cur as Record<string, unknown>)[p];
+    } else {
+      return undefined;
+    }
+  }
+  return cur;
+};
+
+/**
  * Compara campos críticos UI ↔ pipeline.
- * Regla A — UI con dato + pipeline vacío → falla bloqueante.
- * Regla B — Ambos vacíos → permitido.
- * Regla C — Ambos con dato (formato distinto) → válido.
+ * Usa `readDotted` para validar la MISMA clave que docxtemplater renderiza,
+ * incluyendo claves literales con punto materializadas en la raíz.
  */
 function runIntegrityCheck(
   ui: ConsolidationInput["ui"],
   data: ConsolidatedDocxData,
 ): IntegrityFailure[] {
   const failures: IntegrityFailure[] = [];
+  const root = data as unknown as Record<string, unknown>;
 
-  const check = (label: string, uiVal: unknown, pipeVal: unknown): void => {
-    if (normalize(uiVal) !== "" && normalize(pipeVal) === "") {
+  const check = (label: string, uiVal: unknown, ...pipePaths: string[]): void => {
+    if (normalize(uiVal) === "") return;
+    // Pasa si CUALQUIER ruta materializada contiene el dato.
+    const ok = pipePaths.some((p) => normalize(readDotted(root, p)) !== "");
+    if (!ok) {
       failures.push({ field: label, label, uiValue: String(uiVal) });
     }
   };
 
-  // 1. Campos raíz siempre obligatorios.
-  check("Matrícula", ui.inmueble.matricula_inmobiliaria, data.matricula_inmobiliaria);
-  check("Cédula Catastral", ui.inmueble.identificador_predial, data.cedula_catastral);
-  check("Dirección del inmueble", ui.inmueble.direccion, data.direccion_inmueble);
-  const actosPipe = data.actos as unknown as Record<string, unknown> | undefined;
+  // 1. Inmueble — validar tanto clave raíz como literal con punto.
+  check(
+    "Matrícula",
+    ui.inmueble.matricula_inmobiliaria,
+    "matricula_inmobiliaria",
+    "matricula",
+    "inmueble.matricula",
+    "inmueble.matricula_inmobiliaria",
+  );
+  check(
+    "Cédula Catastral",
+    ui.inmueble.identificador_predial,
+    "cedula_catastral",
+    "chip",
+    "identificador_predial",
+    "inmueble.cedula_catastral",
+    "inmueble.chip",
+  );
+  check(
+    "Dirección del inmueble",
+    ui.inmueble.direccion,
+    "direccion_inmueble",
+    "ubicacion_predio",
+    "ubicacion_inmueble",
+    "inmueble.direccion",
+    "inmueble.ubicacion",
+  );
+
+  // 2. Actos — claves dotted que el Word usa.
   check(
     "Valor Compraventa",
     ui.actos.valor_compraventa,
-    actosPipe?.cuantia_compraventa_numero,
+    "actos.cuantia_compraventa_numero",
+    "actos.cuantia_compraventa_letras",
   );
-
-  // 2. Hipoteca (condicional).
   if (ui.actos.es_hipoteca) {
-    check("Entidad Bancaria", ui.actos.entidad_bancaria, actosPipe?.entidad_bancaria);
-    check("Valor Hipoteca", ui.actos.valor_hipoteca, actosPipe?.cuantia_hipoteca_numero);
+    check(
+      "Entidad Bancaria",
+      ui.actos.entidad_bancaria,
+      "actos.entidad_bancaria",
+      "entidad_bancaria",
+      "banco_nombre",
+    );
+    check(
+      "Valor Hipoteca",
+      ui.actos.valor_hipoteca,
+      "actos.cuantia_hipoteca_numero",
+      "actos.cuantia_hipoteca_letras",
+    );
   }
 
   // 3. Arrays personas — mismatch de longitud + chequeo por índice.
@@ -114,8 +170,20 @@ function runIntegrityCheck(
     }
     list.forEach((item, i) => {
       const slot = actual[i];
-      check(`Nombre ${type} #${i + 1}`, item.nombre_completo, slot?.nombre);
-      check(`Cédula ${type} #${i + 1}`, item.numero_cedula, slot?.cedula);
+      if (normalize(item.nombre_completo) !== "" && normalize(slot?.nombre) === "") {
+        failures.push({
+          field: type,
+          label: `Nombre ${type} #${i + 1}`,
+          uiValue: String(item.nombre_completo),
+        });
+      }
+      if (normalize(item.numero_cedula) !== "" && normalize(slot?.cedula) === "") {
+        failures.push({
+          field: type,
+          label: `Cédula ${type} #${i + 1}`,
+          uiValue: String(item.numero_cedula),
+        });
+      }
     });
   };
   validateArray(
@@ -134,6 +202,16 @@ function runIntegrityCheck(
 
 /**
  * Pipeline maestro. NO lanza. El caller debe respetar `diagnostics`.
+ *
+ * Orden v3.2:
+ *   1. Consolidar
+ *   2. Overrides manuales (escriben anidado + clave literal con punto)
+ *   3. Hidratar prosa
+ *   4. Auditoría invisible
+ *   5. Materialización (clona ramas anidadas como claves dotted en raíz)
+ *   6. Integridad UI ↔ pipeline (sobre data materializada)
+ *   7. Críticos vacíos
+ *   8. Placeholders
  */
 export function generateFinalData(
   input: ConsolidationInput,
@@ -141,30 +219,26 @@ export function generateFinalData(
 ): PipelineResult {
   const version = ctx.pipelineVersion ?? PIPELINE_VERSION;
 
-  // 1. Crudo
   let data = getConsolidatedDocxData(input);
-  // 2. Overrides manuales (propaga a todos los alias). Pre-hydrator para que
-  //    las correcciones del usuario sean las que se conviertan a letras.
   data = applyManualOverrides(data, input.manualFieldOverrides);
-  // 3. Prosa notarial (montos en letras, fechas legales)
   data = hydrateProsa(data);
-  // 4. Auditoría invisible
   data = injectAuditMetadata(data, {
     tramiteId: ctx.tramiteId,
     ts: new Date().toISOString(),
     pipelineVersion: version,
   });
 
-  // 5. Integridad UI ↔ pipeline (ANTES de placeholders)
+  // Materializar ANTES de la verificación de integridad para que el chequeo
+  // valide exactamente lo que docxtemplater va a renderizar.
+  data = materializeDocxRenderData(data);
+
   const integrityFailures = runIntegrityCheck(input.ui, data);
 
-  // 6. Críticos vacíos (advertencia preventiva)
   const tipoActo = input.ui.actos.es_hipoteca
     ? "Compraventa con Hipoteca"
     : input.ui.actos.tipo_acto || "_default";
   const missingCritical = checkCriticalEmpty(data, tipoActo);
 
-  // 7. Placeholders (último paso, estético)
   const finalData = ensurePlaceholders(data);
 
   return {
@@ -178,4 +252,4 @@ export function generateFinalData(
 }
 
 // Exportado para tests.
-export const __testables = { normalize, runIntegrityCheck };
+export const __testables = { normalize, runIntegrityCheck, readDotted };
