@@ -356,6 +356,8 @@ export interface DocxAuditPayload {
     mapped: number;
     missing: number;
     unused: number;
+    aliased: number;
+    ignored: number;
     empty: number;
     scoped: number;
     rescued: number;
@@ -395,6 +397,8 @@ export function buildAuditPayload(args: {
       mapped: diff.mapped.length,
       missing: diff.missing.length,
       unused: diff.unused.length,
+      aliased: diff.aliased.length,
+      ignored: diff.ignored.length,
       empty: diff.empty.length,
       scoped: diff.scoped.length,
       rescued: rescued.length,
