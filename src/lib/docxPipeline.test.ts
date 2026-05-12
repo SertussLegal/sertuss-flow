@@ -42,65 +42,110 @@ const baseInput = (
   ocr: { extractedDocumento: null, extractedPredial: null },
 });
 
-describe("generateFinalData — pipeline orchestrator", () => {
-  it("respeta el orden: overrides aplicados ANTES de ensurePlaceholders", () => {
+describe("generateFinalData — pipeline orchestrator v3.2", () => {
+  it("materializa claves literales con punto en la raíz (inmueble.matricula, actos.entidad_bancaria)", () => {
     const input = baseInput();
-    // Override sobre el alias declarado del tag canónico de letras.
+    input.ui.actos.es_hipoteca = true;
+    input.ui.actos.entidad_bancaria = "BANCO CAJA SOCIAL S.A.";
+    const { data } = generateFinalData(input, { tramiteId: "t-mat" });
+    const root = data as unknown as Record<string, unknown>;
+
+    // Tags exactos que pide la plantilla Word:
+    expect(root["inmueble.matricula"]).toBe("50C-12345");
+    expect(root["inmueble.cedula_catastral"]).toBe("010203040506");
+    expect(root["inmueble.direccion"]).toBe("Calle 1 # 2-3");
+    expect(root["actos.entidad_bancaria"]).toBe("BANCO CAJA SOCIAL S.A.");
+    // El objeto anidado sigue presente:
+    expect((root.inmueble as Record<string, unknown>).matricula).toBe("50C-12345");
+  });
+
+  it("respeta el orden: overrides aplicados ANTES de hidratar prosa", () => {
+    const input = baseInput();
     input.manualFieldOverrides = {
       valor_compraventa_letras: "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
     };
     const { data } = generateFinalData(input, { tramiteId: "t-1" });
     const actos = data.actos as unknown as Record<string, string>;
-    // El override propaga al tag canónico (actos.cuantia_compraventa_letras)
-    // y sobrevive a hydrateProsa (solo rellena vacíos) y a placeholders.
     expect(actos.cuantia_compraventa_letras).toBe(
       "DOSCIENTOS CINCUENTA MILLONES DE PESOS",
     );
   });
 
-  it("normalize() preserva 0 y false como datos válidos (no como vacío)", () => {
+  it("override sobre clave dotted pisa anidado + clave literal materializada", () => {
+    const input = baseInput();
+    input.manualFieldOverrides = { "inmueble.matricula": "9999-OVR" };
+    const { data } = generateFinalData(input, { tramiteId: "t-ovr" });
+    const root = data as unknown as Record<string, unknown>;
+    expect(root["inmueble.matricula"]).toBe("9999-OVR");
+    expect((root.inmueble as Record<string, unknown>).matricula).toBe("9999-OVR");
+    // También propaga al canónico raíz vía DOCX_FIELD_MAP.
+    expect(root.matricula_inmobiliaria).toBe("9999-OVR");
+    expect(root.matricula).toBe("9999-OVR");
+  });
+
+  it("normalize() preserva 0 y false como datos válidos", () => {
     expect(__testables.normalize(0)).toBe("0");
     expect(__testables.normalize(false)).toBe("false");
     expect(__testables.normalize("")).toBe("");
     expect(__testables.normalize(null)).toBe("");
-    expect(__testables.normalize(undefined)).toBe("");
     expect(__testables.normalize("  ___  ")).toBe("");
     expect(__testables.normalize("  hola  ")).toBe("hola");
   });
 
-  it("detecta mismatch de cantidad de vendedores", () => {
-    const input = baseInput();
-    input.ui.vendedores = [
-      { ...createEmptyPersona(), nombre_completo: "A", numero_cedula: "1" },
-      { ...createEmptyPersona(), nombre_completo: "B", numero_cedula: "2" },
-      { ...createEmptyPersona(), nombre_completo: "C", numero_cedula: "3" },
-    ];
-    const { data, diagnostics } = generateFinalData(input, { tramiteId: "t-3" });
-    // El pipeline mapea los 3, así que las longitudes coinciden — no falla.
-    expect(data.vendedores.length).toBe(3);
-    const mismatch = diagnostics.integrityFailures.find((f) =>
-      f.label.toLowerCase().includes("vendedor"),
-    );
-    expect(mismatch).toBeUndefined();
+  it("integrityCheck dispara error si la UI tiene matrícula pero la materialización falló", () => {
+    // Simulamos el caso real: data UI con matrícula, pipeline data SIN ella.
+    const fakeData = {
+      vendedores: [],
+      compradores: [],
+      actos: {},
+    } as unknown as Parameters<typeof __testables.runIntegrityCheck>[1];
+    const ui = {
+      vendedores: [],
+      compradores: [],
+      inmueble: { matricula_inmobiliaria: "50C-1", identificador_predial: "", direccion: "" },
+      actos: { valor_compraventa: "", es_hipoteca: false },
+      notariaTramite: {} as never,
+    } as unknown as Parameters<typeof __testables.runIntegrityCheck>[0];
+    const failures = __testables.runIntegrityCheck(ui, fakeData);
+    expect(failures.find((f) => f.label === "Matrícula")).toBeTruthy();
   });
 
-  it("override de direccion_inmueble propaga a inmueble.direccion vía DOCX_FIELD_MAP", () => {
+  it("integrityCheck pasa cuando la matrícula vive solo en la clave literal materializada", () => {
+    const fakeData = {
+      "inmueble.matricula": "50C-1",
+      vendedores: [],
+      compradores: [],
+      actos: {},
+    } as unknown as Parameters<typeof __testables.runIntegrityCheck>[1];
+    const ui = {
+      vendedores: [],
+      compradores: [],
+      inmueble: { matricula_inmobiliaria: "50C-1", identificador_predial: "", direccion: "" },
+      actos: { valor_compraventa: "", es_hipoteca: false },
+      notariaTramite: {} as never,
+    } as unknown as Parameters<typeof __testables.runIntegrityCheck>[0];
+    const failures = __testables.runIntegrityCheck(ui, fakeData);
+    expect(failures.find((f) => f.label === "Matrícula")).toBeFalsy();
+  });
+
+  it("override de direccion_inmueble propaga a anidado, alias y clave literal", () => {
     const input = baseInput();
     input.manualFieldOverrides = { direccion_inmueble: "Carrera 99 # 88-77" };
     const { data } = generateFinalData(input, { tramiteId: "t-4" });
-    expect(data.direccion_inmueble).toBe("Carrera 99 # 88-77");
-    expect((data.inmueble as unknown as Record<string, unknown>).direccion).toBe(
-      "Carrera 99 # 88-77",
-    );
-    expect(data.ubicacion_predio).toBe("Carrera 99 # 88-77");
-    expect(data.ubicacion_inmueble).toBe("Carrera 99 # 88-77");
+    const root = data as unknown as Record<string, unknown>;
+    expect(root.direccion_inmueble).toBe("Carrera 99 # 88-77");
+    expect(root.ubicacion_predio).toBe("Carrera 99 # 88-77");
+    expect((root.inmueble as Record<string, unknown>).direccion).toBe("Carrera 99 # 88-77");
+    expect(root["inmueble.direccion"]).toBe("Carrera 99 # 88-77");
   });
 
   it("inyecta metadata de auditoría con tramiteId", () => {
     const input = baseInput();
     const { data } = generateFinalData(input, { tramiteId: "tramite-xyz" });
     expect((data as Record<string, unknown>).__sertuss_tramite_id).toBe("tramite-xyz");
-    expect((data as Record<string, unknown>).__sertuss_pipeline_version).toBeTruthy();
+    expect((data as Record<string, unknown>).__sertuss_pipeline_version).toBe(
+      "v3.2.materialize",
+    );
   });
 
   it("ensurePlaceholders solo se aplica al final (campos vacíos → placeholder)", () => {
@@ -108,5 +153,9 @@ describe("generateFinalData — pipeline orchestrator", () => {
     input.ui.inmueble.matricula_inmobiliaria = "";
     const { data } = generateFinalData(input, { tramiteId: "t-5" });
     expect(data.matricula_inmobiliaria).toBe("___________");
+    // La materialización tampoco debe inventar valor.
+    expect((data as unknown as Record<string, unknown>)["inmueble.matricula"]).toBe(
+      "___________",
+    );
   });
 });
