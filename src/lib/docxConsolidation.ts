@@ -581,9 +581,66 @@ export function applyManualOverrides(
     const v = (raw ?? "").trim();
     if (!v) continue;
     const targets = new Set<string>([field, ...(fieldAliases.get(field) ?? [])]);
-    for (const t of targets) setPath(out as Record<string, unknown>, t, v);
+    for (const t of targets) {
+      // Escribe ruta anidada (data.inmueble.matricula)
+      setPath(out as Record<string, unknown>, t, v);
+      // Y también clave literal con punto (data["inmueble.matricula"])
+      // para que docxtemplater la resuelva sin depender de la ruta.
+      if (t.includes(".")) {
+        (out as Record<string, unknown>)[t] = v;
+      }
+    }
   }
   return out;
+}
+
+// ── Materialización para docxtemplater ─────────────────────────────────
+
+/**
+ * Recorre el modelo final y crea una clave literal con punto en la raíz
+ * para CADA ruta anidada de tipo string/boolean/number. Los arrays
+ * (vendedores, compradores) y los meta-campos `__sertuss_*` se preservan
+ * sin tocar — los loops de docxtemplater dependen de ellos.
+ *
+ * Necesario porque docxtemplater interpreta `{inmueble.matricula}` como
+ * la propiedad literal `"inmueble.matricula"` y NO siempre como ruta
+ * anidada cuando el render se ejecuta con `paragraphLoop` y null-getter
+ * personalizado. Esta función blinda la generación contra esa ambigüedad.
+ *
+ * Reglas:
+ *  - Si la clave literal ya existe en la raíz (override del usuario), NO
+ *    se sobrescribe. Edición manual > materialización automática.
+ *  - Funciona a cualquier profundidad (`a.b.c`).
+ *  - Idempotente.
+ */
+export function materializeDocxRenderData<T extends Record<string, unknown>>(
+  data: T,
+): T {
+  const out: Record<string, unknown> = { ...data };
+
+  const walk = (val: unknown, path: string): void => {
+    if (val === null || val === undefined) return;
+    if (Array.isArray(val)) return; // loops manejan arrays
+    if (typeof val === "object") {
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        if (k.startsWith("__sertuss_")) continue;
+        walk(v, path ? `${path}.${k}` : k);
+      }
+      return;
+    }
+    // Hoja: escribe la clave literal en la raíz si no existe ya.
+    if (path.includes(".") && !(path in out)) {
+      out[path] = val;
+    }
+  };
+
+  for (const [k, v] of Object.entries(data)) {
+    if (k.startsWith("__sertuss_")) continue;
+    if (Array.isArray(v)) continue;
+    if (v && typeof v === "object") walk(v, k);
+  }
+
+  return out as T;
 }
 
 // ── Placeholders (último paso del pipeline) ────────────────────────────
