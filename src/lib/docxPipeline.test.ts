@@ -87,7 +87,7 @@ describe("generateFinalData — pipeline orchestrator", () => {
     input.manualFieldOverrides = { direccion_inmueble: "Carrera 99 # 88-77" };
     const { data } = generateFinalData(input, { tramiteId: "t-4" });
     expect(data.direccion_inmueble).toBe("Carrera 99 # 88-77");
-    expect((data.inmueble as Record<string, unknown>).direccion).toBe(
+    expect((data.inmueble as unknown as Record<string, unknown>).direccion).toBe(
       "Carrera 99 # 88-77",
     );
     expect(data.ubicacion_predio).toBe("Carrera 99 # 88-77");
