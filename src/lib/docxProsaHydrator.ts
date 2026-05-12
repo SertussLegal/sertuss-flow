@@ -83,11 +83,11 @@ export function hydrateProsa(data: ConsolidatedDocxData): ConsolidatedDocxData {
   // Clonado defensivo para no mutar el input.
   const out = JSON.parse(JSON.stringify(data)) as ConsolidatedDocxData;
 
-  const actos = out.actos as Record<string, unknown> | undefined;
+  const actos = out.actos as unknown as Record<string, unknown> | undefined;
   const antecedentes = out.antecedentes as Record<string, unknown> | undefined;
   const rph = out.rph as Record<string, unknown> | undefined;
   const apoderado = out.apoderado_banco as Record<string, unknown> | undefined;
-  const inmueble = out.inmueble as Record<string, unknown> | undefined;
+  const inmueble = out.inmueble as unknown as Record<string, unknown> | undefined;
 
   // ── Notaría: derivar letras si solo hay número ─────────────────
   const notNumero = String(out.notaria_numero ?? "").replace(/\D/g, "");

@@ -55,6 +55,9 @@ export interface Persona {
   apoderado_persona_cedula: string;
   apoderado_persona_municipio: string;
   lugar_expedicion?: string;
+  telefono?: string;
+  email?: string;
+  actividad_economica?: string;
 }
 
 export interface Inmueble {
