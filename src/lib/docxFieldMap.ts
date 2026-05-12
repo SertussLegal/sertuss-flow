@@ -59,19 +59,33 @@ export const DOCX_FIELD_MAP: ReadonlyArray<DocxFieldDescriptor> = [
   // ── Inmueble (root + nested) ───────────────────────────────────
   {
     tag: "matricula_inmobiliaria",
-    aliases: ["inmueble.matricula", "inmueble.matricula_inmobiliaria", "matricula"],
+    aliases: [
+      "matricula",
+      "inmueble.matricula",
+      "inmueble.matricula_inmobiliaria",
+    ],
     group: "inmueble",
     critical: true,
   },
   {
     tag: "cedula_catastral",
-    aliases: ["inmueble.cedula_catastral", "identificador_predial", "chip", "inmueble.chip"],
+    aliases: [
+      "chip",
+      "identificador_predial",
+      "inmueble.cedula_catastral",
+      "inmueble.chip",
+    ],
     group: "inmueble",
     critical: true,
   },
   {
     tag: "direccion_inmueble",
-    aliases: ["inmueble.direccion", "ubicacion_inmueble", "ubicacion_predio"],
+    aliases: [
+      "inmueble.direccion",
+      "inmueble.ubicacion",
+      "ubicacion_inmueble",
+      "ubicacion_predio",
+    ],
     group: "inmueble",
     critical: true,
   },
