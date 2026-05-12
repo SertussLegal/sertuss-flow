@@ -2258,7 +2258,7 @@ const Validacion = () => {
         await supabase
           .from("logs_extraccion")
           .update({
-            data_final: finalData as unknown as Record<string, unknown>,
+            data_final: finalData as never,
             updated_at: new Date().toISOString(),
           })
           .eq("tramite_id", tramiteId);
