@@ -57,7 +57,7 @@ describe("generateFinalData — pipeline orchestrator", () => {
   it("0 y false en la UI no disparan IntegrityFailure cuando llegan al pipeline", () => {
     const input = baseInput();
     // Forzamos un cero como valor de compraventa: debe tratarse como dato válido.
-    (input.ui.actos as Record<string, unknown>).valor_compraventa = 0 as unknown as string;
+    (input.ui.actos as unknown as Record<string, unknown>).valor_compraventa = 0;
     const { diagnostics } = generateFinalData(input, { tramiteId: "t-2" });
     // No debería haber failure por "Valor Compraventa" — 0 normaliza a "0", no a "".
     const valorFail = diagnostics.integrityFailures.find((f) =>
