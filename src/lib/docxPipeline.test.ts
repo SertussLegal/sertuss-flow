@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateFinalData } from "./docxPipeline";
+import { generateFinalData, __testables } from "./docxPipeline";
 import type { ConsolidationInput } from "./docxConsolidation";
 import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "./types";
 import { createEmptyNotariaTramite } from "@/components/tramites/DocxPreview";
