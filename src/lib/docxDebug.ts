@@ -420,7 +420,9 @@ export function logDocxAuditToConsole(payload: DocxAuditPayload): void {
   );
   console.log("Counts:", payload.counts);
   console.log(`Missing en data (riesgo de ${PLACEHOLDER}):`, payload.diff.missing);
-  console.log("Aliases sin uso:", payload.diff.unused);
+  console.log("Unused real (revisar):", payload.diff.unused);
+  console.log("Aliased (sinónimos de un mapped, OK):", payload.diff.aliased);
+  console.log("Ignored (metadata + flags has_*):", payload.diff.ignored);
   console.log("Tags vacíos:", payload.diff.empty);
   console.log("Scoped (resueltos por loop):", payload.diff.scoped);
   console.log("Secciones detectadas:", payload.diff.sectionsResolved);
