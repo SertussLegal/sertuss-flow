@@ -1817,9 +1817,10 @@ const Validacion = () => {
     setValidando(true);
     try {
       const datosExtraidos = {
-        vendedores: vendedores.map(v => ({
+        vendedores: vendedores.map(v => enrichPersonaForClaude({
           nombre_completo: v.nombre_completo,
           numero_cedula: v.numero_cedula,
+          lugar_expedicion: v.lugar_expedicion,
           estado_civil: v.estado_civil,
           direccion: v.direccion,
           municipio_domicilio: v.municipio_domicilio,
@@ -1827,9 +1828,10 @@ const Validacion = () => {
           razon_social: v.razon_social,
           nit: v.nit,
         })),
-        compradores: compradores.map(c => ({
+        compradores: compradores.map(c => enrichPersonaForClaude({
           nombre_completo: c.nombre_completo,
           numero_cedula: c.numero_cedula,
+          lugar_expedicion: c.lugar_expedicion,
           estado_civil: c.estado_civil,
           direccion: c.direccion,
           municipio_domicilio: c.municipio_domicilio,
