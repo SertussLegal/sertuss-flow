@@ -1245,6 +1245,23 @@ const Validacion = () => {
 
   // Background validation with Claude after each document upload (Momento 1: campos)
   // Fire-and-forget — never blocks UI, silent on failure.
+  /**
+   * Fase A — Traduce una Persona del state UI al contrato que esperan
+   * las reglas `NEG_CAMPOS_MINIMOS_*` y `FMT_NIT_VERIFICACION` de Claude.
+   * Default sano para Colombia: NIT si es PJ, CC en cualquier otro caso.
+   * En Fase B este default será reemplazado por el valor real de
+   * `p.tipo_identificacion` ya capturado en el formulario.
+   */
+  const enrichPersonaForClaude = (p: any) => {
+    const tipo = p.es_persona_juridica ? "NIT" : "CEDULA DE CIUDADANIA";
+    return {
+      ...p,
+      tipo_identificacion: tipo,
+      numero_identificacion: p.es_persona_juridica ? (p.nit || "") : (p.numero_cedula || ""),
+      expedida_en: p.lugar_expedicion || p.municipio_domicilio || "",
+    };
+  };
+
   const validarDespuesDeCarga = useCallback((
     tipoDoc: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial",
     datosDocumento: any,
