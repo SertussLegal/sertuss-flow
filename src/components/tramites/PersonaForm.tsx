@@ -7,8 +7,27 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Trash2, Info, AlertTriangle, FileWarning } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { Persona, NivelConfianza } from "@/lib/types";
+import type { Persona, NivelConfianza, TipoIdentificacion } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const TIPO_ID_OPTIONS: { value: TipoIdentificacion; label: string }[] = [
+  { value: "CC", label: "Cédula de Ciudadanía" },
+  { value: "CE", label: "Cédula de Extranjería" },
+  { value: "PA", label: "Pasaporte" },
+  { value: "TI", label: "Tarjeta de Identidad" },
+  { value: "PPT", label: "Permiso de Protección Temporal" },
+  { value: "NIT", label: "NIT" },
+];
+
+const NUMERO_LABEL: Record<TipoIdentificacion, string> = {
+  CC: "Número de Cédula",
+  CE: "Número de Cédula de Extranjería",
+  PA: "Número de Pasaporte",
+  TI: "Número de Tarjeta de Identidad",
+  PPT: "Número de PPT",
+  NIT: "NIT",
+};
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
 import { InlineBadgeDot } from "./InlineBadgeDot";
