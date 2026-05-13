@@ -454,8 +454,8 @@ const Validacion = () => {
     let localCompradores: Persona[] = [createEmptyPersona()];
 
     if (personas && personas.length > 0) {
-      const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p } as Persona));
-      const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p } as Persona));
+      const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p, tipo_identificacion: p.tipo_identificacion || "CC" } as Persona));
+      const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p, tipo_identificacion: p.tipo_identificacion || "CC" } as Persona));
       if (v.length) localVendedores = v;
       if (c.length) localCompradores = c;
     } else if (meta?.extracted_personas?.length) {
