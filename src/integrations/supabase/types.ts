@@ -650,6 +650,7 @@ export type Database = {
           representante_legal_cedula: string | null
           representante_legal_nombre: string | null
           rol: Database["public"]["Enums"]["persona_rol"]
+          tipo_identificacion: string
           tramite_id: string
         }
         Insert: {
@@ -671,6 +672,7 @@ export type Database = {
           representante_legal_cedula?: string | null
           representante_legal_nombre?: string | null
           rol: Database["public"]["Enums"]["persona_rol"]
+          tipo_identificacion?: string
           tramite_id: string
         }
         Update: {
@@ -692,6 +694,7 @@ export type Database = {
           representante_legal_cedula?: string | null
           representante_legal_nombre?: string | null
           rol?: Database["public"]["Enums"]["persona_rol"]
+          tipo_identificacion?: string
           tramite_id?: string
         }
         Relationships: [
