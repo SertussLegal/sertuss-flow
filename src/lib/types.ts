@@ -168,6 +168,7 @@ export const createEmptyPersona = (): Persona => ({
   id: crypto.randomUUID(),
   nombre_completo: "",
   numero_cedula: "",
+  tipo_identificacion: "CC",
   estado_civil: "",
   direccion: "",
   municipio_domicilio: "",
