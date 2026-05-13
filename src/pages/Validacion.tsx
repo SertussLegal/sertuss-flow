@@ -1246,18 +1246,22 @@ const Validacion = () => {
   // Background validation with Claude after each document upload (Momento 1: campos)
   // Fire-and-forget — never blocks UI, silent on failure.
   /**
-   * Fase A — Traduce una Persona del state UI al contrato que esperan
-   * las reglas `NEG_CAMPOS_MINIMOS_*` y `FMT_NIT_VERIFICACION` de Claude.
-   * Default sano para Colombia: NIT si es PJ, CC en cualquier otro caso.
-   * En Fase B este default será reemplazado por el valor real de
-   * `p.tipo_identificacion` ya capturado en el formulario.
+   * Traduce una Persona del state UI al contrato que esperan las reglas
+   * `NEG_CAMPOS_MINIMOS_*` y `FMT_NIT_VERIFICACION` de Claude.
+   *
+   * Fase B: usa el `tipo_identificacion` real capturado en el formulario
+   * (CC, CE, NIT, PA, TI, PPT) y lo expande al string oficial vía
+   * `IDENTIFICACION_LABELS`. Si una persona legacy llega sin el campo,
+   * cae al default sano (NIT si PJ, CC en otro caso).
    */
   const enrichPersonaForClaude = (p: any) => {
-    const tipo = p.es_persona_juridica ? "NIT" : "CEDULA DE CIUDADANIA";
+    const codigo: TipoIdentificacion =
+      (p.tipo_identificacion as TipoIdentificacion | undefined) ??
+      (p.es_persona_juridica ? "NIT" : "CC");
     return {
       ...p,
-      tipo_identificacion: tipo,
-      numero_identificacion: p.es_persona_juridica ? (p.nit || "") : (p.numero_cedula || ""),
+      tipo_identificacion: IDENTIFICACION_LABELS[codigo],
+      numero_identificacion: codigo === "NIT" ? (p.nit || "") : (p.numero_cedula || ""),
       expedida_en: p.lugar_expedicion || p.municipio_domicilio || "",
     };
   };
