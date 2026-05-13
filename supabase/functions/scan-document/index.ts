@@ -134,7 +134,7 @@ const toolsByCertificado = [
               properties: {
                 nombre_completo: { type: "string", description: "Nombre completo de la persona o razón social" },
                 numero_identificacion: { type: "string", description: "Número de cédula o NIT" },
-                tipo_identificacion: { type: "string", description: "Tipo de documento: CC, NIT, CE, etc." },
+                tipo_identificacion: { type: "string", enum: ["CC", "CE", "NIT", "PA", "TI", "PPT"], description: "Tipo de documento. Inferir del encabezado del documento: 'CEDULA DE CIUDADANIA' → CC, 'CEDULA DE EXTRANJERIA' → CE, 'PASAPORTE' → PA, 'TARJETA DE IDENTIDAD' → TI, 'PERMISO DE PROTECCION TEMPORAL' → PPT, persona jurídica → NIT. Default CC si no es claro." },
                 lugar_expedicion: { type: "string", description: "Lugar de expedición del documento" },
                 confianza: { type: "string", enum: ["alta", "media", "baja"], description: "Confianza en la extracción de esta persona" },
               },
