@@ -248,7 +248,23 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Número de Cédula {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")} {inlineDot(index, "numero_cedula")}</Label>
+                <Label>Tipo de Identificación</Label>
+                <Select
+                  value={persona.tipo_identificacion || "CC"}
+                  onValueChange={(v) => updatePersona(index, "tipo_identificacion", v as TipoIdentificacion)}
+                >
+                  <SelectTrigger data-field-input={`${rolePrefix}_${index}_tipo_identificacion`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPO_ID_OPTIONS.filter((o) => o.value !== "NIT").map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{NUMERO_LABEL[persona.tipo_identificacion || "CC"]} {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")} {inlineDot(index, "numero_cedula")}</Label>
                 {wrapWithSuggestion(index, "numero_cedula",
                   <Input data-field-input={`${rolePrefix}_${index}_numero_cedula`} className={fieldClassName(index, "numero_cedula")} value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
                 )}
