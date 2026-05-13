@@ -1279,7 +1279,10 @@ const Validacion = () => {
           tabOrigen,
           datosExtraidos: {
             documento_cargado: { tipo: tipoDoc, datos: datosDocumento },
-            vendedores, compradores, inmueble, actos,
+            vendedores: vendedores.map(enrichPersonaForClaude),
+            compradores: compradores.map(enrichPersonaForClaude),
+            inmueble,
+            actos,
           },
           validacionesApp: [
             ...(vendedores.length || compradores.length ? ["cruce_roles_certificado_completado"] : []),
