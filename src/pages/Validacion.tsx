@@ -3493,6 +3493,7 @@ const Validacion = () => {
 const personaToRow = (p: Persona) => ({
   nombre_completo: p.nombre_completo,
   numero_cedula: p.numero_cedula,
+  tipo_identificacion: p.tipo_identificacion || "CC",
   estado_civil: p.estado_civil,
   direccion: p.direccion,
   municipio_domicilio: p.municipio_domicilio,
