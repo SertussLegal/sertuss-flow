@@ -31,8 +31,8 @@ import Docxtemplater from "docxtemplater";
 import PreviewModal from "@/components/tramites/PreviewModal";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
 import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
-import { createEmptyPersona, createEmptyInmueble, createEmptyActos } from "@/lib/types";
-import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza } from "@/lib/types";
+import { createEmptyPersona, createEmptyInmueble, createEmptyActos, IDENTIFICACION_LABELS } from "@/lib/types";
+import type { Persona, Inmueble, Actos, TextOverride, CustomVariable, SugerenciaIA, NivelConfianza, TipoIdentificacion } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { consumeCredit, notifyHttpQuotaError } from "@/services/credits";
@@ -454,8 +454,8 @@ const Validacion = () => {
     let localCompradores: Persona[] = [createEmptyPersona()];
 
     if (personas && personas.length > 0) {
-      const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p } as Persona));
-      const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p } as Persona));
+      const v = personas.filter((p: any) => p.rol === "vendedor").map((p: any) => ({ ...p, tipo_identificacion: p.tipo_identificacion || "CC" } as Persona));
+      const c = personas.filter((p: any) => p.rol === "comprador").map((p: any) => ({ ...p, tipo_identificacion: p.tipo_identificacion || "CC" } as Persona));
       if (v.length) localVendedores = v;
       if (c.length) localCompradores = c;
     } else if (meta?.extracted_personas?.length) {
@@ -470,6 +470,7 @@ const Validacion = () => {
             ...createEmptyPersona(),
             nombre_completo: unwrap(p.nombre_completo),
             numero_cedula: unwrap(p.numero_identificacion),
+            tipo_identificacion: (["CC","CE","NIT","PA","TI","PPT"].includes(unwrap(p.tipo_identificacion)) ? unwrap(p.tipo_identificacion) : "CC") as TipoIdentificacion,
             municipio_domicilio: unwrap(p.lugar_expedicion),
           }));
         }
@@ -478,6 +479,7 @@ const Validacion = () => {
             ...createEmptyPersona(),
             nombre_completo: unwrap(p.nombre_completo),
             numero_cedula: unwrap(p.numero_identificacion),
+            tipo_identificacion: (["CC","CE","NIT","PA","TI","PPT"].includes(unwrap(p.tipo_identificacion)) ? unwrap(p.tipo_identificacion) : "CC") as TipoIdentificacion,
             municipio_domicilio: unwrap(p.lugar_expedicion),
           }));
         }
@@ -1245,6 +1247,27 @@ const Validacion = () => {
 
   // Background validation with Claude after each document upload (Momento 1: campos)
   // Fire-and-forget — never blocks UI, silent on failure.
+  /**
+   * Traduce una Persona del state UI al contrato que esperan las reglas
+   * `NEG_CAMPOS_MINIMOS_*` y `FMT_NIT_VERIFICACION` de Claude.
+   *
+   * Fase B: usa el `tipo_identificacion` real capturado en el formulario
+   * (CC, CE, NIT, PA, TI, PPT) y lo expande al string oficial vía
+   * `IDENTIFICACION_LABELS`. Si una persona legacy llega sin el campo,
+   * cae al default sano (NIT si PJ, CC en otro caso).
+   */
+  const enrichPersonaForClaude = (p: any) => {
+    const codigo: TipoIdentificacion =
+      (p.tipo_identificacion as TipoIdentificacion | undefined) ??
+      (p.es_persona_juridica ? "NIT" : "CC");
+    return {
+      ...p,
+      tipo_identificacion: IDENTIFICACION_LABELS[codigo],
+      numero_identificacion: codigo === "NIT" ? (p.nit || "") : (p.numero_cedula || ""),
+      expedida_en: p.lugar_expedicion || p.municipio_domicilio || "",
+    };
+  };
+
   const validarDespuesDeCarga = useCallback((
     tipoDoc: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial",
     datosDocumento: any,
@@ -1262,7 +1285,10 @@ const Validacion = () => {
           tabOrigen,
           datosExtraidos: {
             documento_cargado: { tipo: tipoDoc, datos: datosDocumento },
-            vendedores, compradores, inmueble, actos,
+            vendedores: vendedores.map(enrichPersonaForClaude),
+            compradores: compradores.map(enrichPersonaForClaude),
+            inmueble,
+            actos,
           },
           validacionesApp: [
             ...(vendedores.length || compradores.length ? ["cruce_roles_certificado_completado"] : []),
@@ -1797,9 +1823,10 @@ const Validacion = () => {
     setValidando(true);
     try {
       const datosExtraidos = {
-        vendedores: vendedores.map(v => ({
+        vendedores: vendedores.map(v => enrichPersonaForClaude({
           nombre_completo: v.nombre_completo,
           numero_cedula: v.numero_cedula,
+          lugar_expedicion: v.lugar_expedicion,
           estado_civil: v.estado_civil,
           direccion: v.direccion,
           municipio_domicilio: v.municipio_domicilio,
@@ -1807,9 +1834,10 @@ const Validacion = () => {
           razon_social: v.razon_social,
           nit: v.nit,
         })),
-        compradores: compradores.map(c => ({
+        compradores: compradores.map(c => enrichPersonaForClaude({
           nombre_completo: c.nombre_completo,
           numero_cedula: c.numero_cedula,
+          lugar_expedicion: c.lugar_expedicion,
           estado_civil: c.estado_civil,
           direccion: c.direccion,
           municipio_domicilio: c.municipio_domicilio,
@@ -3467,6 +3495,7 @@ const Validacion = () => {
 const personaToRow = (p: Persona) => ({
   nombre_completo: p.nombre_completo,
   numero_cedula: p.numero_cedula,
+  tipo_identificacion: p.tipo_identificacion || "CC",
   estado_civil: p.estado_civil,
   direccion: p.direccion,
   municipio_domicilio: p.municipio_domicilio,

@@ -37,10 +37,27 @@ export interface Invitation {
   created_at: string;
 }
 
+export type TipoIdentificacion = "CC" | "CE" | "NIT" | "PA" | "TI" | "PPT";
+
+/**
+ * Mapeo de código corto → string oficial que usan las reglas de Claude
+ * (`NEG_CAMPOS_MINIMOS_*`, `FMT_NIT_VERIFICACION`) y los templates Word.
+ * Mantener en mayúsculas SIN tildes para coincidencia exacta.
+ */
+export const IDENTIFICACION_LABELS: Record<TipoIdentificacion, string> = {
+  CC: "CEDULA DE CIUDADANIA",
+  CE: "CEDULA DE EXTRANJERIA",
+  NIT: "NIT",
+  PA: "PASAPORTE",
+  TI: "TARJETA DE IDENTIDAD",
+  PPT: "PERMISO DE PROTECCION TEMPORAL",
+};
+
 export interface Persona {
   id: string;
   nombre_completo: string;
   numero_cedula: string;
+  tipo_identificacion: TipoIdentificacion;
   estado_civil: string;
   direccion: string;
   municipio_domicilio: string;
@@ -151,6 +168,7 @@ export const createEmptyPersona = (): Persona => ({
   id: crypto.randomUUID(),
   nombre_completo: "",
   numero_cedula: "",
+  tipo_identificacion: "CC",
   estado_civil: "",
   direccion: "",
   municipio_domicilio: "",

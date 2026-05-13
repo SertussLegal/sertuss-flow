@@ -7,8 +7,27 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Trash2, Info, AlertTriangle, FileWarning } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { Persona, NivelConfianza } from "@/lib/types";
+import type { Persona, NivelConfianza, TipoIdentificacion } from "@/lib/types";
 import { createEmptyPersona } from "@/lib/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const TIPO_ID_OPTIONS: { value: TipoIdentificacion; label: string }[] = [
+  { value: "CC", label: "Cédula de Ciudadanía" },
+  { value: "CE", label: "Cédula de Extranjería" },
+  { value: "PA", label: "Pasaporte" },
+  { value: "TI", label: "Tarjeta de Identidad" },
+  { value: "PPT", label: "Permiso de Protección Temporal" },
+  { value: "NIT", label: "NIT" },
+];
+
+const NUMERO_LABEL: Record<TipoIdentificacion, string> = {
+  CC: "Número de Cédula",
+  CE: "Número de Cédula de Extranjería",
+  PA: "Número de Pasaporte",
+  TI: "Número de Tarjeta de Identidad",
+  PPT: "Número de PPT",
+  NIT: "NIT",
+};
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
 import { InlineBadgeDot } from "./InlineBadgeDot";
@@ -229,7 +248,23 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Número de Cédula {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")} {inlineDot(index, "numero_cedula")}</Label>
+                <Label>Tipo de Identificación</Label>
+                <Select
+                  value={persona.tipo_identificacion || "CC"}
+                  onValueChange={(v) => updatePersona(index, "tipo_identificacion", v as TipoIdentificacion)}
+                >
+                  <SelectTrigger data-field-input={`${rolePrefix}_${index}_tipo_identificacion`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPO_ID_OPTIONS.filter((o) => o.value !== "NIT").map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{NUMERO_LABEL[persona.tipo_identificacion || "CC"]} {ocr(index, "numero_cedula")} {confBadge(index, "numero_cedula")} {inlineDot(index, "numero_cedula")}</Label>
                 {wrapWithSuggestion(index, "numero_cedula",
                   <Input data-field-input={`${rolePrefix}_${index}_numero_cedula`} className={fieldClassName(index, "numero_cedula")} value={persona.numero_cedula} onChange={(e) => updatePersona(index, "numero_cedula", e.target.value)} />
                 )}
