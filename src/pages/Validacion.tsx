@@ -470,6 +470,7 @@ const Validacion = () => {
             ...createEmptyPersona(),
             nombre_completo: unwrap(p.nombre_completo),
             numero_cedula: unwrap(p.numero_identificacion),
+            tipo_identificacion: (["CC","CE","NIT","PA","TI","PPT"].includes(unwrap(p.tipo_identificacion)) ? unwrap(p.tipo_identificacion) : "CC") as TipoIdentificacion,
             municipio_domicilio: unwrap(p.lugar_expedicion),
           }));
         }
@@ -478,6 +479,7 @@ const Validacion = () => {
             ...createEmptyPersona(),
             nombre_completo: unwrap(p.nombre_completo),
             numero_cedula: unwrap(p.numero_identificacion),
+            tipo_identificacion: (["CC","CE","NIT","PA","TI","PPT"].includes(unwrap(p.tipo_identificacion)) ? unwrap(p.tipo_identificacion) : "CC") as TipoIdentificacion,
             municipio_domicilio: unwrap(p.lugar_expedicion),
           }));
         }
