@@ -164,19 +164,38 @@ serve(async (req) => {
               valor_hipoteca_letras: { type: "string" },
               entidad_bancaria: { type: "string" },
             },
-            required: ["texto_final_word", "sugerencias_ia", "fecha_escritura", "comparecientes_vendedor", "comparecientes_comprador", "clausula_objeto", "clausula_precio", "clausula_tradicion", "clausula_entrega", "clausula_gastos", "matricula_inmobiliaria", "identificador_predial", "direccion_inmueble", "municipio", "departamento", "valor_compraventa_letras"],
+            required: ["texto_final_word", "sugerencias_ia"],
             additionalProperties: false,
           },
         },
       },
     ];
 
-    let response: Response;
-    try {
-      response = await fetchAiGateway({
+    // Helper: detecta errores de timeout/saturación transitorios del gateway
+    // upstream (502/504, idle timeout, empty 200). Esos sí ameritan fallback;
+    // 402/429/401/400 NO (no se arreglan cambiando de modelo).
+    const isUpstreamSaturationError = (err: unknown): boolean => {
+      const anyErr = err as { status?: number; message?: string; rawBody?: string } | null;
+      if (!anyErr) return false;
+      if (anyErr.status === 502 || anyErr.status === 503 || anyErr.status === 504 || anyErr.status === 0) {
+        return true;
+      }
+      const haystack = `${anyErr.message ?? ""} ${anyErr.rawBody ?? ""}`.toLowerCase();
+      return (
+        haystack.includes("idle timeout") ||
+        haystack.includes("upstream timeout") ||
+        haystack.includes("upstream idle") ||
+        haystack.includes("empty body") ||
+        haystack.includes("network connection lost") ||
+        haystack.includes("exhausted retries")
+      );
+    };
+
+    const callEditor = (model: string, maxRetries: number) =>
+      fetchAiGateway({
         apiKey: LOVABLE_API_KEY,
         body: {
-          model: "google/gemini-2.5-pro",
+          model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
@@ -184,12 +203,45 @@ serve(async (req) => {
           tools,
           tool_choice: { type: "function", function: { name: "redactar_escritura" } },
         },
+        maxRetries,
         tag: "process-expediente",
       });
-    } catch (err) {
-      const r = aiGatewayErrorResponse(err, corsHeaders);
-      if (r) return r;
-      throw err;
+
+    let response: Response;
+    let modeloUtilizado = "google/gemini-2.5-pro";
+    let fallbackUsed = false;
+    try {
+      // Intento primario: Pro con reintentos reducidos (1 retry => 2 intentos).
+      response = await callEditor("google/gemini-2.5-pro", 1);
+    } catch (errPro) {
+      if (isUpstreamSaturationError(errPro)) {
+        console.warn(
+          `[process-expediente] Pro saturado, intentando fallback con Flash. status=${(errPro as { status?: number })?.status}`,
+        );
+        try {
+          response = await callEditor("google/gemini-2.5-flash", 2);
+          modeloUtilizado = "google/gemini-2.5-flash";
+          fallbackUsed = true;
+        } catch (errFlash) {
+          // Si tanto Pro como Flash fallan por saturación, devolvemos un
+          // 500 con mensaje humano. Otros errores (402/429) los pasamos al
+          // helper estándar para preservar el status code original.
+          const r = aiGatewayErrorResponse(errFlash, corsHeaders);
+          if (r && (r.status === 402 || r.status === 429)) return r;
+          console.error("[process-expediente] Pro y Flash saturados:", errFlash);
+          return new Response(
+            JSON.stringify({
+              error:
+                "El redactor IA está saturado debido al tamaño del expediente. Por favor, intenta de nuevo en unos momentos.",
+            }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } else {
+        const r = aiGatewayErrorResponse(errPro, corsHeaders);
+        if (r) return r;
+        throw errPro;
+      }
     }
 
     interface EditorResult {
@@ -254,7 +306,8 @@ serve(async (req) => {
         organization_id: tramite.organization_id,
         detalle: {
           phase: "fase_2",
-          model: "google/gemini-2.5-pro",
+          model: modeloUtilizado,
+          fallback_used: fallbackUsed,
           tipo_acto: tipoActo,
           tokens_input: inT,
           tokens_output: outT,
@@ -277,6 +330,7 @@ serve(async (req) => {
       texto_final_word: cleanedTexto,
       sugerencias_ia: cleanedSugerencias,
       templateData: { ...sanitizeAiJson(editorResult), texto_final_word: cleanedTexto, sugerencias_ia: cleanedSugerencias },
+      meta: { modelo_utilizado: modeloUtilizado, fallback_used: fallbackUsed },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
