@@ -97,14 +97,37 @@ const ActosForm = ({ actos, onChange, inlineBadges }: ActosFormProps) => {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>Tipo de Acto {inlineDot("tipo_acto")}</Label>
-          <Select value={actos.tipo_acto} onValueChange={handleTipoActoChange}>
-            <SelectTrigger data-field-input="tipo_acto"><SelectValue placeholder="Seleccione tipo de acto" /></SelectTrigger>
+          <Label className="flex items-center gap-1.5">
+            Tipo de Acto {inlineDot("tipo_acto")}
+            {tipoActoFaltante && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-xs">
+                  Hay valores monetarios cargados pero no has elegido el tipo de acto.
+                  Selecciona "Compraventa" o "Compraventa con Hipoteca".
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </Label>
+          <Select value={actos.tipo_acto || ""} onValueChange={handleTipoActoChange}>
+            <SelectTrigger
+              data-field-input="tipo_acto"
+              className={tipoActoFaltante ? "border-destructive ring-1 ring-destructive/40" : ""}
+            >
+              <SelectValue placeholder="Seleccione tipo de acto" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="Compraventa">Compraventa</SelectItem>
               <SelectItem value="Compraventa con Hipoteca">Compraventa con Hipoteca</SelectItem>
             </SelectContent>
           </Select>
+          {tipoActoFaltante && (
+            <p className="text-xs text-destructive">
+              Selecciona el tipo de acto — hay valores cargados sin clasificar.
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>Valor de Compraventa (COP) {inlineDot("valor_compraventa")}</Label>
