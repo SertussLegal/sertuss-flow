@@ -29,25 +29,44 @@ const BANK_DIRECTORY: Record<string, BankInfo> = {
 };
 
 /**
- * Busca un banco por nombre usando matching fuzzy (includes).
- * Normaliza a mayúsculas y elimina acentos para mejor coincidencia.
+ * Normaliza un nombre de banco para comparación:
+ *  - Quita acentos, mayúsculas, espacios redundantes.
+ *  - Quita sufijos comerciales (S.A., S.A.S, LTDA, S.A.S., E.U.).
+ *  - Quita prefijos genéricos como "BANCO " para fuzzy "DE BOGOTA" ⇄ "BOGOTA".
  */
-export function lookupBank(name: string): BankInfo | null {
-  if (!name) return null;
-  const normalized = name
+function normalizeBankName(raw: string): string {
+  if (!raw) return "";
+  let n = raw
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+  // Quitar sufijos comerciales (con o sin puntos).
+  n = n.replace(/\b(S\.?A\.?S\.?|S\.?A\.?|LTDA\.?|E\.?U\.?|S\.?A\.?S)\b\.?/g, "");
+  // Normalizar espacios y signos.
+  n = n.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
+  return n;
+}
 
-  // Exact match first
+/**
+ * Busca un banco por nombre. Devuelve `null` si no hay match razonable.
+ * El caller DEBE usar el resultado solo para complementar NIT/domicilio
+ * si esos campos vienen vacíos. JAMÁS sobrescribe el nombre extraído.
+ */
+export function lookupBank(name: string): BankInfo | null {
+  if (!name) return null;
+  const normalized = normalizeBankName(name);
+  if (!normalized) return null;
+
+  // Exact normalized match
   if (BANK_DIRECTORY[normalized]) return BANK_DIRECTORY[normalized];
 
-  // Fuzzy: check if any key is contained in the name or vice versa
+  // Fuzzy: contención bidireccional sobre formas normalizadas.
   for (const [key, info] of Object.entries(BANK_DIRECTORY)) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      return info;
-    }
+    const normKey = normalizeBankName(key);
+    if (!normKey) continue;
+    if (normalized === normKey) return info;
+    if (normalized.includes(normKey) || normKey.includes(normalized)) return info;
   }
 
   return null;
