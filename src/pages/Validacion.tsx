@@ -1950,7 +1950,23 @@ const Validacion = () => {
           emitCreditsBlocked({ source: "process-expediente" });
           return;
         }
-        throw new Error("Error en el pipeline de IA: " + fnError.message);
+        // Extraer mensaje humano del Edge Function (status 500 con JSON
+        // { error: "..." }). supabase-js expone el body crudo en
+        // fnError.context.body cuando el status es non-2xx.
+        let humanMessage = "";
+        const ctxBody = (fnError as { context?: { body?: unknown } })?.context?.body;
+        if (typeof ctxBody === "string") {
+          try {
+            const parsed = JSON.parse(ctxBody);
+            if (parsed && typeof parsed.error === "string") humanMessage = parsed.error;
+          } catch { /* body no era JSON */ }
+        } else if (ctxBody && typeof (ctxBody as { error?: unknown }).error === "string") {
+          humanMessage = (ctxBody as { error: string }).error;
+        }
+        if (!humanMessage && typeof (result as { error?: unknown })?.error === "string") {
+          humanMessage = (result as { error: string }).error;
+        }
+        throw new Error(humanMessage || "Error en el pipeline de IA: " + fnError.message);
       }
       if (result?.error) {
         if (isCreditsBlockedError(null, result)) {
