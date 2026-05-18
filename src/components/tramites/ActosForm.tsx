@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertTriangle } from "lucide-react";
 import type { Actos } from "@/lib/types";
 import OcrBadge from "./OcrBadge";
 import OcrSuggestion from "./OcrSuggestion";
@@ -39,6 +41,27 @@ const ActosForm = ({ actos, onChange, inlineBadges }: ActosFormProps) => {
     onChange({ ...actos, tipo_acto: value, es_hipoteca: esHipoteca });
   };
 
+  // Auto-detección: si el usuario ingresa valor_hipoteca pero el Select
+  // sigue vacío o en "Compraventa", lo promovemos a "Compraventa con
+  // Hipoteca". Solo escribe el estado si hace falta.
+  useEffect(() => {
+    const tieneCompraventa = Number((actos.valor_compraventa || "").replace(/\D/g, "")) > 0;
+    const tieneHipoteca = Number((actos.valor_hipoteca || "").replace(/\D/g, "")) > 0;
+    if (tieneCompraventa && tieneHipoteca && actos.tipo_acto !== "Compraventa con Hipoteca") {
+      onChange({ ...actos, tipo_acto: "Compraventa con Hipoteca", es_hipoteca: true });
+    } else if (tieneCompraventa && !tieneHipoteca && !actos.tipo_acto) {
+      onChange({ ...actos, tipo_acto: "Compraventa", es_hipoteca: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actos.valor_compraventa, actos.valor_hipoteca]);
+
+  // Falta el tipo de acto aunque existan valores numéricos relacionados.
+  const tieneValores =
+    Number((actos.valor_compraventa || "").replace(/\D/g, "")) > 0 ||
+    Number((actos.valor_hipoteca || "").replace(/\D/g, "")) > 0;
+  const tipoActoFaltante = tieneValores && !actos.tipo_acto;
+
+
   const ocr = (field: string) => ocrFields.has(field) ? <OcrBadge /> : null;
   const inlineDot = (field: string) => {
     const v = inlineBadges?.get(field);
@@ -74,14 +97,37 @@ const ActosForm = ({ actos, onChange, inlineBadges }: ActosFormProps) => {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>Tipo de Acto {inlineDot("tipo_acto")}</Label>
-          <Select value={actos.tipo_acto} onValueChange={handleTipoActoChange}>
-            <SelectTrigger data-field-input="tipo_acto"><SelectValue placeholder="Seleccione tipo de acto" /></SelectTrigger>
+          <Label className="flex items-center gap-1.5">
+            Tipo de Acto {inlineDot("tipo_acto")}
+            {tipoActoFaltante && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-xs">
+                  Hay valores monetarios cargados pero no has elegido el tipo de acto.
+                  Selecciona "Compraventa" o "Compraventa con Hipoteca".
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </Label>
+          <Select value={actos.tipo_acto || ""} onValueChange={handleTipoActoChange}>
+            <SelectTrigger
+              data-field-input="tipo_acto"
+              className={tipoActoFaltante ? "border-destructive ring-1 ring-destructive/40" : ""}
+            >
+              <SelectValue placeholder="Seleccione tipo de acto" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="Compraventa">Compraventa</SelectItem>
               <SelectItem value="Compraventa con Hipoteca">Compraventa con Hipoteca</SelectItem>
             </SelectContent>
           </Select>
+          {tipoActoFaltante && (
+            <p className="text-xs text-destructive">
+              Selecciona el tipo de acto — hay valores cargados sin clasificar.
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>Valor de Compraventa (COP) {inlineDot("valor_compraventa")}</Label>

@@ -52,10 +52,21 @@ function masculinoAFemenino(words: string): string {
  *   de ordinales ("primera", "segunda", ..., "décima"). Para >10 sustituye
  *   morfológicamente.
  */
+/**
+ * Detecta si una cadena ya está en formato "<algo> (NNN)" o "<algo> ($NNN...)".
+ * Idempotencia: si el input ya viene formateado, devolverlo intacto evita
+ * doble envoltura tipo "treinta y cinco (35) (35)".
+ */
+const ALREADY_FORMATTED_RE = /\([\d.\s$,]+\)\s*$/;
+
 export function numeroConLetras(
   n: number | string,
   gender: "masculine" | "feminine" = "masculine",
 ): string {
+  // Idempotencia: si recibimos ya el string formateado, no re-envolver.
+  if (typeof n === "string" && ALREADY_FORMATTED_RE.test(n.trim())) {
+    return n.trim();
+  }
   const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
   if (!Number.isFinite(num) || num <= 0) return "";
 
@@ -151,6 +162,10 @@ export function escrituraProsa(data: EscrituraInput): string | null {
  */
 export function montoProsa(valor: string | number): string {
   if (valor === null || valor === undefined || valor === "") return "";
+  // Idempotencia: si ya viene formateado tipo "... ($NNN...)", devolverlo.
+  if (typeof valor === "string" && /\(\$[\d.,]+\)\s*$/.test(valor.trim())) {
+    return valor.trim();
+  }
   const raw = typeof valor === "number" ? valor.toString() : valor;
   const formatted = formatMonedaLegal(raw);
   if (!formatted) return "";

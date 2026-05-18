@@ -21,6 +21,7 @@ import {
   injectAuditMetadata,
   ensurePlaceholders,
   materializeDocxRenderData,
+  sanitizeDuplicates,
   type ConsolidatedDocxData,
   type ConsolidationInput,
   type PersonaDocxData,
@@ -239,7 +240,11 @@ export function generateFinalData(
     : input.ui.actos.tipo_acto || "_default";
   const missingCritical = checkCriticalEmpty(data, tipoActo);
 
-  const finalData = ensurePlaceholders(data);
+  // Limpieza final de duplicaciones `(NNN) (NNN)` / `($X) ($X)` antes
+  // de placeholders. Idempotente — protege contra doble envoltura por
+  // re-renderizado de IA o hidrataciones múltiples.
+  const deduped = sanitizeDuplicates(data);
+  const finalData = ensurePlaceholders(deduped);
 
   return {
     data: finalData,

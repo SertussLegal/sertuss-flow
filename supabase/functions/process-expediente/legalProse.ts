@@ -72,10 +72,16 @@ function masculinoAFemenino(words: string): string {
   return out;
 }
 
+const ALREADY_FORMATTED_RE = /\([\d.\s$,]+\)\s*$/;
+
 export function numeroConLetras(
   n: number | string,
   gender: "masculine" | "feminine" = "masculine",
 ): string {
+  // Idempotencia: si recibimos ya un string formateado, no re-envolver.
+  if (typeof n === "string" && ALREADY_FORMATTED_RE.test(n.trim())) {
+    return n.trim();
+  }
   const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
   if (!Number.isFinite(num) || num <= 0) return "";
   if (gender === "feminine" && num >= 1 && num <= 10) {
@@ -131,6 +137,10 @@ export function escrituraProsa(data: EscrituraInput): string | null {
 
 export function montoProsa(valor: string | number): string {
   if (valor === null || valor === undefined || valor === "") return "";
+  // Idempotencia
+  if (typeof valor === "string" && /\(\$[\d.,]+\)\s*$/.test(valor.trim())) {
+    return valor.trim();
+  }
   const raw = typeof valor === "number" ? valor.toString() : valor;
   return formatMonedaLegal(raw);
 }

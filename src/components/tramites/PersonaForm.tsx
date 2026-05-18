@@ -271,9 +271,21 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
               </div>
               <div className="space-y-2">
                 <Label>Estado Civil {inlineDot(index, "estado_civil")}</Label>
-                <Input data-field-input={`${rolePrefix}_${index}_estado_civil`} value={persona.estado_civil} onChange={(e) => updatePersona(index, "estado_civil", e.target.value)} />
+                <Input
+                  data-field-input={`${rolePrefix}_${index}_estado_civil`}
+                  value={persona.estado_civil}
+                  onChange={(e) => updatePersona(index, "estado_civil", e.target.value)}
+                  className={
+                    persona.nombre_completo && persona.numero_cedula && !persona.estado_civil
+                      ? "border-destructive ring-1 ring-destructive/40 focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
                 {persona.nombre_completo && persona.numero_cedula && !persona.estado_civil && (
-                  <span className="text-xs text-muted-foreground italic">ⓘ Se extrae de la escritura antecedente</span>
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    Dato requerido no presente en la cédula, por favor digítalo manualmente.
+                  </p>
                 )}
               </div>
               <div className="space-y-2">
@@ -284,9 +296,21 @@ const PersonaForm = ({ title, personas, onChange, confianzaFields, onConfianzaCh
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Dirección {inlineDot(index, "direccion")}</Label>
-                <Input data-field-input={`${title.toLowerCase().includes("vendedor") ? "vendedor" : "comprador"}_${index}_direccion`} value={persona.direccion} onChange={(e) => updatePersona(index, "direccion", e.target.value)} />
+                <Input
+                  data-field-input={`${rolePrefix}_${index}_direccion`}
+                  value={persona.direccion}
+                  onChange={(e) => updatePersona(index, "direccion", e.target.value)}
+                  className={
+                    persona.nombre_completo && persona.numero_cedula && !persona.direccion
+                      ? "border-destructive ring-1 ring-destructive/40 focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
                 {persona.nombre_completo && persona.numero_cedula && !persona.direccion && (
-                  <span className="text-xs text-muted-foreground italic">ⓘ Se extrae de la escritura antecedente</span>
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    Dato requerido no presente en la cédula, por favor digítalo manualmente.
+                  </p>
                 )}
               </div>
             </div>

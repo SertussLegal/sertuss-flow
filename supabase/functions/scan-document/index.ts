@@ -335,12 +335,12 @@ ROLES SEMÁNTICOS: Asigna roles basados en la estructura del acto:
    - Si hay afectación a vivienda familiar (SI/NO)
    - El acto más reciente y de mayor relevancia es el "principal"
 
-5. TÍTULO ANTECEDENTE: Identifica la anotación que dio origen a la propiedad ACTUAL del vendedor. Busca el acto de compraventa, donación, sentencia o resolución más reciente que transfirió la propiedad al propietario actual. Extrae:
+5. TÍTULO ANTECEDENTE: Identifica la ÚLTIMA anotación cronológica que constituya una TRANSFERENCIA DE DOMINIO válida (compraventa, donación, permuta, cesión, adjudicación por sucesión, sentencia judicial, liquidación de sociedad conyugal, dación en pago, resolución administrativa de adjudicación). IGNORA estrictamente anotaciones de: hipoteca, cancelación de hipoteca, embargo, levantamiento de embargo, afectación a vivienda familiar, patrimonio de familia, servidumbre, demanda, medida cautelar, aclaratoria, corrección o cambio de jurisdicción — esas NO transfieren dominio. Una vez identificada esa anotación, extrae sus datos:
    - Tipo de documento (Escritura Pública, Sentencia Judicial, Resolución)
    - Número del documento
-   - Fecha
-   - Notaría o juzgado donde se otorgó
-   - Ciudad
+   - Fecha (DD-MM-AAAA)
+   - Notaría o juzgado donde se otorgó (con número exacto)
+   - Ciudad/Círculo
    - Nombre de quien transfirió el bien (el vendedor anterior)
 
 IMPORTANTE: Los linderos son críticos — transcribe CADA PALABRA tal como aparece. No inventes datos que no aparezcan en el documento. Extrae TODAS las personas mencionadas, no solo los propietarios actuales.

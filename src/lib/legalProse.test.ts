@@ -61,6 +61,22 @@ describe("legalProse — montoProsa", () => {
       "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)",
     );
   });
+  it("idempotencia: no re-envuelve montos ya formateados", () => {
+    const formatted = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)";
+    expect(montoProsa(formatted)).toBe(formatted);
+  });
+});
+
+describe("legalProse — idempotencia numeroConLetras", () => {
+  it("no re-envuelve cadenas ya formateadas tipo 'palabra (NNN)'", () => {
+    const formatted = "tres mil quinientos noventa y cinco (3595)";
+    expect(numeroConLetras(formatted)).toBe(formatted);
+  });
+  it("doble aplicación produce el mismo resultado", () => {
+    const once = numeroConLetras(3595);
+    const twice = numeroConLetras(once);
+    expect(twice).toBe(once);
+  });
 });
 
 describe("clausulaBuilder — buildParagrafoRegimenPH", () => {

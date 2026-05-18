@@ -673,6 +673,48 @@ export function ensurePlaceholders<T>(value: T): T {
   return out as unknown as T;
 }
 
+// ── Sanitizador de duplicaciones contiguas ─────────────────────────────
+
+/**
+ * Limpia patrones tipo `(3595) (3595)` o `($35.000.000) ($35.000.000)` o
+ * `(treinta y cinco) (treinta y cinco)` que pueden colarse por doble
+ * aplicación de los helpers de prosa o por la IA al re-envolver.
+ *
+ * Se aplica como ÚLTIMO paso del pipeline sobre cada string-hoja del
+ * objeto de datos que va a docxtemplater. NO modifica HTML; opera sobre
+ * los valores planos que se inyectan en los tags {nombre.de.tag}.
+ *
+ * Idempotente. Aplica varias pasadas para colapsar (a) (a) (a) → (a).
+ */
+const DUP_PAREN_RE = /\(([^()]+)\)\s*\(\1\)/g;
+
+export function sanitizeDuplicates<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    let out: string = value;
+    // Hasta 5 pasadas — suficiente para colapsar cualquier cadena razonable.
+    for (let i = 0; i < 5; i++) {
+      const next = out.replace(DUP_PAREN_RE, "($1)");
+      if (next === out) break;
+      out = next;
+    }
+    return out as unknown as T;
+  }
+  if (typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeDuplicates(item)) as unknown as T;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k.startsWith("__sertuss_")) {
+      out[k] = v;
+      continue;
+    }
+    out[k] = sanitizeDuplicates(v);
+  }
+  return out as unknown as T;
+}
+
 // ── Audit metadata ─────────────────────────────────────────────────────
 
 export interface AuditCtx {
