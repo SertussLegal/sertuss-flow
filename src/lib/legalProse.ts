@@ -162,6 +162,10 @@ export function escrituraProsa(data: EscrituraInput): string | null {
  */
 export function montoProsa(valor: string | number): string {
   if (valor === null || valor === undefined || valor === "") return "";
+  // Idempotencia: si ya viene formateado tipo "... ($NNN...)", devolverlo.
+  if (typeof valor === "string" && /\(\$[\d.,]+\)\s*$/.test(valor.trim())) {
+    return valor.trim();
+  }
   const raw = typeof valor === "number" ? valor.toString() : valor;
   const formatted = formatMonedaLegal(raw);
   if (!formatted) return "";
