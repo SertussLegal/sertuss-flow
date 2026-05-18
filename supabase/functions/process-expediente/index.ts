@@ -164,7 +164,7 @@ serve(async (req) => {
               valor_hipoteca_letras: { type: "string" },
               entidad_bancaria: { type: "string" },
             },
-            required: ["texto_final_word", "sugerencias_ia", "fecha_escritura", "comparecientes_vendedor", "comparecientes_comprador", "clausula_objeto", "clausula_precio", "clausula_tradicion", "clausula_entrega", "clausula_gastos", "matricula_inmobiliaria", "identificador_predial", "direccion_inmueble", "municipio", "departamento", "valor_compraventa_letras"],
+            required: ["texto_final_word", "sugerencias_ia"],
             additionalProperties: false,
           },
         },
