@@ -691,7 +691,7 @@ const DUP_PAREN_RE = /\(([^()]+)\)\s*\(\1\)/g;
 export function sanitizeDuplicates<T>(value: T): T {
   if (value === null || value === undefined) return value;
   if (typeof value === "string") {
-    let out = value;
+    let out: string = value;
     // Hasta 5 pasadas — suficiente para colapsar cualquier cadena razonable.
     for (let i = 0; i < 5; i++) {
       const next = out.replace(DUP_PAREN_RE, "($1)");
