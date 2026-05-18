@@ -1820,6 +1820,29 @@ const Validacion = () => {
       return;
     }
 
+    // ── Bloqueo duro: campos manuales obligatorios (no presentes en cédula) ──
+    const faltantes: string[] = [];
+    const checkPersona = (label: string, list: Persona[]) => {
+      list.forEach((p, i) => {
+        if (p.es_persona_juridica) return; // PJ no usa estado civil
+        if (!p.nombre_completo && !p.numero_cedula) return; // slot vacío
+        if (!p.estado_civil) faltantes.push(`${label} ${i + 1} (${p.nombre_completo || "sin nombre"}): Estado Civil`);
+        if (!p.direccion) faltantes.push(`${label} ${i + 1} (${p.nombre_completo || "sin nombre"}): Dirección`);
+      });
+    };
+    checkPersona("Vendedor", vendedores);
+    checkPersona("Comprador", compradores);
+
+    if (faltantes.length > 0) {
+      toast({
+        title: "Faltan datos obligatorios",
+        description: `No presentes en la cédula colombiana. Completa antes de generar:\n• ${faltantes.join("\n• ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+
     setValidando(true);
     try {
       const datosExtraidos = {
