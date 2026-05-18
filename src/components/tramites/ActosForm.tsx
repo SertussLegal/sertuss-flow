@@ -41,6 +41,27 @@ const ActosForm = ({ actos, onChange, inlineBadges }: ActosFormProps) => {
     onChange({ ...actos, tipo_acto: value, es_hipoteca: esHipoteca });
   };
 
+  // Auto-detección: si el usuario ingresa valor_hipoteca pero el Select
+  // sigue vacío o en "Compraventa", lo promovemos a "Compraventa con
+  // Hipoteca". Solo escribe el estado si hace falta.
+  useEffect(() => {
+    const tieneCompraventa = Number((actos.valor_compraventa || "").replace(/\D/g, "")) > 0;
+    const tieneHipoteca = Number((actos.valor_hipoteca || "").replace(/\D/g, "")) > 0;
+    if (tieneCompraventa && tieneHipoteca && actos.tipo_acto !== "Compraventa con Hipoteca") {
+      onChange({ ...actos, tipo_acto: "Compraventa con Hipoteca", es_hipoteca: true });
+    } else if (tieneCompraventa && !tieneHipoteca && !actos.tipo_acto) {
+      onChange({ ...actos, tipo_acto: "Compraventa", es_hipoteca: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actos.valor_compraventa, actos.valor_hipoteca]);
+
+  // Falta el tipo de acto aunque existan valores numéricos relacionados.
+  const tieneValores =
+    Number((actos.valor_compraventa || "").replace(/\D/g, "")) > 0 ||
+    Number((actos.valor_hipoteca || "").replace(/\D/g, "")) > 0;
+  const tipoActoFaltante = tieneValores && !actos.tipo_acto;
+
+
   const ocr = (field: string) => ocrFields.has(field) ? <OcrBadge /> : null;
   const inlineDot = (field: string) => {
     const v = inlineBadges?.get(field);
