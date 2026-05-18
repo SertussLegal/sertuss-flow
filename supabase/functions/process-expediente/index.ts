@@ -330,6 +330,7 @@ serve(async (req) => {
       texto_final_word: cleanedTexto,
       sugerencias_ia: cleanedSugerencias,
       templateData: { ...sanitizeAiJson(editorResult), texto_final_word: cleanedTexto, sugerencias_ia: cleanedSugerencias },
+      meta: { modelo_utilizado: modeloUtilizado, fallback_used: fallbackUsed },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
