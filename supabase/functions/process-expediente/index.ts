@@ -306,7 +306,8 @@ serve(async (req) => {
         organization_id: tramite.organization_id,
         detalle: {
           phase: "fase_2",
-          model: "google/gemini-2.5-pro",
+          model: modeloUtilizado,
+          fallback_used: fallbackUsed,
           tipo_acto: tipoActo,
           tokens_input: inT,
           tokens_output: outT,
