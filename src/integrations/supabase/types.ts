@@ -142,6 +142,59 @@ export type Database = {
           },
         ]
       }
+      cancelaciones: {
+        Row: {
+          aplica_ley_546: boolean
+          created_at: string
+          deudor_cedula: string | null
+          deudor_nombre: string | null
+          id: string
+          matricula_inmobiliaria: string | null
+          organization_id: string
+          status: string
+          updated_at: string
+          url_certificado_generado: string | null
+          url_minuta_generada: string | null
+          valor_hipoteca: number | null
+        }
+        Insert: {
+          aplica_ley_546?: boolean
+          created_at?: string
+          deudor_cedula?: string | null
+          deudor_nombre?: string | null
+          id?: string
+          matricula_inmobiliaria?: string | null
+          organization_id: string
+          status?: string
+          updated_at?: string
+          url_certificado_generado?: string | null
+          url_minuta_generada?: string | null
+          valor_hipoteca?: number | null
+        }
+        Update: {
+          aplica_ley_546?: boolean
+          created_at?: string
+          deudor_cedula?: string | null
+          deudor_nombre?: string | null
+          id?: string
+          matricula_inmobiliaria?: string | null
+          organization_id?: string
+          status?: string
+          updated_at?: string
+          url_certificado_generado?: string | null
+          url_minuta_generada?: string | null
+          valor_hipoteca?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cancelaciones_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       config_tramites: {
         Row: {
           campos_obligatorios: Json
