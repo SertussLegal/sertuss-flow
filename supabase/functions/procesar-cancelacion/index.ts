@@ -11,7 +11,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import PizZip from "https://esm.sh/pizzip@3.1.6";
 import Docxtemplater from "https://esm.sh/docxtemplater@3.50.0";
-import { fetchAiGateway, aiGatewayErrorResponse, parseToolCallArguments } from "../_shared/aiFetch.ts";
+import { fetchAiGateway, AiGatewayError, parseToolCallArguments } from "../_shared/aiFetch.ts";
+
+// Envelope helper: 200 OK con { ok:false, code, message } para errores de negocio
+function biz(code: string, message: string, extra: Record<string, unknown> = {}) {
+  return new Response(JSON.stringify({ ok: false, code, message, ...extra }), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
