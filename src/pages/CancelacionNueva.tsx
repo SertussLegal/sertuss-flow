@@ -58,7 +58,7 @@ export const CancelacionNueva = () => {
     <div className="min-h-screen bg-muted/30">
       {/* Top bar */}
       <div className="border-b border-border bg-background">
-        <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <Button
             type="button"
             variant="ghost"
@@ -70,7 +70,7 @@ export const CancelacionNueva = () => {
             <ArrowLeft className="h-4 w-4" />
             Volver a Cancelaciones
           </Button>
-          <span className="text-xs text-muted-foreground">Nueva cancelación</span>
+          <span className="text-sm text-muted-foreground">— Nueva Cancelación de Hipoteca</span>
         </div>
       </div>
 

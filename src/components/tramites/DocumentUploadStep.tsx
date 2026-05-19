@@ -569,16 +569,11 @@ const DocumentUploadStep = () => {
   return (
     <div className="flex h-dvh flex-col bg-background">
       <header className="border-b border-border bg-background shrink-0">
-        <div className="container flex h-14 items-center gap-4">
+        <div className="container flex h-14 items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="gap-2">
             <ArrowLeft className="h-4 w-4" /> Volver a Escrituras
           </Button>
-          <span className="text-sm font-medium text-muted-foreground">Nueva Escritura — Carga de Documentos</span>
-          <div className="ml-auto flex items-center gap-3">
-            <Badge variant="outline">
-              <Coins className="mr-1 h-3 w-3" /> {credits} créditos
-            </Badge>
-          </div>
+          <span className="text-sm text-muted-foreground">— Carga de Documentos del Expediente</span>
         </div>
       </header>
 
