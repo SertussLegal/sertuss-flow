@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
 
 const BANCO_FIJO = "Banco Davivienda S.A.";
+const BUCKET_OUTPUT = "expediente-files";
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -34,17 +35,15 @@ export const CancelacionNueva = () => {
     navigate("/cancelaciones");
   };
 
-  const fileToBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // strip "data:application/pdf;base64,"
-        resolve(result.split(",")[1] ?? "");
-      };
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
+  const uploadSupportPdf = async (cancelacionId: string, file: File, kind: "certificado" | "escritura") => {
+    const path = `${cancelacionId}/cancelaciones/soportes/${kind}.pdf`;
+    const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, file, {
+      contentType: "application/pdf",
+      upsert: true,
     });
+    if (error) throw new Error(`No se pudo subir ${kind}: ${error.message}`);
+    return path;
+  };
 
   const handleSubmit = async () => {
     if (!activeOrgId) {
@@ -66,10 +65,10 @@ export const CancelacionNueva = () => {
       if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
       const cancelacionId = inserted.id;
 
-      // 2) PDFs → base64
-      const [certificadoBase64, escrituraBase64] = await Promise.all([
-        fileToBase64(certificado),
-        fileToBase64(escritura),
+      // 2) PDFs → Storage privado (evita enviar base64 gigante al Edge Function)
+      const [certificadoPath, escrituraPath] = await Promise.all([
+        uploadSupportPdf(cancelacionId, certificado, "certificado"),
+        uploadSupportPdf(cancelacionId, escritura, "escritura"),
       ]);
 
       // 3) Invocar edge function
@@ -80,8 +79,8 @@ export const CancelacionNueva = () => {
         message?: string;
       }>("procesar-cancelacion", {
         cancelacionId,
-        certificadoBase64,
-        escrituraBase64,
+        certificadoPath,
+        escrituraPath,
       });
 
       if (error) {
