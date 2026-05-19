@@ -228,7 +228,7 @@ const NuevaCancelacionDialog = ({
         <DialogHeader>
           <DialogTitle>Nueva cancelación de hipoteca</DialogTitle>
           <DialogDescription>
-            Selecciona el banco acreedor y adjunta los documentos requeridos para iniciar el trámite.
+            Adjunta los documentos requeridos para iniciar el trámite con {BANCO_FIJO}.
           </DialogDescription>
         </DialogHeader>
 
