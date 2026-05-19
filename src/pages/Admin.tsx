@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { isSuperAdmin } from "@/lib/superAdmin";
 import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity, Bug } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,12 +56,14 @@ const Admin = () => {
   const [claudeError, setClaudeError] = useState<string | null>(null);
   const [showClaudeDialog, setShowClaudeDialog] = useState(false);
 
-  // Access guard
+  // Access guard — only the global SuperAdmin (info@sertuss.com) may enter.
+  const isAllowed = isSuperAdmin(profile?.email);
+
   useEffect(() => {
-    if (!authLoading && profile?.role !== "owner") {
-      navigate("/dashboard", { replace: true });
+    if (!authLoading && !isAllowed) {
+      navigate("/escrituras", { replace: true });
     }
-  }, [authLoading, profile, navigate]);
+  }, [authLoading, isAllowed, navigate]);
 
   const fetchOrgs = async () => {
     setLoading(true);
@@ -74,8 +77,8 @@ const Admin = () => {
   };
 
   useEffect(() => {
-    if (profile?.role === "owner") fetchOrgs();
-  }, [profile]);
+    if (isAllowed) fetchOrgs();
+  }, [isAllowed]);
 
   const filtered = orgs.filter(
     (o) =>
@@ -190,7 +193,7 @@ const Admin = () => {
     }
   };
 
-  if (authLoading || profile?.role !== "owner") {
+  if (authLoading || !isAllowed) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />

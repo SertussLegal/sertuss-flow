@@ -17,13 +17,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useModules } from "@/contexts/ModuleContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { isSuperAdmin } from "@/lib/superAdmin";
 
 interface NavItem {
   slug: string | null; // null = always visible (admin/account)
   label: string;
   icon: LucideIcon;
   path: string;
-  ownerOnly?: boolean;
+  superAdminOnly?: boolean;
 }
 
 const MODULE_NAV: NavItem[] = [
@@ -34,7 +35,7 @@ const MODULE_NAV: NavItem[] = [
 const ACCOUNT_NAV: NavItem[] = [
   { slug: null, label: "Equipo", icon: Users, path: "/equipo" },
   { slug: null, label: "Notaría", icon: Settings, path: "/notaria" },
-  { slug: null, label: "Administración", icon: Shield, path: "/admin", ownerOnly: true },
+  { slug: null, label: "Administración", icon: Shield, path: "/admin", superAdminOnly: true },
 ];
 
 export const AppSidebar = () => {
@@ -103,7 +104,7 @@ export const AppSidebar = () => {
           )}
           <SidebarGroupContent>
             <SidebarMenu>
-              {ACCOUNT_NAV.filter((i) => !i.ownerOnly || profile?.role === "owner").map(renderItem)}
+              {ACCOUNT_NAV.filter((i) => !i.superAdminOnly || isSuperAdmin(profile?.email)).map(renderItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

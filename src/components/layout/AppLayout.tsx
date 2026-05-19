@@ -2,11 +2,13 @@ import { Outlet } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { useModules } from "@/contexts/ModuleContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
-import ProfileSwitcher from "@/components/ProfileSwitcher";
+import { Coins } from "lucide-react";
 
 export const AppLayout = () => {
   const { loadingModules } = useModules();
+  const { organization } = useAuth();
 
   return (
     <SidebarProvider>
@@ -17,7 +19,15 @@ export const AppLayout = () => {
           <header className="h-14 flex items-center gap-3 border-b border-slate-100 px-4 bg-background/95 backdrop-blur-md">
             <SidebarTrigger />
             <div className="flex-1" />
-            <ProfileSwitcher variant="light" />
+            {organization && (
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Coins className="h-4 w-4 text-notarial-gold" />
+                <span className="font-medium text-foreground">
+                  {organization.credit_balance}
+                </span>
+                <span>créditos</span>
+              </div>
+            )}
           </header>
 
           <main className="flex-1 min-w-0">

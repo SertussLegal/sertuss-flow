@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { isSuperAdmin } from "@/lib/superAdmin";
 import { Scale, ArrowLeft, Save } from "lucide-react";
 
 const NIT_REGEX = /^\d{9}-\d{1}$/;
@@ -24,14 +25,16 @@ const AdminOrgEdit = () => {
   const [saving, setSaving] = useState(false);
   const [nitError, setNitError] = useState("");
 
-  useEffect(() => {
-    if (!authLoading && profile?.role !== "owner") {
-      navigate("/dashboard", { replace: true });
-    }
-  }, [authLoading, profile, navigate]);
+  const isAllowed = isSuperAdmin(profile?.email);
 
   useEffect(() => {
-    if (profile?.role === "owner" && id) {
+    if (!authLoading && !isAllowed) {
+      navigate("/escrituras", { replace: true });
+    }
+  }, [authLoading, isAllowed, navigate]);
+
+  useEffect(() => {
+    if (isAllowed && id) {
       (async () => {
         const { data, error } = await supabase.rpc("get_all_organizations" as any);
         if (error) {

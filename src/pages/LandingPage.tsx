@@ -73,7 +73,7 @@ const LandingPage = () => {
           password
         });
         if (error) throw error;
-        navigate("/dashboard");
+        navigate("/escrituras");
       }
     } catch (error: any) {
       toast({
