@@ -50,8 +50,10 @@ export const AppSidebar = () => {
   const { isModuleEnabled, loadingModules } = useModules();
   const { profile, memberships, activeOrgId } = useAuth();
 
+  // Rol dentro de la org activa. El SuperAdmin NO obtiene bypass aquí:
+  // "Mi notaría" solo se muestra cuando realmente es owner del contexto actual.
   const activeMembership = memberships.find((m) => m.organization_id === activeOrgId);
-  const isOwner = activeMembership?.role === "owner";
+  const isOwnerOfActiveOrg = activeMembership?.role === "owner";
   const superAdmin = isSuperAdmin(profile?.email);
 
   const isActive = (path: string) =>
@@ -83,27 +85,29 @@ export const AppSidebar = () => {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Grupo 1 — Módulos de trabajo (feature flags) */}
-        <SidebarGroup>
-          {!collapsed && (
-            <SidebarGroupLabel className={GROUP_LABEL_CLS}>
-              Módulos de trabajo
-            </SidebarGroupLabel>
-          )}
-          <SidebarGroupContent>
-            {loadingModules ? (
-              <div className="space-y-2 px-2 py-2">
-                <Skeleton className="h-8 w-full" />
-                <Skeleton className="h-8 w-full" />
-              </div>
-            ) : (
-              <SidebarMenu>{visibleWorkModules.map(renderItem)}</SidebarMenu>
+        {/* Grupo 1 — Módulos de trabajo. Para SuperAdmin nunca se oculta. */}
+        {(loadingModules || visibleWorkModules.length > 0 || superAdmin) && (
+          <SidebarGroup>
+            {!collapsed && (
+              <SidebarGroupLabel className={GROUP_LABEL_CLS}>
+                Módulos de trabajo
+              </SidebarGroupLabel>
             )}
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroupContent>
+              {loadingModules && !superAdmin ? (
+                <div className="space-y-2 px-2 py-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : (
+                <SidebarMenu>{visibleWorkModules.map(renderItem)}</SidebarMenu>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
-        {/* Grupo 2 — Mi notaría (solo owner de la org activa) */}
-        {isOwner && (
+        {/* Grupo 2 — Mi notaría: solo si la membresía activa es owner */}
+        {isOwnerOfActiveOrg && (
           <SidebarGroup>
             {!collapsed && (
               <SidebarGroupLabel className={GROUP_LABEL_CLS}>
@@ -116,7 +120,7 @@ export const AppSidebar = () => {
           </SidebarGroup>
         )}
 
-        {/* Grupo 3 — Plataforma (exclusivo SuperAdmin) */}
+        {/* Grupo 3 — Plataforma: exclusivo info@sertuss.com */}
         {superAdmin && (
           <SidebarGroup>
             {!collapsed && (
