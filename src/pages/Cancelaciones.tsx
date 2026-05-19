@@ -240,18 +240,17 @@ const NuevaCancelacionDialog = ({
               </span>
               <h3 className="text-sm font-semibold">Banco acreedor</h3>
             </div>
-            <Select value={banco} onValueChange={setBanco}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un banco" />
-              </SelectTrigger>
-              <SelectContent>
-                {BANCOS.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              value={BANCO_FIJO}
+              disabled
+              readOnly
+              className="font-medium"
+              aria-label="Banco acreedor"
+            />
+            <p className="text-xs text-muted-foreground">
+              Este módulo opera exclusivamente con {BANCO_FIJO}. Las plantillas y reglas
+              de procesamiento están configuradas para esta entidad.
+            </p>
           </section>
 
           <section className="space-y-3">
