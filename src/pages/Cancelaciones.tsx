@@ -17,14 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -44,16 +38,9 @@ type CancelacionRow = {
   created_at: string;
 };
 
-const BANCOS = [
-  "Banco Davivienda S.A.",
-  "Bancolombia S.A.",
-  "BBVA Colombia",
-  "Banco de Bogotá",
-  "Banco AV Villas",
-  "Banco Caja Social",
-  "Scotiabank Colpatria",
-  "Banco Popular",
-];
+const BANCO_FIJO = "Banco Davivienda S.A.";
+export const PLANTILLAS_BUCKET = "cancelaciones-plantillas";
+export const PLANTILLAS_PREFIX_DAVIVIENDA = "davivienda/";
 
 const QUERY_KEY = ["cancelaciones"] as const;
 
@@ -196,13 +183,11 @@ const NuevaCancelacionDialog = ({
   organizationId: string | null;
   onCreated: () => void;
 }) => {
-  const [banco, setBanco] = useState<string>(BANCOS[0]);
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setBanco(BANCOS[0]);
     setCertificado(null);
     setEscritura(null);
     setSaving(false);
@@ -230,7 +215,7 @@ const NuevaCancelacionDialog = ({
       return;
     }
     toast.success("Cancelación creada en borrador", {
-      description: `Banco: ${banco}`,
+      description: `Banco: ${BANCO_FIJO}`,
     });
     reset();
     onOpenChange(false);
@@ -243,7 +228,7 @@ const NuevaCancelacionDialog = ({
         <DialogHeader>
           <DialogTitle>Nueva cancelación de hipoteca</DialogTitle>
           <DialogDescription>
-            Selecciona el banco acreedor y adjunta los documentos requeridos para iniciar el trámite.
+            Adjunta los documentos requeridos para iniciar el trámite con {BANCO_FIJO}.
           </DialogDescription>
         </DialogHeader>
 
@@ -255,18 +240,17 @@ const NuevaCancelacionDialog = ({
               </span>
               <h3 className="text-sm font-semibold">Banco acreedor</h3>
             </div>
-            <Select value={banco} onValueChange={setBanco}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un banco" />
-              </SelectTrigger>
-              <SelectContent>
-                {BANCOS.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              value={BANCO_FIJO}
+              disabled
+              readOnly
+              className="font-medium"
+              aria-label="Banco acreedor"
+            />
+            <p className="text-xs text-muted-foreground">
+              Este módulo opera exclusivamente con {BANCO_FIJO}. Las plantillas y reglas
+              de procesamiento están configuradas para esta entidad.
+            </p>
           </section>
 
           <section className="space-y-3">
@@ -363,10 +347,6 @@ const Cancelaciones = () => {
             <p className="max-w-sm text-sm text-muted-foreground">
               Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
             </p>
-            <Button variant="outline" className="mt-2 gap-2" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Crear la primera
-            </Button>
           </div>
         ) : (
           <Table>
