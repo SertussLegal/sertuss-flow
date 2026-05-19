@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
-import { emitCreditsBlocked } from "@/lib/creditsBus";
+import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
@@ -96,6 +96,15 @@ export const CancelacionNueva = () => {
         console.error("Error de Procesamiento Cancelación:", data.code, data.message);
         const code = data.code ?? "internal";
         const message = data.message ?? "Error al procesar la cancelación";
+
+        // Safety-net: cualquier payload reconocido como "sin créditos internos"
+        // dispara el modal global, igual que en Escrituras.
+        if (isCreditsBlockedError(null, data)) {
+          emitCreditsBlocked({ source: "generate-document", message });
+          setSaving(false);
+          return;
+        }
+
 
         switch (code) {
           case "ai_gateway_no_credits":
