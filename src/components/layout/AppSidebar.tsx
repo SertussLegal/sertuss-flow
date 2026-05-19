@@ -20,41 +20,46 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isSuperAdmin } from "@/lib/superAdmin";
 
 interface NavItem {
-  slug: string | null; // null = always visible (admin/account)
+  slug?: string; // feature flag (módulos de trabajo)
   label: string;
   icon: LucideIcon;
   path: string;
-  superAdminOnly?: boolean;
 }
 
-const MODULE_NAV: NavItem[] = [
+const WORK_MODULES: NavItem[] = [
   { slug: "escrituras", label: "Escrituras", icon: FileText, path: "/escrituras" },
   { slug: "cancelaciones", label: "Cancelaciones", icon: FileX, path: "/cancelaciones" },
 ];
 
-const ACCOUNT_NAV: NavItem[] = [
-  { slug: null, label: "Equipo", icon: Users, path: "/equipo" },
-  { slug: null, label: "Notaría", icon: Settings, path: "/notaria" },
-  { slug: null, label: "Administración", icon: Shield, path: "/admin", superAdminOnly: true },
+const OFFICE_NAV: NavItem[] = [
+  { label: "Equipo", icon: Users, path: "/equipo" },
+  { label: "Configuración", icon: Settings, path: "/notaria" },
 ];
+
+const PLATFORM_NAV: NavItem[] = [
+  { label: "Administración", icon: Shield, path: "/admin" },
+];
+
+const GROUP_LABEL_CLS =
+  "text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium";
 
 export const AppSidebar = () => {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { pathname } = useLocation();
   const { isModuleEnabled, loadingModules } = useModules();
-  const { profile } = useAuth();
+  const { profile, memberships, activeOrgId } = useAuth();
+
+  const activeMembership = memberships.find((m) => m.organization_id === activeOrgId);
+  const isOwner = activeMembership?.role === "owner";
+  const superAdmin = isSuperAdmin(profile?.email);
 
   const isActive = (path: string) =>
     pathname === path || pathname.startsWith(`${path}/`);
 
   const renderItem = (item: NavItem) => (
     <SidebarMenuItem key={item.path}>
-      <SidebarMenuButton
-        asChild
-        isActive={isActive(item.path)}
-        tooltip={item.label}
-      >
+      <SidebarMenuButton asChild isActive={isActive(item.path)} tooltip={item.label}>
         <NavLink to={item.path} className="flex items-center gap-2">
           <item.icon className="h-4 w-4 shrink-0" />
           {!collapsed && <span className="truncate">{item.label}</span>}
@@ -62,6 +67,8 @@ export const AppSidebar = () => {
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
+
+  const visibleWorkModules = WORK_MODULES.filter((m) => !m.slug || isModuleEnabled(m.slug));
 
   return (
     <Sidebar collapsible="icon" className="border-r border-slate-100">
@@ -76,10 +83,11 @@ export const AppSidebar = () => {
       </SidebarHeader>
 
       <SidebarContent>
+        {/* Grupo 1 — Módulos de trabajo (feature flags) */}
         <SidebarGroup>
           {!collapsed && (
-            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground">
-              Módulos
+            <SidebarGroupLabel className={GROUP_LABEL_CLS}>
+              Módulos de trabajo
             </SidebarGroupLabel>
           )}
           <SidebarGroupContent>
@@ -89,25 +97,38 @@ export const AppSidebar = () => {
                 <Skeleton className="h-8 w-full" />
               </div>
             ) : (
-              <SidebarMenu>
-                {MODULE_NAV.filter((m) => !m.slug || isModuleEnabled(m.slug)).map(renderItem)}
-              </SidebarMenu>
+              <SidebarMenu>{visibleWorkModules.map(renderItem)}</SidebarMenu>
             )}
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          {!collapsed && (
-            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground">
-              Cuenta
-            </SidebarGroupLabel>
-          )}
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {ACCOUNT_NAV.filter((i) => !i.superAdminOnly || isSuperAdmin(profile?.email)).map(renderItem)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Grupo 2 — Mi notaría (solo owner de la org activa) */}
+        {isOwner && (
+          <SidebarGroup>
+            {!collapsed && (
+              <SidebarGroupLabel className={GROUP_LABEL_CLS}>
+                Mi notaría
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>{OFFICE_NAV.map(renderItem)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Grupo 3 — Plataforma (exclusivo SuperAdmin) */}
+        {superAdmin && (
+          <SidebarGroup>
+            {!collapsed && (
+              <SidebarGroupLabel className={GROUP_LABEL_CLS}>
+                Plataforma
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>{PLATFORM_NAV.map(renderItem)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-slate-100 p-2">
