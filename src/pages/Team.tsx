@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,9 +39,8 @@ interface ConsumptionRow {
 }
 
 const Team = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const { profile, organization, credits } = useAuth();
+  const { profile, organization } = useAuth();
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("operator");
