@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Loader2, RefreshCw, FileText, FileSignature } from "lucide-react";
+import { ArrowLeft, Download, Loader2, RefreshCw, FileText, FileSignature, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
