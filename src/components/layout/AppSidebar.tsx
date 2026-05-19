@@ -50,8 +50,10 @@ export const AppSidebar = () => {
   const { isModuleEnabled, loadingModules } = useModules();
   const { profile, memberships, activeOrgId } = useAuth();
 
+  // Rol dentro de la org activa. El SuperAdmin NO obtiene bypass aquí:
+  // "Mi notaría" solo se muestra cuando realmente es owner del contexto actual.
   const activeMembership = memberships.find((m) => m.organization_id === activeOrgId);
-  const isOwner = activeMembership?.role === "owner";
+  const isOwnerOfActiveOrg = activeMembership?.role === "owner";
   const superAdmin = isSuperAdmin(profile?.email);
 
   const isActive = (path: string) =>
