@@ -146,7 +146,7 @@ export const CancelacionNueva = () => {
             ) : (
               <>
                 <Sparkles className="h-4 w-4" />
-                Procesar con IA
+                Procesar
               </>
             )}
           </Button>

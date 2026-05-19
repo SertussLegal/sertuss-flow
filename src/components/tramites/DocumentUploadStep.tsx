@@ -568,14 +568,14 @@ const DocumentUploadStep = () => {
 
   return (
     <div className="flex h-dvh flex-col bg-background">
-      <header className="border-b bg-notarial-dark text-white shrink-0">
+      <header className="border-b border-border bg-background shrink-0">
         <div className="container flex h-14 items-center gap-4">
-          <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
-            <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
+          <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="gap-2">
+            <ArrowLeft className="h-4 w-4" /> Volver a Escrituras
           </Button>
-          <span className="text-sm font-medium">Nuevo Trámite — Carga de Documentos</span>
+          <span className="text-sm font-medium text-muted-foreground">Nueva Escritura — Carga de Documentos</span>
           <div className="ml-auto flex items-center gap-3">
-            <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
+            <Badge variant="outline">
               <Coins className="mr-1 h-3 w-3" /> {credits} créditos
             </Badge>
           </div>
@@ -801,18 +801,18 @@ const DocumentUploadStep = () => {
           )}
 
           <div className="flex justify-end gap-3 pt-4">
-            <Button variant="outline" onClick={() => navigate("/dashboard")}>
+            <Button variant="ghost" onClick={() => navigate("/dashboard")}>
               Cancelar
             </Button>
             <Button
               onClick={handleContinue}
               disabled={!hasAny || isProcessing}
-              className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
+              className="min-w-[220px] gap-2"
             >
               {isProcessing ? (
-                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Procesando...</>
+                <><Loader2 className="h-4 w-4 animate-spin" /> Procesando...</>
               ) : (
-                <><ArrowRight className="mr-1 h-4 w-4" /> Continuar a Validación</>
+                <><ArrowRight className="h-4 w-4" /> Continuar a Validación</>
               )}
             </Button>
           </div>
