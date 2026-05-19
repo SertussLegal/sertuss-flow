@@ -333,75 +333,93 @@ serve(async (req) => {
       status: "processing", created_by: userId, error_message: null,
     }).eq("id", cancelacionId);
 
-    // 2) Llamada a Gemini 2.5 Pro
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
-    const aiBody = {
-      model: "google/gemini-2.5-pro",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos." },
-            { type: "image_url", image_url: { url: `data:application/pdf;base64,${certificadoBase64}` } },
-            { type: "image_url", image_url: { url: `data:application/pdf;base64,${escrituraBase64}` } },
+    // Capturamos refs locales para que el response pueda liberar las del request
+    const certB64 = certificadoBase64;
+    const escB64 = escrituraBase64;
+
+    // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
+    const heavyWork = async () => {
+      try {
+        const aiBody = {
+          model: "google/gemini-2.5-pro",
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos." },
+                { type: "image_url", image_url: { url: `data:application/pdf;base64,${certB64}` } },
+                { type: "image_url", image_url: { url: `data:application/pdf;base64,${escB64}` } },
+              ],
+            },
           ],
-        },
-      ],
-      tools,
-      tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
+          tools,
+          tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
+        };
+
+        const aiResp = await fetchAiGateway({ apiKey: LOVABLE_API_KEY, body: aiBody, tag: "procesar-cancelacion" });
+        const extracted = await parseToolCallArguments<CancelacionData>(aiResp, "procesar-cancelacion");
+
+        const vars = buildDocxVars(extracted);
+        const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
+        const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
+
+        const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
+        const certPath = `cancelaciones/${cancelacionId}/certificado.docx`;
+        const { error: upMinErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaPath, minuta, {
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          upsert: true,
+        });
+        if (upMinErr) throw new Error(`Upload minuta: ${upMinErr.message}`);
+        const { error: upCertErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(certPath, certificado, {
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          upsert: true,
+        });
+        if (upCertErr) throw new Error(`Upload certificado: ${upCertErr.message}`);
+
+        const { error: updErr } = await supabaseService.from("cancelaciones").update({
+          status: "completed",
+          data_ia: extracted,
+          data_final: extracted,
+          numero_escritura_hipoteca: extracted.hipoteca_anterior.numero_escritura_hipoteca,
+          fecha_escritura_hipoteca: extracted.hipoteca_anterior.fecha_escritura_hipoteca,
+          notaria_hipoteca: extracted.hipoteca_anterior.notaria_hipoteca,
+          valor_hipoteca_original: extracted.hipoteca_anterior.valor_hipoteca_original,
+          matricula_inmobiliaria: extracted.inmueble.matricula_inmobiliaria,
+          direccion_inmueble: extracted.inmueble.direccion_completa,
+          ciudad_inmueble: extracted.inmueble.ciudad,
+          deudor_nombre: extracted.partes.deudor_nombre,
+          deudor_cedula: extracted.partes.deudor_identificacion,
+          deudor_tipo_id: extracted.partes.deudor_tipo_id,
+          banco_acreedor: extracted.partes.banco_acreedor,
+          banco_nit: extracted.partes.banco_nit,
+          aplica_ley_546: extracted.analisis_legal.aplica_ley_546,
+          explicacion_ley: extracted.analisis_legal.explicacion_ley,
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+          updated_at: new Date().toISOString(),
+        }).eq("id", cancelacionId);
+        if (updErr) throw new Error(`Persist: ${updErr.message}`);
+      } catch (bgErr) {
+        const msg = bgErr instanceof Error ? bgErr.message : String(bgErr);
+        console.error("[procesar-cancelacion bg] error:", msg);
+        try {
+          await supabaseService.rpc("restore_credit", { org_id: orgId });
+          await supabaseService.rpc("restore_credit", { org_id: orgId });
+        } catch (_) { /* ignore */ }
+        await supabaseService.from("cancelaciones").update({
+          status: "error", error_message: msg.slice(0, 500),
+        }).eq("id", cancelacionId);
+      }
     };
 
-    const aiResp = await fetchAiGateway({ apiKey: LOVABLE_API_KEY, body: aiBody, tag: "procesar-cancelacion" });
-    const extracted = await parseToolCallArguments<CancelacionData>(aiResp, "procesar-cancelacion");
+    // @ts-ignore EdgeRuntime global disponible en Supabase Edge Functions
+    EdgeRuntime.waitUntil(heavyWork());
 
-    // 3) Mapear y generar docx
-    const vars = buildDocxVars(extracted);
-    const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
-    const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
-
-    // 4) Subir al bucket
-    const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
-    const certPath = `cancelaciones/${cancelacionId}/certificado.docx`;
-    const { error: upMinErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaPath, minuta, {
-      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      upsert: true,
-    });
-    if (upMinErr) throw new Error(`Upload minuta: ${upMinErr.message}`);
-    const { error: upCertErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(certPath, certificado, {
-      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      upsert: true,
-    });
-    if (upCertErr) throw new Error(`Upload certificado: ${upCertErr.message}`);
-
-    // 5) Persistir
-    const { error: updErr } = await supabaseService.from("cancelaciones").update({
-      status: "completed",
-      data_ia: extracted,
-      data_final: extracted,
-      numero_escritura_hipoteca: extracted.hipoteca_anterior.numero_escritura_hipoteca,
-      fecha_escritura_hipoteca: extracted.hipoteca_anterior.fecha_escritura_hipoteca,
-      notaria_hipoteca: extracted.hipoteca_anterior.notaria_hipoteca,
-      valor_hipoteca_original: extracted.hipoteca_anterior.valor_hipoteca_original,
-      matricula_inmobiliaria: extracted.inmueble.matricula_inmobiliaria,
-      direccion_inmueble: extracted.inmueble.direccion_completa,
-      ciudad_inmueble: extracted.inmueble.ciudad,
-      deudor_nombre: extracted.partes.deudor_nombre,
-      deudor_cedula: extracted.partes.deudor_identificacion,
-      deudor_tipo_id: extracted.partes.deudor_tipo_id,
-      banco_acreedor: extracted.partes.banco_acreedor,
-      banco_nit: extracted.partes.banco_nit,
-      aplica_ley_546: extracted.analisis_legal.aplica_ley_546,
-      explicacion_ley: extracted.analisis_legal.explicacion_ley,
-      url_minuta_generada: minutaPath,
-      url_certificado_generado: certPath,
-      updated_at: new Date().toISOString(),
-    }).eq("id", cancelacionId);
-    if (updErr) throw new Error(`Persist: ${updErr.message}`);
-
-    return new Response(JSON.stringify({ ok: true, cancelacionId, data: extracted }), {
+    return new Response(JSON.stringify({ ok: true, cancelacionId, async: true }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

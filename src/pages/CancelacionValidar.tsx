@@ -68,6 +68,10 @@ export const CancelacionValidar = () => {
       return data;
     },
     enabled: !!id,
+    refetchInterval: (q) => {
+      const s = (q.state.data as { status?: string } | undefined)?.status;
+      return s === "processing" || s === "draft" ? 3000 : false;
+    },
   });
 
   const [data, setData] = useState<Data | null>(null);
