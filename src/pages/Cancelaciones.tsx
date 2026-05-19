@@ -20,13 +20,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -45,16 +38,9 @@ type CancelacionRow = {
   created_at: string;
 };
 
-const BANCOS = [
-  "Banco Davivienda S.A.",
-  "Bancolombia S.A.",
-  "BBVA Colombia",
-  "Banco de Bogotá",
-  "Banco AV Villas",
-  "Banco Caja Social",
-  "Scotiabank Colpatria",
-  "Banco Popular",
-];
+const BANCO_FIJO = "Banco Davivienda S.A.";
+export const PLANTILLAS_BUCKET = "cancelaciones-plantillas";
+export const PLANTILLAS_PREFIX_DAVIVIENDA = "davivienda/";
 
 const QUERY_KEY = ["cancelaciones"] as const;
 
