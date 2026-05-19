@@ -22,6 +22,7 @@ import NotariaSettings from "./pages/NotariaSettings";
 import DocumentUploadStep from "./components/tramites/DocumentUploadStep";
 import CreditsBlockedModal from "./components/CreditsBlockedModal";
 import Cancelaciones from "./pages/Cancelaciones";
+import CancelacionNueva from "./pages/CancelacionNueva";
 
 const queryClient = new QueryClient();
 
@@ -84,7 +85,14 @@ const App = () => (
                   element={
                     <ModuleGate slug="cancelaciones" moduleName="Cancelaciones">
                       <Cancelaciones />
-
+                    </ModuleGate>
+                  }
+                />
+                <Route
+                  path="/cancelaciones/nueva"
+                  element={
+                    <ModuleGate slug="cancelaciones" moduleName="Cancelaciones">
+                      <CancelacionNueva />
                     </ModuleGate>
                   }
                 />
@@ -96,6 +104,7 @@ const App = () => (
                     </ModuleGate>
                   }
                 />
+
 
                 {/* Administración / cuenta (siempre visibles) */}
                 <Route path="/admin" element={<Admin />} />
