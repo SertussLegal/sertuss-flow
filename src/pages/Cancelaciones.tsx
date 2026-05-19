@@ -347,10 +347,6 @@ const Cancelaciones = () => {
             <p className="max-w-sm text-sm text-muted-foreground">
               Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
             </p>
-            <Button variant="outline" className="mt-2 gap-2" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Crear la primera
-            </Button>
           </div>
         ) : (
           <Table>
