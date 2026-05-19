@@ -73,20 +73,43 @@ export const CancelacionNueva = () => {
       ]);
 
       // 3) Invocar edge function
-      const { error } = await monitored.invoke("procesar-cancelacion", {
+      const { data, error } = await monitored.invoke<{
+        ok: boolean;
+        cancelacionId?: string;
+        code?: string;
+        message?: string;
+      }>("procesar-cancelacion", {
         cancelacionId,
         certificadoBase64,
         escrituraBase64,
       });
 
       if (error) {
-        const msg = String(error.message || "").toLowerCase();
-        if (msg.includes("402") || msg.includes("credits")) {
-          emitCreditsBlocked({ source: "otro", message: "Créditos insuficientes para procesar la cancelación" });
-          setSaving(false);
-          return;
+        console.error("[CancelacionNueva] invoke error:", error);
+        toast.error("No se pudo contactar al servidor", { description: error.message });
+        setSaving(false);
+        return;
+      }
+
+      // Business-error envelope: 200 OK con ok:false + code
+      if (data && data.ok === false) {
+        console.error("[CancelacionNueva] business error:", data.code, data.message);
+        const code = data.code ?? "internal";
+        const message = data.message ?? "Error al procesar la cancelación";
+
+        if (code === "ai_gateway_no_credits") {
+          emitCreditsBlocked({ source: "otro", message });
+        } else if (code === "credits_blocked") {
+          emitCreditsBlocked({ source: "otro", message });
+        } else if (code === "ai_gateway_rate_limit") {
+          toast.error("Demasiadas solicitudes", { description: message });
+        } else if (code === "ai_gateway_bad_response") {
+          toast.error("La IA no devolvió datos válidos", { description: message });
+        } else {
+          toast.error("No se pudo procesar", { description: message });
         }
-        throw error;
+        setSaving(false);
+        return;
       }
 
       toast.success("Cancelación procesada", { description: `Banco: ${BANCO_FIJO}` });
