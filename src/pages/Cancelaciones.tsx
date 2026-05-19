@@ -97,6 +97,9 @@ const Cancelaciones = () => {
       </header>
 
       <Card className="overflow-hidden">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
+        </div>
         {isLoading ? (
           <div className="space-y-3 p-6">
             {Array.from({ length: 4 }).map((_, i) => (

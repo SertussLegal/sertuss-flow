@@ -246,7 +246,7 @@ const Dashboard = () => {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-lg">Trámites</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-lg">Historial de Escrituras</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
