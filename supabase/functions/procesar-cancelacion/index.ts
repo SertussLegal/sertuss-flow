@@ -305,17 +305,27 @@ serve(async (req) => {
       });
     }
 
-    // 1) Cobro de 2 créditos
+    // 1) Cobro de 2 créditos (con auditoría obligatoria → p_tramite_id requerido)
     const { data: charge, error: chargeErr } = await supabaseService.rpc("consume_credit_v2", {
       p_org_id: orgId,
       p_user_id: userId,
-      p_action: "CANCELACION_HIPOTECA",
-      p_tramite_id: null,
+      p_action: "GENERACION_DOCX",
+      p_tramite_id: cancelacionId,
       p_tipo_acto: "cancelacion_hipoteca",
       p_credits: 2,
     });
-    if (chargeErr || charge !== true) {
-      return biz("credits_blocked", "No tienes créditos suficientes para procesar esta cancelación (requiere 2 créditos).");
+    if (chargeErr) {
+      console.error("[procesar-cancelacion] consume_credit_v2 chargeErr:", chargeErr);
+      return biz(
+        "credit_charge_error",
+        "No se pudo registrar el consumo de créditos en la auditoría. Contacte a soporte técnico.",
+      );
+    }
+    if (charge !== true) {
+      return biz(
+        "credits_blocked",
+        "No tienes créditos suficientes para procesar esta cancelación (requiere 2 créditos).",
+      );
     }
 
     // Marcar processing

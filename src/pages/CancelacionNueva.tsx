@@ -23,7 +23,7 @@ const StepNumber = ({ n }: { n: number }) => (
 export const CancelacionNueva = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { activeOrgId } = useAuth();
+  const { activeOrgId, refreshCredits } = useAuth();
 
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
@@ -125,6 +125,12 @@ export const CancelacionNueva = () => {
           case "ai_gateway_error":
             toast.error("Error del servicio de IA", { description: message });
             break;
+          case "credit_charge_error":
+            toast.error("Error Técnico", {
+              description:
+                "No se pudo registrar el consumo de créditos en la auditoría. Contacte a soporte.",
+            });
+            break;
           default:
             toast.error("No se pudo procesar", { description: message });
             break;
@@ -134,6 +140,7 @@ export const CancelacionNueva = () => {
       }
 
       toast.success("Cancelación procesada", { description: `Banco: ${BANCO_FIJO}` });
+      await refreshCredits();
       queryClient.invalidateQueries({ queryKey: ["cancelaciones"] });
       navigate(`/cancelaciones/${cancelacionId}/validar`);
     } catch (err) {
