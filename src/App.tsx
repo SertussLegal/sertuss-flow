@@ -23,6 +23,7 @@ import DocumentUploadStep from "./components/tramites/DocumentUploadStep";
 import CreditsBlockedModal from "./components/CreditsBlockedModal";
 import Cancelaciones from "./pages/Cancelaciones";
 import CancelacionNueva from "./pages/CancelacionNueva";
+import CancelacionValidar from "./pages/CancelacionValidar";
 
 const queryClient = new QueryClient();
 
@@ -93,6 +94,14 @@ const App = () => (
                   element={
                     <ModuleGate slug="cancelaciones" moduleName="Cancelaciones">
                       <CancelacionNueva />
+                    </ModuleGate>
+                  }
+                />
+                <Route
+                  path="/cancelaciones/:id/validar"
+                  element={
+                    <ModuleGate slug="cancelaciones" moduleName="Cancelaciones">
+                      <CancelacionValidar />
                     </ModuleGate>
                   }
                 />
