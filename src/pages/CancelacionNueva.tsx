@@ -93,20 +93,32 @@ export const CancelacionNueva = () => {
 
       // Business-error envelope: 200 OK con ok:false + code
       if (data && data.ok === false) {
-        console.error("[CancelacionNueva] business error:", data.code, data.message);
+        console.error("Error de Procesamiento Cancelación:", data.code, data.message);
         const code = data.code ?? "internal";
         const message = data.message ?? "Error al procesar la cancelación";
 
-        if (code === "ai_gateway_no_credits") {
-          emitCreditsBlocked({ source: "otro", message });
-        } else if (code === "credits_blocked") {
-          emitCreditsBlocked({ source: "otro", message });
-        } else if (code === "ai_gateway_rate_limit") {
-          toast.error("Demasiadas solicitudes", { description: message });
-        } else if (code === "ai_gateway_bad_response") {
-          toast.error("La IA no devolvió datos válidos", { description: message });
-        } else {
-          toast.error("No se pudo procesar", { description: message });
+        switch (code) {
+          case "ai_gateway_no_credits":
+            toast.error("Error de Plataforma", {
+              description:
+                "El AI Gateway no cuenta con tokens globales disponibles. Contacte al administrador del sistema.",
+            });
+            break;
+          case "credits_blocked":
+            emitCreditsBlocked({ source: "generate-document", message });
+            break;
+          case "ai_gateway_rate_limit":
+            toast.error("Demasiadas solicitudes", { description: message });
+            break;
+          case "ai_gateway_bad_response":
+            toast.error("La IA no devolvió datos válidos", { description: message });
+            break;
+          case "ai_gateway_error":
+            toast.error("Error del servicio de IA", { description: message });
+            break;
+          default:
+            toast.error("No se pudo procesar", { description: message });
+            break;
         }
         setSaving(false);
         return;
