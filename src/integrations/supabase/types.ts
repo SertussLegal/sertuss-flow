@@ -145,45 +145,87 @@ export type Database = {
       cancelaciones: {
         Row: {
           aplica_ley_546: boolean
+          banco_acreedor: string | null
+          banco_nit: string | null
+          ciudad_inmueble: string | null
           created_at: string
+          created_by: string | null
+          data_final: Json | null
+          data_ia: Json | null
           deudor_cedula: string | null
           deudor_nombre: string | null
+          deudor_tipo_id: string | null
+          direccion_inmueble: string | null
+          error_message: string | null
+          explicacion_ley: string | null
+          fecha_escritura_hipoteca: string | null
           id: string
           matricula_inmobiliaria: string | null
+          notaria_hipoteca: string | null
+          numero_escritura_hipoteca: string | null
           organization_id: string
           status: string
           updated_at: string
           url_certificado_generado: string | null
           url_minuta_generada: string | null
           valor_hipoteca: number | null
+          valor_hipoteca_original: string | null
         }
         Insert: {
           aplica_ley_546?: boolean
+          banco_acreedor?: string | null
+          banco_nit?: string | null
+          ciudad_inmueble?: string | null
           created_at?: string
+          created_by?: string | null
+          data_final?: Json | null
+          data_ia?: Json | null
           deudor_cedula?: string | null
           deudor_nombre?: string | null
+          deudor_tipo_id?: string | null
+          direccion_inmueble?: string | null
+          error_message?: string | null
+          explicacion_ley?: string | null
+          fecha_escritura_hipoteca?: string | null
           id?: string
           matricula_inmobiliaria?: string | null
+          notaria_hipoteca?: string | null
+          numero_escritura_hipoteca?: string | null
           organization_id: string
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
           url_minuta_generada?: string | null
           valor_hipoteca?: number | null
+          valor_hipoteca_original?: string | null
         }
         Update: {
           aplica_ley_546?: boolean
+          banco_acreedor?: string | null
+          banco_nit?: string | null
+          ciudad_inmueble?: string | null
           created_at?: string
+          created_by?: string | null
+          data_final?: Json | null
+          data_ia?: Json | null
           deudor_cedula?: string | null
           deudor_nombre?: string | null
+          deudor_tipo_id?: string | null
+          direccion_inmueble?: string | null
+          error_message?: string | null
+          explicacion_ley?: string | null
+          fecha_escritura_hipoteca?: string | null
           id?: string
           matricula_inmobiliaria?: string | null
+          notaria_hipoteca?: string | null
+          numero_escritura_hipoteca?: string | null
           organization_id?: string
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
           url_minuta_generada?: string | null
           valor_hipoteca?: number | null
+          valor_hipoteca_original?: string | null
         }
         Relationships: [
           {
