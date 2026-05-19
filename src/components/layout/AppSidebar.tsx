@@ -1,5 +1,5 @@
-import { FileText, FileX, Settings, Users, Shield, type LucideIcon } from "lucide-react";
-import { NavLink, useLocation } from "react-router-dom";
+import { FileText, FileX, Users, Shield, LogOut, type LucideIcon } from "lucide-react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -11,16 +11,18 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { useModules } from "@/contexts/ModuleContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSuperAdmin } from "@/lib/superAdmin";
+import { supabase } from "@/integrations/supabase/client";
+import ProfileSwitcher from "@/components/ProfileSwitcher";
 
 interface NavItem {
-  slug?: string; // feature flag (módulos de trabajo)
+  slug?: string;
   label: string;
   icon: LucideIcon;
   path: string;
@@ -32,12 +34,11 @@ const WORK_MODULES: NavItem[] = [
 ];
 
 const OFFICE_NAV: NavItem[] = [
-  { label: "Equipo", icon: Users, path: "/equipo" },
-  { label: "Configuración", icon: Settings, path: "/notaria" },
+  { label: "Mi Equipo", icon: Users, path: "/equipo" },
 ];
 
 const PLATFORM_NAV: NavItem[] = [
-  { label: "Administración", icon: Shield, path: "/admin" },
+  { label: "Panel de Administración", icon: Shield, path: "/admin" },
 ];
 
 const GROUP_LABEL_CLS =
@@ -47,11 +48,10 @@ export const AppSidebar = () => {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { isModuleEnabled, loadingModules } = useModules();
   const { profile, memberships, activeOrgId } = useAuth();
 
-  // Rol dentro de la org activa. El SuperAdmin NO obtiene bypass aquí:
-  // "Mi notaría" solo se muestra cuando realmente es owner del contexto actual.
   const activeMembership = memberships.find((m) => m.organization_id === activeOrgId);
   const isOwnerOfActiveOrg = activeMembership?.role === "owner";
   const superAdmin = isSuperAdmin(profile?.email);
@@ -70,7 +70,18 @@ export const AppSidebar = () => {
     </SidebarMenuItem>
   );
 
-  const visibleWorkModules = WORK_MODULES.filter((m) => !m.slug || isModuleEnabled(m.slug));
+  const visibleWorkModules = WORK_MODULES.filter(
+    (m) => !m.slug || isModuleEnabled(m.slug),
+  );
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/");
+  };
+
+  const showWorkGroup = loadingModules || visibleWorkModules.length > 0 || superAdmin;
+  const showOfficeGroup = isOwnerOfActiveOrg && OFFICE_NAV.length > 0;
+  const showPlatformGroup = superAdmin && PLATFORM_NAV.length > 0;
 
   return (
     <Sidebar collapsible="icon" className="border-r border-slate-100">
@@ -85,8 +96,7 @@ export const AppSidebar = () => {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Grupo 1 — Módulos de trabajo. Para SuperAdmin nunca se oculta. */}
-        {(loadingModules || visibleWorkModules.length > 0 || superAdmin) && (
+        {showWorkGroup && (
           <SidebarGroup>
             {!collapsed && (
               <SidebarGroupLabel className={GROUP_LABEL_CLS}>
@@ -106,8 +116,7 @@ export const AppSidebar = () => {
           </SidebarGroup>
         )}
 
-        {/* Grupo 2 — Mi notaría: solo si la membresía activa es owner */}
-        {isOwnerOfActiveOrg && (
+        {showOfficeGroup && (
           <SidebarGroup>
             {!collapsed && (
               <SidebarGroupLabel className={GROUP_LABEL_CLS}>
@@ -120,8 +129,7 @@ export const AppSidebar = () => {
           </SidebarGroup>
         )}
 
-        {/* Grupo 3 — Plataforma: exclusivo info@sertuss.com */}
-        {superAdmin && (
+        {showPlatformGroup && (
           <SidebarGroup>
             {!collapsed && (
               <SidebarGroupLabel className={GROUP_LABEL_CLS}>
@@ -135,8 +143,33 @@ export const AppSidebar = () => {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-slate-100 p-2">
-        <SidebarTrigger className="w-full justify-center" />
+      <SidebarFooter className="border-t border-slate-100 p-2 gap-2">
+        {!collapsed ? (
+          <>
+            <div className="px-1">
+              <ProfileSwitcher variant="light" />
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Cerrar sesión</span>
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            className="w-full"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        )}
       </SidebarFooter>
     </Sidebar>
   );

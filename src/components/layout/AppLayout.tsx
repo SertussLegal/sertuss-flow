@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { useModules } from "@/contexts/ModuleContext";
@@ -6,9 +6,25 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Coins } from "lucide-react";
 
+const SECTION_TITLES: Array<{ match: RegExp; title: string }> = [
+  { match: /^\/escrituras\/nuevo/, title: "Nueva escritura" },
+  { match: /^\/escrituras\/[^/]+/, title: "Validación de expediente" },
+  { match: /^\/escrituras/, title: "Escrituras" },
+  { match: /^\/cancelaciones/, title: "Cancelaciones" },
+  { match: /^\/equipo/, title: "Mi equipo" },
+  { match: /^\/notaria/, title: "Configuración" },
+  { match: /^\/admin\/entidad/, title: "Editar entidad" },
+  { match: /^\/admin/, title: "Panel de administración" },
+];
+
+const resolveTitle = (pathname: string) =>
+  SECTION_TITLES.find((s) => s.match.test(pathname))?.title ?? "";
+
 export const AppLayout = () => {
   const { loadingModules } = useModules();
   const { organization } = useAuth();
+  const { pathname } = useLocation();
+  const title = resolveTitle(pathname);
 
   return (
     <SidebarProvider>
@@ -18,6 +34,11 @@ export const AppLayout = () => {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-14 flex items-center gap-3 border-b border-slate-100 px-4 bg-background/95 backdrop-blur-md">
             <SidebarTrigger />
+            {title && (
+              <span className="text-sm font-medium text-muted-foreground">
+                {title}
+              </span>
+            )}
             <div className="flex-1" />
             {organization && (
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">

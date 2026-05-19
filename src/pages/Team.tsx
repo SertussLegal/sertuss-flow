@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,13 +14,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, Scale, UserPlus, Users, Activity, Pencil, Check, X, CalendarIcon, Download, Coins, FileText, Trophy,
+  UserPlus, Users, Activity, Pencil, Check, X, CalendarIcon, Download, Coins, FileText, Trophy,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfDay, endOfDay, subDays, startOfWeek, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
-import ProfileSwitcher from "@/components/ProfileSwitcher";
 
 interface MemberRow {
   id: string;
@@ -40,9 +39,8 @@ interface ConsumptionRow {
 }
 
 const Team = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const { profile, organization, credits } = useAuth();
+  const { profile, organization } = useAuth();
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("operator");
@@ -263,25 +261,7 @@ const Team = () => {
     : "Selecciona rango";
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-notarial-dark text-white">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Scale className="h-6 w-6 text-notarial-gold" />
-            <span className="text-lg font-bold">Sertuss</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <ProfileSwitcher variant="dark" />
-            <Badge variant="outline" className="border-notarial-gold/30 text-notarial-gold">
-              {credits} créditos
-            </Badge>
-            <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
-              <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
-            </Button>
-          </div>
-        </div>
-      </header>
-
+    <div className="bg-background">
       <main className="container max-w-5xl py-8 space-y-6">
         <div className="flex items-center gap-3">
           <Users className="h-6 w-6" />

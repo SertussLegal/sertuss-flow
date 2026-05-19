@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
-import { Scale, ArrowLeft, Save } from "lucide-react";
+import { Save } from "lucide-react";
 
 const NIT_REGEX = /^\d{9}-\d{1}$/;
 
@@ -82,7 +82,7 @@ const AdminOrgEdit = () => {
     }
   };
 
-  if (authLoading || loading || profile?.role !== "owner") {
+  if (authLoading || loading || !isAllowed) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -91,20 +91,7 @@ const AdminOrgEdit = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-notarial-dark text-white">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Scale className="h-6 w-6 text-notarial-gold" />
-            <span className="text-lg font-bold">Sertuss</span>
-            <span className="text-sm text-white/60">/ Configurar Entidad</span>
-          </div>
-          <Button variant="ghost-dark" size="sm" onClick={() => navigate("/admin")}>
-            <ArrowLeft className="mr-1 h-4 w-4" /> Admin
-          </Button>
-        </div>
-      </header>
-
+    <div className="bg-background">
       <main className="container max-w-xl py-8">
         <Card>
           <CardHeader>
