@@ -348,15 +348,15 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
     // Capturamos solo rutas livianas; los PDFs quedan en Storage privado y se leen por URL firmada.
-    const certPath = certificadoPath;
-    const escPath = escrituraPath;
+    const certInputPath = certificadoPath;
+    const escInputPath = escrituraPath;
 
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
         const [certUrl, escUrl] = await Promise.all([
-          createSignedStorageUrl(supabaseService, certPath),
-          createSignedStorageUrl(supabaseService, escPath),
+          createSignedStorageUrl(supabaseService, certInputPath),
+          createSignedStorageUrl(supabaseService, escInputPath),
         ]);
 
         const aiBody = {
