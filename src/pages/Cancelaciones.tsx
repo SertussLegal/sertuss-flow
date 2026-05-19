@@ -183,13 +183,11 @@ const NuevaCancelacionDialog = ({
   organizationId: string | null;
   onCreated: () => void;
 }) => {
-  const [banco, setBanco] = useState<string>(BANCOS[0]);
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setBanco(BANCOS[0]);
     setCertificado(null);
     setEscritura(null);
     setSaving(false);
