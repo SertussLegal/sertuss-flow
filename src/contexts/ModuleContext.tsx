@@ -30,7 +30,7 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
       .select("module_slug, enabled")
       .eq("organization_id", orgId)
       .eq("enabled", true);
-    return { data: (data ?? []) as Array<{ module_slug: string }>, error };
+    return { data: ((data ?? []) as unknown) as Array<{ module_slug: string }>, error };
   }, []);
 
   const fetchModules = useCallback(

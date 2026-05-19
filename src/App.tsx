@@ -48,7 +48,8 @@ const App = () => (
                   </ProtectedRoute>
                 }
               >
-                {/* Default: dashboard antiguo → /escrituras */}
+                {/* Default: index del shell protegido → /escrituras */}
+                <Route index element={<Navigate to="/escrituras" replace />} />
                 <Route path="/dashboard" element={<Navigate to="/escrituras" replace />} />
 
                 {/* MÓDULO: Escrituras */}
