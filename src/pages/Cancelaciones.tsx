@@ -215,7 +215,7 @@ const NuevaCancelacionDialog = ({
       return;
     }
     toast.success("Cancelación creada en borrador", {
-      description: `Banco: ${banco}`,
+      description: `Banco: ${BANCO_FIJO}`,
     });
     reset();
     onOpenChange(false);
