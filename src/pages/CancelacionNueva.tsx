@@ -34,26 +34,70 @@ export const CancelacionNueva = () => {
     navigate("/cancelaciones");
   };
 
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // strip "data:application/pdf;base64,"
+        resolve(result.split(",")[1] ?? "");
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
   const handleSubmit = async () => {
     if (!activeOrgId) {
       toast.error("No hay organización activa");
       return;
     }
-    setSaving(true);
-    const { error } = await supabase.from("cancelaciones").insert({
-      organization_id: activeOrgId,
-      status: "draft",
-    });
-    setSaving(false);
-    if (error) {
-      toast.error("No se pudo crear la cancelación", { description: error.message });
+    if (!certificado || !escritura) {
+      toast.error("Debes adjuntar ambos documentos");
       return;
     }
-    toast.success("Cancelación creada en borrador", {
-      description: `Banco: ${BANCO_FIJO}`,
-    });
-    queryClient.invalidateQueries({ queryKey: ["cancelaciones"] });
-    navigate("/cancelaciones");
+    setSaving(true);
+    try {
+      // 1) Crear el row en draft
+      const { data: inserted, error: insErr } = await supabase
+        .from("cancelaciones")
+        .insert({ organization_id: activeOrgId, status: "draft" })
+        .select("id")
+        .single();
+      if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
+      const cancelacionId = inserted.id;
+
+      // 2) PDFs → base64
+      const [certificadoBase64, escrituraBase64] = await Promise.all([
+        fileToBase64(certificado),
+        fileToBase64(escritura),
+      ]);
+
+      // 3) Invocar edge function
+      const { error } = await monitored.invoke("procesar-cancelacion", {
+        cancelacionId,
+        certificadoBase64,
+        escrituraBase64,
+      });
+
+      if (error) {
+        const msg = String(error.message || "").toLowerCase();
+        if (msg.includes("402") || msg.includes("credits")) {
+          emitCreditsBlocked({ source: "otro", message: "Créditos insuficientes para procesar la cancelación" });
+          setSaving(false);
+          return;
+        }
+        throw error;
+      }
+
+      toast.success("Cancelación procesada", { description: `Banco: ${BANCO_FIJO}` });
+      queryClient.invalidateQueries({ queryKey: ["cancelaciones"] });
+      navigate(`/cancelaciones/${cancelacionId}/validar`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("No se pudo procesar", { description: msg });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
