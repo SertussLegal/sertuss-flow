@@ -17,9 +17,9 @@ import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
 const statusColors: Record<string, string> = {
-  pendiente: "bg-yellow-100 text-yellow-800 border-yellow-300",
-  validado: "bg-notarial-green/10 text-notarial-green border-notarial-green/30",
-  word_generado: "bg-notarial-blue/10 text-notarial-blue border-notarial-blue/30",
+  pendiente: "border border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100",
+  validado: "border border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
+  word_generado: "border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100",
 };
 
 const statusLabels: Record<string, string> = {
@@ -111,7 +111,7 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-muted/30">
       {needsOrgSetup && user && (
         <SetupOrgModal
           open={true}
@@ -120,9 +120,14 @@ const Dashboard = () => {
         />
       )}
 
-      <main className="container py-8">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold">Escrituras</h1>
+      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Escrituras</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Historial de escrituras gestionadas por tu organización.
+            </p>
+          </div>
           <div className="flex items-center gap-3">
             {(!organization?.nit || !organization?.name) && (
               <div className="flex items-center gap-1 text-sm text-destructive">
@@ -132,13 +137,14 @@ const Dashboard = () => {
             )}
             <Button
               onClick={handleNewTramite}
-              className="bg-notarial-green hover:bg-notarial-green/90"
+              className="gap-2"
               disabled={!organization?.nit || !organization?.name}
             >
-              <Plus className="mr-2 h-4 w-4" /> Nuevo Trámite
+              <Plus className="h-4 w-4" /> Nueva Escritura
             </Button>
           </div>
-        </div>
+        </header>
+
 
         {/* Drafts section */}
         {drafts.length > 0 && (
@@ -162,7 +168,7 @@ const Dashboard = () => {
                 return (
                   <Card
                     key={t.id}
-                    className="group relative cursor-pointer border-l-4 border-l-accent border-border transition-all hover:shadow-md hover:border-l-primary"
+                    className="group relative cursor-pointer border-border bg-background transition-all hover:border-primary/40 hover:shadow-md"
                     onClick={() => navigate(`/tramite/${t.id}`)}
                   >
                     <CardContent className="flex flex-col gap-3 p-4">
@@ -259,7 +265,7 @@ const Dashboard = () => {
                     <TableCell>{t.tipo ?? "—"}</TableCell>
                     <TableCell>{t.fecha ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={statusColors[t.status] ?? ""}>{statusLabels[t.status] ?? t.status}</Badge>
+                      <Badge className={statusColors[t.status] ?? ""}>{statusLabels[t.status] ?? t.status}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm">Abrir</Button>
@@ -268,10 +274,21 @@ const Dashboard = () => {
                 ))}
                 {!loading && filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No se encontraron trámites</TableCell>
+                    <TableCell colSpan={5} className="p-0">
+                      <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                          <Search className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <h2 className="text-base font-semibold">No se encontraron escrituras</h2>
+                        <p className="max-w-sm text-sm text-muted-foreground">
+                          Cuando inicies una nueva escritura, aparecerá aquí su historial completo.
+                        </p>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 )}
               </TableBody>
+
             </Table>
           </CardContent>
         </Card>
