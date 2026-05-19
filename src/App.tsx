@@ -21,7 +21,7 @@ import ResetPassword from "./pages/ResetPassword";
 import NotariaSettings from "./pages/NotariaSettings";
 import DocumentUploadStep from "./components/tramites/DocumentUploadStep";
 import CreditsBlockedModal from "./components/CreditsBlockedModal";
-import CancelacionesPlaceholder from "./pages/CancelacionesPlaceholder";
+import Cancelaciones from "./pages/Cancelaciones";
 
 const queryClient = new QueryClient();
 
@@ -83,7 +83,8 @@ const App = () => (
                   path="/cancelaciones"
                   element={
                     <ModuleGate slug="cancelaciones" moduleName="Cancelaciones">
-                      <CancelacionesPlaceholder />
+                      <Cancelaciones />
+
                     </ModuleGate>
                   }
                 />
@@ -91,7 +92,7 @@ const App = () => (
                   path="/cancelaciones/:id"
                   element={
                     <ModuleGate slug="cancelaciones" moduleName="Cancelaciones">
-                      <CancelacionesPlaceholder />
+                      <Cancelaciones />
                     </ModuleGate>
                   }
                 />
