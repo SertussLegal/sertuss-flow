@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
 import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import {
-  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Coins, Plus, Users, ArrowRightLeft, CreditCard, UserCheck, Building2,
+  Upload, FileText, CheckCircle, AlertTriangle, Loader2, ArrowRight, ArrowLeft, X, Plus, Users, ArrowRightLeft, CreditCard, UserCheck, Building2,
 } from "lucide-react";
 import type { NivelConfianza } from "@/lib/types";
 import { unwrapConfianza, unwrapConfianzaBool } from "@/lib/types";
@@ -569,16 +569,11 @@ const DocumentUploadStep = () => {
   return (
     <div className="flex h-dvh flex-col bg-background">
       <header className="border-b border-border bg-background shrink-0">
-        <div className="container flex h-14 items-center gap-4">
+        <div className="container flex h-14 items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")} className="gap-2">
             <ArrowLeft className="h-4 w-4" /> Volver a Escrituras
           </Button>
-          <span className="text-sm font-medium text-muted-foreground">Nueva Escritura — Carga de Documentos</span>
-          <div className="ml-auto flex items-center gap-3">
-            <Badge variant="outline">
-              <Coins className="mr-1 h-3 w-3" /> {credits} créditos
-            </Badge>
-          </div>
+          <span className="text-sm text-muted-foreground">— Carga de Documentos del Expediente</span>
         </div>
       </header>
 
