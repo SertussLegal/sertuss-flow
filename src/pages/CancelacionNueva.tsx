@@ -5,7 +5,9 @@ import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
+import { emitCreditsBlocked } from "@/lib/creditsBus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
