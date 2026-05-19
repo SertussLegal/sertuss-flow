@@ -315,9 +315,7 @@ serve(async (req) => {
       p_credits: 2,
     });
     if (chargeErr || charge !== true) {
-      return new Response(JSON.stringify({ error: "credits:blocked", message: "Créditos insuficientes" }), {
-        status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return biz("credits_blocked", "No tienes créditos suficientes para procesar esta cancelación (requiere 2 créditos).");
     }
 
     // Marcar processing
@@ -400,7 +398,7 @@ serve(async (req) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[procesar-cancelacion] error:", msg);
 
-    // Restaurar créditos (2)
+    // Restaurar créditos internos (2) — siempre que no haya sido credits_blocked
     try {
       await supabaseService.rpc("restore_credit", { org_id: orgId });
       await supabaseService.rpc("restore_credit", { org_id: orgId });
@@ -410,11 +408,23 @@ serve(async (req) => {
       status: "error", error_message: msg.slice(0, 500),
     }).eq("id", cancelacionId);
 
-    const aiErrResp = aiGatewayErrorResponse(err, corsHeaders);
-    if (aiErrResp) return aiErrResp;
+    // Mapeo de errores del AI Gateway → envelope de negocio (HTTP 200)
+    if (err instanceof AiGatewayError) {
+      if (err.status === 402) {
+        return biz("ai_gateway_no_credits",
+          "El servicio de IA no tiene créditos disponibles. Contacta al administrador del workspace para recargar.");
+      }
+      if (err.status === 429) {
+        return biz("ai_gateway_rate_limit",
+          "Demasiadas solicitudes al servicio de IA. Espera unos minutos e intenta de nuevo.");
+      }
+      if (err.status === 502) {
+        return biz("ai_gateway_bad_response",
+          "La IA no devolvió datos estructurados válidos. Intenta nuevamente con los mismos documentos.");
+      }
+      return biz("ai_gateway_error", `Error del servicio de IA (${err.status}). Intenta de nuevo.`);
+    }
 
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return biz("internal", msg.slice(0, 300));
   }
 });
