@@ -188,6 +188,17 @@ async function fillTemplate(
   return out;
 }
 
+async function createSignedStorageUrl(
+  supabase: ReturnType<typeof createClient>,
+  path: string,
+): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET_OUTPUT)
+    .createSignedUrl(path, 60 * 30);
+  if (error || !data?.signedUrl) throw new Error(`No se pudo firmar PDF ${path}: ${error?.message}`);
+  return data.signedUrl;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -217,7 +228,7 @@ serve(async (req) => {
   }
   const userId = claimsData.claims.sub as string;
 
-  let body: { cancelacionId?: string; certificadoBase64?: string; escrituraBase64?: string; regen?: boolean };
+  let body: { cancelacionId?: string; certificadoPath?: string; escrituraPath?: string; regen?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -226,7 +237,7 @@ serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoBase64, escrituraBase64, regen } = body;
+  const { cancelacionId, certificadoPath, escrituraPath, regen } = body;
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -299,7 +310,7 @@ serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     // MODO NORMAL: cobro + IA + docx + persistencia
     // ─────────────────────────────────────────────────────────────
-    if (!certificadoBase64 || !escrituraBase64) {
+    if (!certificadoPath || !escrituraPath) {
       return new Response(JSON.stringify({ error: "Archivos PDF requeridos" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -336,13 +347,18 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
-    // Capturamos refs locales para que el response pueda liberar las del request
-    const certB64 = certificadoBase64;
-    const escB64 = escrituraBase64;
+    // Capturamos solo rutas livianas; los PDFs quedan en Storage privado y se leen por URL firmada.
+    const certPath = certificadoPath;
+    const escPath = escrituraPath;
 
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
+        const [certUrl, escUrl] = await Promise.all([
+          createSignedStorageUrl(supabaseService, certPath),
+          createSignedStorageUrl(supabaseService, escPath),
+        ]);
+
         const aiBody = {
           model: "google/gemini-2.5-pro",
           messages: [
@@ -351,8 +367,8 @@ serve(async (req) => {
               role: "user",
               content: [
                 { type: "text", text: "Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos." },
-                { type: "image_url", image_url: { url: `data:application/pdf;base64,${certB64}` } },
-                { type: "image_url", image_url: { url: `data:application/pdf;base64,${escB64}` } },
+                { type: "image_url", image_url: { url: certUrl } },
+                { type: "image_url", image_url: { url: escUrl } },
               ],
             },
           ],
