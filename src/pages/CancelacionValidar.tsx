@@ -161,9 +161,16 @@ export const CancelacionValidar = () => {
     return (
       <div className="min-h-screen bg-muted/30 flex items-center justify-center p-8">
         <div className="max-w-md text-center">
-          <p className="text-base font-medium text-destructive">Hubo un error al procesar</p>
-          <p className="mt-2 text-sm text-muted-foreground">{row.error_message ?? "Intenta nuevamente."}</p>
-          <Button variant="ghost" onClick={() => navigate("/cancelaciones")} className="mt-6 gap-2">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-6 w-6 text-destructive" />
+          </div>
+          <p className="text-base font-semibold text-destructive">
+            Falló el análisis de IA
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground break-words">
+            {row.error_message ?? "Ocurrió un error inesperado durante el procesamiento. Intenta nuevamente."}
+          </p>
+          <Button variant="default" onClick={() => navigate("/cancelaciones")} className="mt-6 gap-2">
             <ArrowLeft className="h-4 w-4" /> Volver a Cancelaciones
           </Button>
         </div>
