@@ -348,15 +348,15 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
     // Capturamos solo rutas livianas; los PDFs quedan en Storage privado y se leen por URL firmada.
-    const certPath = certificadoPath;
-    const escPath = escrituraPath;
+    const certInputPath = certificadoPath;
+    const escInputPath = escrituraPath;
 
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
         const [certUrl, escUrl] = await Promise.all([
-          createSignedStorageUrl(supabaseService, certPath),
-          createSignedStorageUrl(supabaseService, escPath),
+          createSignedStorageUrl(supabaseService, certInputPath),
+          createSignedStorageUrl(supabaseService, escInputPath),
         ]);
 
         const aiBody = {
@@ -383,14 +383,14 @@ serve(async (req) => {
         const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
         const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
 
-        const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
-        const certPath = `cancelaciones/${cancelacionId}/certificado.docx`;
-        const { error: upMinErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaPath, minuta, {
+        const minutaOutputPath = `cancelaciones/${cancelacionId}/minuta.docx`;
+        const certOutputPath = `cancelaciones/${cancelacionId}/certificado.docx`;
+        const { error: upMinErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaOutputPath, minuta, {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           upsert: true,
         });
         if (upMinErr) throw new Error(`Upload minuta: ${upMinErr.message}`);
-        const { error: upCertErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(certPath, certificado, {
+        const { error: upCertErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(certOutputPath, certificado, {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           upsert: true,
         });
@@ -414,8 +414,8 @@ serve(async (req) => {
           banco_nit: extracted.partes.banco_nit,
           aplica_ley_546: extracted.analisis_legal.aplica_ley_546,
           explicacion_ley: extracted.analisis_legal.explicacion_ley,
-          url_minuta_generada: minutaPath,
-          url_certificado_generado: certPath,
+          url_minuta_generada: minutaOutputPath,
+          url_certificado_generado: certOutputPath,
           updated_at: new Date().toISOString(),
         }).eq("id", cancelacionId);
         if (updErr) throw new Error(`Persist: ${updErr.message}`);
