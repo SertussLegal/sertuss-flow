@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
-import { Scale, ArrowLeft, Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity, Bug } from "lucide-react";
+import { Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity, Bug } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SystemMonitor from "@/components/admin/SystemMonitor";
@@ -202,21 +202,7 @@ const Admin = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-notarial-dark text-white">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Scale className="h-6 w-6 text-notarial-gold" />
-            <span className="text-lg font-bold">Sertuss</span>
-            <span className="text-sm text-white/60">/ Panel de Administración</span>
-          </div>
-          <Button variant="ghost-dark" size="sm" onClick={() => navigate("/dashboard")}>
-            <ArrowLeft className="mr-1 h-4 w-4" /> Dashboard
-          </Button>
-        </div>
-      </header>
-
+    <div className="bg-background">
       <main className="container py-8 space-y-6">
         <Tabs defaultValue="organizaciones">
           <TabsList>

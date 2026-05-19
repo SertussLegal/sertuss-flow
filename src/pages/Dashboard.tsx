@@ -8,8 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, LogOut, Scale, Users, AlertTriangle, Shield, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Building2, Settings } from "lucide-react";
-import ProfileSwitcher from "@/components/ProfileSwitcher";
+import { Plus, Search, AlertTriangle, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Building2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import SetupOrgModal from "@/components/SetupOrgModal";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -67,10 +66,6 @@ const Dashboard = () => {
     return matchSearch && matchStatus;
   });
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
-  };
 
   const handleNewTramite = () => {
     navigate("/nuevo-tramite");
@@ -124,35 +119,6 @@ const Dashboard = () => {
           onComplete={() => refreshProfile()}
         />
       )}
-      <header className="border-b bg-notarial-dark text-white">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Scale className="h-6 w-6 text-notarial-gold" />
-            <span className="text-lg font-bold">Sertuss</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <ProfileSwitcher variant="dark" />
-            {profile?.role === "owner" && (
-              <Button variant="ghost-dark" size="sm" onClick={() => navigate("/admin")}>
-                <Shield className="mr-1 h-4 w-4" /> Admin
-              </Button>
-            )}
-            {(profile?.role === "owner" || profile?.role === "admin") && (
-              <Button variant="ghost-dark" size="sm" onClick={() => navigate("/equipo")}>
-                <Users className="mr-1 h-4 w-4" /> Equipo
-              </Button>
-            )}
-            {(profile?.role === "owner" || profile?.role === "admin") && (
-              <Button variant="ghost-dark" size="sm" onClick={() => navigate("/notaria")}>
-                <Settings className="mr-1 h-4 w-4" /> Notarías
-              </Button>
-            )}
-            <Button variant="ghost-dark" size="sm" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" /> Salir
-            </Button>
-          </div>
-        </div>
-      </header>
 
       <main className="container py-8">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

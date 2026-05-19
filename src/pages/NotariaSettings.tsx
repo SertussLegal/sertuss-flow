@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Scale, Loader2, Plus, Trash2, Edit2, MapPin, Building2, Ruler } from "lucide-react";
+import { Save, Loader2, Plus, Trash2, Edit2, MapPin, Building2, Ruler } from "lucide-react";
 
 const ESTILO_LINDEROS = [
   { value: "estandar", label: "Estándar — puntos cardinales" },
@@ -231,18 +231,9 @@ const NotariaSettings = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-notarial-dark text-white">
-        <div className="container flex h-16 items-center gap-3">
-          <Scale className="h-6 w-6 text-notarial-gold" />
-          <span className="text-lg font-bold">Sertuss</span>
-        </div>
-      </header>
-
+    <div className="bg-background">
       <main className="container max-w-4xl py-8">
-        <Button variant="ghost" size="sm" className="mb-4" onClick={() => navigate("/dashboard")}>
-          <ArrowLeft className="mr-1 h-4 w-4" /> Volver al Dashboard
-        </Button>
+
 
         <div className="flex items-center justify-between mb-6">
           <div>
