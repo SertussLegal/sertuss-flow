@@ -529,6 +529,30 @@ export type Database = {
           },
         ]
       }
+      modules: {
+        Row: {
+          created_at: string
+          description: string | null
+          is_core: boolean
+          name: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          is_core?: boolean
+          name: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          is_core?: boolean
+          name?: string
+          slug?: string
+        }
+        Relationships: []
+      }
       notaria_styles: {
         Row: {
           ciudad: string
@@ -593,6 +617,45 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "notaria_styles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_modules: {
+        Row: {
+          enabled: boolean
+          enabled_at: string
+          enabled_by: string | null
+          module_slug: string
+          organization_id: string
+        }
+        Insert: {
+          enabled?: boolean
+          enabled_at?: string
+          enabled_by?: string | null
+          module_slug: string
+          organization_id: string
+        }
+        Update: {
+          enabled?: boolean
+          enabled_at?: string
+          enabled_by?: string | null
+          module_slug?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_modules_module_slug_fkey"
+            columns: ["module_slug"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "organization_modules_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -990,6 +1053,10 @@ export type Database = {
       accept_invitation: { Args: { p_invitation_id: string }; Returns: string }
       admin_set_debug_tools: {
         Args: { enabled: boolean; target_org_id: string }
+        Returns: undefined
+      }
+      admin_toggle_module: {
+        Args: { p_enabled: boolean; p_org_id: string; p_slug: string }
         Returns: undefined
       }
       admin_update_credits: {
