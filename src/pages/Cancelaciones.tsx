@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FileSearch, Loader2, Plus } from "lucide-react";
+import { Eye, FileSearch, Loader2, Plus } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -125,11 +125,17 @@ const Cancelaciones = () => {
                 <TableHead>Cédula</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Fecha</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => navigate(`/cancelaciones/${row.id}/validar`)}
+                  aria-label="Abrir cancelación"
+                >
                   <TableCell className="font-medium">
                     {row.matricula_inmobiliaria || (
                       <span className="text-muted-foreground">—</span>
@@ -146,6 +152,19 @@ const Cancelaciones = () => {
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
                     {formatDate(row.created_at)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/cancelaciones/${row.id}/validar`);
+                      }}
+                    >
+                      <Eye className="mr-1.5 h-3.5 w-3.5" />
+                      Abrir
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
