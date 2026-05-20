@@ -13,7 +13,7 @@ import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
 export interface PdfToImagesOptions {
-  /** Máximo de páginas a renderizar (default 10). */
+  /** Máximo de páginas a renderizar (default 10). Configurable: 3 certificados, 10 escrituras. */
   maxPages?: number;
   /** Lado mayor del canvas, en pixeles (default 1600). */
   maxDimension?: number;
