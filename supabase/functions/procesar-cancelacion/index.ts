@@ -228,7 +228,13 @@ serve(async (req) => {
   }
   const userId = claimsData.claims.sub as string;
 
-  let body: { cancelacionId?: string; certificadoPath?: string; escrituraPath?: string; regen?: boolean };
+  let body: {
+    cancelacionId?: string;
+    certificadoPath?: string;
+    escrituraPath?: string;
+    escrituraImagePaths?: string[];
+    regen?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -237,7 +243,7 @@ serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoPath, escrituraPath, regen } = body;
+  const { cancelacionId, certificadoPath, escrituraPath, escrituraImagePaths, regen } = body;
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -310,7 +316,7 @@ serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     // MODO NORMAL: cobro + IA + docx + persistencia
     // ─────────────────────────────────────────────────────────────
-    if (!certificadoPath || !escrituraPath) {
+    if (!certificadoPath || (!escrituraPath && (!escrituraImagePaths || escrituraImagePaths.length === 0))) {
       return new Response(JSON.stringify({ error: "Archivos PDF requeridos" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -347,30 +353,33 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
-    // Capturamos solo rutas livianas; los PDFs quedan en Storage privado y se leen por URL firmada.
     const certInputPath = certificadoPath;
-    const escInputPath = escrituraPath;
+    const escInputPaths: string[] = escrituraImagePaths && escrituraImagePaths.length > 0
+      ? escrituraImagePaths
+      : (escrituraPath ? [escrituraPath] : []);
 
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
-        const [certUrl, escUrl] = await Promise.all([
-          createSignedStorageUrl(supabaseService, certInputPath),
-          createSignedStorageUrl(supabaseService, escInputPath),
-        ]);
+        const certUrl = await createSignedStorageUrl(supabaseService, certInputPath);
+        const escUrls = await Promise.all(
+          escInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+        );
+
+        const userContent: Array<Record<string, unknown>> = [
+          {
+            type: "text",
+            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. El primer adjunto es el Certificado de Tradición y Libertad; los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
+          },
+          { type: "image_url", image_url: { url: certUrl } },
+          ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+        ];
 
         const aiBody = {
           model: "google/gemini-2.5-pro",
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos." },
-                { type: "image_url", image_url: { url: certUrl } },
-                { type: "image_url", image_url: { url: escUrl } },
-              ],
-            },
+            { role: "user", content: userContent },
           ],
           tools,
           tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
@@ -420,14 +429,35 @@ serve(async (req) => {
         }).eq("id", cancelacionId);
         if (updErr) throw new Error(`Persist: ${updErr.message}`);
       } catch (bgErr) {
-        const msg = bgErr instanceof Error ? bgErr.message : String(bgErr);
-        console.error("[procesar-cancelacion bg] error:", msg);
-        try {
-          await supabaseService.rpc("restore_credit", { org_id: orgId });
-          await supabaseService.rpc("restore_credit", { org_id: orgId });
-        } catch (_) { /* ignore */ }
+        const rawMsg = bgErr instanceof Error ? bgErr.message : String(bgErr);
+        const isPayloadTooLarge =
+          bgErr instanceof AiGatewayError && bgErr.status === 413;
+        const friendlyMsg = isPayloadTooLarge
+          ? "La escritura supera el límite técnico de análisis de la IA (30 MB de contenido por documento). Comprime el PDF o reduce su tamaño antes de reintentar."
+          : rawMsg;
+
+        console.error(
+          `[procesar-cancelacion bg] error${isPayloadTooLarge ? " (413 payload too large)" : ""}:`,
+          rawMsg,
+        );
+
+        // Guard idempotente: solo restituye créditos si aún no se ha marcado error.
+        const { data: currentRow } = await supabaseService
+          .from("cancelaciones")
+          .select("status, error_message")
+          .eq("id", cancelacionId)
+          .maybeSingle();
+
+        if (currentRow && currentRow.status !== "error") {
+          try {
+            await supabaseService.rpc("restore_credit", { org_id: orgId });
+            await supabaseService.rpc("restore_credit", { org_id: orgId });
+          } catch (_) { /* ignore */ }
+        }
+
         await supabaseService.from("cancelaciones").update({
-          status: "error", error_message: msg.slice(0, 500),
+          status: "error",
+          error_message: friendlyMsg.slice(0, 500),
         }).eq("id", cancelacionId);
       }
     };
@@ -457,6 +487,10 @@ serve(async (req) => {
       if (err.status === 402) {
         return biz("ai_gateway_no_credits",
           "El servicio de IA no tiene créditos disponibles. Contacta al administrador del workspace para recargar.");
+      }
+      if (err.status === 413) {
+        return biz("ai_gateway_payload_too_large",
+          "La escritura supera el límite técnico de análisis de la IA (30 MB de contenido por documento). Comprime el PDF antes de reintentar.");
       }
       if (err.status === 429) {
         return biz("ai_gateway_rate_limit",

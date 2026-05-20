@@ -11,9 +11,15 @@ import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
+import { pdfToImages } from "@/lib/pdfToImages";
 
 const BANCO_FIJO = "Banco Davivienda S.A.";
 const BUCKET_OUTPUT = "expediente-files";
+
+// Límites defensivos para proteger el navegador del usuario.
+const MAX_ESCRITURA_BYTES = 80 * 1024 * 1024; // 80 MB
+const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
+const ESCRITURA_MAX_PAGES = 10;
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -29,13 +35,14 @@ export const CancelacionNueva = () => {
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [stepLabel, setStepLabel] = useState<string>("");
 
   const handleCancel = () => {
     if (saving) return;
     navigate("/cancelaciones");
   };
 
-  const uploadSupportPdf = async (cancelacionId: string, file: File, kind: "certificado" | "escritura") => {
+  const uploadPdf = async (cancelacionId: string, file: File, kind: "certificado") => {
     const path = `${cancelacionId}/cancelaciones/soportes/${kind}.pdf`;
     const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, file, {
       contentType: "application/pdf",
@@ -43,6 +50,26 @@ export const CancelacionNueva = () => {
     });
     if (error) throw new Error(`No se pudo subir ${kind}: ${error.message}`);
     return path;
+  };
+
+  const uploadEscrituraPages = async (cancelacionId: string, file: File): Promise<string[]> => {
+    setStepLabel(`Renderizando primeras ${ESCRITURA_MAX_PAGES} páginas…`);
+    const pages = await pdfToImages(file, { maxPages: ESCRITURA_MAX_PAGES });
+    if (pages.length === 0) throw new Error("La escritura no contiene páginas válidas.");
+
+    setStepLabel(`Subiendo ${pages.length} imágenes de escritura…`);
+    const basePath = `${cancelacionId}/cancelaciones/soportes/escritura`;
+    const paths: string[] = [];
+    for (const p of pages) {
+      const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.jpg`;
+      const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, p.blob, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+      if (error) throw new Error(`Subiendo página ${p.pageNumber}: ${error.message}`);
+      paths.push(path);
+    }
+    return paths;
   };
 
   const handleSubmit = async () => {
@@ -54,9 +81,22 @@ export const CancelacionNueva = () => {
       toast.error("Debes adjuntar ambos documentos");
       return;
     }
+    if (certificado.size > MAX_CERTIFICADO_BYTES) {
+      toast.error("Certificado demasiado grande", {
+        description: `El certificado supera ${Math.round(MAX_CERTIFICADO_BYTES / 1024 / 1024)} MB. Comprime el PDF antes de subirlo.`,
+      });
+      return;
+    }
+    if (escritura.size > MAX_ESCRITURA_BYTES) {
+      toast.error("Escritura demasiado grande", {
+        description: `La escritura supera ${Math.round(MAX_ESCRITURA_BYTES / 1024 / 1024)} MB. Comprime el PDF antes de subirlo.`,
+      });
+      return;
+    }
+
     setSaving(true);
     try {
-      // 1) Crear el row en draft
+      setStepLabel("Creando borrador…");
       const { data: inserted, error: insErr } = await supabase
         .from("cancelaciones")
         .insert({ organization_id: activeOrgId, status: "draft" })
@@ -65,13 +105,12 @@ export const CancelacionNueva = () => {
       if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
       const cancelacionId = inserted.id;
 
-      // 2) PDFs → Storage privado (evita enviar base64 gigante al Edge Function)
-      const [certificadoPath, escrituraPath] = await Promise.all([
-        uploadSupportPdf(cancelacionId, certificado, "certificado"),
-        uploadSupportPdf(cancelacionId, escritura, "escritura"),
-      ]);
+      // Certificado liviano → PDF directo. Escritura pesada → primeras N páginas como JPEG.
+      setStepLabel("Subiendo certificado…");
+      const certificadoPath = await uploadPdf(cancelacionId, certificado, "certificado");
+      const escrituraImagePaths = await uploadEscrituraPages(cancelacionId, escritura);
 
-      // 3) Invocar edge function
+      setStepLabel("Iniciando análisis con IA…");
       const { data, error } = await monitored.invoke<{
         ok: boolean;
         cancelacionId?: string;
@@ -80,36 +119,29 @@ export const CancelacionNueva = () => {
       }>("procesar-cancelacion", {
         cancelacionId,
         certificadoPath,
-        escrituraPath,
+        escrituraImagePaths,
       });
 
       if (error) {
-        console.error("[CancelacionNueva] invoke error:", error);
         toast.error("No se pudo contactar al servidor", { description: error.message });
         setSaving(false);
         return;
       }
 
-      // Business-error envelope: 200 OK con ok:false + code
       if (data && data.ok === false) {
-        console.error("Error de Procesamiento Cancelación:", data.code, data.message);
         const code = data.code ?? "internal";
         const message = data.message ?? "Error al procesar la cancelación";
 
-        // Safety-net: cualquier payload reconocido como "sin créditos internos"
-        // dispara el modal global, igual que en Escrituras.
         if (isCreditsBlockedError(null, data)) {
           emitCreditsBlocked({ source: "generate-document", message });
           setSaving(false);
           return;
         }
 
-
         switch (code) {
           case "ai_gateway_no_credits":
             toast.error("Error de Plataforma", {
-              description:
-                "El AI Gateway no cuenta con tokens globales disponibles. Contacte al administrador del sistema.",
+              description: "El AI Gateway no cuenta con tokens globales disponibles. Contacte al administrador.",
             });
             break;
           case "credits_blocked":
@@ -117,6 +149,10 @@ export const CancelacionNueva = () => {
             break;
           case "ai_gateway_rate_limit":
             toast.error("Demasiadas solicitudes", { description: message });
+            break;
+          case "pdf_too_large":
+          case "ai_gateway_payload_too_large":
+            toast.error("Documento demasiado pesado para la IA", { description: message });
             break;
           case "ai_gateway_bad_response":
             toast.error("La IA no devolvió datos válidos", { description: message });
@@ -126,8 +162,7 @@ export const CancelacionNueva = () => {
             break;
           case "credit_charge_error":
             toast.error("Error Técnico", {
-              description:
-                "No se pudo registrar el consumo de créditos en la auditoría. Contacte a soporte.",
+              description: "No se pudo registrar el consumo de créditos. Contacte a soporte.",
             });
             break;
           default:
@@ -138,7 +173,9 @@ export const CancelacionNueva = () => {
         return;
       }
 
-      toast.success("Cancelación procesada", { description: `Banco: ${BANCO_FIJO}` });
+      toast.success("Procesamiento iniciado", {
+        description: "El análisis se ejecuta en segundo plano. Esta página se actualizará automáticamente.",
+      });
       await refreshCredits();
       queryClient.invalidateQueries({ queryKey: ["cancelaciones"] });
       navigate(`/cancelaciones/${cancelacionId}/validar`);
@@ -147,22 +184,15 @@ export const CancelacionNueva = () => {
       toast.error("No se pudo procesar", { description: msg });
     } finally {
       setSaving(false);
+      setStepLabel("");
     }
   };
 
   return (
     <div className="min-h-screen bg-muted/30">
-      {/* Top bar */}
       <div className="border-b border-border bg-background">
         <div className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleCancel}
-            className="gap-2"
-            disabled={saving}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="gap-2" disabled={saving}>
             <ArrowLeft className="h-4 w-4" />
             Volver a Cancelaciones
           </Button>
@@ -170,39 +200,27 @@ export const CancelacionNueva = () => {
         </div>
       </div>
 
-      {/* Main */}
       <main className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
         <header className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Nueva cancelación de hipoteca
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Nueva cancelación de hipoteca</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Adjunta los documentos requeridos. La IA extraerá automáticamente los datos
-            relevantes para construir el borrador del trámite.
+            Adjunta los documentos requeridos. La IA extraerá automáticamente los datos relevantes para construir el
+            borrador del trámite.
           </p>
         </header>
 
         <div className="space-y-8">
-          {/* Sección 1: Banco */}
           <section className="rounded-lg border border-border bg-background p-6">
             <div className="mb-4 flex items-center gap-3">
               <StepNumber n={1} />
               <h2 className="text-base font-semibold">Banco acreedor</h2>
             </div>
-            <Input
-              value={BANCO_FIJO}
-              disabled
-              readOnly
-              className="font-medium"
-              aria-label="Banco acreedor"
-            />
+            <Input value={BANCO_FIJO} disabled readOnly className="font-medium" aria-label="Banco acreedor" />
             <p className="mt-2 text-xs text-muted-foreground">
-              Este módulo opera exclusivamente con {BANCO_FIJO}. Las plantillas y reglas
-              de procesamiento están configuradas para esta entidad.
+              Este módulo opera exclusivamente con {BANCO_FIJO}.
             </p>
           </section>
 
-          {/* Sección 2: Documentos */}
           <section className="rounded-lg border border-border bg-background p-6">
             <div className="mb-4 flex items-center gap-3">
               <StepNumber n={2} />
@@ -217,7 +235,7 @@ export const CancelacionNueva = () => {
                 disabled={saving}
               />
               <FileDropzone
-                label="Escritura Pública de Constitución de Hipoteca (PDF)"
+                label={`Escritura Pública de Constitución de Hipoteca (PDF) — analizamos las primeras ${ESCRITURA_MAX_PAGES} páginas`}
                 file={escritura}
                 onFile={setEscritura}
                 disabled={saving}
@@ -227,9 +245,11 @@ export const CancelacionNueva = () => {
         </div>
       </main>
 
-      {/* Footer fijo */}
       <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-end gap-3 px-4 py-4 sm:px-6 lg:px-8">
+          {saving && stepLabel && (
+            <span className="mr-auto text-xs text-muted-foreground">{stepLabel}</span>
+          )}
           <Button variant="ghost" onClick={handleCancel} disabled={saving}>
             Cancelar
           </Button>
@@ -237,7 +257,7 @@ export const CancelacionNueva = () => {
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Guardando…
+                Procesando…
               </>
             ) : (
               <>
