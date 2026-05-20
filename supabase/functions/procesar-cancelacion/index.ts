@@ -161,28 +161,78 @@ REGLAS ESTRICTAS DE FORMATO:
 
 Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
-// Build the variable map sent to Docxtemplater
+// Helpers
+function splitValor(valor: string): { letras: string; numeros: string } {
+  if (!valor) return { letras: "", numeros: "" };
+  const m = valor.match(/^(.*?)\s*\(\$?\s*([\d.,]+)\s*\)\s*$/);
+  if (m) return { letras: m[1].trim(), numeros: m[2].trim() };
+  return { letras: valor, numeros: "" };
+}
+function extractCorto(s: string): string {
+  if (!s) return "";
+  const m = s.match(/\(([^)]+)\)/);
+  return m ? m[1].trim() : s;
+}
+function extractCiudadFromNotaria(s: string): string {
+  if (!s) return "";
+  const m = s.match(/\bDE\s+(.+)$/i);
+  return m ? m[1].trim() : "";
+}
+function extractAno(s: string): string {
+  if (!s) return "";
+  const m = s.match(/(19|20)\d{2}/);
+  return m ? m[0] : "";
+}
+
+// Build the variable map sent to Docxtemplater (54 tags posicionales)
 function buildDocxVars(data: CancelacionData) {
+  const valor = splitValor(data.hipoteca_anterior.valor_hipoteca_original || "");
+  const ciudadHipoteca = extractCiudadFromNotaria(data.hipoteca_anterior.notaria_hipoteca || "");
+  const ne = data.notaria_emisora || {};
   return {
     // Hipoteca anterior
     numero_escritura_hipoteca: data.hipoteca_anterior.numero_escritura_hipoteca,
+    numero_escritura_hipoteca_corto: extractCorto(data.hipoteca_anterior.numero_escritura_hipoteca),
     fecha_escritura_hipoteca: data.hipoteca_anterior.fecha_escritura_hipoteca,
+    fecha_escritura_hipoteca_cont: "",
+    fecha_escritura_hipoteca_ano: extractAno(data.hipoteca_anterior.fecha_escritura_hipoteca),
     notaria_hipoteca: data.hipoteca_anterior.notaria_hipoteca,
+    ciudad_hipoteca: ciudadHipoteca,
+    ciudad_hipoteca_corto: ciudadHipoteca,
     valor_hipoteca_original: data.hipoteca_anterior.valor_hipoteca_original,
+    valor_hipoteca_letras: valor.letras,
+    valor_hipoteca_numeros: valor.numeros,
     // Inmueble
     matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
     direccion_inmueble: data.inmueble.direccion_completa,
+    direccion_inmueble_cont: "",
     ciudad_inmueble: data.inmueble.ciudad,
+    descripcion_inmueble: data.inmueble.descripcion || data.inmueble.direccion_completa,
     // Partes
     deudor_nombre: data.partes.deudor_nombre,
     deudor_identificacion: data.partes.deudor_identificacion,
     deudor_tipo_id: data.partes.deudor_tipo_id,
     banco_acreedor: data.partes.banco_acreedor,
     banco_nit: data.partes.banco_nit,
-    // Ley 546 (controla la sección {#aplica_ley_546}...{/aplica_ley_546})
+    // Ley 546
     aplica_ley_546: data.analisis_legal.aplica_ley_546,
     // Apoderado fijo
     ...APODERADO_FIJO,
+    // Notario emisor (editable; defaults → nullGetter "___________")
+    notario_nombre: ne.notario_nombre || "",
+    notaria_emisora_titulo: ne.notaria_emisora_titulo || "",
+    notaria_emisora_numero: ne.notaria_emisora_numero || "",
+    notaria_emisora_ciudad: ne.notaria_emisora_ciudad || "",
+    notaria_resolucion: ne.notaria_resolucion || "",
+    notaria_fecha_resolucion: ne.notaria_fecha_resolucion || "",
+    numero_escritura_nueva: ne.numero_escritura_nueva || "",
+    fecha_otorgamiento_nueva: ne.fecha_otorgamiento_nueva || "",
+    fecha_otorgamiento_nueva_cont: "",
+    derechos_notariales: ne.derechos_notariales || "",
+    superintendencia: ne.superintendencia || "",
+    fondo_nacional: ne.fondo_nacional || "",
+    iva: ne.iva || "",
+    valor_acto: ne.valor_acto || "",
   };
 }
 
