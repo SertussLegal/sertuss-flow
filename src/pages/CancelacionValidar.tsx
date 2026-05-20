@@ -235,7 +235,7 @@ export const CancelacionValidar = () => {
       humanErr = "El documento supera el límite técnico de la IA (30 MB). Comprime el PDF antes de reintentar.";
     }
     return (
-      <div className="min-h-screen bg-muted/30 flex items-center justify-center p-8">
+      <div className="h-screen bg-muted/30 flex items-center justify-center p-8 overflow-hidden">
         <div className="max-w-md text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
             <AlertTriangle className="h-6 w-6 text-destructive" />
