@@ -125,6 +125,7 @@ const Cancelaciones = () => {
                 <TableHead>Cédula</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Fecha</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
