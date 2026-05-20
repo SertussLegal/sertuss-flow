@@ -184,19 +184,75 @@ function extractAno(s: string): string {
   return m ? m[0] : "";
 }
 
-// Build the variable map sent to Docxtemplater (54 tags posicionales)
+const MESES_NUM: Record<string, string> = {
+  enero: "01", febrero: "02", marzo: "03", abril: "04", mayo: "05", junio: "06",
+  julio: "07", agosto: "08", septiembre: "09", setiembre: "09",
+  octubre: "10", noviembre: "11", diciembre: "12",
+};
+
+function parseFechaParts(s: string): { dia: string; mes: string; ano: string } {
+  if (!s) return { dia: "", mes: "", ano: "" };
+  const dia = (s.match(/\((\d{1,2})\)/)?.[1] ?? "").padStart(2, "0");
+  let mes = "";
+  const lower = s.toLowerCase();
+  for (const [k, v] of Object.entries(MESES_NUM)) {
+    if (lower.includes(k)) { mes = v; break; }
+  }
+  const ano = extractAno(s);
+  if (!dia || !mes) {
+    const m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) {
+      return {
+        dia: m[1].padStart(2, "0"),
+        mes: m[2].padStart(2, "0"),
+        ano: m[3].length === 2 ? `20${m[3]}` : m[3],
+      };
+    }
+  }
+  return { dia, mes, ano };
+}
+
+function extractNotariaNumero(s: string): string {
+  if (!s) return "";
+  return s.match(/\((\d{1,3})\)/)?.[1] ?? s.match(/\b(\d{1,3})\b/)?.[1] ?? "";
+}
+
+// Formatea un valor numérico/letra a "$48.200.000,00" si detecta dígitos
+function formatValorPesos(s: string): string {
+  if (!s) return "";
+  const numStr = (s.match(/[\d.,]+/g) || []).pop() || "";
+  const digits = numStr.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  const n = parseInt(digits, 10);
+  return `$${n.toLocaleString("es-CO").replace(/,/g, ".")},00`;
+}
+
+// Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
   const valor = splitValor(data.hipoteca_anterior.valor_hipoteca_original || "");
   const ciudadHipoteca = extractCiudadFromNotaria(data.hipoteca_anterior.notaria_hipoteca || "");
   const ne = data.notaria_emisora || {};
+  const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
+  const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
+
+  // valor_acto: si Ley 546 y vacío → línea de guiones + valor formateado
+  const valorActoFinal = ne.valor_acto?.trim()
+    ? ne.valor_acto
+    : data.analisis_legal.aplica_ley_546
+      ? `----------------------------------------------------------------------------- ${formatValorPesos(data.hipoteca_anterior.valor_hipoteca_original) || valor.numeros || ""}`.trim()
+      : "";
+
   return {
     // Hipoteca anterior
     numero_escritura_hipoteca: data.hipoteca_anterior.numero_escritura_hipoteca,
     numero_escritura_hipoteca_corto: extractCorto(data.hipoteca_anterior.numero_escritura_hipoteca),
     fecha_escritura_hipoteca: data.hipoteca_anterior.fecha_escritura_hipoteca,
     fecha_escritura_hipoteca_cont: "",
-    fecha_escritura_hipoteca_ano: extractAno(data.hipoteca_anterior.fecha_escritura_hipoteca),
+    fecha_escritura_hipoteca_dia: fp.dia || undefined,
+    fecha_escritura_hipoteca_mes: fp.mes || undefined,
+    fecha_escritura_hipoteca_ano: fp.ano || extractAno(data.hipoteca_anterior.fecha_escritura_hipoteca) || undefined,
     notaria_hipoteca: data.hipoteca_anterior.notaria_hipoteca,
+    notaria_hipoteca_numero: notariaOrigenNum || undefined,
     ciudad_hipoteca: ciudadHipoteca,
     ciudad_hipoteca_corto: ciudadHipoteca,
     valor_hipoteca_original: data.hipoteca_anterior.valor_hipoteca_original,
@@ -218,21 +274,24 @@ function buildDocxVars(data: CancelacionData) {
     aplica_ley_546: data.analisis_legal.aplica_ley_546,
     // Apoderado fijo
     ...APODERADO_FIJO,
-    // Notario emisor (editable; defaults → nullGetter "___________")
-    notario_nombre: ne.notario_nombre || "",
-    notaria_emisora_titulo: ne.notaria_emisora_titulo || "",
-    notaria_emisora_numero: ne.notaria_emisora_numero || "",
-    notaria_emisora_ciudad: ne.notaria_emisora_ciudad || "",
-    notaria_resolucion: ne.notaria_resolucion || "",
-    notaria_fecha_resolucion: ne.notaria_fecha_resolucion || "",
-    numero_escritura_nueva: ne.numero_escritura_nueva || "",
-    fecha_otorgamiento_nueva: ne.fecha_otorgamiento_nueva || "",
+    // Notario emisor (editable; vacío → nullGetter "___________")
+    notario_nombre: ne.notario_nombre || undefined,
+    notaria_emisora_titulo: ne.notaria_emisora_titulo || undefined,
+    notaria_emisora_numero: ne.notaria_emisora_numero || undefined,
+    notaria_emisora_ciudad: ne.notaria_emisora_ciudad || undefined,
+    notaria_resolucion: ne.notaria_resolucion || undefined,
+    notaria_fecha_resolucion: ne.notaria_fecha_resolucion || undefined,
+    numero_escritura_nueva: ne.numero_escritura_nueva || undefined,
+    numero_escritura_nueva_letras: (ne as Record<string, string>).numero_escritura_nueva_letras || undefined,
+    fecha_otorgamiento_nueva: ne.fecha_otorgamiento_nueva || undefined,
+    fecha_otorgamiento_nueva_letras: (ne as Record<string, string>).fecha_otorgamiento_nueva_letras || undefined,
     fecha_otorgamiento_nueva_cont: "",
-    derechos_notariales: ne.derechos_notariales || "",
-    superintendencia: ne.superintendencia || "",
-    fondo_nacional: ne.fondo_nacional || "",
-    iva: ne.iva || "",
-    valor_acto: ne.valor_acto || "",
+    // Liquidación notarial → undefined fuerza nullGetter para mantener líneas
+    derechos_notariales: ne.derechos_notariales || undefined,
+    superintendencia: ne.superintendencia || undefined,
+    fondo_nacional: ne.fondo_nacional || undefined,
+    iva: ne.iva || undefined,
+    valor_acto: valorActoFinal || undefined,
   };
 }
 
