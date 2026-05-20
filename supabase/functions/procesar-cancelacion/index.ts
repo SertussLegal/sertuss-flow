@@ -488,6 +488,10 @@ serve(async (req) => {
         return biz("ai_gateway_no_credits",
           "El servicio de IA no tiene créditos disponibles. Contacta al administrador del workspace para recargar.");
       }
+      if (err.status === 413) {
+        return biz("ai_gateway_payload_too_large",
+          "La escritura supera el límite técnico de análisis de la IA (30 MB de contenido por documento). Comprime el PDF antes de reintentar.");
+      }
       if (err.status === 429) {
         return biz("ai_gateway_rate_limit",
           "Demasiadas solicitudes al servicio de IA. Espera unos minutos e intenta de nuevo.");
