@@ -231,6 +231,7 @@ serve(async (req) => {
   let body: {
     cancelacionId?: string;
     certificadoPath?: string;
+    certificadoImagePaths?: string[];
     escrituraPath?: string;
     escrituraImagePaths?: string[];
     regen?: boolean;
@@ -243,7 +244,7 @@ serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoPath, escrituraPath, escrituraImagePaths, regen } = body;
+  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, regen } = body;
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -316,8 +317,15 @@ serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     // MODO NORMAL: cobro + IA + docx + persistencia
     // ─────────────────────────────────────────────────────────────
-    if (!certificadoPath || (!escrituraPath && (!escrituraImagePaths || escrituraImagePaths.length === 0))) {
-      return new Response(JSON.stringify({ error: "Archivos PDF requeridos" }), {
+    const hasCertImages = certificadoImagePaths && certificadoImagePaths.length > 0;
+    const hasEscImages = escrituraImagePaths && escrituraImagePaths.length > 0;
+    if (!hasCertImages && !certificadoPath) {
+      return new Response(JSON.stringify({ error: "Certificado requerido (imágenes JPEG)" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!hasEscImages && !escrituraPath) {
+      return new Response(JSON.stringify({ error: "Escritura requerida (imágenes JPEG)" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

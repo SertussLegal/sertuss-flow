@@ -149,6 +149,9 @@ export const CancelacionNueva = () => {
           case "ai_gateway_payload_too_large":
             toast.error("Documento demasiado pesado para la IA", { description: message });
             break;
+          case "unsupported_image_format":
+            toast.error("Formato de documento no soportado", { description: message });
+            break;
           case "ai_gateway_bad_response":
             toast.error("La IA no devolvió datos válidos", { description: message });
             break;
