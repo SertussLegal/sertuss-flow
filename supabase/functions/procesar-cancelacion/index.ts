@@ -37,10 +37,28 @@ const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
 const APODERADO_FIJO = {
   apoderado_nombre: "HEIBER HERNAN BELTRAN TORRES",
   apoderado_cedula: "1.033.718.974",
-  apoderado_escritura: "4035",
-  apoderado_fecha_poder: "19 de agosto de 2025",
-  apoderado_notaria_poder: "24 de Bogotá D.C.",
+  apoderado_escritura: "CUATRO MIL TREINTA Y CINCO (4035)",
+  apoderado_dia: "DIECINUEVE (19)",
+  apoderado_mes: "AGOSTO",
+  apoderado_ano: "DOS MIL VEINTICINCO (2025)",
+  apoderado_notaria_poder: "VEINTICUATRO (24) DE BOGOTA D.C.",
 };
+
+interface NotariaEmisora {
+  notario_nombre?: string;
+  notaria_emisora_titulo?: string;
+  notaria_emisora_numero?: string;
+  notaria_emisora_ciudad?: string;
+  notaria_resolucion?: string;
+  notaria_fecha_resolucion?: string;
+  numero_escritura_nueva?: string;
+  fecha_otorgamiento_nueva?: string;
+  derechos_notariales?: string;
+  superintendencia?: string;
+  fondo_nacional?: string;
+  iva?: string;
+  valor_acto?: string;
+}
 
 interface CancelacionData {
   hipoteca_anterior: {
@@ -53,6 +71,7 @@ interface CancelacionData {
     matricula_inmobiliaria: string;
     direccion_completa: string;
     ciudad: string;
+    descripcion?: string;
   };
   partes: {
     deudor_nombre: string;
@@ -65,6 +84,7 @@ interface CancelacionData {
     aplica_ley_546: boolean;
     explicacion_ley: string;
   };
+  notaria_emisora?: NotariaEmisora;
 }
 
 const tools = [
