@@ -5,8 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 interface PdfViewerPaneProps {
-  tramiteId: string;
-  docxPath: string | null;
+  bucket?: string;
+  filePath: string | null;
+  refreshKey?: string | number;
+  isLoading?: boolean;
+  downloadName?: string;
 }
 
 type ViewerState = "idle" | "loading" | "ready" | "error";
@@ -17,9 +20,10 @@ interface ErrorInfo {
 }
 
 const SIGNED_URL_TTL_SECONDS = 300;
+const DEFAULT_BUCKET = "expediente-files";
 
-const classifyError = (err: any): ErrorInfo => {
-  const msg = String(err?.message || err || "").toLowerCase();
+const classifyError = (err: unknown): ErrorInfo => {
+  const msg = String((err as { message?: string })?.message || err || "").toLowerCase();
   if (msg.includes("not found") || msg.includes("404") || msg.includes("does not exist")) {
     return {
       title: "Documento no encontrado",
@@ -41,7 +45,19 @@ const classifyError = (err: any): ErrorInfo => {
   };
 };
 
-const PdfViewerPane = ({ tramiteId, docxPath }: PdfViewerPaneProps) => {
+const inferDownloadName = (filePath: string | null, downloadName?: string): string => {
+  if (downloadName) return downloadName;
+  const fromPath = filePath?.split("/").pop();
+  return fromPath || "documento.docx";
+};
+
+export const PdfViewerPane = ({
+  bucket,
+  filePath,
+  refreshKey,
+  isLoading: externalLoading,
+  downloadName,
+}: PdfViewerPaneProps) => {
   const [state, setState] = useState<ViewerState>("idle");
   const [html, setHtml] = useState<string>("");
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
@@ -49,7 +65,7 @@ const PdfViewerPane = ({ tramiteId, docxPath }: PdfViewerPaneProps) => {
   const reqIdRef = useRef(0);
 
   const load = useCallback(async () => {
-    if (!docxPath) {
+    if (!filePath) {
       setState("idle");
       setHtml("");
       setSignedUrl(null);
@@ -63,8 +79,8 @@ const PdfViewerPane = ({ tramiteId, docxPath }: PdfViewerPaneProps) => {
     try {
       const { data: signed, error: signError } = await supabase
         .storage
-        .from("expediente-files")
-        .createSignedUrl(docxPath, SIGNED_URL_TTL_SECONDS);
+        .from(bucket ?? DEFAULT_BUCKET)
+        .createSignedUrl(filePath, SIGNED_URL_TTL_SECONDS);
 
       if (signError || !signed?.signedUrl) {
         throw signError ?? new Error("No se pudo firmar la URL del documento");
@@ -89,24 +105,25 @@ const PdfViewerPane = ({ tramiteId, docxPath }: PdfViewerPaneProps) => {
       setError(classifyError(err));
       setState("error");
     }
-  }, [docxPath]);
+  }, [bucket, filePath, refreshKey]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const handleDownload = async () => {
+  const handleDownload = () => {
     if (!signedUrl) return;
-    // Force download: open the signed URL in a new tab; storage serves as octet-stream attachment
     const link = document.createElement("a");
     link.href = signedUrl;
-    link.download = docxPath?.split("/").pop() || `documento-${tramiteId.slice(0, 8)}.docx`;
+    link.download = inferDownloadName(filePath, downloadName);
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  const showExternalLoading = externalLoading && state !== "loading";
 
   return (
     <div className="pdf-viewer-pane h-full w-full overflow-auto bg-slate-900/40">
@@ -144,7 +161,7 @@ const PdfViewerPane = ({ tramiteId, docxPath }: PdfViewerPaneProps) => {
 
       {/* Content */}
       <div className="flex justify-center py-8 px-4">
-        {state === "idle" && (
+        {state === "idle" && !showExternalLoading && (
           <div className="max-w-md mt-16 text-center text-white/60 text-sm">
             <FileText className="h-10 w-10 mx-auto mb-3 text-white/30" />
             Aún no se ha generado el documento. Pulsa <span className="text-notarial-gold">Previsualizar</span>
@@ -152,7 +169,7 @@ const PdfViewerPane = ({ tramiteId, docxPath }: PdfViewerPaneProps) => {
           </div>
         )}
 
-        {state === "loading" && (
+        {(state === "loading" || showExternalLoading) && (
           <div className="flex items-center gap-3 text-white/70 mt-16">
             <Loader2 className="h-5 w-5 animate-spin text-notarial-gold" />
             <span className="text-sm">Cargando documento desde la nube…</span>
