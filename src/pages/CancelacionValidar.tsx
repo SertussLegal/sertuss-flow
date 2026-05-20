@@ -217,7 +217,7 @@ export const CancelacionValidar = () => {
 
   if (row.status === "processing") {
     return (
-      <div className="min-h-screen bg-muted/30 flex items-center justify-center">
+      <div className="h-screen bg-muted/30 flex items-center justify-center overflow-hidden">
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
           <p className="mt-4 text-sm text-muted-foreground">Procesando documentos con IA…</p>
