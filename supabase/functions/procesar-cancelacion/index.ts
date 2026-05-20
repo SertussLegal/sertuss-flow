@@ -228,7 +228,13 @@ serve(async (req) => {
   }
   const userId = claimsData.claims.sub as string;
 
-  let body: { cancelacionId?: string; certificadoPath?: string; escrituraPath?: string; regen?: boolean };
+  let body: {
+    cancelacionId?: string;
+    certificadoPath?: string;
+    escrituraPath?: string;
+    escrituraImagePaths?: string[];
+    regen?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -237,7 +243,7 @@ serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoPath, escrituraPath, regen } = body;
+  const { cancelacionId, certificadoPath, escrituraPath, escrituraImagePaths, regen } = body;
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
