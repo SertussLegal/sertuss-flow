@@ -361,7 +361,9 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
-    const certInputPath = certificadoPath;
+    const certInputPaths: string[] = certificadoImagePaths && certificadoImagePaths.length > 0
+      ? certificadoImagePaths
+      : (certificadoPath ? [certificadoPath] : []);
     const escInputPaths: string[] = escrituraImagePaths && escrituraImagePaths.length > 0
       ? escrituraImagePaths
       : (escrituraPath ? [escrituraPath] : []);
@@ -369,7 +371,9 @@ serve(async (req) => {
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
-        const certUrl = await createSignedStorageUrl(supabaseService, certInputPath);
+        const certUrls = await Promise.all(
+          certInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+        );
         const escUrls = await Promise.all(
           escInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
         );
@@ -377,9 +381,9 @@ serve(async (req) => {
         const userContent: Array<Record<string, unknown>> = [
           {
             type: "text",
-            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. El primer adjunto es el Certificado de Tradición y Libertad; los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
+            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden); los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
           },
-          { type: "image_url", image_url: { url: certUrl } },
+          ...certUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
           ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
         ];
 
@@ -438,14 +442,22 @@ serve(async (req) => {
         if (updErr) throw new Error(`Persist: ${updErr.message}`);
       } catch (bgErr) {
         const rawMsg = bgErr instanceof Error ? bgErr.message : String(bgErr);
-        const isPayloadTooLarge =
-          bgErr instanceof AiGatewayError && bgErr.status === 413;
-        const friendlyMsg = isPayloadTooLarge
-          ? "La escritura supera el límite técnico de análisis de la IA (30 MB de contenido por documento). Comprime el PDF o reduce su tamaño antes de reintentar."
-          : rawMsg;
+        const isAiErr = bgErr instanceof AiGatewayError;
+        const isPayloadTooLarge = isAiErr && (bgErr as AiGatewayError).status === 413;
+        const isUnsupportedFormat =
+          isAiErr &&
+          (bgErr as AiGatewayError).status === 400 &&
+          /unsupported image format/i.test((bgErr as AiGatewayError).rawBody ?? rawMsg);
+
+        let friendlyMsg = rawMsg;
+        if (isPayloadTooLarge) {
+          friendlyMsg = "La escritura supera el límite técnico de análisis de la IA (30 MB de contenido por documento). Comprime el PDF o reduce su tamaño antes de reintentar.";
+        } else if (isUnsupportedFormat) {
+          friendlyMsg = "El certificado debe convertirse a imagen antes del análisis. Reintenta la carga; el sistema ya está preparado para hacerlo automáticamente.";
+        }
 
         console.error(
-          `[procesar-cancelacion bg] error${isPayloadTooLarge ? " (413 payload too large)" : ""}:`,
+          `[procesar-cancelacion bg] error${isPayloadTooLarge ? " (413 payload too large)" : isUnsupportedFormat ? " (400 unsupported image format)" : ""}:`,
           rawMsg,
         );
 
