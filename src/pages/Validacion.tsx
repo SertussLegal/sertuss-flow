@@ -3206,7 +3206,7 @@ const Validacion = () => {
               )}
               <div className="flex-1 min-h-0 overflow-hidden">
                 {docxPath && showFinalView ? (
-                  <PdfViewerPane tramiteId={tramiteId ?? ""} docxPath={docxPath} />
+                  <PdfViewerPane filePath={docxPath} />
                 ) : (
                   <DocxPreview
                     vendedores={vendedores}
