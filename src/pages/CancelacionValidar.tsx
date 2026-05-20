@@ -208,7 +208,7 @@ export const CancelacionValidar = () => {
 
   if (isLoading || !row) {
     return (
-      <div className="min-h-screen bg-muted/30 p-8">
+      <div className="h-screen bg-muted/30 p-8 overflow-hidden">
         <Skeleton className="h-10 w-64 mb-6" />
         <Skeleton className="h-96 w-full" />
       </div>
