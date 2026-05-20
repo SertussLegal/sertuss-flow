@@ -206,6 +206,13 @@ export const CancelacionValidar = () => {
   }
 
   if (row.status === "error") {
+    const rawErr = row.error_message ?? "";
+    let humanErr = rawErr || "Ocurrió un error inesperado durante el procesamiento. Intenta nuevamente.";
+    if (/unsupported image format/i.test(rawErr) || /ai gateway error 400/i.test(rawErr)) {
+      humanErr = "El certificado debe convertirse a imagen antes del análisis. Reintenta la carga; el sistema ya está preparado para hacerlo automáticamente.";
+    } else if (/ai gateway error 413/i.test(rawErr) || /payload too large/i.test(rawErr)) {
+      humanErr = "El documento supera el límite técnico de la IA (30 MB). Comprime el PDF antes de reintentar.";
+    }
     return (
       <div className="min-h-screen bg-muted/30 flex items-center justify-center p-8">
         <div className="max-w-md text-center">
@@ -216,7 +223,7 @@ export const CancelacionValidar = () => {
             Falló el análisis de IA
           </p>
           <p className="mt-2 text-sm text-muted-foreground break-words">
-            {row.error_message ?? "Ocurrió un error inesperado durante el procesamiento. Intenta nuevamente."}
+            {humanErr}
           </p>
           <Button variant="default" onClick={() => navigate("/cancelaciones/nueva")} className="mt-6 gap-2">
             <ArrowLeft className="h-4 w-4" /> Regresar a cargar documentos

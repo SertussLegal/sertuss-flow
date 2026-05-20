@@ -20,6 +20,7 @@ const BUCKET_OUTPUT = "expediente-files";
 const MAX_ESCRITURA_BYTES = 80 * 1024 * 1024; // 80 MB
 const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
 const ESCRITURA_MAX_PAGES = 10;
+const CERTIFICADO_MAX_PAGES = 3;
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -42,23 +43,18 @@ export const CancelacionNueva = () => {
     navigate("/cancelaciones");
   };
 
-  const uploadPdf = async (cancelacionId: string, file: File, kind: "certificado") => {
-    const path = `${cancelacionId}/cancelaciones/soportes/${kind}.pdf`;
-    const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, file, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-    if (error) throw new Error(`No se pudo subir ${kind}: ${error.message}`);
-    return path;
-  };
+  const uploadPdfAsImages = async (
+    cancelacionId: string,
+    file: File,
+    kind: "certificado" | "escritura",
+    maxPages: number,
+  ): Promise<string[]> => {
+    setStepLabel(`Renderizando ${kind} (primeras ${maxPages} páginas)…`);
+    const pages = await pdfToImages(file, { maxPages });
+    if (pages.length === 0) throw new Error(`El ${kind} no contiene páginas válidas.`);
 
-  const uploadEscrituraPages = async (cancelacionId: string, file: File): Promise<string[]> => {
-    setStepLabel(`Renderizando primeras ${ESCRITURA_MAX_PAGES} páginas…`);
-    const pages = await pdfToImages(file, { maxPages: ESCRITURA_MAX_PAGES });
-    if (pages.length === 0) throw new Error("La escritura no contiene páginas válidas.");
-
-    setStepLabel(`Subiendo ${pages.length} imágenes de escritura…`);
-    const basePath = `${cancelacionId}/cancelaciones/soportes/escritura`;
+    setStepLabel(`Subiendo ${pages.length} imágenes de ${kind}…`);
+    const basePath = `${cancelacionId}/cancelaciones/soportes/${kind}`;
     const paths: string[] = [];
     for (const p of pages) {
       const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.jpg`;
@@ -66,7 +62,7 @@ export const CancelacionNueva = () => {
         contentType: "image/jpeg",
         upsert: true,
       });
-      if (error) throw new Error(`Subiendo página ${p.pageNumber}: ${error.message}`);
+      if (error) throw new Error(`Subiendo página ${p.pageNumber} de ${kind}: ${error.message}`);
       paths.push(path);
     }
     return paths;
@@ -105,10 +101,9 @@ export const CancelacionNueva = () => {
       if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
       const cancelacionId = inserted.id;
 
-      // Certificado liviano → PDF directo. Escritura pesada → primeras N páginas como JPEG.
-      setStepLabel("Subiendo certificado…");
-      const certificadoPath = await uploadPdf(cancelacionId, certificado, "certificado");
-      const escrituraImagePaths = await uploadEscrituraPages(cancelacionId, escritura);
+      // Ambos PDFs se convierten a JPEG: el AI Gateway solo acepta image_url con imágenes.
+      const certificadoImagePaths = await uploadPdfAsImages(cancelacionId, certificado, "certificado", CERTIFICADO_MAX_PAGES);
+      const escrituraImagePaths = await uploadPdfAsImages(cancelacionId, escritura, "escritura", ESCRITURA_MAX_PAGES);
 
       setStepLabel("Iniciando análisis con IA…");
       const { data, error } = await monitored.invoke<{
@@ -118,7 +113,7 @@ export const CancelacionNueva = () => {
         message?: string;
       }>("procesar-cancelacion", {
         cancelacionId,
-        certificadoPath,
+        certificadoImagePaths,
         escrituraImagePaths,
       });
 
@@ -153,6 +148,9 @@ export const CancelacionNueva = () => {
           case "pdf_too_large":
           case "ai_gateway_payload_too_large":
             toast.error("Documento demasiado pesado para la IA", { description: message });
+            break;
+          case "unsupported_image_format":
+            toast.error("Formato de documento no soportado", { description: message });
             break;
           case "ai_gateway_bad_response":
             toast.error("La IA no devolvió datos válidos", { description: message });
