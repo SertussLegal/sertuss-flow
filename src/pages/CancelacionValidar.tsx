@@ -255,9 +255,9 @@ export const CancelacionValidar = () => {
     data && setData({ ...data, notaria_emisora: { ...ne, ...patch } });
 
   return (
-    <div className="min-h-screen bg-muted/30 flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden bg-muted/30">
       {/* Top bar */}
-      <div className="border-b border-border bg-background sticky top-0 z-10">
+      <div className="sticky top-0 z-50 bg-background border-b border-border">
         <div className="flex items-center gap-3 px-4 py-3">
           <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/cancelaciones")} className="gap-2">
             <ArrowLeft className="h-4 w-4" /> Volver
@@ -288,10 +288,27 @@ export const CancelacionValidar = () => {
         </div>
       </div>
 
-      {/* 3 paneles: Form (izq) + Visor (der) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[440px_1fr] gap-0 overflow-hidden">
+      {/* Visor (izq) + Form (der) con scrolls independientes */}
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_450px]">
+        {/* Visor */}
+        <div className="h-full overflow-hidden relative bg-slate-100 order-1">
+          <PdfViewerPane
+            key={`${activeDoc}-${viewerKey}`}
+            filePath={activePath}
+            refreshKey={`${activeDoc}-${viewerKey}`}
+          />
+          {previewRefreshing && (
+            <div className="absolute inset-0 bg-background/40 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20">
+              <div className="rounded-md bg-background/95 px-4 py-2 shadow-lg border border-border flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-xs">Actualizando vista previa…</span>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Form */}
-        <div className="overflow-auto p-4 space-y-3 bg-muted/20 border-r border-border">
+        <div className="h-full overflow-y-auto p-4 space-y-3 bg-muted/20 border-l border-border order-2">
           {data && (
             <>
               <Section title="Hipoteca anterior">
