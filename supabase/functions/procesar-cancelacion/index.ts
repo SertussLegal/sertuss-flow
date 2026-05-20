@@ -307,10 +307,21 @@ async function fillTemplate(
 
   const buf = new Uint8Array(await blob.arrayBuffer());
   const zip = new PizZip(buf);
+  // Campos "atómicos" en celdas de tabla angostas: si están vacíos, usamos un guion
+  // corto en lugar de la línea larga "___________" que deforma la tabla.
+  const SLIM_FIELDS = new Set([
+    "fecha_escritura_hipoteca_dia",
+    "fecha_escritura_hipoteca_mes",
+    "fecha_escritura_hipoteca_ano",
+    "notaria_hipoteca_numero",
+    "ciudad_hipoteca_corto",
+    "numero_escritura_hipoteca_corto",
+  ]);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
-    nullGetter: () => "___________",
+    nullGetter: (part: { value?: string }) =>
+      part?.value && SLIM_FIELDS.has(part.value) ? "—" : "___________",
   });
   doc.render(vars);
   const out = doc.getZip().generate({ type: "uint8array" });
