@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Loader2, RefreshCw, FileText, FileSignature, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Download, Loader2, RefreshCw, FileText, FileSignature, AlertTriangle, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,15 @@ type Data = {
   };
 };
 
+const copyToClipboard = async (value: string, label: string) => {
+  try {
+    await navigator.clipboard.writeText(value ?? "");
+    toast.success(`${label} copiado al portapapeles`);
+  } catch {
+    toast.error("No se pudo copiar al portapapeles");
+  }
+};
+
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="rounded-lg border border-border bg-background p-5">
     <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
@@ -48,10 +58,36 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
   </section>
 );
 
-const Field = ({ label, value, onChange, disabled }: { label: string; value: string; onChange: (v: string) => void; disabled?: boolean }) => (
+const Field = ({
+  label,
+  value,
+  onChange,
+  disabled,
+  copyable,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  copyable?: boolean;
+}) => (
   <div className="space-y-1.5">
     <Label className="text-xs">{label}</Label>
-    <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+    <div className="flex items-center gap-2">
+      <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      {copyable && (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-10 w-10 shrink-0"
+          onClick={() => copyToClipboard(value ?? "", label)}
+          title={`Copiar ${label}`}
+        >
+          <Copy className="h-4 w-4" />
+        </Button>
+      )}
+    </div>
   </div>
 );
 
@@ -59,6 +95,7 @@ export const CancelacionValidar = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { refreshCredits } = useAuth();
 
   const { data: row, isLoading } = useQuery({
     queryKey: ["cancelacion", id],
@@ -77,15 +114,27 @@ export const CancelacionValidar = () => {
   const [data, setData] = useState<Data | null>(null);
   const [saving, setSaving] = useState(false);
   const [regen, setRegen] = useState(false);
+  const creditsRefreshedRef = useRef(false);
 
+  // Hidratación tipada y segura del formulario
   useEffect(() => {
-    if (row?.data_final) setData(row.data_final as Data);
-    else if (row?.data_ia) setData(row.data_ia as Data);
+    if (!row) return;
+    const source = (row.data_final ?? row.data_ia) as Data | null;
+    if (source && typeof source === "object") setData(source);
   }, [row]);
 
-  // Debounced autosave to data_final
+  // Refresh de créditos una sola vez cuando el trámite pasa a completed
+  useEffect(() => {
+    if (row?.status === "completed" && !creditsRefreshedRef.current) {
+      creditsRefreshedRef.current = true;
+      refreshCredits();
+    }
+  }, [row?.status, refreshCredits]);
+
+  // Debounced autosave to data_final — solo cuando el trámite está listo
   useEffect(() => {
     if (!data || !id) return;
+    if (row?.status === "processing" || row?.status === "error") return;
     const t = setTimeout(async () => {
       setSaving(true);
       const { error } = await supabase.from("cancelaciones").update({
@@ -100,7 +149,7 @@ export const CancelacionValidar = () => {
       if (error) toast.error("No se pudo guardar", { description: error.message });
     }, 15000);
     return () => clearTimeout(t);
-  }, [data, id]);
+  }, [data, id, row?.status]);
 
   const handleDownload = async (path: string | null, fallbackName: string) => {
     if (!path) {
@@ -123,7 +172,6 @@ export const CancelacionValidar = () => {
   const handleRegen = async () => {
     if (!id || !data) return;
     setRegen(true);
-    // Persist latest edits first
     await supabase.from("cancelaciones").update({ data_final: data }).eq("id", id);
     const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true });
     setRegen(false);
@@ -170,8 +218,8 @@ export const CancelacionValidar = () => {
           <p className="mt-2 text-sm text-muted-foreground break-words">
             {row.error_message ?? "Ocurrió un error inesperado durante el procesamiento. Intenta nuevamente."}
           </p>
-          <Button variant="default" onClick={() => navigate("/cancelaciones")} className="mt-6 gap-2">
-            <ArrowLeft className="h-4 w-4" /> Volver a Cancelaciones
+          <Button variant="default" onClick={() => navigate("/cancelaciones/nueva")} className="mt-6 gap-2">
+            <ArrowLeft className="h-4 w-4" /> Regresar a cargar documentos
           </Button>
         </div>
       </div>
@@ -205,37 +253,37 @@ export const CancelacionValidar = () => {
             {data && (
               <>
                 <Section title="Hipoteca anterior">
-                  <Field label="Número de escritura" value={data.hipoteca_anterior.numero_escritura_hipoteca}
+                  <Field label="Número de escritura" copyable value={data.hipoteca_anterior.numero_escritura_hipoteca}
                     onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, numero_escritura_hipoteca: v } })} />
-                  <Field label="Fecha" value={data.hipoteca_anterior.fecha_escritura_hipoteca}
+                  <Field label="Fecha" copyable value={data.hipoteca_anterior.fecha_escritura_hipoteca}
                     onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, fecha_escritura_hipoteca: v } })} />
-                  <Field label="Notaría" value={data.hipoteca_anterior.notaria_hipoteca}
+                  <Field label="Notaría" copyable value={data.hipoteca_anterior.notaria_hipoteca}
                     onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, notaria_hipoteca: v } })} />
-                  <Field label="Valor original" value={data.hipoteca_anterior.valor_hipoteca_original}
+                  <Field label="Valor original" copyable value={data.hipoteca_anterior.valor_hipoteca_original}
                     onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: v } })} />
                 </Section>
 
                 <Section title="Inmueble">
-                  <Field label="Matrícula inmobiliaria" value={data.inmueble.matricula_inmobiliaria}
+                  <Field label="Matrícula inmobiliaria" copyable value={data.inmueble.matricula_inmobiliaria}
                     onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, matricula_inmobiliaria: v } })} />
-                  <Field label="Dirección completa" value={data.inmueble.direccion_completa}
+                  <Field label="Dirección completa" copyable value={data.inmueble.direccion_completa}
                     onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, direccion_completa: v } })} />
-                  <Field label="Ciudad" value={data.inmueble.ciudad}
+                  <Field label="Ciudad" copyable value={data.inmueble.ciudad}
                     onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, ciudad: v } })} />
                 </Section>
 
                 <Section title="Partes">
-                  <Field label="Nombre del deudor" value={data.partes.deudor_nombre}
+                  <Field label="Nombre del deudor" copyable value={data.partes.deudor_nombre}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_nombre: v } })} />
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Tipo de identificación" value={data.partes.deudor_tipo_id}
                       onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_tipo_id: v } })} />
-                    <Field label="Número de identificación" value={data.partes.deudor_identificacion}
+                    <Field label="Número de identificación" copyable value={data.partes.deudor_identificacion}
                       onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_identificacion: v } })} />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Banco acreedor" value={data.partes.banco_acreedor} onChange={() => {}} disabled />
-                    <Field label="NIT del banco" value={data.partes.banco_nit} onChange={() => {}} disabled />
+                    <Field label="Banco acreedor" copyable value={data.partes.banco_acreedor} onChange={() => {}} disabled />
+                    <Field label="NIT del banco" copyable value={data.partes.banco_nit} onChange={() => {}} disabled />
                   </div>
                 </Section>
 
