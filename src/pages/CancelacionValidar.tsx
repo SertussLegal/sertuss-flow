@@ -395,19 +395,6 @@ export const CancelacionValidar = () => {
             </>
           )}
         </div>
-
-        {/* Visor */}
-        <div className="relative bg-slate-100">
-          <PdfViewerPane key={`${activeDoc}-${viewerKey}`} tramiteId={id!} docxPath={activePath} />
-          {previewRefreshing && (
-            <div className="absolute inset-0 bg-background/40 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20">
-              <div className="rounded-md bg-background/95 px-4 py-2 shadow-lg border border-border flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-xs">Actualizando vista previa…</span>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Estilos notariales para preservar sangría en cláusulas dentro del visor */}
