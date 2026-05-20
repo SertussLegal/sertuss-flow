@@ -429,14 +429,35 @@ serve(async (req) => {
         }).eq("id", cancelacionId);
         if (updErr) throw new Error(`Persist: ${updErr.message}`);
       } catch (bgErr) {
-        const msg = bgErr instanceof Error ? bgErr.message : String(bgErr);
-        console.error("[procesar-cancelacion bg] error:", msg);
-        try {
-          await supabaseService.rpc("restore_credit", { org_id: orgId });
-          await supabaseService.rpc("restore_credit", { org_id: orgId });
-        } catch (_) { /* ignore */ }
+        const rawMsg = bgErr instanceof Error ? bgErr.message : String(bgErr);
+        const isPayloadTooLarge =
+          bgErr instanceof AiGatewayError && bgErr.status === 413;
+        const friendlyMsg = isPayloadTooLarge
+          ? "La escritura supera el límite técnico de análisis de la IA (30 MB de contenido por documento). Comprime el PDF o reduce su tamaño antes de reintentar."
+          : rawMsg;
+
+        console.error(
+          `[procesar-cancelacion bg] error${isPayloadTooLarge ? " (413 payload too large)" : ""}:`,
+          rawMsg,
+        );
+
+        // Guard idempotente: solo restituye créditos si aún no se ha marcado error.
+        const { data: currentRow } = await supabaseService
+          .from("cancelaciones")
+          .select("status, error_message")
+          .eq("id", cancelacionId)
+          .maybeSingle();
+
+        if (currentRow && currentRow.status !== "error") {
+          try {
+            await supabaseService.rpc("restore_credit", { org_id: orgId });
+            await supabaseService.rpc("restore_credit", { org_id: orgId });
+          } catch (_) { /* ignore */ }
+        }
+
         await supabaseService.from("cancelaciones").update({
-          status: "error", error_message: msg.slice(0, 500),
+          status: "error",
+          error_message: friendlyMsg.slice(0, 500),
         }).eq("id", cancelacionId);
       }
     };
