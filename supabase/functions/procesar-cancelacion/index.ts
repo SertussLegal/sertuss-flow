@@ -316,7 +316,7 @@ serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     // MODO NORMAL: cobro + IA + docx + persistencia
     // ─────────────────────────────────────────────────────────────
-    if (!certificadoPath || !escrituraPath) {
+    if (!certificadoPath || (!escrituraPath && (!escrituraImagePaths || escrituraImagePaths.length === 0))) {
       return new Response(JSON.stringify({ error: "Archivos PDF requeridos" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -353,30 +353,33 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY no configurada");
 
-    // Capturamos solo rutas livianas; los PDFs quedan en Storage privado y se leen por URL firmada.
     const certInputPath = certificadoPath;
-    const escInputPath = escrituraPath;
+    const escInputPaths: string[] = escrituraImagePaths && escrituraImagePaths.length > 0
+      ? escrituraImagePaths
+      : (escrituraPath ? [escrituraPath] : []);
 
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
-        const [certUrl, escUrl] = await Promise.all([
-          createSignedStorageUrl(supabaseService, certInputPath),
-          createSignedStorageUrl(supabaseService, escInputPath),
-        ]);
+        const certUrl = await createSignedStorageUrl(supabaseService, certInputPath);
+        const escUrls = await Promise.all(
+          escInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+        );
+
+        const userContent: Array<Record<string, unknown>> = [
+          {
+            type: "text",
+            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. El primer adjunto es el Certificado de Tradición y Libertad; los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
+          },
+          { type: "image_url", image_url: { url: certUrl } },
+          ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+        ];
 
         const aiBody = {
           model: "google/gemini-2.5-pro",
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos." },
-                { type: "image_url", image_url: { url: certUrl } },
-                { type: "image_url", image_url: { url: escUrl } },
-              ],
-            },
+            { role: "user", content: userContent },
           ],
           tools,
           tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
