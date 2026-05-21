@@ -154,13 +154,15 @@ const AdminOrgEdit = () => {
     setTogglingSlug(null);
   };
 
-  if (authLoading || loading || !isAllowed) {
+  if (authLoading || !profile || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
       </div>
     );
   }
+
+  if (!isAllowed) return null;
 
   return (
     <div className="h-full overflow-y-auto bg-background">
