@@ -37,6 +37,7 @@ export const CancelacionNueva = () => {
 
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
+  const [poder, setPoder] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [stepLabel, setStepLabel] = useState<string>("");
 
