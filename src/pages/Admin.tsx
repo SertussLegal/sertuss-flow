@@ -57,13 +57,16 @@ const Admin = () => {
   const [showClaudeDialog, setShowClaudeDialog] = useState(false);
 
   // Access guard — only the global SuperAdmin (info@sertuss.com) may enter.
+  // Esperamos a que el perfil esté hidratado antes de decidir: si redirigimos
+  // mientras `profile` aún es null (race con AuthContext) el usuario rebota
+  // de /admin a /escrituras incluso siendo SuperAdmin.
   const isAllowed = isSuperAdmin(profile?.email);
 
   useEffect(() => {
-    if (!authLoading && !isAllowed) {
+    if (!authLoading && profile && !isAllowed) {
       navigate("/escrituras", { replace: true });
     }
-  }, [authLoading, isAllowed, navigate]);
+  }, [authLoading, profile, isAllowed, navigate]);
 
   const fetchOrgs = async () => {
     setLoading(true);
