@@ -667,7 +667,7 @@ serve(async (req) => {
           notaria_hipoteca: extracted.hipoteca_anterior.notaria_hipoteca,
           valor_hipoteca_original: extracted.hipoteca_anterior.valor_hipoteca_original,
           matricula_inmobiliaria: extracted.inmueble.matricula_inmobiliaria,
-          direccion_inmueble: extracted.inmueble.direccion_completa,
+          direccion_inmueble: extracted.inmueble.nomenclatura_predio ?? extracted.inmueble.direccion_completa ?? null,
           ciudad_inmueble: extracted.inmueble.ciudad,
           deudor_nombre: extracted.partes.deudor_nombre,
           deudor_cedula: extracted.partes.deudor_identificacion,
