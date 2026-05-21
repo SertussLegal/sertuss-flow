@@ -19,8 +19,10 @@ const BUCKET_OUTPUT = "expediente-files";
 // Límites defensivos para proteger el navegador del usuario.
 const MAX_ESCRITURA_BYTES = 80 * 1024 * 1024; // 80 MB
 const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_PODER_BYTES = 40 * 1024 * 1024; // 40 MB
 const ESCRITURA_MAX_PAGES = 10;
 const CERTIFICADO_MAX_PAGES = 3;
+const PODER_MAX_PAGES = 25;
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
