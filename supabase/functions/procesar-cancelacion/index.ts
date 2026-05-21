@@ -398,6 +398,12 @@ async function fillTemplate(
     "notaria_hipoteca_numero",
     "ciudad_hipoteca_corto",
     "numero_escritura_hipoteca_corto",
+    // Tabla SNR (escritura nueva) — celdas angostas
+    "numero_escritura_nueva_corto",
+    "fecha_otorgamiento_nueva_dia",
+    "fecha_otorgamiento_nueva_mes",
+    "fecha_otorgamiento_nueva_ano",
+    "notaria_emisora_numero",
   ]);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
