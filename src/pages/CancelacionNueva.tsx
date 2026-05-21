@@ -92,6 +92,12 @@ export const CancelacionNueva = () => {
       });
       return;
     }
+    if (poder && poder.size > MAX_PODER_BYTES) {
+      toast.error("Poder demasiado grande", {
+        description: `El Poder General supera ${Math.round(MAX_PODER_BYTES / 1024 / 1024)} MB.`,
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -104,9 +110,11 @@ export const CancelacionNueva = () => {
       if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
       const cancelacionId = inserted.id;
 
-      // Ambos PDFs se convierten a JPEG: el AI Gateway solo acepta image_url con imágenes.
       const certificadoImagePaths = await uploadPdfAsImages(cancelacionId, certificado, "certificado", CERTIFICADO_MAX_PAGES);
       const escrituraImagePaths = await uploadPdfAsImages(cancelacionId, escritura, "escritura", ESCRITURA_MAX_PAGES);
+      const poderImagePaths = poder
+        ? await uploadPdfAsImages(cancelacionId, poder, "poder" as "certificado", PODER_MAX_PAGES)
+        : [];
 
       setStepLabel("Iniciando análisis con IA…");
       const { data, error } = await monitored.invoke<{
@@ -118,6 +126,7 @@ export const CancelacionNueva = () => {
         cancelacionId,
         certificadoImagePaths,
         escrituraImagePaths,
+        poderImagePaths,
       });
 
       if (error) {
