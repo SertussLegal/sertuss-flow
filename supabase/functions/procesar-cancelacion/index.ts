@@ -462,6 +462,8 @@ serve(async (req) => {
     certificadoImagePaths?: string[];
     escrituraPath?: string;
     escrituraImagePaths?: string[];
+    poderPath?: string;
+    poderImagePaths?: string[];
     regen?: boolean;
   };
   try {
@@ -472,7 +474,7 @@ serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, regen } = body;
+  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen } = body;
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
