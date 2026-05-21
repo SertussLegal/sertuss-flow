@@ -250,6 +250,16 @@ export const CancelacionNueva = () => {
                 onFile={setEscritura}
                 disabled={saving}
               />
+              <FileDropzone
+                label={`Poder General del Banco (PDF) — opcional, hasta ${PODER_MAX_PAGES} páginas`}
+                hint="Si se adjunta, extraemos automáticamente el apoderado actual del banco. Si no, los campos quedan en blanco en la escritura."
+                file={poder}
+                onFile={setPoder}
+                disabled={saving}
+              />
+              {poder && poder.size > MAX_PODER_BYTES && (
+                <p className="text-xs text-destructive">El Poder supera {Math.round(MAX_PODER_BYTES / 1024 / 1024)} MB.</p>
+              )}
             </div>
           </section>
         </div>
