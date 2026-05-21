@@ -1,0 +1,1 @@
+CREATE POLICY "owners read all modules" ON public.organization_modules FOR SELECT TO authenticated USING (public.get_user_role(auth.uid()) = 'owner');
