@@ -33,16 +33,8 @@ const PREFIX_DAVIVIENDA = "davivienda/";
 const TEMPLATE_MINUTA = "formato cancelacion hipoteca blanqueado.docx";
 const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
 
-// Datos fijos del apoderado de Davivienda (vigentes para este mes)
-const APODERADO_FIJO = {
-  apoderado_nombre: "HEIBER HERNAN BELTRAN TORRES",
-  apoderado_cedula: "1.033.718.974",
-  apoderado_escritura: "CUATRO MIL TREINTA Y CINCO (4035)",
-  apoderado_dia: "DIECINUEVE (19)",
-  apoderado_mes: "AGOSTO",
-  apoderado_ano: "DOS MIL VEINTICINCO (2025)",
-  apoderado_notaria_poder: "VEINTICUATRO (24) DE BOGOTA D.C.",
-};
+// NO hay apoderado hardcodeado. Si no se carga el Poder General, los campos
+// quedan undefined → nullGetter pinta "___________" en la antefirma.
 
 interface NotariaEmisora {
   notario_nombre?: string;
