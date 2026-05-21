@@ -253,11 +253,36 @@ function formatValorPesos(s: string): string {
   return `$${n.toLocaleString("es-CO").replace(/,/g, ".")},00`;
 }
 
+// Sanea la matrícula: deja solo dígitos, letras y guiones.
+// Acepta "50C-2085432", "50-2085432". Si no encaja en formato esperado → undefined.
+function sanitizeMatricula(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const clean = String(raw)
+    .replace(/[()]/g, " ")
+    .replace(/\bDOSCIENTOS\b|\bMIL\b|\bCINCUENTA\b|\bCIENTO\b|\bCUARENTA\b|\bSESENTA\b|\bSETENTA\b|\bOCHENTA\b|\bNOVENTA\b|\bTREINTA\b|\bVEINTE\b|\bDIEZ\b|\bUNO\b|\bDOS\b|\bTRES\b|\bCUATRO\b|\bCINCO\b|\bSEIS\b|\bSIETE\b|\bOCHO\b|\bNUEVE\b|\bQUINIENTOS\b|\bSEISCIENTOS\b|\bSETECIENTOS\b|\bOCHOCIENTOS\b|\bNOVECIENTOS\b|\bCUATROCIENTOS\b|\bTRESCIENTOS\b|\bMILLON(?:ES)?\b/gi, " ")
+    .replace(/[^0-9A-Za-z-]/g, "")
+    .toUpperCase();
+  // Patrón esperado: opcional prefijo (1-3 digits + letra opcional) + guión + dígitos
+  const m = clean.match(/(\d{1,4}[A-Z]?)-?(\d{3,})/);
+  if (!m) return clean || undefined;
+  return `${m[1]}-${m[2]}`;
+}
+
+// Anti-duplicación: si "haystack" ya contiene "needle" como palabra, no concatena.
+function joinSinDuplicar(haystack: string, separador: string, needle: string): string {
+  if (!needle) return haystack;
+  if (!haystack) return needle;
+  const re = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\b`, "i");
+  if (re.test(haystack)) return haystack;
+  return `${haystack}${separador}${needle}`;
+}
+
 // Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
   const valor = splitValor(data.hipoteca_anterior.valor_hipoteca_original || "");
   const ciudadHipoteca = extractCiudadFromNotaria(data.hipoteca_anterior.notaria_hipoteca || "");
   const ne = data.notaria_emisora || {};
+  const pb = data.poder_banco || {};
   const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
   const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
 
@@ -268,6 +293,25 @@ function buildDocxVars(data: CancelacionData) {
       ? `----------------------------------------------------------------------------- ${formatValorPesos(data.hipoteca_anterior.valor_hipoteca_original) || valor.numeros || ""}`.trim()
       : "";
 
+  // Inmueble: separar descripción arquitectónica vs nomenclatura urbana.
+  // Sufijo "(DIRECCION CATASTRAL)" se inyecta una sola vez aquí (nunca en la plantilla).
+  const ciudadInmueble = (data.inmueble.ciudad || "").trim();
+  const descripcionPredio = data.inmueble.descripcion_predio
+    ?? data.inmueble.descripcion
+    ?? "";
+  let nomenclaturaBase = (data.inmueble.nomenclatura_predio ?? data.inmueble.direccion_completa ?? "").trim();
+  // Quita cualquier "(DIRECCION CATASTRAL)" pre-existente para evitar duplicado
+  nomenclaturaBase = nomenclaturaBase.replace(/\s*\(?DIRECCI[OÓ]N\s+CATASTRAL\)?/gi, "").trim();
+  const nomenclaturaFinal = nomenclaturaBase
+    ? `${nomenclaturaBase} (DIRECCION CATASTRAL)`
+    : undefined;
+
+  // Notaría origen: anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
+  const notariaHipotecaSanitizada = ciudadInmueble
+    ? joinSinDuplicar(data.hipoteca_anterior.notaria_hipoteca || "", "", "")
+        .replace(new RegExp(`\\b${ciudadInmueble}\\b\\s+DEL?\\s+\\b${ciudadInmueble}\\b`, "gi"), ciudadInmueble)
+    : data.hipoteca_anterior.notaria_hipoteca;
+
   return {
     // Hipoteca anterior
     numero_escritura_hipoteca: data.hipoteca_anterior.numero_escritura_hipoteca,
@@ -277,19 +321,22 @@ function buildDocxVars(data: CancelacionData) {
     fecha_escritura_hipoteca_dia: fp.dia || undefined,
     fecha_escritura_hipoteca_mes: fp.mes || undefined,
     fecha_escritura_hipoteca_ano: fp.ano || extractAno(data.hipoteca_anterior.fecha_escritura_hipoteca) || undefined,
-    notaria_hipoteca: data.hipoteca_anterior.notaria_hipoteca,
+    notaria_hipoteca: notariaHipotecaSanitizada,
     notaria_hipoteca_numero: notariaOrigenNum || undefined,
     ciudad_hipoteca: ciudadHipoteca,
     ciudad_hipoteca_corto: ciudadHipoteca,
     valor_hipoteca_original: data.hipoteca_anterior.valor_hipoteca_original,
     valor_hipoteca_letras: valor.letras,
     valor_hipoteca_numeros: valor.numeros,
-    // Inmueble
-    matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
-    direccion_inmueble: data.inmueble.direccion_completa,
+    // Inmueble (atómico)
+    matricula_inmobiliaria: sanitizeMatricula(data.inmueble.matricula_inmobiliaria) || undefined,
+    descripcion_predio: descripcionPredio || undefined,
+    nomenclatura_predio: nomenclaturaFinal,
+    // Compatibilidad retro con plantillas antiguas
+    direccion_inmueble: nomenclaturaFinal,
     direccion_inmueble_cont: "",
-    ciudad_inmueble: data.inmueble.ciudad,
-    descripcion_inmueble: data.inmueble.descripcion || data.inmueble.direccion_completa,
+    ciudad_inmueble: ciudadInmueble || undefined,
+    descripcion_inmueble: descripcionPredio || undefined,
     // Partes
     deudor_nombre: data.partes.deudor_nombre,
     deudor_identificacion: data.partes.deudor_identificacion,
@@ -298,8 +345,12 @@ function buildDocxVars(data: CancelacionData) {
     banco_nit: data.partes.banco_nit,
     // Ley 546
     aplica_ley_546: data.analisis_legal.aplica_ley_546,
-    // Apoderado fijo
-    ...APODERADO_FIJO,
+    // Apoderado dinámico (sin hardcode). undefined → nullGetter → "___________"
+    apoderado_nombre: pb.apoderado_nombre || undefined,
+    apoderado_cedula: pb.apoderado_cedula || undefined,
+    apoderado_escritura: pb.apoderado_escritura || undefined,
+    apoderado_fecha: pb.apoderado_fecha || undefined,
+    apoderado_notaria_poder: pb.apoderado_notaria_poder || undefined,
     // Notario emisor (editable; vacío → nullGetter "___________")
     notario_nombre: ne.notario_nombre || undefined,
     notaria_emisora_titulo: ne.notaria_emisora_titulo || undefined,
@@ -307,9 +358,14 @@ function buildDocxVars(data: CancelacionData) {
     notaria_emisora_ciudad: ne.notaria_emisora_ciudad || undefined,
     notaria_resolucion: ne.notaria_resolucion || undefined,
     notaria_fecha_resolucion: ne.notaria_fecha_resolucion || undefined,
+    // Escritura NUEVA (tabla SNR encabezado) → undefined fuerza líneas en blanco
     numero_escritura_nueva: ne.numero_escritura_nueva || undefined,
+    numero_escritura_nueva_corto: extractCorto(ne.numero_escritura_nueva || "") || undefined,
     numero_escritura_nueva_letras: (ne as Record<string, string>).numero_escritura_nueva_letras || undefined,
     fecha_otorgamiento_nueva: ne.fecha_otorgamiento_nueva || undefined,
+    fecha_otorgamiento_nueva_dia: parseFechaParts(ne.fecha_otorgamiento_nueva || "").dia || undefined,
+    fecha_otorgamiento_nueva_mes: parseFechaParts(ne.fecha_otorgamiento_nueva || "").mes || undefined,
+    fecha_otorgamiento_nueva_ano: parseFechaParts(ne.fecha_otorgamiento_nueva || "").ano || undefined,
     fecha_otorgamiento_nueva_letras: (ne as Record<string, string>).fecha_otorgamiento_nueva_letras || undefined,
     fecha_otorgamiento_nueva_cont: "",
     // Liquidación notarial → undefined fuerza nullGetter para mantener líneas
