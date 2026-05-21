@@ -152,7 +152,12 @@ export const CancelacionValidar = () => {
     if (!row) return;
     const source = (row.data_final ?? row.data_ia) as Data | null;
     if (source && typeof source === "object" && !initialHydrationRef.current) {
-      setData({ ...source, notaria_emisora: source.notaria_emisora ?? {} });
+      const ia = (row.data_ia ?? {}) as Partial<Data>;
+      setData({
+        ...source,
+        notaria_emisora: source.notaria_emisora ?? {},
+        poder_banco: source.poder_banco ?? ia.poder_banco ?? {},
+      });
       initialHydrationRef.current = true;
     }
   }, [row]);
