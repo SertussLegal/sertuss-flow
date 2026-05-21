@@ -52,6 +52,14 @@ interface NotariaEmisora {
   valor_acto?: string;
 }
 
+interface PoderBanco {
+  apoderado_nombre?: string;
+  apoderado_cedula?: string;
+  apoderado_escritura?: string;
+  apoderado_fecha?: string;
+  apoderado_notaria_poder?: string;
+}
+
 interface CancelacionData {
   hipoteca_anterior: {
     numero_escritura_hipoteca: string;
@@ -64,6 +72,8 @@ interface CancelacionData {
     direccion_completa: string;
     ciudad: string;
     descripcion?: string;
+    descripcion_predio?: string;
+    nomenclatura_predio?: string;
   };
   partes: {
     deudor_nombre: string;
@@ -77,6 +87,7 @@ interface CancelacionData {
     explicacion_ley: string;
   };
   notaria_emisora?: NotariaEmisora;
+  poder_banco?: PoderBanco;
 }
 
 const tools = [
