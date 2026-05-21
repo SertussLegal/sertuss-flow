@@ -152,7 +152,12 @@ export const CancelacionValidar = () => {
     if (!row) return;
     const source = (row.data_final ?? row.data_ia) as Data | null;
     if (source && typeof source === "object" && !initialHydrationRef.current) {
-      setData({ ...source, notaria_emisora: source.notaria_emisora ?? {} });
+      const ia = (row.data_ia ?? {}) as Partial<Data>;
+      setData({
+        ...source,
+        notaria_emisora: source.notaria_emisora ?? {},
+        poder_banco: source.poder_banco ?? ia.poder_banco ?? {},
+      });
       initialHydrationRef.current = true;
     }
   }, [row]);
@@ -336,14 +341,20 @@ export const CancelacionValidar = () => {
               <Section title="Inmueble">
                 <Field label="Matrícula" value={data.inmueble.matricula_inmobiliaria}
                   onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, matricula_inmobiliaria: v } })} />
-                <Field label="Dirección" value={data.inmueble.direccion_completa}
-                  onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, direccion_completa: v } })} />
                 <Field label="Ciudad" value={data.inmueble.ciudad}
                   onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, ciudad: v } })} />
                 <div className="space-y-1">
-                  <Label className="text-xs">Descripción del inmueble</Label>
-                  <Textarea rows={2} className="text-sm" value={data.inmueble.descripcion ?? ""}
-                    onChange={(e) => setData({ ...data, inmueble: { ...data.inmueble, descripcion: e.target.value } })} />
+                  <Label className="text-xs">Descripción Arquitectónica del Predio (Ubicación)</Label>
+                  <Textarea rows={2} className="text-sm" value={data.inmueble.descripcion_predio ?? ""}
+                    onChange={(e) => setData({ ...data, inmueble: { ...data.inmueble, descripcion_predio: e.target.value } })} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Nomenclatura Urbana (Dirección)</Label>
+                  <Field label="" value={data.inmueble.nomenclatura_predio ?? ""}
+                    onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, nomenclatura_predio: v } })} />
+                  <p className="text-[11px] text-muted-foreground">
+                    No incluyas el sufijo <span className="font-mono">(DIRECCION CATASTRAL)</span>; el sistema lo agrega automáticamente.
+                  </p>
                 </div>
               </Section>
 
@@ -361,6 +372,37 @@ export const CancelacionValidar = () => {
                   <Field label="NIT" value={data.partes.banco_nit} onChange={() => {}} disabled />
                 </div>
               </Section>
+
+              {(() => {
+                const pb: PoderBanco = data.poder_banco ?? {};
+                const setPB = (patch: Partial<PoderBanco>) =>
+                  setData({ ...data, poder_banco: { ...pb, ...patch } });
+                const empty = !pb.apoderado_nombre && !pb.apoderado_cedula && !pb.apoderado_escritura
+                  && !pb.apoderado_fecha && !pb.apoderado_notaria_poder;
+                return (
+                  <Section title="Apoderado del Banco (Poder General)">
+                    {empty && (
+                      <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-500">
+                        No se adjuntó Poder General. Los campos quedarán en blanco en el documento.
+                      </p>
+                    )}
+                    <Field label="Nombre apoderado" value={pb.apoderado_nombre ?? ""}
+                      onChange={(v) => setPB({ apoderado_nombre: v })} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Cédula" value={pb.apoderado_cedula ?? ""}
+                        onChange={(v) => setPB({ apoderado_cedula: v })} />
+                      <Field label="N° escritura del poder" value={pb.apoderado_escritura ?? ""}
+                        onChange={(v) => setPB({ apoderado_escritura: v })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Fecha del poder" value={pb.apoderado_fecha ?? ""}
+                        onChange={(v) => setPB({ apoderado_fecha: v })} />
+                      <Field label="Notaría del poder" value={pb.apoderado_notaria_poder ?? ""}
+                        onChange={(v) => setPB({ apoderado_notaria_poder: v })} />
+                    </div>
+                  </Section>
+                );
+              })()}
 
               <Section title="Notario emisor">
                 <Field label="Notario(a) nombre" value={ne.notario_nombre ?? ""} onChange={(v) => setNE({ notario_nombre: v })} />
