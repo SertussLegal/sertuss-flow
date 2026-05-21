@@ -69,11 +69,13 @@ interface CancelacionData {
   };
   inmueble: {
     matricula_inmobiliaria: string;
-    direccion_completa: string;
-    ciudad: string;
+    // Compatibilidad legacy
+    direccion_completa?: string;
     descripcion?: string;
+    // Nuevos campos atómicos (preferidos)
     descripcion_predio?: string;
     nomenclatura_predio?: string;
+    ciudad: string;
   };
   partes: {
     deudor_nombre: string;
