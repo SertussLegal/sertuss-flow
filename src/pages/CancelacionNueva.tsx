@@ -49,7 +49,7 @@ export const CancelacionNueva = () => {
   const uploadPdfAsImages = async (
     cancelacionId: string,
     file: File,
-    kind: "certificado" | "escritura",
+    kind: "certificado" | "escritura" | "poder",
     maxPages: number,
   ): Promise<string[]> => {
     setStepLabel(`Renderizando ${kind} (primeras ${maxPages} páginas)…`);
