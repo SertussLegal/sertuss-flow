@@ -41,10 +41,13 @@ const AdminOrgEdit = () => {
   const isAllowed = isSuperAdmin(profile?.email);
 
   useEffect(() => {
-    if (!authLoading && !isAllowed) {
+    // Esperamos a que el perfil esté hidratado: sin esta guarda, el primer render
+    // post-login tiene `profile === null` y dispararía un rebote a /escrituras
+    // incluso siendo SuperAdmin (race con AuthContext).
+    if (!authLoading && profile && !isAllowed) {
       navigate("/escrituras", { replace: true });
     }
-  }, [authLoading, isAllowed, navigate]);
+  }, [authLoading, profile, isAllowed, navigate]);
 
   const loadModules = async (orgId: string) => {
     setModulesLoading(true);
@@ -151,13 +154,15 @@ const AdminOrgEdit = () => {
     setTogglingSlug(null);
   };
 
-  if (authLoading || loading || !isAllowed) {
+  if (authLoading || !profile || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
       </div>
     );
   }
+
+  if (!isAllowed) return null;
 
   return (
     <div className="h-full overflow-y-auto bg-background">
