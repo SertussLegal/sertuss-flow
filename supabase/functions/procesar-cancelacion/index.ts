@@ -97,7 +97,7 @@ const tools = [
     type: "function" as const,
     function: {
       name: "extract_cancelacion_hipoteca",
-      description: "Extrae los datos de cancelación de hipoteca a partir del Certificado de Tradición y Libertad y la Escritura Pública de constitución de hipoteca.",
+      description: "Extrae los datos de cancelación de hipoteca a partir del Certificado de Tradición y Libertad, la Escritura Pública de constitución de hipoteca y (opcionalmente) el Poder General del banco.",
       parameters: {
         type: "object",
         properties: {
@@ -115,11 +115,12 @@ const tools = [
           inmueble: {
             type: "object",
             properties: {
-              matricula_inmobiliaria: { type: "string", description: "Matrícula en LETRAS Y NÚMEROS, ej: 'CINCUENTA C - DOSCIENTOS OCHO MIL QUINIENTOS CUARENTA Y DOS (50C-2085432)'" },
-              direccion_completa: { type: "string", description: "Dirección completa. Si la ciudad es BOGOTA D.C., concatena obligatoriamente ' (DIRECCION CATASTRAL)' al final" },
-              ciudad: { type: "string", description: "Ciudad en mayúsculas, ej: 'BOGOTA D.C.'" },
+              matricula_inmobiliaria: { type: "string", description: "Matrícula ESTRICTAMENTE alfanumérica con guión, ej: '50C-2085432'. SIN palabras en letras, SIN paréntesis." },
+              descripcion_predio: { type: "string", description: "Descripción ARQUITECTÓNICA/JURÍDICA del predio (tipo, lote, área, linderos, número de unidad, etc.) SIN dirección postal. Ej: 'APARTAMENTO 502 DEL EDIFICIO TORRE A, ÁREA PRIVADA 65,30 M2'." },
+              nomenclatura_predio: { type: "string", description: "Nomenclatura urbana / dirección postal LIMPIA, sin sufijo catastral y sin redundancias. Ej: 'CALLE 100 No. 15-23 APTO 502'. NO agregues '(DIRECCION CATASTRAL)' — el backend lo añade." },
+              ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
             },
-            required: ["matricula_inmobiliaria", "direccion_completa", "ciudad"],
+            required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
             additionalProperties: false,
           },
           partes: {
@@ -143,6 +144,18 @@ const tools = [
             required: ["aplica_ley_546", "explicacion_ley"],
             additionalProperties: false,
           },
+          poder_banco: {
+            type: "object",
+            description: "SOLO si se adjuntó el Poder General del banco. Si no se adjuntó, OMITE este objeto completamente. Los datos suelen estar en las cláusulas finales del PDF.",
+            properties: {
+              apoderado_nombre: { type: "string", description: "Nombre completo del apoderado / representante legal en MAYÚSCULAS." },
+              apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'." },
+              apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'." },
+              apoderado_fecha: { type: "string", description: "Fecha del poder en FORMATO NOTARIAL COMPLETO: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'." },
+              apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'." },
+            },
+            additionalProperties: false,
+          },
         },
         required: ["hipoteca_anterior", "inmueble", "partes", "analisis_legal"],
         additionalProperties: false,
@@ -153,16 +166,24 @@ const tools = [
 
 const SYSTEM_PROMPT = `Eres un asistente jurídico experto en derecho notarial colombiano especializado en cancelaciones de hipoteca de BANCO DAVIVIENDA S.A.
 
-Recibes dos documentos:
-1. Certificado de Tradición y Libertad del inmueble
-2. Escritura Pública de Constitución de Hipoteca
+Recibes hasta tres documentos:
+1. Certificado de Tradición y Libertad del inmueble.
+2. Escritura Pública de Constitución de Hipoteca.
+3. (Opcional) Poder General del banco a su apoderado — PDF de hasta 25 páginas.
 
 REGLAS ESTRICTAS DE FORMATO:
 - Toda escritura, notaría, valor y fecha debe expresarse en DOBLE EXPRESIÓN: LETRAS y NÚMEROS entre paréntesis.
-- Las identificaciones (deudor_identificacion, banco_nit) son ESTRICTAMENTE NUMÉRICAS, con puntos de miles. Nunca letras.
-- Si la ciudad del inmueble es BOGOTA D.C. o BOGOTÁ D.C., concatena obligatoriamente ' (DIRECCION CATASTRAL)' al final de direccion_completa.
+- Las identificaciones (deudor_identificacion, banco_nit, apoderado_cedula) son ESTRICTAMENTE NUMÉRICAS con puntos de miles. NUNCA letras.
+- La matrícula inmobiliaria es ESTRICTAMENTE alfanumérica con guión (ej: '50C-2085432'). SIN letras en palabras, SIN paréntesis.
+- Separa el inmueble en DOS campos: 'descripcion_predio' (arquitectónico/jurídico, lote, área, linderos) y 'nomenclatura_predio' (dirección postal limpia). NUNCA incluyas '(DIRECCION CATASTRAL)' — el backend lo añade automáticamente.
 - Texto siempre en MAYÚSCULAS para nombres, ciudades, notarías.
 - aplica_ley_546 = true cuando la constitución de la hipoteca se otorga en la misma escritura pública que la compraventa de vivienda de interés social/prioritario o vivienda financiada.
+
+PODER GENERAL DEL BANCO (cuando se adjunte):
+- ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
+- Palabras clave para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
+- Devuelve la fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
+- Si NO se adjuntó el Poder o no logras localizar los datos con certeza, OMITE COMPLETAMENTE el objeto 'poder_banco' (no lo devuelvas vacío).
 
 Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
