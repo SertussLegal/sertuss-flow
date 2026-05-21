@@ -113,7 +113,7 @@ export const CancelacionNueva = () => {
       const certificadoImagePaths = await uploadPdfAsImages(cancelacionId, certificado, "certificado", CERTIFICADO_MAX_PAGES);
       const escrituraImagePaths = await uploadPdfAsImages(cancelacionId, escritura, "escritura", ESCRITURA_MAX_PAGES);
       const poderImagePaths = poder
-        ? await uploadPdfAsImages(cancelacionId, poder, "poder" as "certificado", PODER_MAX_PAGES)
+        ? await uploadPdfAsImages(cancelacionId, poder, "poder", PODER_MAX_PAGES)
         : [];
 
       setStepLabel("Iniciando análisis con IA…");
