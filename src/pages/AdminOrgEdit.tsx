@@ -41,10 +41,13 @@ const AdminOrgEdit = () => {
   const isAllowed = isSuperAdmin(profile?.email);
 
   useEffect(() => {
-    if (!authLoading && !isAllowed) {
+    // Esperamos a que el perfil esté hidratado: sin esta guarda, el primer render
+    // post-login tiene `profile === null` y dispararía un rebote a /escrituras
+    // incluso siendo SuperAdmin (race con AuthContext).
+    if (!authLoading && profile && !isAllowed) {
       navigate("/escrituras", { replace: true });
     }
-  }, [authLoading, isAllowed, navigate]);
+  }, [authLoading, profile, isAllowed, navigate]);
 
   const loadModules = async (orgId: string) => {
     setModulesLoading(true);
