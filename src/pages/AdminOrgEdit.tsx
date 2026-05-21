@@ -3,14 +3,23 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
-import { Save } from "lucide-react";
+import { Save, Loader2, Puzzle } from "lucide-react";
 
 const NIT_REGEX = /^\d{9}-\d{1}$/;
+
+interface ModuleRow {
+  slug: string;
+  name: string;
+  description: string | null;
+  is_core: boolean;
+  enabled: boolean;
+}
 
 const AdminOrgEdit = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +34,10 @@ const AdminOrgEdit = () => {
   const [saving, setSaving] = useState(false);
   const [nitError, setNitError] = useState("");
 
+  const [modules, setModules] = useState<ModuleRow[]>([]);
+  const [modulesLoading, setModulesLoading] = useState(true);
+  const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
+
   const isAllowed = isSuperAdmin(profile?.email);
 
   useEffect(() => {
@@ -32,6 +45,39 @@ const AdminOrgEdit = () => {
       navigate("/escrituras", { replace: true });
     }
   }, [authLoading, isAllowed, navigate]);
+
+  const loadModules = async (orgId: string) => {
+    setModulesLoading(true);
+    const [{ data: catalog, error: catErr }, { data: orgMods, error: omErr }] = await Promise.all([
+      supabase.from("modules" as any).select("slug, name, description, is_core").order("name"),
+      supabase
+        .from("organization_modules" as any)
+        .select("module_slug, enabled")
+        .eq("organization_id", orgId),
+    ]);
+    if (catErr || omErr) {
+      toast({
+        title: "Error",
+        description: (catErr ?? omErr)?.message ?? "No se pudieron cargar los módulos",
+        variant: "destructive",
+      });
+      setModules([]);
+      setModulesLoading(false);
+      return;
+    }
+    const enabledMap = new Map<string, boolean>(
+      ((orgMods ?? []) as any[]).map((r) => [r.module_slug, !!r.enabled]),
+    );
+    const merged: ModuleRow[] = ((catalog ?? []) as any[]).map((m) => ({
+      slug: m.slug,
+      name: m.name,
+      description: m.description ?? null,
+      is_core: !!m.is_core,
+      enabled: enabledMap.get(m.slug) ?? false,
+    }));
+    setModules(merged);
+    setModulesLoading(false);
+  };
 
   useEffect(() => {
     if (isAllowed && id) {
@@ -52,8 +98,10 @@ const AdminOrgEdit = () => {
         setNit(org.nit ?? "");
         setAddress(org.address ?? "");
         setLoading(false);
+        await loadModules(id);
       })();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, id]);
 
   const handleSave = async () => {
@@ -82,6 +130,27 @@ const AdminOrgEdit = () => {
     }
   };
 
+  const handleToggleModule = async (slug: string, next: boolean) => {
+    if (!id) return;
+    setTogglingSlug(slug);
+    setModules((prev) => prev.map((m) => (m.slug === slug ? { ...m, enabled: next } : m)));
+    const { error } = await supabase.rpc("admin_toggle_module" as any, {
+      p_org_id: id,
+      p_slug: slug,
+      p_enabled: next,
+    });
+    if (error) {
+      setModules((prev) => prev.map((m) => (m.slug === slug ? { ...m, enabled: !next } : m)));
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({
+        title: next ? "Módulo activado" : "Módulo desactivado",
+        description: `${slug} · cambio registrado en activity_logs`,
+      });
+    }
+    setTogglingSlug(null);
+  };
+
   if (authLoading || loading || !isAllowed) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -91,8 +160,8 @@ const AdminOrgEdit = () => {
   }
 
   return (
-    <div className="bg-background">
-      <main className="container max-w-xl py-8">
+    <div className="h-full overflow-y-auto bg-background">
+      <main className="container max-w-xl py-8 space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Datos Legales de la Entidad</CardTitle>
@@ -118,6 +187,66 @@ const AdminOrgEdit = () => {
                 {saving ? "Guardando..." : "Guardar"}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Puzzle className="h-4 w-4 text-notarial-blue" />
+              Módulos Habilitados
+            </CardTitle>
+            <CardDescription>
+              Activa o desactiva las secciones visibles para esta organización. Los cambios se aplican
+              en cuanto el usuario recarga la app y quedan registrados en el log de actividad.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {modulesLoading ? (
+              <div className="flex items-center justify-center py-6 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Cargando módulos…
+              </div>
+            ) : modules.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No hay módulos disponibles en el catálogo.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {modules.map((m) => {
+                  const isToggling = togglingSlug === m.slug;
+                  return (
+                    <li key={m.slug} className="flex items-center justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{m.name}</span>
+                          {m.is_core && (
+                            <span className="rounded bg-notarial-gold/15 px-1.5 py-0.5 text-[10px] font-semibold text-notarial-gold">
+                              Core
+                            </span>
+                          )}
+                          <code className="text-[10px] text-muted-foreground">{m.slug}</code>
+                        </div>
+                        {m.description && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                            {m.description}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isToggling && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                        <Switch
+                          checked={m.enabled}
+                          disabled={isToggling}
+                          onCheckedChange={(next) => handleToggleModule(m.slug, next)}
+                          aria-label={`Activar módulo ${m.name}`}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </CardContent>
         </Card>
       </main>
