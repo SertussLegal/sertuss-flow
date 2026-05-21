@@ -33,6 +33,14 @@ type NotariaEmisora = {
   valor_acto?: string;
 };
 
+type PoderBanco = {
+  apoderado_nombre?: string;
+  apoderado_cedula?: string;
+  apoderado_escritura?: string;
+  apoderado_fecha?: string;
+  apoderado_notaria_poder?: string;
+};
+
 type Data = {
   hipoteca_anterior: {
     numero_escritura_hipoteca: string;
@@ -42,9 +50,11 @@ type Data = {
   };
   inmueble: {
     matricula_inmobiliaria: string;
-    direccion_completa: string;
+    direccion_completa?: string;
     ciudad: string;
     descripcion?: string;
+    descripcion_predio?: string;
+    nomenclatura_predio?: string;
   };
   partes: {
     deudor_nombre: string;
@@ -58,6 +68,7 @@ type Data = {
     explicacion_ley: string;
   };
   notaria_emisora?: NotariaEmisora;
+  poder_banco?: PoderBanco;
 };
 
 const copyToClipboard = async (value: string, label: string) => {

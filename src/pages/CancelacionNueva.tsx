@@ -19,8 +19,10 @@ const BUCKET_OUTPUT = "expediente-files";
 // Límites defensivos para proteger el navegador del usuario.
 const MAX_ESCRITURA_BYTES = 80 * 1024 * 1024; // 80 MB
 const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_PODER_BYTES = 40 * 1024 * 1024; // 40 MB
 const ESCRITURA_MAX_PAGES = 10;
 const CERTIFICADO_MAX_PAGES = 3;
+const PODER_MAX_PAGES = 25;
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -35,6 +37,7 @@ export const CancelacionNueva = () => {
 
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
+  const [poder, setPoder] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [stepLabel, setStepLabel] = useState<string>("");
 
@@ -46,7 +49,7 @@ export const CancelacionNueva = () => {
   const uploadPdfAsImages = async (
     cancelacionId: string,
     file: File,
-    kind: "certificado" | "escritura",
+    kind: "certificado" | "escritura" | "poder",
     maxPages: number,
   ): Promise<string[]> => {
     setStepLabel(`Renderizando ${kind} (primeras ${maxPages} páginas)…`);
@@ -89,6 +92,12 @@ export const CancelacionNueva = () => {
       });
       return;
     }
+    if (poder && poder.size > MAX_PODER_BYTES) {
+      toast.error("Poder demasiado grande", {
+        description: `El Poder General supera ${Math.round(MAX_PODER_BYTES / 1024 / 1024)} MB.`,
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -101,9 +110,11 @@ export const CancelacionNueva = () => {
       if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
       const cancelacionId = inserted.id;
 
-      // Ambos PDFs se convierten a JPEG: el AI Gateway solo acepta image_url con imágenes.
       const certificadoImagePaths = await uploadPdfAsImages(cancelacionId, certificado, "certificado", CERTIFICADO_MAX_PAGES);
       const escrituraImagePaths = await uploadPdfAsImages(cancelacionId, escritura, "escritura", ESCRITURA_MAX_PAGES);
+      const poderImagePaths = poder
+        ? await uploadPdfAsImages(cancelacionId, poder, "poder", PODER_MAX_PAGES)
+        : [];
 
       setStepLabel("Iniciando análisis con IA…");
       const { data, error } = await monitored.invoke<{
@@ -115,6 +126,7 @@ export const CancelacionNueva = () => {
         cancelacionId,
         certificadoImagePaths,
         escrituraImagePaths,
+        poderImagePaths,
       });
 
       if (error) {
@@ -238,6 +250,16 @@ export const CancelacionNueva = () => {
                 onFile={setEscritura}
                 disabled={saving}
               />
+              <FileDropzone
+                label={`Poder General del Banco (PDF) — opcional, hasta ${PODER_MAX_PAGES} páginas`}
+                hint="Si se adjunta, extraemos automáticamente el apoderado actual del banco. Si no, los campos quedan en blanco en la escritura."
+                file={poder}
+                onFile={setPoder}
+                disabled={saving}
+              />
+              {poder && poder.size > MAX_PODER_BYTES && (
+                <p className="text-xs text-destructive">El Poder supera {Math.round(MAX_PODER_BYTES / 1024 / 1024)} MB.</p>
+              )}
             </div>
           </section>
         </div>
