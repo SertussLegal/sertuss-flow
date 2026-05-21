@@ -597,6 +597,9 @@ serve(async (req) => {
     const escInputPaths: string[] = escrituraImagePaths && escrituraImagePaths.length > 0
       ? escrituraImagePaths
       : (escrituraPath ? [escrituraPath] : []);
+    const poderInputPaths: string[] = poderImagePaths && poderImagePaths.length > 0
+      ? poderImagePaths
+      : (poderPath ? [poderPath] : []);
 
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
@@ -607,14 +610,22 @@ serve(async (req) => {
         const escUrls = await Promise.all(
           escInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
         );
+        const poderUrls = await Promise.all(
+          poderInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+        );
+
+        const poderLine = poderUrls.length > 0
+          ? ` Los siguientes ${poderUrls.length} adjuntos son páginas del Poder General del Banco (en orden) — revisa TODAS las páginas, especialmente las finales, para extraer el bloque 'poder_banco'.`
+          : ` NO se adjuntó Poder General; OMITE el objeto 'poder_banco' por completo.`;
 
         const userContent: Array<Record<string, unknown>> = [
           {
             type: "text",
-            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden); los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
+            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden); los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden).${poderLine} Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
           },
           ...certUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
           ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+          ...poderUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
         ];
 
         const aiBody = {
