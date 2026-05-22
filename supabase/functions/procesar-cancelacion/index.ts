@@ -116,8 +116,8 @@ const tools = [
             type: "object",
             properties: {
               matricula_inmobiliaria: { type: "string", description: "Matrícula ESTRICTAMENTE alfanumérica con guión, ej: '50C-2085432'. SIN palabras en letras, SIN paréntesis." },
-              descripcion_predio: { type: "string", description: "Descripción ARQUITECTÓNICA/JURÍDICA del predio (tipo, lote, área, linderos, número de unidad, etc.) SIN dirección postal. Ej: 'APARTAMENTO 502 DEL EDIFICIO TORRE A, ÁREA PRIVADA 65,30 M2'." },
-              nomenclatura_predio: { type: "string", description: "Nomenclatura urbana / dirección postal LIMPIA, sin sufijo catastral y sin redundancias. Ej: 'CALLE 100 No. 15-23 APTO 502'. NO agregues '(DIRECCION CATASTRAL)' — el backend lo añade." },
+              descripcion_predio: { type: "string", description: "Identificación ARQUITECTÓNICA del predio en formato notarial corto, MAYÚSCULAS, con números en LETRAS seguidos del número entre paréntesis. Ej EXACTO: 'APARTAMENTO NUMERO MIL CUATROCIENTOS DOS (1402) TORRE DOS (2) QUE HACE PARTE DEL CONJUNTO RESIDENCIAL SALITRE LIVING – PROPIEDAD HORIZONTAL'. PROHIBIDO incluir áreas privadas/construidas/totales, metros cuadrados (M2), coeficiente de copropiedad (%), linderos, puntos cardinales, dimensiones ni nomenclatura urbana. Si encuentras ese contenido en los PDFs, descártalo." },
+              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio en formato notarial, MAYÚSCULAS. Ej EXACTO: 'CALLE 66 C NUMERO 60-65'. PROHIBIDO incluir apartamento/torre, ciudad, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los agrega automáticamente." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
             },
             required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
