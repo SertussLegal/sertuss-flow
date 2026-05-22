@@ -305,17 +305,25 @@ function buildDocxVars(data: CancelacionData) {
       ? `----------------------------------------------------------------------------- ${formatValorPesos(data.hipoteca_anterior.valor_hipoteca_original) || valor.numeros || ""}`.trim()
       : "";
 
-  // Inmueble: separar descripción arquitectónica vs nomenclatura urbana.
-  // Sufijo "(DIRECCION CATASTRAL)" se inyecta una sola vez aquí (nunca en la plantilla).
+  // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
+  // Sufijo "(DIRECCION CATASTRAL)" + ciudad se inyectan UNA sola vez aquí (nunca en la plantilla, nunca por el OCR).
   const ciudadInmueble = (data.inmueble.ciudad || "").trim();
-  const descripcionPredio = data.inmueble.descripcion_predio
-    ?? data.inmueble.descripcion
-    ?? "";
+  const descripcionPredio = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
   let nomenclaturaBase = (data.inmueble.nomenclatura_predio ?? data.inmueble.direccion_completa ?? "").trim();
-  // Quita cualquier "(DIRECCION CATASTRAL)" pre-existente para evitar duplicado
-  nomenclaturaBase = nomenclaturaBase.replace(/\s*\(?DIRECCI[OÓ]N\s+CATASTRAL\)?/gi, "").trim();
+  // Colapsa cualquier sufijo catastral pre-existente (con o sin paréntesis) y la cola de ciudad redundante.
+  nomenclaturaBase = nomenclaturaBase
+    .replace(/\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
+    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y\/O\s+MUNICIPIO\s+DE\s+.+$/i, "")
+    .replace(/[\s,;.-]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const nomenclaturaFinal = nomenclaturaBase
-    ? `${nomenclaturaBase} (DIRECCION CATASTRAL)`
+    ? (ciudadInmueble
+        ? `${nomenclaturaBase} (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble}`
+        : `${nomenclaturaBase} (DIRECCION CATASTRAL)`)
     : undefined;
 
   // Notaría origen: anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
