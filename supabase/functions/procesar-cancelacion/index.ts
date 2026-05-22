@@ -116,8 +116,8 @@ const tools = [
             type: "object",
             properties: {
               matricula_inmobiliaria: { type: "string", description: "Matrícula ESTRICTAMENTE alfanumérica con guión, ej: '50C-2085432'. SIN palabras en letras, SIN paréntesis." },
-              descripcion_predio: { type: "string", description: "Descripción ARQUITECTÓNICA/JURÍDICA del predio (tipo, lote, área, linderos, número de unidad, etc.) SIN dirección postal. Ej: 'APARTAMENTO 502 DEL EDIFICIO TORRE A, ÁREA PRIVADA 65,30 M2'." },
-              nomenclatura_predio: { type: "string", description: "Nomenclatura urbana / dirección postal LIMPIA, sin sufijo catastral y sin redundancias. Ej: 'CALLE 100 No. 15-23 APTO 502'. NO agregues '(DIRECCION CATASTRAL)' — el backend lo añade." },
+              descripcion_predio: { type: "string", description: "Identificación ARQUITECTÓNICA del predio en formato notarial corto, MAYÚSCULAS, con números en LETRAS seguidos del número entre paréntesis. Ej EXACTO: 'APARTAMENTO NUMERO MIL CUATROCIENTOS DOS (1402) TORRE DOS (2) QUE HACE PARTE DEL CONJUNTO RESIDENCIAL SALITRE LIVING – PROPIEDAD HORIZONTAL'. PROHIBIDO incluir áreas privadas/construidas/totales, metros cuadrados (M2), coeficiente de copropiedad (%), linderos, puntos cardinales, dimensiones ni nomenclatura urbana. Si encuentras ese contenido en los PDFs, descártalo." },
+              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio en formato notarial, MAYÚSCULAS. Ej EXACTO: 'CALLE 66 C NUMERO 60-65'. PROHIBIDO incluir apartamento/torre, ciudad, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los agrega automáticamente." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
             },
             required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
@@ -164,7 +164,7 @@ const tools = [
   },
 ];
 
-const SYSTEM_PROMPT = `Eres un asistente jurídico experto en derecho notarial colombiano especializado en cancelaciones de hipoteca de BANCO DAVIVIENDA S.A.
+const SYSTEM_PROMPT = `Eres un asistente jurídico experto en derecho notarial colombiano especializado EXCLUSIVAMENTE en CANCELACIONES DE HIPOTECA de BANCO DAVIVIENDA S.A. Estas reglas aplican SOLO a esta sección (Cancelaciones); NO son reglas globales del sistema — otras secciones como Escrituras tienen sus propias reglas.
 
 Recibes hasta tres documentos:
 1. Certificado de Tradición y Libertad del inmueble.
@@ -175,9 +175,21 @@ REGLAS ESTRICTAS DE FORMATO:
 - Toda escritura, notaría, valor y fecha debe expresarse en DOBLE EXPRESIÓN: LETRAS y NÚMEROS entre paréntesis.
 - Las identificaciones (deudor_identificacion, banco_nit, apoderado_cedula) son ESTRICTAMENTE NUMÉRICAS con puntos de miles. NUNCA letras.
 - La matrícula inmobiliaria es ESTRICTAMENTE alfanumérica con guión (ej: '50C-2085432'). SIN letras en palabras, SIN paréntesis.
-- Separa el inmueble en DOS campos: 'descripcion_predio' (arquitectónico/jurídico, lote, área, linderos) y 'nomenclatura_predio' (dirección postal limpia). NUNCA incluyas '(DIRECCION CATASTRAL)' — el backend lo añade automáticamente.
 - Texto siempre en MAYÚSCULAS para nombres, ciudades, notarías.
 - aplica_ley_546 = true cuando la constitución de la hipoteca se otorga en la misma escritura pública que la compraventa de vivienda de interés social/prioritario o vivienda financiada.
+
+REGLAS DE INMUEBLE PARA CANCELACIÓN (CRÍTICAS — NO APLICAN A ESCRITURAS):
+Las cancelaciones de Davivienda NO requieren ni admiten linderos técnicos, medidas, áreas ni coeficientes. La Cláusula Primera solo remite al cuadro superior del Formulario SNR. Por eso:
+
+- 'descripcion_predio': SOLO la identificación arquitectónica corta en formato notarial.
+  ✅ CORRECTO: "APARTAMENTO NUMERO MIL CUATROCIENTOS DOS (1402) TORRE DOS (2) QUE HACE PARTE DEL CONJUNTO RESIDENCIAL SALITRE LIVING – PROPIEDAD HORIZONTAL"
+  ❌ INCORRECTO: "APARTAMENTO 1402, PISO 14, TORRE 2 DEL CONJUNTO RESIDENCIAL SALITRE LIVING – PROPIEDAD HORIZONTAL, CON UN ÁREA PRIVADA CONSTRUIDA DE VEINTISÉIS PUNTO CINCUENTA METROS CUADRADOS (26.50 M2) Y UN ÁREA TOTAL CONSTRUIDA DE TREINTA PUNTO CERO CERO METROS CUADRADOS (30.00 M2), AL QUE LE CORRESPONDE UN COEFICIENTE DE COPROPIEDAD DE 0.069220% SOBRE LOS BIENES COMUNES. LINDEROS HORIZONTALES: ENTRE LOS PUNTOS 1 Y 2: LÍNEA RECTA..."
+  → Aunque el PDF de la escritura traiga linderos, áreas y coeficientes, DESCÁRTALOS por completo. Nunca los incluyas en 'descripcion_predio'.
+
+- 'nomenclatura_predio': SOLO la dirección postal corta.
+  ✅ CORRECTO: "CALLE 66 C NUMERO 60-65"
+  ❌ INCORRECTO: "CALLE 66 C NUMERO 60-65, APARTAMENTO 1402 (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE BOGOTA D.C."
+  → NO añadas '(DIRECCION CATASTRAL)', NO añadas la ciudad, NO añadas apartamento ni torre. El backend los inyecta una sola vez.
 
 PODER GENERAL DEL BANCO (cuando se adjunte):
 - ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
@@ -293,17 +305,25 @@ function buildDocxVars(data: CancelacionData) {
       ? `----------------------------------------------------------------------------- ${formatValorPesos(data.hipoteca_anterior.valor_hipoteca_original) || valor.numeros || ""}`.trim()
       : "";
 
-  // Inmueble: separar descripción arquitectónica vs nomenclatura urbana.
-  // Sufijo "(DIRECCION CATASTRAL)" se inyecta una sola vez aquí (nunca en la plantilla).
+  // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
+  // Sufijo "(DIRECCION CATASTRAL)" + ciudad se inyectan UNA sola vez aquí (nunca en la plantilla, nunca por el OCR).
   const ciudadInmueble = (data.inmueble.ciudad || "").trim();
-  const descripcionPredio = data.inmueble.descripcion_predio
-    ?? data.inmueble.descripcion
-    ?? "";
+  const descripcionPredio = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
   let nomenclaturaBase = (data.inmueble.nomenclatura_predio ?? data.inmueble.direccion_completa ?? "").trim();
-  // Quita cualquier "(DIRECCION CATASTRAL)" pre-existente para evitar duplicado
-  nomenclaturaBase = nomenclaturaBase.replace(/\s*\(?DIRECCI[OÓ]N\s+CATASTRAL\)?/gi, "").trim();
+  // Colapsa cualquier sufijo catastral pre-existente (con o sin paréntesis) y la cola de ciudad redundante.
+  nomenclaturaBase = nomenclaturaBase
+    .replace(/\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
+    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y\/O\s+MUNICIPIO\s+DE\s+.+$/i, "")
+    .replace(/[\s,;.-]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const nomenclaturaFinal = nomenclaturaBase
-    ? `${nomenclaturaBase} (DIRECCION CATASTRAL)`
+    ? (ciudadInmueble
+        ? `${nomenclaturaBase} (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble}`
+        : `${nomenclaturaBase} (DIRECCION CATASTRAL)`)
     : undefined;
 
   // Notaría origen: anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
