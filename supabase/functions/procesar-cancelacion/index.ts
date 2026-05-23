@@ -308,15 +308,20 @@ function buildDocxVars(data: CancelacionData) {
   // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
   // Sufijo "(DIRECCION CATASTRAL)" + ciudad se inyectan UNA sola vez aquí (nunca en la plantilla, nunca por el OCR).
   const ciudadInmueble = (data.inmueble.ciudad || "").trim();
+  // Red de seguridad determinista: aunque Gemini se desborde, descartamos áreas,
+  // linderos y coeficientes en el servidor antes de mapear a la plantilla.
   const descripcionPredio = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
+    .replace(/(?:CON\s+UN\s+[ÁA]REA|[ÁA]REA\s+(?:PRIVADA|CONSTRUIDA|TOTAL)|LINDEROS?\s+(?:HORIZONTALES?|T[EÉ]CNICOS?|GENERALES?|VERTICALES?)|COEFICIENTE\s+DE\s+COPROPIEDAD|ENTRE\s+LOS\s+PUNTOS).*$/i, "")
+    .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
   let nomenclaturaBase = (data.inmueble.nomenclatura_predio ?? data.inmueble.direccion_completa ?? "").trim();
-  // Colapsa cualquier sufijo catastral pre-existente (con o sin paréntesis) y la cola de ciudad redundante.
+  // Colapsa cualquier sufijo catastral pre-existente (con o sin paréntesis) y la cola
+  // de ciudad redundante en todas sus variantes OCR ("Y/O", "Y O", "YO").
   nomenclaturaBase = nomenclaturaBase
     .replace(/\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
-    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y\/O\s+MUNICIPIO\s+DE\s+.+$/i, "")
+    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO\s+DE\s+.+$/i, "")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
