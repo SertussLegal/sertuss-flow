@@ -159,6 +159,14 @@ export const CancelacionValidar = () => {
         poder_banco: source.poder_banco ?? ia.poder_banco ?? {},
       });
       initialHydrationRef.current = true;
+      // Aviso semántico: valor del crédito no detectado por la IA.
+      const valorCredito = (source.hipoteca_anterior?.valor_hipoteca_original ?? "").trim();
+      if (!valorCredito) {
+        toast.warning("Valor del crédito hipotecario no detectado", {
+          description: "Verifícalo manualmente en la escritura antecedente antes de generar.",
+          duration: 6000,
+        });
+      }
     }
   }, [row]);
 
