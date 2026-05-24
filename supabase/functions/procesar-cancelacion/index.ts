@@ -107,7 +107,7 @@ const tools = [
               numero_escritura_hipoteca: { type: "string", description: "Número de escritura en LETRAS Y NÚMEROS, ej: 'CUATRO MIL CIENTO SESENTA Y CINCO (4165)'" },
               fecha_escritura_hipoteca: { type: "string", description: "Fecha en LETRAS Y NÚMEROS, ej: 'NUEVE (09) DE OCTUBRE DE DOS MIL VEINTE (2020)'" },
               notaria_hipoteca: { type: "string", description: "Notaría en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y OCHO (38) DE BOGOTA D.C.'" },
-              valor_hipoteca_original: { type: "string", description: "Valor en LETRAS Y NÚMEROS, ej: 'CUARENTA Y OCHO MILLONES DOSCIENTOS MIL PESOS ($48.200.000)'" },
+              valor_hipoteca_original: { type: "string", description: "Monto del CRÉDITO HIPOTECARIO original que la entidad financiera concedió al deudor. NO es el precio de la compraventa, NO es el avalúo catastral o comercial, NO es el saldo abonado, NO es el valor del acto de liberación parcial. Aplica análisis semántico-contextual (la ubicación cambia por notaría — NUNCA asumas página, tabla ni coordenada fija). Búscalo bajo CUALQUIERA de estos tres contextos, en este orden de prioridad: (a) CONTEXTO DE MUTUO — cláusulas de constitución de hipoteca donde el banco 'PRESTA', 'OTORGA', 'CONCEDE', 'DESEMBOLSA' o 'ENTREGA' al deudor una suma determinada como crédito. (b) CONTEXTO DE PAGO — cláusulas de la compraventa donde el SALDO del precio se extingue, cubre o cancela mediante el PRODUCTO de un crédito concedido por la entidad financiera (ej: 'el saldo se cubrirá con el producto del crédito que le concede [BANCO] por valor de …'). (c) CONTEXTO LIQUIDATORIO — hoja de calificación / liquidación / orden de escritura anexa, en campos tipo 'CUANTÍA DEL MUTUO', 'VALOR DEL CRÉDITO', 'MONTO DEL PRÉSTAMO' o equivalentes. Devuelve LETRAS y NÚMEROS en MAYÚSCULAS, formato: '<MONTO EN LETRAS> DE PESOS ($<NÚMERO CON PUNTOS DE MILES>)'. Casos especiales: si el instrumento declara expresamente que la hipoteca es ABIERTA, SIN LÍMITE DE CUANTÍA o de CUANTÍA INDETERMINADA → devuelve EXACTAMENTE la cadena: 'HIPOTECA DE CUANTÍA INDETERMINADA'. Si no logras ubicar el monto en ninguno de los tres contextos con certeza razonable → devuelve cadena vacía ''. PROHIBIDO ABSOLUTO: inferir, calcular o copiar el precio de la compraventa, el avalúo, el abono parcial, el saldo pendiente, o cualquier monto que no corresponda inequívocamente a uno de los tres contextos anteriores." },
             },
             required: ["numero_escritura_hipoteca", "fecha_escritura_hipoteca", "notaria_hipoteca", "valor_hipoteca_original"],
             additionalProperties: false,
@@ -196,6 +196,19 @@ PODER GENERAL DEL BANCO (cuando se adjunte):
 - Palabras clave para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
 - Devuelve la fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
 - Si NO se adjuntó el Poder o no logras localizar los datos con certeza, OMITE COMPLETAMENTE el objeto 'poder_banco' (no lo devuelvas vacío).
+
+REGLA CRÍTICA — VALOR DEL CRÉDITO HIPOTECARIO (anti-alucinación, lógica semántica):
+
+Las escrituras notariales colombianas varían radicalmente de formato, diseño y posición entre notarías. NO asumas que el valor del crédito siempre aparece en la misma página, tabla, casilla o coordenada. Aplica análisis contextual basado en el SIGNIFICADO de las cláusulas, no en su ubicación física.
+
+El valor que debe ir en 'valor_hipoteca_original' es ÚNICAMENTE el monto del crédito que la entidad financiera prestó al deudor. Para localizarlo, recorre el instrumento buscando — en orden — uno de estos tres contextos semánticos:
+  1. MUTUO: cláusula donde el banco "presta / otorga / concede / desembolsa / entrega" una suma al deudor como crédito.
+  2. PAGO: cláusula de compraventa donde el saldo del precio se cubre con el "producto del crédito" del banco.
+  3. LIQUIDACIÓN: casilla anexa de "cuantía del mutuo", "valor del crédito" o "monto del préstamo" en la hoja de calificación / orden de escritura.
+
+NUNCA confundas el valor del crédito con: el precio de la compraventa del Certificado de Tradición, el avalúo catastral o comercial, el monto del abono parcial, el saldo pendiente, ni el valor declarado del acto de liberación / cancelación.
+
+Si dos cifras compiten y no puedes resolver con certeza cuál corresponde al mutuo, devuelve cadena vacía '' — siempre es preferible que el notario complete manualmente a que el documento salga con una cuantía incorrecta (provoca rechazo de calificación registral). Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA, devuelve exactamente 'HIPOTECA DE CUANTÍA INDETERMINADA'.
 
 Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
@@ -291,18 +304,21 @@ function joinSinDuplicar(haystack: string, separador: string, needle: string): s
 
 // Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
-  const valor = splitValor(data.hipoteca_anterior.valor_hipoteca_original || "");
+  const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
+  const esCuantiaIndeterminada = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
+  const valor = esCuantiaIndeterminada ? { letras: "", numeros: "" } : splitValor(valorRaw);
   const ciudadHipoteca = extractCiudadFromNotaria(data.hipoteca_anterior.notaria_hipoteca || "");
   const ne = data.notaria_emisora || {};
   const pb = data.poder_banco || {};
   const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
   const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
 
-  // valor_acto: si Ley 546 y vacío → línea de guiones + valor formateado
+  // valor_acto (cuadro SNR): respeta override manual. Si Ley 546 y hay valor, lo formatea.
+  // Si está vacío o es cuantía indeterminada → undefined → nullGetter pinta "___________".
   const valorActoFinal = ne.valor_acto?.trim()
     ? ne.valor_acto
-    : data.analisis_legal.aplica_ley_546
-      ? `----------------------------------------------------------------------------- ${formatValorPesos(data.hipoteca_anterior.valor_hipoteca_original) || valor.numeros || ""}`.trim()
+    : (data.analisis_legal.aplica_ley_546 && !esCuantiaIndeterminada && valorRaw)
+      ? `----------------------------------------------------------------------------- ${formatValorPesos(valorRaw) || valor.numeros || ""}`.trim()
       : "";
 
   // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
@@ -350,9 +366,10 @@ function buildDocxVars(data: CancelacionData) {
     notaria_hipoteca_numero: notariaOrigenNum || undefined,
     ciudad_hipoteca: ciudadHipoteca,
     ciudad_hipoteca_corto: ciudadHipoteca,
-    valor_hipoteca_original: data.hipoteca_anterior.valor_hipoteca_original,
-    valor_hipoteca_letras: valor.letras,
-    valor_hipoteca_numeros: valor.numeros,
+    valor_hipoteca_original: esCuantiaIndeterminada ? "HIPOTECA DE CUANTÍA INDETERMINADA" : (valorRaw || undefined),
+    valor_hipoteca_letras: valor.letras || undefined,
+    valor_hipoteca_numeros: valor.numeros || undefined,
+    valor_hipoteca_es_indeterminada: esCuantiaIndeterminada || undefined,
     // Inmueble (atómico)
     matricula_inmobiliaria: sanitizeMatricula(data.inmueble.matricula_inmobiliaria) || undefined,
     descripcion_predio: descripcionPredio || undefined,
