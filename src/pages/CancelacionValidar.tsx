@@ -342,8 +342,28 @@ export const CancelacionValidar = () => {
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, fecha_escritura_hipoteca: v } })} />
                 <Field label="Notaría" value={data.hipoteca_anterior.notaria_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, notaria_hipoteca: v } })} />
-                <Field label="Valor original" value={data.hipoteca_anterior.valor_hipoteca_original}
-                  onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: v } })} />
+                <div className="space-y-1">
+                  <Label className="text-xs">Valor del crédito hipotecario original</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={data.hipoteca_anterior.valor_hipoteca_original ?? ""}
+                      onChange={(e) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: e.target.value } })}
+                      className={`h-9 text-sm ${!data.hipoteca_anterior.valor_hipoteca_original?.trim() ? "border-amber-500/60 focus-visible:ring-amber-500/40" : ""}`}
+                      placeholder="CIENTO… DE PESOS ($000.000.000)"
+                    />
+                    <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => copyToClipboard(data.hipoteca_anterior.valor_hipoteca_original ?? "", "Valor")}
+                      title="Copiar valor">
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Monto que el banco le prestó al deudor. Búscalo en la escritura antecedente: cláusula de constitución
+                    de hipoteca, cláusula de pago de la compraventa ("el saldo se cubrirá con el producto del crédito…"),
+                    o en la hoja de calificación. <span className="font-medium">No es el precio de venta ni el avalúo.</span>
+                    Si la hipoteca es abierta, escribe exactamente <span className="font-mono">HIPOTECA DE CUANTÍA INDETERMINADA</span>.
+                  </p>
+                </div>
               </Section>
 
               <Section title="Inmueble">
