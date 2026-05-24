@@ -197,6 +197,19 @@ PODER GENERAL DEL BANCO (cuando se adjunte):
 - Devuelve la fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
 - Si NO se adjuntó el Poder o no logras localizar los datos con certeza, OMITE COMPLETAMENTE el objeto 'poder_banco' (no lo devuelvas vacío).
 
+REGLA CRÍTICA — VALOR DEL CRÉDITO HIPOTECARIO (anti-alucinación, lógica semántica):
+
+Las escrituras notariales colombianas varían radicalmente de formato, diseño y posición entre notarías. NO asumas que el valor del crédito siempre aparece en la misma página, tabla, casilla o coordenada. Aplica análisis contextual basado en el SIGNIFICADO de las cláusulas, no en su ubicación física.
+
+El valor que debe ir en 'valor_hipoteca_original' es ÚNICAMENTE el monto del crédito que la entidad financiera prestó al deudor. Para localizarlo, recorre el instrumento buscando — en orden — uno de estos tres contextos semánticos:
+  1. MUTUO: cláusula donde el banco "presta / otorga / concede / desembolsa / entrega" una suma al deudor como crédito.
+  2. PAGO: cláusula de compraventa donde el saldo del precio se cubre con el "producto del crédito" del banco.
+  3. LIQUIDACIÓN: casilla anexa de "cuantía del mutuo", "valor del crédito" o "monto del préstamo" en la hoja de calificación / orden de escritura.
+
+NUNCA confundas el valor del crédito con: el precio de la compraventa del Certificado de Tradición, el avalúo catastral o comercial, el monto del abono parcial, el saldo pendiente, ni el valor declarado del acto de liberación / cancelación.
+
+Si dos cifras compiten y no puedes resolver con certeza cuál corresponde al mutuo, devuelve cadena vacía '' — siempre es preferible que el notario complete manualmente a que el documento salga con una cuantía incorrecta (provoca rechazo de calificación registral). Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA, devuelve exactamente 'HIPOTECA DE CUANTÍA INDETERMINADA'.
+
 Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
 // Helpers
