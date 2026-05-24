@@ -507,6 +507,7 @@ serve(async (req) => {
     poderPath?: string;
     poderImagePaths?: string[];
     regen?: boolean;
+    manualOverrides?: CancelacionData;
   };
   try {
     body = await req.json();
@@ -516,7 +517,7 @@ serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen } = body;
+  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides } = body;
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -555,7 +556,8 @@ serve(async (req) => {
     // MODO REGEN: solo re-mapeo docx con data_final, sin cobrar
     // ─────────────────────────────────────────────────────────────
     if (regen) {
-      const data: CancelacionData = cancRow.data_final ?? cancRow.data_ia;
+      // SSOT: frontend payload manda. Permite vaciar campos intencionalmente.
+      const data: CancelacionData = (manualOverrides ?? cancRow.data_final ?? cancRow.data_ia) as CancelacionData;
       if (!data) {
         return new Response(JSON.stringify({ error: "No hay datos para regenerar" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -576,6 +578,7 @@ serve(async (req) => {
         upsert: true,
       });
       await supabaseService.from("cancelaciones").update({
+        data_final: data,
         url_minuta_generada: minutaPath,
         url_certificado_generado: certPath,
         updated_at: new Date().toISOString(),

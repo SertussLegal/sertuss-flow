@@ -177,11 +177,16 @@ export const CancelacionValidar = () => {
     }
   }, [row?.status, refreshCredits]);
 
-  // Debounced autosave + regen (no bloqueante: solo refresca el panel derecho)
+  // Debounce inteligente: 3s si cambió poder_banco, 15s en otros casos.
+  const prevPoderRef = useRef<string>("");
   useEffect(() => {
     if (!data || !id) return;
     if (row?.status === "processing" || row?.status === "error") return;
     if (!initialHydrationRef.current) return;
+
+    const currentPoder = JSON.stringify(data.poder_banco ?? {});
+    const poderChanged = prevPoderRef.current !== "" && prevPoderRef.current !== currentPoder;
+    const delay = poderChanged ? 3000 : 15000;
 
     const t = setTimeout(async () => {
       setSaving(true);
@@ -198,15 +203,18 @@ export const CancelacionValidar = () => {
         toast.error("No se pudo guardar", { description: error.message });
         return;
       }
-      // Regen silencioso → solo el visor muestra loader
+      // Regen silencioso con SSOT del frontend (manualOverrides).
       setPreviewRefreshing(true);
-      const { error: regenErr } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true });
+      const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
+        cancelacionId: id, regen: true, manualOverrides: data,
+      });
       setPreviewRefreshing(false);
       if (!regenErr) {
         setViewerKey((k) => k + 1);
         queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
       }
-    }, 15000);
+      prevPoderRef.current = currentPoder;
+    }, delay);
     return () => clearTimeout(t);
   }, [data, id, row?.status, queryClient]);
 
@@ -214,7 +222,7 @@ export const CancelacionValidar = () => {
     if (!id || !data) return;
     setPreviewRefreshing(true);
     await supabase.from("cancelaciones").update({ data_final: data }).eq("id", id);
-    const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true });
+    const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
     setPreviewRefreshing(false);
     if (error) {
       toast.error("No se pudo regenerar", { description: error.message });
