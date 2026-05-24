@@ -304,18 +304,21 @@ function joinSinDuplicar(haystack: string, separador: string, needle: string): s
 
 // Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
-  const valor = splitValor(data.hipoteca_anterior.valor_hipoteca_original || "");
+  const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
+  const esCuantiaIndeterminada = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
+  const valor = esCuantiaIndeterminada ? { letras: "", numeros: "" } : splitValor(valorRaw);
   const ciudadHipoteca = extractCiudadFromNotaria(data.hipoteca_anterior.notaria_hipoteca || "");
   const ne = data.notaria_emisora || {};
   const pb = data.poder_banco || {};
   const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
   const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
 
-  // valor_acto: si Ley 546 y vacío → línea de guiones + valor formateado
+  // valor_acto (cuadro SNR): respeta override manual. Si Ley 546 y hay valor, lo formatea.
+  // Si está vacío o es cuantía indeterminada → undefined → nullGetter pinta "___________".
   const valorActoFinal = ne.valor_acto?.trim()
     ? ne.valor_acto
-    : data.analisis_legal.aplica_ley_546
-      ? `----------------------------------------------------------------------------- ${formatValorPesos(data.hipoteca_anterior.valor_hipoteca_original) || valor.numeros || ""}`.trim()
+    : (data.analisis_legal.aplica_ley_546 && !esCuantiaIndeterminada && valorRaw)
+      ? `----------------------------------------------------------------------------- ${formatValorPesos(valorRaw) || valor.numeros || ""}`.trim()
       : "";
 
   // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
