@@ -222,7 +222,7 @@ export const CancelacionValidar = () => {
     if (!id || !data) return;
     setPreviewRefreshing(true);
     await supabase.from("cancelaciones").update({ data_final: data }).eq("id", id);
-    const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true });
+    const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
     setPreviewRefreshing(false);
     if (error) {
       toast.error("No se pudo regenerar", { description: error.message });
