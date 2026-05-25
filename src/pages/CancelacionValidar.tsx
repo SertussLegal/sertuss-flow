@@ -16,6 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { inferGeneroFromNombre } from "@/lib/genero";
 
 type NotariaEmisora = {
   notario_nombre?: string;
