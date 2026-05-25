@@ -39,6 +39,7 @@ type PoderBanco = {
   apoderado_escritura?: string;
   apoderado_fecha?: string;
   apoderado_notaria_poder?: string;
+  apoderado_genero?: "M" | "F" | "";
 };
 
 type Data = {
@@ -62,6 +63,8 @@ type Data = {
     deudor_tipo_id: string;
     banco_acreedor: string;
     banco_nit: string;
+    deudor_genero?: "M" | "F" | "";
+    tratamiento_entidad?: "M" | "F" | "";
   };
   analisis_legal: {
     aplica_ley_546: boolean;
