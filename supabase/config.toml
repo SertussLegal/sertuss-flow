@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.validar-con-claude]
 verify_jwt = false
+
+[functions._tmp_dl_plantilla]
+verify_jwt = false
