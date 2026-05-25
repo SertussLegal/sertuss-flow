@@ -467,6 +467,19 @@ export const CancelacionValidar = () => {
                     )}
                     <Field label="Nombre apoderado" value={pb.apoderado_nombre ?? ""}
                       onChange={(v) => setPB({ apoderado_nombre: v })} />
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Género del apoderado</Label>
+                      <ToggleGroup
+                        type="single"
+                        size="sm"
+                        value={pb.apoderado_genero ?? ""}
+                        onValueChange={(v) => setPB({ apoderado_genero: (v as "M" | "F" | "") || "" })}
+                      >
+                        <ToggleGroupItem value="M" className="text-xs">Masculino</ToggleGroupItem>
+                        <ToggleGroupItem value="F" className="text-xs">Femenino</ToggleGroupItem>
+                      </ToggleGroup>
+                      <p className="text-[10px] text-muted-foreground">"el señor apoderado identificado" vs "la señora apoderada identificada".</p>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <Field label="Cédula" value={pb.apoderado_cedula ?? ""}
                         onChange={(v) => setPB({ apoderado_cedula: v })} />
