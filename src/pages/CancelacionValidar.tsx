@@ -414,6 +414,19 @@ export const CancelacionValidar = () => {
               <Section title="Partes">
                 <Field label="Deudor" value={data.partes.deudor_nombre}
                   onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_nombre: v } })} />
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Género gramatical del deudor</Label>
+                  <ToggleGroup
+                    type="single"
+                    size="sm"
+                    value={data.partes.deudor_genero ?? ""}
+                    onValueChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_genero: (v as "M" | "F" | "") || "" } })}
+                  >
+                    <ToggleGroupItem value="M" className="text-xs">Masculino</ToggleGroupItem>
+                    <ToggleGroupItem value="F" className="text-xs">Femenino</ToggleGroupItem>
+                  </ToggleGroup>
+                  <p className="text-[10px] text-muted-foreground">Define la concordancia: "el señor deudor identificado" vs "la señora deudora identificada". Vacío → "el(la) señor(a) deudor(a)".</p>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Tipo ID" value={data.partes.deudor_tipo_id} copyable={false}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_tipo_id: v } })} />
@@ -423,6 +436,19 @@ export const CancelacionValidar = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Banco" value={data.partes.banco_acreedor} onChange={() => {}} disabled />
                   <Field label="NIT" value={data.partes.banco_nit} onChange={() => {}} disabled />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Tratamiento notarial del banco</Label>
+                  <ToggleGroup
+                    type="single"
+                    size="sm"
+                    value={data.partes.tratamiento_entidad ?? ""}
+                    onValueChange={(v) => setData({ ...data, partes: { ...data.partes, tratamiento_entidad: (v as "M" | "F" | "") || "" } })}
+                  >
+                    <ToggleGroupItem value="F" className="text-xs">La entidad</ToggleGroupItem>
+                    <ToggleGroupItem value="M" className="text-xs">El establecimiento bancario</ToggleGroupItem>
+                  </ToggleGroup>
+                  <p className="text-[10px] text-muted-foreground">Elige la fórmula de apertura. Vacío → "la entidad".</p>
                 </div>
               </Section>
 
