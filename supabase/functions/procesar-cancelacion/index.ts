@@ -12,6 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import PizZip from "https://esm.sh/pizzip@3.1.6";
 import Docxtemplater from "https://esm.sh/docxtemplater@3.50.0";
 import { fetchAiGateway, AiGatewayError, parseToolCallArguments } from "../_shared/aiFetch.ts";
+import { deudorTokens, apoderadoTokens, bancoTokens, inferGeneroFromNombre } from "../_shared/genero.ts";
 
 // Envelope helper: 200 OK con { ok:false, code, message } para errores de negocio
 function biz(code: string, message: string, extra: Record<string, unknown> = {}) {
@@ -83,13 +84,15 @@ interface CancelacionData {
     deudor_tipo_id: string;
     banco_acreedor: string;
     banco_nit: string;
+    deudor_genero?: "M" | "F" | "";
+    tratamiento_entidad?: "M" | "F" | "";
   };
   analisis_legal: {
     aplica_ley_546: boolean;
     explicacion_ley: string;
   };
   notaria_emisora?: NotariaEmisora;
-  poder_banco?: PoderBanco;
+  poder_banco?: PoderBanco & { apoderado_genero?: "M" | "F" | "" };
 }
 
 const tools = [
@@ -313,6 +316,15 @@ function buildDocxVars(data: CancelacionData) {
   const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
   const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
 
+  // Motor de flexión de género gramatical (módulo compartido _shared/genero.ts).
+  // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
+  const generoDeudor = data.partes.deudor_genero || inferGeneroFromNombre(data.partes.deudor_nombre || "") || "";
+  const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(pb.apoderado_nombre || "") || "";
+  const tratamientoBanco = data.partes.tratamiento_entidad || "";
+  const tokensDeudor = deudorTokens(generoDeudor);
+  const tokensApoderado = apoderadoTokens(generoApoderado);
+  const tokensBanco = bancoTokens(tratamientoBanco);
+
   // valor_acto (cuadro SNR): respeta override manual. Si Ley 546 y hay valor, lo formatea.
   // Si está vacío o es cuantía indeterminada → undefined → nullGetter pinta "___________".
   const valorActoFinal = ne.valor_acto?.trim()
@@ -416,6 +428,10 @@ function buildDocxVars(data: CancelacionData) {
     fondo_nacional: ne.fondo_nacional || undefined,
     iva: ne.iva || undefined,
     valor_acto: valorActoFinal || undefined,
+    // Tokens de flexión de género gramatical (motor compartido)
+    ...tokensDeudor,
+    ...tokensApoderado,
+    ...tokensBanco,
   };
 }
 
