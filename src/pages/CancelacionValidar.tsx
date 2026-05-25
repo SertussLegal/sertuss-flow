@@ -158,10 +158,22 @@ export const CancelacionValidar = () => {
     const source = (row.data_final ?? row.data_ia) as Data | null;
     if (source && typeof source === "object" && !initialHydrationRef.current) {
       const ia = (row.data_ia ?? {}) as Partial<Data>;
+      const poderBanco = source.poder_banco ?? ia.poder_banco ?? {};
+      // Inferencia inicial de género (no sobrescribe si ya existe en data_final).
+      const partes = {
+        ...source.partes,
+        deudor_genero: source.partes?.deudor_genero ?? inferGeneroFromNombre(source.partes?.deudor_nombre ?? ""),
+        tratamiento_entidad: source.partes?.tratamiento_entidad ?? "",
+      };
+      const poderInferido = {
+        ...poderBanco,
+        apoderado_genero: poderBanco.apoderado_genero ?? inferGeneroFromNombre(poderBanco.apoderado_nombre ?? ""),
+      };
       setData({
         ...source,
+        partes,
         notaria_emisora: source.notaria_emisora ?? {},
-        poder_banco: source.poder_banco ?? ia.poder_banco ?? {},
+        poder_banco: poderInferido,
       });
       initialHydrationRef.current = true;
       // Aviso semántico: valor del crédito no detectado por la IA.
