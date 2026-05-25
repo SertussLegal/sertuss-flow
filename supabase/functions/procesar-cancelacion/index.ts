@@ -316,6 +316,15 @@ function buildDocxVars(data: CancelacionData) {
   const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
   const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
 
+  // Motor de flexión de género gramatical (módulo compartido _shared/genero.ts).
+  // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
+  const generoDeudor = data.partes.deudor_genero || inferGeneroFromNombre(data.partes.deudor_nombre || "") || "";
+  const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(pb.apoderado_nombre || "") || "";
+  const tratamientoBanco = data.partes.tratamiento_entidad || "";
+  const tokensDeudor = deudorTokens(generoDeudor);
+  const tokensApoderado = apoderadoTokens(generoApoderado);
+  const tokensBanco = bancoTokens(tratamientoBanco);
+
   // valor_acto (cuadro SNR): respeta override manual. Si Ley 546 y hay valor, lo formatea.
   // Si está vacío o es cuantía indeterminada → undefined → nullGetter pinta "___________".
   const valorActoFinal = ne.valor_acto?.trim()
