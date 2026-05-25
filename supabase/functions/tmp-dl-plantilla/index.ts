@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
 
   const { data, error } = await supabase.storage
     .from("cancelaciones-plantillas")
-    .download("formato cancelacion hipoteca blanqueado.docx");
+    .download("davivienda/formato cancelacion hipoteca blanqueado.docx");
 
   if (error || !data) {
     return new Response(JSON.stringify({ error: error?.message ?? "no data" }), {
