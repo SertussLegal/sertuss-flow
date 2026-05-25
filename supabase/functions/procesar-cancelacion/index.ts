@@ -428,6 +428,10 @@ function buildDocxVars(data: CancelacionData) {
     fondo_nacional: ne.fondo_nacional || undefined,
     iva: ne.iva || undefined,
     valor_acto: valorActoFinal || undefined,
+    // Tokens de flexión de género gramatical (motor compartido)
+    ...tokensDeudor,
+    ...tokensApoderado,
+    ...tokensBanco,
   };
 }
 
