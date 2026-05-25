@@ -83,13 +83,15 @@ interface CancelacionData {
     deudor_tipo_id: string;
     banco_acreedor: string;
     banco_nit: string;
+    deudor_genero?: "M" | "F" | "";
+    tratamiento_entidad?: "M" | "F" | "";
   };
   analisis_legal: {
     aplica_ley_546: boolean;
     explicacion_ley: string;
   };
   notaria_emisora?: NotariaEmisora;
-  poder_banco?: PoderBanco;
+  poder_banco?: PoderBanco & { apoderado_genero?: "M" | "F" | "" };
 }
 
 const tools = [
