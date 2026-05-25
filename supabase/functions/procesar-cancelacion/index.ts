@@ -12,6 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import PizZip from "https://esm.sh/pizzip@3.1.6";
 import Docxtemplater from "https://esm.sh/docxtemplater@3.50.0";
 import { fetchAiGateway, AiGatewayError, parseToolCallArguments } from "../_shared/aiFetch.ts";
+import { deudorTokens, apoderadoTokens, bancoTokens, inferGeneroFromNombre } from "../_shared/genero.ts";
 
 // Envelope helper: 200 OK con { ok:false, code, message } para errores de negocio
 function biz(code: string, message: string, extra: Record<string, unknown> = {}) {
