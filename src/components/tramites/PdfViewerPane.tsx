@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import mammoth from "mammoth";
+import DOMPurify from "dompurify";
 import { Loader2, AlertTriangle, Download, RotateCw, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -97,7 +98,8 @@ export const PdfViewerPane = ({
       const result = await mammoth.convertToHtml({ arrayBuffer });
 
       if (reqId !== reqIdRef.current) return;
-      setHtml(result.value || "<p><em>(Documento vacío)</em></p>");
+      const safeHtml = DOMPurify.sanitize(result.value || "");
+      setHtml(safeHtml || "<p><em>(Documento vacío)</em></p>");
       setState("ready");
     } catch (err) {
       if (reqId !== reqIdRef.current) return;
