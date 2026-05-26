@@ -1203,6 +1203,7 @@ export type Database = {
       }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
       is_org_member: { Args: { p_org_id: string }; Returns: boolean }
+      is_platform_admin: { Args: never; Returns: boolean }
       next_radicado: { Args: { p_org_id: string }; Returns: string }
       purge_expired_drafts: { Args: never; Returns: undefined }
       restore_credit: { Args: { org_id: string }; Returns: undefined }
