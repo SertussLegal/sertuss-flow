@@ -36,9 +36,57 @@ serve(async (req) => {
 
   try {
     const startTime = Date.now();
+
+    // JWT auth — prevent unauthenticated reads of notaría config / audit trail injection
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const sbUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: claimsData, error: claimsErr } = await sbUser.auth.getClaims(
+      authHeader.replace("Bearer ", ""),
+    );
+    if (claimsErr || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId = claimsData.claims.sub as string;
+
     const payload: ValidacionRequest = await req.json();
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Verify caller is a member of the org they claim, and that tramite belongs to that org.
+    // This prevents an attacker from supplying arbitrary organization_id/tramite_id.
+    const { data: membership } = await supabase
+      .from("memberships")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("organization_id", payload.organization_id)
+      .maybeSingle();
+    if (!membership) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (payload.tramite_id) {
+      const { data: tramiteRow } = await supabase
+        .from("tramites")
+        .select("organization_id")
+        .eq("id", payload.tramite_id)
+        .maybeSingle();
+      if (!tramiteRow || tramiteRow.organization_id !== payload.organization_id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // 1. Leer reglas activas para este tipo de acto y momento
     const { data: reglas, error: reglasError } = await supabase
