@@ -40,6 +40,9 @@ type PoderBanco = {
   apoderado_cedula?: string;
   apoderado_escritura?: string;
   apoderado_fecha?: string;
+  apoderado_fecha_dia?: string;
+  apoderado_fecha_mes?: string;
+  apoderado_fecha_anio?: string;
   apoderado_notaria_poder?: string;
   apoderado_genero?: "M" | "F" | "";
 };
