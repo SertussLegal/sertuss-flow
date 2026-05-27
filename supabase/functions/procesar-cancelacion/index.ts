@@ -58,6 +58,9 @@ interface PoderBanco {
   apoderado_cedula?: string;
   apoderado_escritura?: string;
   apoderado_fecha?: string;
+  apoderado_fecha_dia?: string;
+  apoderado_fecha_mes?: string;
+  apoderado_fecha_anio?: string;
   apoderado_notaria_poder?: string;
 }
 
@@ -67,6 +70,7 @@ interface CancelacionData {
     fecha_escritura_hipoteca: string;
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
+    valor_hipoteca_es_indeterminada?: boolean;
   };
   inmueble: {
     matricula_inmobiliaria: string;
