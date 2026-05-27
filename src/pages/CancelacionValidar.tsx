@@ -53,6 +53,7 @@ type Data = {
     fecha_escritura_hipoteca: string;
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
+    valor_hipoteca_es_indeterminada?: boolean;
   };
   inmueble: {
     matricula_inmobiliaria: string;
