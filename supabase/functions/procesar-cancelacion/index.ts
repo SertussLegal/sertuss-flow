@@ -427,6 +427,9 @@ function buildDocxVars(data: CancelacionData) {
     apoderado_cedula: pb.apoderado_cedula || undefined,
     apoderado_escritura: pb.apoderado_escritura || undefined,
     apoderado_fecha: pb.apoderado_fecha || undefined,
+    apoderado_fecha_dia: pb.apoderado_fecha_dia || fpPoder.dia || undefined,
+    apoderado_fecha_mes: pb.apoderado_fecha_mes || fpPoder.mes || undefined,
+    apoderado_fecha_ano: pb.apoderado_fecha_anio || fpPoder.ano || undefined,
     apoderado_notaria_poder: pb.apoderado_notaria_poder || undefined,
     // Notario emisor (editable; vacío → nullGetter "___________")
     notario_nombre: ne.notario_nombre || undefined,
