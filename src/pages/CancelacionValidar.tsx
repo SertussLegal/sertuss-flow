@@ -40,6 +40,9 @@ type PoderBanco = {
   apoderado_cedula?: string;
   apoderado_escritura?: string;
   apoderado_fecha?: string;
+  apoderado_fecha_dia?: string;
+  apoderado_fecha_mes?: string;
+  apoderado_fecha_anio?: string;
   apoderado_notaria_poder?: string;
   apoderado_genero?: "M" | "F" | "";
 };
@@ -50,6 +53,7 @@ type Data = {
     fecha_escritura_hipoteca: string;
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
+    valor_hipoteca_es_indeterminada?: boolean;
   };
   inmueble: {
     matricula_inmobiliaria: string;
@@ -84,6 +88,51 @@ const copyToClipboard = async (value: string, label: string) => {
     toast.error("No se pudo copiar");
   }
 };
+
+const MESES_NOMBRE = [
+  "", "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+  "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+];
+const MES_LOOKUP: Record<string, string> = {
+  enero: "01", febrero: "02", marzo: "03", abril: "04", mayo: "05", junio: "06",
+  julio: "07", agosto: "08", septiembre: "09", setiembre: "09",
+  octubre: "10", noviembre: "11", diciembre: "12",
+};
+// Extrae día/mes/año desde un string de fecha notarial libre.
+// Acepta: "DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)" o "19/08/2025".
+function parseFechaPartsClient(s: string): { dia: string; mes: string; anio: string } {
+  if (!s) return { dia: "", mes: "", anio: "" };
+  const diaP = (s.match(/\((\d{1,2})\)/)?.[1] ?? "").padStart(2, "0");
+  let mes = "";
+  const lower = s.toLowerCase();
+  for (const [k, v] of Object.entries(MES_LOOKUP)) {
+    if (lower.includes(k)) { mes = v; break; }
+  }
+  const anioMatch = s.match(/(19|20)\d{2}/);
+  const anio = anioMatch ? anioMatch[0] : "";
+  if (!diaP || !mes) {
+    const m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) return {
+      dia: m[1].padStart(2, "0"),
+      mes: m[2].padStart(2, "0"),
+      anio: m[3].length === 2 ? `20${m[3]}` : m[3],
+    };
+  }
+  return { dia: diaP, mes, anio };
+}
+// Recompone una fecha legible para el campo string a partir de atómicos.
+// Formato simplificado: "DD DE <MES> DE AAAA". El usuario puede luego refinar
+// a "DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)" si lo requiere.
+function composeFechaFromAtoms(dia: string, mes: string, anio: string): string {
+  if (!dia && !mes && !anio) return "";
+  const mesIdx = parseInt(mes, 10);
+  const mesNombre = mesIdx >= 1 && mesIdx <= 12 ? MESES_NOMBRE[mesIdx] : "";
+  const parts: string[] = [];
+  if (dia) parts.push(dia.padStart(2, "0"));
+  if (mesNombre) parts.push("DE", mesNombre);
+  if (anio) parts.push("DE", anio);
+  return parts.join(" ");
+}
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="rounded-lg border border-border bg-background p-4">
@@ -158,7 +207,22 @@ export const CancelacionValidar = () => {
     const source = (row.data_final ?? row.data_ia) as Data | null;
     if (source && typeof source === "object" && !initialHydrationRef.current) {
       const ia = (row.data_ia ?? {}) as Partial<Data>;
-      const poderBanco = source.poder_banco ?? ia.poder_banco ?? {};
+      // Merge selectivo campo-a-campo: la edición manual (source) prevalece;
+      // la IA solo rellena huecos. Evita que un source.poder_banco parcial borre
+      // los campos que sí extrajo la IA (incluidos los atómicos de fecha).
+      const ia_pb: PoderBanco = (ia.poder_banco ?? {}) as PoderBanco;
+      const src_pb: PoderBanco = (source.poder_banco ?? {}) as PoderBanco;
+      const poderBanco: PoderBanco = {
+        apoderado_nombre:        src_pb.apoderado_nombre        ?? ia_pb.apoderado_nombre,
+        apoderado_cedula:        src_pb.apoderado_cedula        ?? ia_pb.apoderado_cedula,
+        apoderado_escritura:     src_pb.apoderado_escritura     ?? ia_pb.apoderado_escritura,
+        apoderado_fecha:         src_pb.apoderado_fecha         ?? ia_pb.apoderado_fecha,
+        apoderado_fecha_dia:     src_pb.apoderado_fecha_dia     ?? ia_pb.apoderado_fecha_dia,
+        apoderado_fecha_mes:     src_pb.apoderado_fecha_mes     ?? ia_pb.apoderado_fecha_mes,
+        apoderado_fecha_anio:    src_pb.apoderado_fecha_anio    ?? ia_pb.apoderado_fecha_anio,
+        apoderado_notaria_poder: src_pb.apoderado_notaria_poder ?? ia_pb.apoderado_notaria_poder,
+        apoderado_genero:        src_pb.apoderado_genero        ?? ia_pb.apoderado_genero,
+      };
       // Inferencia inicial de género (no sobrescribe si ya existe en data_final).
       const partes = {
         ...source.partes,
@@ -456,6 +520,29 @@ export const CancelacionValidar = () => {
                 const pb: PoderBanco = data.poder_banco ?? {};
                 const setPB = (patch: Partial<PoderBanco>) =>
                   setData({ ...data, poder_banco: { ...pb, ...patch } });
+                // Sincronización bidireccional fecha del poder:
+                //  - Editar string compuesto → si parsea, poblar atómicos.
+                //  - Editar atómicos → recomponer string para mantener un único SSOT.
+                const setFechaString = (v: string) => {
+                  const parsed = parseFechaPartsClient(v);
+                  setPB({
+                    apoderado_fecha: v,
+                    apoderado_fecha_dia: parsed.dia || pb.apoderado_fecha_dia,
+                    apoderado_fecha_mes: parsed.mes || pb.apoderado_fecha_mes,
+                    apoderado_fecha_anio: parsed.anio || pb.apoderado_fecha_anio,
+                  });
+                };
+                const setFechaAtom = (key: "dia" | "mes" | "anio", v: string) => {
+                  const dia = key === "dia" ? v : (pb.apoderado_fecha_dia ?? "");
+                  const mes = key === "mes" ? v : (pb.apoderado_fecha_mes ?? "");
+                  const anio = key === "anio" ? v : (pb.apoderado_fecha_anio ?? "");
+                  setPB({
+                    apoderado_fecha_dia: dia,
+                    apoderado_fecha_mes: mes,
+                    apoderado_fecha_anio: anio,
+                    apoderado_fecha: composeFechaFromAtoms(dia, mes, anio),
+                  });
+                };
                 const empty = !pb.apoderado_nombre && !pb.apoderado_cedula && !pb.apoderado_escritura
                   && !pb.apoderado_fecha && !pb.apoderado_notaria_poder;
                 return (
@@ -488,10 +575,36 @@ export const CancelacionValidar = () => {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <Field label="Fecha del poder" value={pb.apoderado_fecha ?? ""}
-                        onChange={(v) => setPB({ apoderado_fecha: v })} />
+                        onChange={setFechaString} />
                       <Field label="Notaría del poder" value={pb.apoderado_notaria_poder ?? ""}
                         onChange={(v) => setPB({ apoderado_notaria_poder: v })} />
                     </div>
+                    <details className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+                      <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground select-none">
+                        Editar día / mes / año (sincronizado)
+                      </summary>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Día</Label>
+                          <Input value={pb.apoderado_fecha_dia ?? ""} placeholder="DD" className="h-8 text-xs"
+                            onChange={(e) => setFechaAtom("dia", e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Mes</Label>
+                          <Input value={pb.apoderado_fecha_mes ?? ""} placeholder="MM" className="h-8 text-xs"
+                            onChange={(e) => setFechaAtom("mes", e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Año</Label>
+                          <Input value={pb.apoderado_fecha_anio ?? ""} placeholder="AAAA" className="h-8 text-xs"
+                            onChange={(e) => setFechaAtom("anio", e.target.value)} />
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Al editar aquí se recompone el campo "Fecha del poder" como
+                        <span className="font-mono"> DD DE MES DE AAAA</span>. Refínalo con la doble expresión notarial si lo deseas.
+                      </p>
+                    </details>
                   </Section>
                 );
               })()}
