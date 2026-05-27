@@ -322,13 +322,22 @@ function joinSinDuplicar(haystack: string, separador: string, needle: string): s
 // Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
-  const esCuantiaIndeterminada = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
+  const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
+  // Tolerancia retro: si una versión vieja inyectó el literal en el campo de monto, lo normalizamos al flag.
+  const esIndeterminadaLegacy = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
+  const esCuantiaIndeterminada = esIndeterminadaIA || esIndeterminadaLegacy;
   const valor = esCuantiaIndeterminada ? { letras: "", numeros: "" } : splitValor(valorRaw);
+  // Type safety: campo de monto SIEMPRE numérico/formateado o undefined. Nunca literal de estado.
+  const valorHipotecaMonto: string | undefined = esCuantiaIndeterminada
+    ? undefined
+    : (valorRaw || undefined);
   const ciudadHipoteca = extractCiudadFromNotaria(data.hipoteca_anterior.notaria_hipoteca || "");
   const ne = data.notaria_emisora || {};
   const pb = data.poder_banco || {};
   const fp = parseFechaParts(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
+  const fpPoder = parseFechaParts(pb.apoderado_fecha || "");
   const notariaOrigenNum = extractNotariaNumero(data.hipoteca_anterior.notaria_hipoteca || "");
+
 
   // Motor de flexión de género gramatical (módulo compartido _shared/genero.ts).
   // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
