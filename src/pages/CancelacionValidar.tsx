@@ -520,6 +520,29 @@ export const CancelacionValidar = () => {
                 const pb: PoderBanco = data.poder_banco ?? {};
                 const setPB = (patch: Partial<PoderBanco>) =>
                   setData({ ...data, poder_banco: { ...pb, ...patch } });
+                // Sincronización bidireccional fecha del poder:
+                //  - Editar string compuesto → si parsea, poblar atómicos.
+                //  - Editar atómicos → recomponer string para mantener un único SSOT.
+                const setFechaString = (v: string) => {
+                  const parsed = parseFechaPartsClient(v);
+                  setPB({
+                    apoderado_fecha: v,
+                    apoderado_fecha_dia: parsed.dia || pb.apoderado_fecha_dia,
+                    apoderado_fecha_mes: parsed.mes || pb.apoderado_fecha_mes,
+                    apoderado_fecha_anio: parsed.anio || pb.apoderado_fecha_anio,
+                  });
+                };
+                const setFechaAtom = (key: "dia" | "mes" | "anio", v: string) => {
+                  const dia = key === "dia" ? v : (pb.apoderado_fecha_dia ?? "");
+                  const mes = key === "mes" ? v : (pb.apoderado_fecha_mes ?? "");
+                  const anio = key === "anio" ? v : (pb.apoderado_fecha_anio ?? "");
+                  setPB({
+                    apoderado_fecha_dia: dia,
+                    apoderado_fecha_mes: mes,
+                    apoderado_fecha_anio: anio,
+                    apoderado_fecha: composeFechaFromAtoms(dia, mes, anio),
+                  });
+                };
                 const empty = !pb.apoderado_nombre && !pb.apoderado_cedula && !pb.apoderado_escritura
                   && !pb.apoderado_fecha && !pb.apoderado_notaria_poder;
                 return (
@@ -552,10 +575,36 @@ export const CancelacionValidar = () => {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <Field label="Fecha del poder" value={pb.apoderado_fecha ?? ""}
-                        onChange={(v) => setPB({ apoderado_fecha: v })} />
+                        onChange={setFechaString} />
                       <Field label="Notaría del poder" value={pb.apoderado_notaria_poder ?? ""}
                         onChange={(v) => setPB({ apoderado_notaria_poder: v })} />
                     </div>
+                    <details className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+                      <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground select-none">
+                        Editar día / mes / año (sincronizado)
+                      </summary>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Día</Label>
+                          <Input value={pb.apoderado_fecha_dia ?? ""} placeholder="DD" className="h-8 text-xs"
+                            onChange={(e) => setFechaAtom("dia", e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Mes</Label>
+                          <Input value={pb.apoderado_fecha_mes ?? ""} placeholder="MM" className="h-8 text-xs"
+                            onChange={(e) => setFechaAtom("mes", e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">Año</Label>
+                          <Input value={pb.apoderado_fecha_anio ?? ""} placeholder="AAAA" className="h-8 text-xs"
+                            onChange={(e) => setFechaAtom("anio", e.target.value)} />
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Al editar aquí se recompone el campo "Fecha del poder" como
+                        <span className="font-mono"> DD DE MES DE AAAA</span>. Refínalo con la doble expresión notarial si lo deseas.
+                      </p>
+                    </details>
                   </Section>
                 );
               })()}
