@@ -401,7 +401,7 @@ function buildDocxVars(data: CancelacionData) {
     notaria_hipoteca_numero: notariaOrigenNum || undefined,
     ciudad_hipoteca: ciudadHipoteca,
     ciudad_hipoteca_corto: ciudadHipoteca,
-    valor_hipoteca_original: esCuantiaIndeterminada ? "HIPOTECA DE CUANTÍA INDETERMINADA" : (valorRaw || undefined),
+    valor_hipoteca_original: valorHipotecaMonto,
     valor_hipoteca_letras: valor.letras || undefined,
     valor_hipoteca_numeros: valor.numeros || undefined,
     valor_hipoteca_es_indeterminada: esCuantiaIndeterminada || undefined,
