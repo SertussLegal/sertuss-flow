@@ -205,18 +205,27 @@ PODER GENERAL DEL BANCO (cuando se adjunte):
 - Devuelve la fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
 - Si NO se adjuntó el Poder o no logras localizar los datos con certeza, OMITE COMPLETAMENTE el objeto 'poder_banco' (no lo devuelvas vacío).
 
-REGLA CRÍTICA — VALOR DEL CRÉDITO HIPOTECARIO (anti-alucinación, lógica semántica):
+REGLA CRÍTICA — VALOR DEL CRÉDITO HIPOTECARIO (anti-alucinación, lógica semántica + type safety):
 
-Las escrituras notariales colombianas varían radicalmente de formato, diseño y posición entre notarías. NO asumas que el valor del crédito siempre aparece en la misma página, tabla, casilla o coordenada. Aplica análisis contextual basado en el SIGNIFICADO de las cláusulas, no en su ubicación física.
+Las escrituras notariales colombianas varían radicalmente de formato y posición. NO asumas que el valor aparece en la misma página, tabla o coordenada. Aplica análisis contextual basado en el SIGNIFICADO.
 
-El valor que debe ir en 'valor_hipoteca_original' es ÚNICAMENTE el monto del crédito que la entidad financiera prestó al deudor. Para localizarlo, recorre el instrumento buscando — en orden — uno de estos tres contextos semánticos:
-  1. MUTUO: cláusula donde el banco "presta / otorga / concede / desembolsa / entrega" una suma al deudor como crédito.
-  2. PAGO: cláusula de compraventa donde el saldo del precio se cubre con el "producto del crédito" del banco.
-  3. LIQUIDACIÓN: casilla anexa de "cuantía del mutuo", "valor del crédito" o "monto del préstamo" en la hoja de calificación / orden de escritura.
+ANCLAJE SINTÁCTICO OBLIGATORIO: la cifra que extraigas DEBE estar gobernada gramaticalmente por un verbo rector del gravamen sobre el mismo inmueble: 'constituye', 'grava', 'hipoteca', 'garantiza', 'otorga garantía hipotecaria', 'presta', 'concede', 'desembolsa', 'entrega'. La proximidad física a la palabra 'hipoteca' NO basta — necesitas la relación verbo→monto.
 
-NUNCA confundas el valor del crédito con: el precio de la compraventa del Certificado de Tradición, el avalúo catastral o comercial, el monto del abono parcial, el saldo pendiente, ni el valor declarado del acto de liberación / cancelación.
+LISTA NEGRA DE CONCEPTOS (ignora el monto, NO el párrafo completo): si la cifra está sintácticamente ligada a 'precio de venta', 'valor de la compraventa', 'avalúo catastral', 'avalúo comercial', 'liberación de gravamen', 'subrogación', 'abono', 'saldo pendiente', 'subsidio' o 'cesantías', DESCÁRTALA. Si el mismo párrafo trae además una cifra anclada al mutuo, extrae solo esa.
 
-Si dos cifras compiten y no puedes resolver con certeza cuál corresponde al mutuo, devuelve cadena vacía '' — siempre es preferible que el notario complete manualmente a que el documento salga con una cuantía incorrecta (provoca rechazo de calificación registral). Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA, devuelve exactamente 'HIPOTECA DE CUANTÍA INDETERMINADA'.
+JERARQUÍA SEMÁNTICA (en orden):
+  1. MUTUO: el banco "presta / otorga / concede / desembolsa / entrega" una suma al deudor.
+  2. PAGO: "el saldo del precio se cubre con el producto del crédito que le concede [BANCO] por valor de …".
+  3. LIQUIDACIÓN: casilla anexa "CUANTÍA DEL MUTUO", "VALOR DEL CRÉDITO", "MONTO DEL PRÉSTAMO".
+
+FALLBACK DE CUERPO: si la carátula / hoja de calificación no aparece, recorre las cláusulas del cuerpo buscando los términos 'CUANTÍA', 'GARANTÍA HIPOTECARIA', 'MUTUO HIPOTECARIO', 'VALOR DEL CRÉDITO' ancladas a la misma hipoteca.
+
+CONTRATO DE SALIDA (TYPE-SAFE — CRÍTICO):
+- Si encuentras un monto válido anclado al mutuo → 'valor_hipoteca_original' = "<LETRAS> DE PESOS ($<NÚMEROS>)" y 'valor_hipoteca_es_indeterminada' = false.
+- Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA / DE CUANTÍA INDETERMINADA → 'valor_hipoteca_original' = "" (cadena vacía, NUNCA inyectes literales en el campo de monto) y 'valor_hipoteca_es_indeterminada' = true.
+- Si hay dos cifras candidatas ambiguas y no puedes desambiguar → 'valor_hipoteca_original' = "" y 'valor_hipoteca_es_indeterminada' = false. Siempre es preferible que el notario complete manualmente a que el documento salga con cuantía incorrecta (rechazo de calificación registral).
+
+PROHIBIDO ABSOLUTO: copiar el precio de la compraventa, el avalúo, el abono parcial, el saldo pendiente, o cualquier monto que no esté inequívocamente gobernado por un verbo rector del crédito.
 
 Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
