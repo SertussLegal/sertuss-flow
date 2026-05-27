@@ -89,6 +89,51 @@ const copyToClipboard = async (value: string, label: string) => {
   }
 };
 
+const MESES_NOMBRE = [
+  "", "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+  "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+];
+const MES_LOOKUP: Record<string, string> = {
+  enero: "01", febrero: "02", marzo: "03", abril: "04", mayo: "05", junio: "06",
+  julio: "07", agosto: "08", septiembre: "09", setiembre: "09",
+  octubre: "10", noviembre: "11", diciembre: "12",
+};
+// Extrae día/mes/año desde un string de fecha notarial libre.
+// Acepta: "DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)" o "19/08/2025".
+function parseFechaPartsClient(s: string): { dia: string; mes: string; anio: string } {
+  if (!s) return { dia: "", mes: "", anio: "" };
+  const diaP = (s.match(/\((\d{1,2})\)/)?.[1] ?? "").padStart(2, "0");
+  let mes = "";
+  const lower = s.toLowerCase();
+  for (const [k, v] of Object.entries(MES_LOOKUP)) {
+    if (lower.includes(k)) { mes = v; break; }
+  }
+  const anioMatch = s.match(/(19|20)\d{2}/);
+  const anio = anioMatch ? anioMatch[0] : "";
+  if (!diaP || !mes) {
+    const m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) return {
+      dia: m[1].padStart(2, "0"),
+      mes: m[2].padStart(2, "0"),
+      anio: m[3].length === 2 ? `20${m[3]}` : m[3],
+    };
+  }
+  return { dia: diaP, mes, anio };
+}
+// Recompone una fecha legible para el campo string a partir de atómicos.
+// Formato simplificado: "DD DE <MES> DE AAAA". El usuario puede luego refinar
+// a "DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)" si lo requiere.
+function composeFechaFromAtoms(dia: string, mes: string, anio: string): string {
+  if (!dia && !mes && !anio) return "";
+  const mesIdx = parseInt(mes, 10);
+  const mesNombre = mesIdx >= 1 && mesIdx <= 12 ? MESES_NOMBRE[mesIdx] : "";
+  const parts: string[] = [];
+  if (dia) parts.push(dia.padStart(2, "0"));
+  if (mesNombre) parts.push("DE", mesNombre);
+  if (anio) parts.push("DE", anio);
+  return parts.join(" ");
+}
+
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="rounded-lg border border-border bg-background p-4">
     <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
