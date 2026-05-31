@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, ProtectedRoute } from "@/contexts/AuthContext";
 import { ModuleProvider } from "@/contexts/ModuleContext";
+import { SaveStatusProvider } from "@/contexts/SaveStatusContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ModuleGate } from "@/components/layout/ModuleGate";
 import { LegacyTramiteRedirect } from "@/components/layout/LegacyTramiteRedirect";
@@ -35,6 +36,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <ModuleProvider>
+            <SaveStatusProvider>
             <CreditsBlockedModal />
             <Routes>
               {/* Públicas */}
@@ -136,6 +138,7 @@ const App = () => (
 
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </SaveStatusProvider>
           </ModuleProvider>
         </AuthProvider>
       </BrowserRouter>
