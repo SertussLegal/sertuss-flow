@@ -444,10 +444,25 @@ export const CancelacionValidar = () => {
                 <Loader2 className="h-3 w-3 animate-spin" /> Actualizando vista…
               </span>
             )}
-            <Button size="sm" variant="outline" onClick={handleManualRegen} disabled={previewRefreshing} className="gap-1.5 text-xs">
+            <Button size="sm" variant="outline" onClick={handleManualRegen} disabled={previewRefreshing || saving} className="gap-1.5 text-xs">
               <RefreshCw className="h-3.5 w-3.5" /> Regenerar
             </Button>
-            <Badge variant="outline" className="capitalize">{row.status}</Badge>
+            {isDirty ? (
+              <Button
+                size="sm"
+                onClick={handleManualSave}
+                disabled={saving || previewRefreshing}
+                className="gap-1.5 text-xs bg-notarial-gold text-slate-950 hover:bg-notarial-gold/90"
+              >
+                <Save className="h-3.5 w-3.5" /> Guardar cambios
+              </Button>
+            ) : row.status === "completed" ? (
+              <Badge variant="outline" className="capitalize gap-1.5 border-emerald-500/40 text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Guardado
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="capitalize">{row.status}</Badge>
+            )}
           </div>
         </div>
       </div>
