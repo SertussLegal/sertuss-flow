@@ -67,7 +67,7 @@ const docxVars = {
 ## 4. Anti-ejemplos
 
 - ❌ `"27 de mayo de 2026"` en una minuta (sin letras + paréntesis).
-- ❌ `"$30.000.000,00"` o `"$ 30.000.000 M/CTE"` (sufijo legacy).
+- ❌ `"$30.000.000,00"` o `"TREINTA MILLONES DE PESOS ($30.000.000)"` (falta `M/CTE` — los registradores lo rechazan).
 - ❌ `"quinto (5)"` para notaría (debe ser **femenino**: `"quinta (5)"`).
 - ❌ Reimplementar `numberToWords` en una nueva edge function.
 - ❌ Concatenar `numeroConLetras(x) + " (" + x + ")"` (ya viene con paréntesis — produce doble envoltura).
