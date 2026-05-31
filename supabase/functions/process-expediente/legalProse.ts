@@ -137,10 +137,15 @@ export function escrituraProsa(data: EscrituraInput): string | null {
 
 export function montoProsa(valor: string | number): string {
   if (valor === null || valor === undefined || valor === "") return "";
-  // Idempotencia
+  // Idempotencia: si ya viene formateado tipo "... ($NNN)" o "... ($NNN,00)", devolverlo.
   if (typeof valor === "string" && /\(\$[\d.,]+\)\s*$/.test(valor.trim())) {
-    return valor.trim();
+    return valor.trim().replace(/,00\)$/, ")");
   }
   const raw = typeof valor === "number" ? valor.toString() : valor;
-  return formatMonedaLegal(raw);
+  const formatted = formatMonedaLegal(raw);
+  if (!formatted) return "";
+  // formatMonedaLegal → "... DE PESOS M/CTE ($NNN,00)"
+  // Estilo notarial registral colombiano: mantener M/CTE, quitar solo ",00".
+  return formatted.replace(/,00\)$/, ")").trim();
 }
+
