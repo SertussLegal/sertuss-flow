@@ -119,6 +119,10 @@ export const PdfViewerPane = ({
   }, [load]);
 
   const handleDownload = () => {
+    if (blockDownload) {
+      onBlockedDownload?.();
+      return;
+    }
     if (!signedUrl) return;
     const link = document.createElement("a");
     link.href = signedUrl;
