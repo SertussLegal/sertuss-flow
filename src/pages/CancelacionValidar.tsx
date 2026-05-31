@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
 
 type NotariaEmisora = {
@@ -478,19 +479,16 @@ export const CancelacionValidar = () => {
               <Section title="Partes">
                 <Field label="Deudor" value={data.partes.deudor_nombre}
                   onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_nombre: v } })} />
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Género gramatical del deudor</Label>
-                  <ToggleGroup
-                    type="single"
-                    size="sm"
-                    value={data.partes.deudor_genero ?? ""}
-                    onValueChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_genero: (v as "M" | "F" | "") || "" } })}
-                  >
-                    <ToggleGroupItem value="M" className="text-xs">Masculino</ToggleGroupItem>
-                    <ToggleGroupItem value="F" className="text-xs">Femenino</ToggleGroupItem>
-                  </ToggleGroup>
-                  <p className="text-[10px] text-muted-foreground">Define la concordancia: "el señor deudor identificado" vs "la señora deudora identificada". Vacío → "el(la) señor(a) deudor(a)".</p>
-                </div>
+                <SegmentedChoice
+                  label="Género gramatical del deudor"
+                  options={[
+                    { value: "M", label: "Masculino" },
+                    { value: "F", label: "Femenino" },
+                  ]}
+                  value={data.partes.deudor_genero ?? ""}
+                  onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_genero: v as "M" | "F" | "" } })}
+                  helper={`Define la concordancia: "el señor deudor identificado" vs "la señora deudora identificada". Vacío → "el(la) señor(a) deudor(a)".`}
+                />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Tipo ID" value={data.partes.deudor_tipo_id} copyable={false}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_tipo_id: v } })} />
@@ -501,19 +499,16 @@ export const CancelacionValidar = () => {
                   <Field label="Banco" value={data.partes.banco_acreedor} onChange={() => {}} disabled />
                   <Field label="NIT" value={data.partes.banco_nit} onChange={() => {}} disabled />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Tratamiento notarial del banco</Label>
-                  <ToggleGroup
-                    type="single"
-                    size="sm"
-                    value={data.partes.tratamiento_entidad ?? ""}
-                    onValueChange={(v) => setData({ ...data, partes: { ...data.partes, tratamiento_entidad: (v as "M" | "F" | "") || "" } })}
-                  >
-                    <ToggleGroupItem value="F" className="text-xs">La entidad</ToggleGroupItem>
-                    <ToggleGroupItem value="M" className="text-xs">El establecimiento bancario</ToggleGroupItem>
-                  </ToggleGroup>
-                  <p className="text-[10px] text-muted-foreground">Elige la fórmula de apertura. Vacío → "la entidad".</p>
-                </div>
+                <SegmentedChoice
+                  label="Tratamiento notarial del banco"
+                  options={[
+                    { value: "F", label: "La entidad" },
+                    { value: "M", label: "El establecimiento bancario" },
+                  ]}
+                  value={data.partes.tratamiento_entidad ?? ""}
+                  onChange={(v) => setData({ ...data, partes: { ...data.partes, tratamiento_entidad: v as "M" | "F" | "" } })}
+                  helper={`Elige la fórmula de apertura. Vacío → "la entidad".`}
+                />
               </Section>
 
               {(() => {
@@ -554,19 +549,16 @@ export const CancelacionValidar = () => {
                     )}
                     <Field label="Nombre apoderado" value={pb.apoderado_nombre ?? ""}
                       onChange={(v) => setPB({ apoderado_nombre: v })} />
-                    <div className="space-y-1">
-                      <Label className="text-[11px] text-muted-foreground">Género del apoderado</Label>
-                      <ToggleGroup
-                        type="single"
-                        size="sm"
-                        value={pb.apoderado_genero ?? ""}
-                        onValueChange={(v) => setPB({ apoderado_genero: (v as "M" | "F" | "") || "" })}
-                      >
-                        <ToggleGroupItem value="M" className="text-xs">Masculino</ToggleGroupItem>
-                        <ToggleGroupItem value="F" className="text-xs">Femenino</ToggleGroupItem>
-                      </ToggleGroup>
-                      <p className="text-[10px] text-muted-foreground">"el señor apoderado identificado" vs "la señora apoderada identificada".</p>
-                    </div>
+                    <SegmentedChoice
+                      label="Género del apoderado"
+                      options={[
+                        { value: "M", label: "Masculino" },
+                        { value: "F", label: "Femenino" },
+                      ]}
+                      value={pb.apoderado_genero ?? ""}
+                      onChange={(v) => setPB({ apoderado_genero: v as "M" | "F" | "" })}
+                      helper={`"el señor apoderado identificado" vs "la señora apoderada identificada".`}
+                    />
                     <div className="grid grid-cols-2 gap-2">
                       <Field label="Cédula" value={pb.apoderado_cedula ?? ""}
                         onChange={(v) => setPB({ apoderado_cedula: v })} />
