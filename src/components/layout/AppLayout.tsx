@@ -4,7 +4,8 @@ import { AppSidebar } from "./AppSidebar";
 import { useModules } from "@/contexts/ModuleContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Coins } from "lucide-react";
+import { CheckCircle2, Coins, Loader2 } from "lucide-react";
+import { useSaveStatus } from "@/contexts/SaveStatusContext";
 
 const SECTION_TITLES: Array<{ match: RegExp; title: string }> = [
   { match: /^\/escrituras\/nuevo/, title: "Nueva escritura" },
@@ -23,6 +24,7 @@ const resolveTitle = (pathname: string) =>
 export const AppLayout = () => {
   const { loadingModules } = useModules();
   const { organization } = useAuth();
+  const { status: saveStatus } = useSaveStatus();
   const { pathname } = useLocation();
   const title = resolveTitle(pathname);
 
@@ -40,6 +42,24 @@ export const AppLayout = () => {
               </span>
             )}
             <div className="flex-1" />
+            {saveStatus === "saving" && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 border border-border rounded-full px-2.5 py-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Guardando…</span>
+              </div>
+            )}
+            {saveStatus === "dirty" && (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/40 rounded-full px-2.5 py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <span>Sin guardar</span>
+              </div>
+            )}
+            {saveStatus === "saved" && (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/40 rounded-full px-2.5 py-1">
+                <CheckCircle2 className="h-3 w-3" />
+                <span>Guardado</span>
+              </div>
+            )}
             {organization && (
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Coins className="h-4 w-4 text-notarial-gold" />
