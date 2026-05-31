@@ -61,6 +61,8 @@ export const PdfViewerPane = ({
   refreshKey,
   isLoading: externalLoading,
   downloadName,
+  blockDownload,
+  onBlockedDownload,
 }: PdfViewerPaneProps) => {
   const [state, setState] = useState<ViewerState>("idle");
   const [html, setHtml] = useState<string>("");
