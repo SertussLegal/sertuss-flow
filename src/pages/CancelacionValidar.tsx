@@ -273,6 +273,46 @@ export const CancelacionValidar = () => {
     }
   }, [row?.status, refreshCredits]);
 
+  // Función central reutilizable: persiste data_final + regenera docx silenciosamente.
+  // Limpia el flag dirty al terminar exitosamente.
+  const persistData = useCallback(
+    async (opts: { silent?: boolean } = {}): Promise<boolean> => {
+      if (!id || !data) return false;
+      setSaving(true);
+      const snapshot = JSON.stringify(data);
+      const { error } = await supabase.from("cancelaciones").update({
+        data_final: data,
+        deudor_nombre: data.partes.deudor_nombre,
+        deudor_cedula: data.partes.deudor_identificacion,
+        matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
+        aplica_ley_546: data.analisis_legal.aplica_ley_546,
+        explicacion_ley: data.analisis_legal.explicacion_ley,
+      }).eq("id", id);
+      setSaving(false);
+      if (error) {
+        toast.error("No se pudo guardar", { description: error.message });
+        return false;
+      }
+      lastSavedSnapshotRef.current = snapshot;
+      setIsDirty(false);
+      // Regen silencioso con SSOT del frontend (manualOverrides).
+      setPreviewRefreshing(true);
+      const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
+        cancelacionId: id, regen: true, manualOverrides: data,
+      });
+      setPreviewRefreshing(false);
+      if (!regenErr) {
+        setViewerKey((k) => k + 1);
+        queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+        if (!opts.silent) toast.success("Cambios guardados");
+      } else if (!opts.silent) {
+        toast.warning("Cambios guardados, pero la vista previa no se actualizó");
+      }
+      return true;
+    },
+    [id, data, queryClient],
+  );
+
   // Debounce inteligente: 3s si cambió poder_banco, 15s en otros casos.
   const prevPoderRef = useRef<string>("");
   useEffect(() => {
@@ -285,39 +325,24 @@ export const CancelacionValidar = () => {
     const delay = poderChanged ? 3000 : 15000;
 
     const t = setTimeout(async () => {
-      setSaving(true);
-      const { error } = await supabase.from("cancelaciones").update({
-        data_final: data,
-        deudor_nombre: data.partes.deudor_nombre,
-        deudor_cedula: data.partes.deudor_identificacion,
-        matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
-        aplica_ley_546: data.analisis_legal.aplica_ley_546,
-        explicacion_ley: data.analisis_legal.explicacion_ley,
-      }).eq("id", id);
-      setSaving(false);
-      if (error) {
-        toast.error("No se pudo guardar", { description: error.message });
-        return;
-      }
-      // Regen silencioso con SSOT del frontend (manualOverrides).
-      setPreviewRefreshing(true);
-      const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
-        cancelacionId: id, regen: true, manualOverrides: data,
-      });
-      setPreviewRefreshing(false);
-      if (!regenErr) {
-        setViewerKey((k) => k + 1);
-        queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-      }
+      await persistData({ silent: true });
       prevPoderRef.current = currentPoder;
     }, delay);
     return () => clearTimeout(t);
-  }, [data, id, row?.status, queryClient]);
+  }, [data, id, row?.status, persistData]);
+
+  const handleManualSave = () => {
+    void persistData({ silent: false });
+  };
 
   const handleManualRegen = async () => {
     if (!id || !data) return;
+    // Si hay cambios pendientes, guárdalos primero.
+    if (isDirty) {
+      await persistData({ silent: true });
+      return;
+    }
     setPreviewRefreshing(true);
-    await supabase.from("cancelaciones").update({ data_final: data }).eq("id", id);
     const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
     setPreviewRefreshing(false);
     if (error) {
@@ -328,6 +353,17 @@ export const CancelacionValidar = () => {
     setViewerKey((k) => k + 1);
     queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
+
+  // Aviso si el usuario cierra/recarga la pestaña con cambios sin guardar.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const activePath = useMemo(() => {
     if (!row) return null;
