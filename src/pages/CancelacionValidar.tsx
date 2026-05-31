@@ -475,6 +475,17 @@ export const CancelacionValidar = () => {
             key={`${activeDoc}-${viewerKey}`}
             filePath={activePath}
             refreshKey={`${activeDoc}-${viewerKey}`}
+            blockDownload={isDirty}
+            onBlockedDownload={() => {
+              toast.warning("Tienes cambios sin guardar", {
+                description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
+                action: {
+                  label: "Guardar ahora",
+                  onClick: () => handleManualSave(),
+                },
+                duration: 6000,
+              });
+            }}
           />
           {previewRefreshing && (
             <div className="absolute inset-0 bg-background/40 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20">
