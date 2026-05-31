@@ -319,6 +319,145 @@ function joinSinDuplicar(haystack: string, separador: string, needle: string): s
   return `${haystack}${separador}${needle}`;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// FASE 2 — Helpers locales para Deno (réplica de src/lib/legalFormatters
+// y legalProse, ya que Deno no puede importar de src/lib/...).
+// ──────────────────────────────────────────────────────────────────────
+
+// Corrige typos endémicos del OCR colombiano. Tabla extensible.
+function fixOcrTypos(s: string): string {
+  if (!s) return s;
+  return s.replace(/\bCUNDINAMRCA\b/gi, "CUNDINAMARCA");
+}
+
+const _UNITS = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
+const _TEENS = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
+const _TENS = ["", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+const _HUNDREDS = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+
+function _convertGroupLegal(n: number): string {
+  if (n === 0) return "";
+  if (n === 100) return "cien";
+  if (n < 10) return _UNITS[n];
+  if (n < 20) return _TEENS[n - 10];
+  if (n < 30) return n === 20 ? "veinte" : `veinti${_UNITS[n % 10]}`;
+  if (n < 100) {
+    const t = Math.floor(n / 10), u = n % 10;
+    return u === 0 ? _TENS[t] : `${_TENS[t]} y ${_UNITS[u]}`;
+  }
+  const h = Math.floor(n / 100), rest = n % 100;
+  if (h === 1 && rest === 0) return "cien";
+  return rest === 0 ? _HUNDREDS[h] : `${_HUNDREDS[h]} ${_convertGroupLegal(rest)}`;
+}
+
+function numberToWordsLegal(num: number): string {
+  if (num === 0) return "cero";
+  const groups: [number, string, string][] = [
+    [1_000_000_000, "mil millones", "mil millones"],
+    [1_000_000, "millón", "millones"],
+    [1_000, "mil", "mil"],
+    [1, "", ""],
+  ];
+  let result = "";
+  let remaining = num;
+  for (const [divisor, singular, plural] of groups) {
+    const q = Math.floor(remaining / divisor);
+    remaining = remaining % divisor;
+    if (q === 0) continue;
+    if (divisor === 1) {
+      result += ` ${_convertGroupLegal(q)}`;
+    } else if (q === 1) {
+      result += divisor === 1000 ? ` mil` : ` un ${singular}`;
+    } else {
+      result += ` ${_convertGroupLegal(q)} ${plural}`;
+    }
+  }
+  return result.trim();
+}
+
+const _FEM_ORD_1_10: Record<number, string> = {
+  1: "ÚNICA", 2: "SEGUNDA", 3: "TERCERA", 4: "CUARTA", 5: "QUINTA",
+  6: "SEXTA", 7: "SÉPTIMA", 8: "OCTAVA", 9: "NOVENA", 10: "DÉCIMA",
+};
+function masculinoAFemenino(words: string): string {
+  let out = words;
+  out = out.replace(/\bveintiun[oó]?\b/gi, "veintiuna");
+  out = out.replace(/\b(y)\s+un(o)?\b/gi, "$1 una");
+  out = out.replace(/(^|\s)un(o)?$/i, "$1una");
+  return out;
+}
+
+// Idempotencia: si ya viene "<algo> (NNN)" o "($NNN...)", no re-envolver.
+const ALREADY_FORMATTED_RE = /\([\d.\s$,]+\)\s*$/;
+
+function numeroConLetras(n: number | string, gender: "masculine" | "feminine" = "masculine"): string {
+  if (typeof n === "string" && ALREADY_FORMATTED_RE.test(n.trim())) return n.trim();
+  const num = typeof n === "string" ? parseInt(n.replace(/\D/g, ""), 10) : n;
+  if (!Number.isFinite(num) || num <= 0) return "";
+  if (gender === "feminine" && num >= 1 && num <= 10) {
+    return `${_FEM_ORD_1_10[num]} (${num})`;
+  }
+  let words = numberToWordsLegal(num);
+  if (gender === "feminine") words = masculinoAFemenino(words);
+  return `${words.toLocaleUpperCase("es-CO")} (${num})`;
+}
+
+const _MESES_PROSA = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+// Fecha en prosa MAYÚSCULAS para protocolo. Idempotente.
+function fechaProsaUpper(fecha: string): string {
+  if (!fecha) return "";
+  const trimmed = fecha.trim();
+  if (ALREADY_FORMATTED_RE.test(trimmed) && /[A-Za-zÁÉÍÓÚáéíóú]/.test(trimmed)) {
+    return trimmed.toLocaleUpperCase("es-CO");
+  }
+  let dia: number, mes: number, anio: number;
+  const ymd = trimmed.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/);
+  const dmy = trimmed.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})$/);
+  if (ymd) { anio = parseInt(ymd[1], 10); mes = parseInt(ymd[2], 10); dia = parseInt(ymd[3], 10); }
+  else if (dmy) { dia = parseInt(dmy[1], 10); mes = parseInt(dmy[2], 10); anio = parseInt(dmy[3], 10); }
+  else return "";
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return "";
+  return `${numeroConLetras(dia)} DE ${_MESES_PROSA[mes - 1].toUpperCase()} DE ${numeroConLetras(anio)}`;
+}
+
+// formatMonedaLegal idéntica al frontend (preserva ",00" + "M/CTE").
+function formatMonedaLegal(valor: string): string {
+  if (!valor) return "";
+  const cleaned = valor.replace(/[$.\s]/g, "").replace(/,\d{2}$/, "").replace(/,/g, "");
+  const num = parseInt(cleaned, 10);
+  if (!Number.isFinite(num) || num <= 0) return "";
+  const words = numberToWordsLegal(num).toUpperCase();
+  const formatted = num.toLocaleString("es-CO").replace(/,/g, ".");
+  return `${words} DE PESOS M/CTE ($${formatted},00)`;
+}
+
+// Monto para protocolo: reusa formatMonedaLegal y elimina ",00)" si decimales = 0.
+// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente.
+function montoProsaProtocolo(valor: string | number | undefined | null): string {
+  if (valor === null || valor === undefined || valor === "") return "";
+  const raw = typeof valor === "number" ? String(valor) : valor;
+  if (typeof raw === "string" && /\(\$[\d.,]+\)\s*$/.test(raw.trim())) return raw.trim();
+  const formateado = formatMonedaLegal(raw);
+  if (!formateado) return "";
+  // Escape correcto del paréntesis de cierre.
+  return formateado.replace(/,00\)$/, ")");
+}
+
+// Inyección PH: cláusula intercalada ", bajo el régimen de PROPIEDAD HORIZONTAL,".
+// Idempotente (no duplica si ya existe).
+const _PH_TOKENS = /\b(APARTAMENTO|APTO|TORRE|CONJUNTO|GARAJE|DEP[OÓ]SITO|BLOQUE|CUARTO\s+[UÚ]TIL|UNIDAD\s+PRIVADA)\b/i;
+function inyectarRegimenPH(descripcion: string): string {
+  if (!descripcion) return descripcion;
+  if (/PROPIEDAD\s+HORIZONTAL/i.test(descripcion)) return descripcion;
+  if (!_PH_TOKENS.test(descripcion)) return descripcion;
+  const limpio = descripcion.replace(/[\s.,;:–\-]+$/g, "");
+  return `${limpio}, bajo el régimen de PROPIEDAD HORIZONTAL,`;
+}
+
 // Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
@@ -357,36 +496,75 @@ function buildDocxVars(data: CancelacionData) {
       : "";
 
   // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
-  // Sufijo "(DIRECCION CATASTRAL)" + ciudad se inyectan UNA sola vez aquí (nunca en la plantilla, nunca por el OCR).
-  const ciudadInmueble = (data.inmueble.ciudad || "").trim();
+  // FASE 2: sufijo "(DIRECCION CATASTRAL)" SOLO si la ciudad es Bogotá (formato SNR capital).
+  // Para Villeta, Girardot y cualquier otro municipio, se omite.
+  const ciudadInmueble = fixOcrTypos((data.inmueble.ciudad || "").trim());
+  const ciudadNorm = ciudadInmueble
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().trim();
+  const esBogota = /^BOGOTA(\s|,|\.|$|D)/i.test(ciudadNorm);
+
   // Red de seguridad determinista: aunque Gemini se desborde, descartamos áreas,
   // linderos y coeficientes en el servidor antes de mapear a la plantilla.
-  const descripcionPredio = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
+  const descripcionPredioBase = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
     .replace(/(?:CON\s+UN\s+[ÁA]REA|[ÁA]REA\s+(?:PRIVADA|CONSTRUIDA|TOTAL)|LINDEROS?\s+(?:HORIZONTALES?|T[EÉ]CNICOS?|GENERALES?|VERTICALES?)|COEFICIENTE\s+DE\s+COPROPIEDAD|ENTRE\s+LOS\s+PUNTOS).*$/i, "")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  // Inyección de régimen PH como cláusula intercalada notarial (Ley 675 de 2001).
+  const descripcionPredio = inyectarRegimenPH(fixOcrTypos(descripcionPredioBase));
 
   let nomenclaturaBase = (data.inmueble.nomenclatura_predio ?? data.inmueble.direccion_completa ?? "").trim();
-  // Colapsa cualquier sufijo catastral pre-existente (con o sin paréntesis) y la cola
-  // de ciudad redundante en todas sus variantes OCR ("Y/O", "Y O", "YO").
-  nomenclaturaBase = nomenclaturaBase
-    .replace(/\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
-    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO\s+DE\s+.+$/i, "")
+  // FASE 2: limpieza estricta en este orden:
+  //  1) fixOcrTypos  2) quitar sufijo catastral pre-existente (lo re-inyectamos sólo si Bogotá)
+  //  3) colapsar coletilla "DE LA CIUDAD Y/O MUNICIPIO ..." final, incluso TRUNCADA en seco.
+  nomenclaturaBase = fixOcrTypos(nomenclaturaBase)
+    .replace(/\s*\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
+    // Regex tolerante: la cola "DE ..." final es opcional (cubre los 3 residuos OCR reales)
+    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO(?:\s+DE\s+.+)?\s*$/i, "")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+
+  const departamentoInmueble = fixOcrTypos(((data.inmueble as Record<string, string>).departamento || "").trim().toUpperCase());
+  const coletillaCiudad = ciudadInmueble
+    ? ` DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble.toUpperCase()}${departamentoInmueble ? ` DEPARTAMENTO DE ${departamentoInmueble}` : ""}`
+    : "";
   const nomenclaturaFinal = nomenclaturaBase
-    ? (ciudadInmueble
-        ? `${nomenclaturaBase} (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble}`
-        : `${nomenclaturaBase} (DIRECCION CATASTRAL)`)
+    ? (esBogota
+        ? `${nomenclaturaBase} (DIRECCION CATASTRAL)${coletillaCiudad}`
+        : `${nomenclaturaBase}${coletillaCiudad}`)
     : undefined;
 
-  // Notaría origen: anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
-  const notariaHipotecaSanitizada = ciudadInmueble
-    ? joinSinDuplicar(data.hipoteca_anterior.notaria_hipoteca || "", "", "")
-        .replace(new RegExp(`\\b${ciudadInmueble}\\b\\s+DEL?\\s+\\b${ciudadInmueble}\\b`, "gi"), ciudadInmueble)
-    : data.hipoteca_anterior.notaria_hipoteca;
+  // Notaría origen: typos OCR + anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
+  const notariaHipotecaSanitizada = (() => {
+    const fixed = fixOcrTypos(data.hipoteca_anterior.notaria_hipoteca || "");
+    if (!ciudadInmueble) return fixed;
+    return fixed.replace(new RegExp(`\\b${ciudadInmueble}\\b\\s+DEL?\\s+\\b${ciudadInmueble}\\b`, "gi"), ciudadInmueble);
+  })();
+
+  // FASE 2 — Capa protocolo TEXTO (NÚMERO). Idempotente, con género gramatical.
+  // Heurística "ÚNICA": si el nombre/título contiene la palabra, forzamos número 1 femenino.
+  const _esNotariaUnica = (s?: string) => !!s && /\b[ÚU]?NICA\b/i.test(s);
+  const notariaHipotecaNumLetras = _esNotariaUnica(notariaHipotecaSanitizada)
+    ? numeroConLetras(1, "feminine")
+    : numeroConLetras(notariaOrigenNum || "", "feminine");
+  const notariaEmisoraNumLetras = _esNotariaUnica(ne.notaria_emisora_titulo || ne.notario_nombre || "")
+    ? numeroConLetras(1, "feminine")
+    : numeroConLetras(ne.notaria_emisora_numero || "", "feminine");
+  const escrituraHipotecaNumLetras = numeroConLetras(
+    extractCorto(data.hipoteca_anterior.numero_escritura_hipoteca || "") || data.hipoteca_anterior.numero_escritura_hipoteca || "",
+    "masculine",
+  );
+  const escrituraNuevaNumLetras = numeroConLetras(
+    extractCorto(ne.numero_escritura_nueva || "") || ne.numero_escritura_nueva || "",
+    "masculine",
+  );
+  const fechaEscrituraHipotecaLetras = fechaProsaUpper(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
+  const fechaOtorgamientoNuevaLetras = fechaProsaUpper(ne.fecha_otorgamiento_nueva || "");
+  const apoderadoFechaLetras = fechaProsaUpper(pb.apoderado_fecha || "");
+  const valorHipotecaProtocolo = esCuantiaIndeterminada ? undefined : (montoProsaProtocolo(valorRaw) || undefined);
+
 
   return {
     // Hipoteca anterior
@@ -454,6 +632,15 @@ function buildDocxVars(data: CancelacionData) {
     fondo_nacional: ne.fondo_nacional || undefined,
     iva: ne.iva || undefined,
     valor_acto: valorActoFinal || undefined,
+    // FASE 2 — Capa protocolo TEXTO (NÚMERO). Idempotente. Las atómicas siguen intactas arriba.
+    escritura_hipoteca_numero_letras: escrituraHipotecaNumLetras || undefined,
+    notaria_hipoteca_numero_letras: notariaHipotecaNumLetras || undefined,
+    escritura_nueva_numero_letras: escrituraNuevaNumLetras || (ne as Record<string, string>).numero_escritura_nueva_letras || undefined,
+    notaria_emisora_numero_letras: notariaEmisoraNumLetras || undefined,
+    fecha_escritura_hipoteca_letras: fechaEscrituraHipotecaLetras || undefined,
+    fecha_otorgamiento_nueva_prosa: fechaOtorgamientoNuevaLetras || (ne as Record<string, string>).fecha_otorgamiento_nueva_letras || undefined,
+    apoderado_fecha_letras: apoderadoFechaLetras || undefined,
+    valor_hipoteca_protocolo: valorHipotecaProtocolo,
     // Tokens de flexión de género gramatical (motor compartido)
     ...tokensDeudor,
     ...tokensApoderado,
