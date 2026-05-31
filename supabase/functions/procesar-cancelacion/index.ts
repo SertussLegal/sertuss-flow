@@ -835,7 +835,7 @@ serve(async (req) => {
     }
 
     // 1) Cobro de 2 créditos (con auditoría obligatoria → p_tramite_id requerido)
-    const { data: charge, error: chargeErr } = await supabaseService.rpc("consume_credit_v2", {
+    const { data: charge, error: chargeErr } = await supabaseUser.rpc("consume_credit_v2", {
       p_org_id: orgId,
       p_user_id: userId,
       p_action: "GENERACION_DOCX",
