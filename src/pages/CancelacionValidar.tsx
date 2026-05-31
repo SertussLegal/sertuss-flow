@@ -236,12 +236,15 @@ export const CancelacionValidar = () => {
         ...poderBanco,
         apoderado_genero: poderBanco.apoderado_genero ?? inferGeneroFromNombre(poderBanco.apoderado_nombre ?? ""),
       };
-      setData({
+      const hydrated = {
         ...source,
         partes,
         notaria_emisora: source.notaria_emisora ?? {},
         poder_banco: poderInferido,
-      });
+      };
+      setData(hydrated);
+      lastSavedSnapshotRef.current = JSON.stringify(hydrated);
+      setIsDirty(false);
       initialHydrationRef.current = true;
       // Aviso semántico: valor del crédito no detectado por la IA.
       const valorCredito = (source.hipoteca_anterior?.valor_hipoteca_original ?? "").trim();
@@ -253,6 +256,15 @@ export const CancelacionValidar = () => {
       }
     }
   }, [row]);
+
+  // Detecta cambios manuales del usuario (post-hidratación) y marca dirty.
+  useEffect(() => {
+    if (!data || !initialHydrationRef.current) return;
+    const snap = JSON.stringify(data);
+    if (snap !== lastSavedSnapshotRef.current) {
+      setIsDirty(true);
+    }
+  }, [data]);
 
   useEffect(() => {
     if (row?.status === "completed" && !creditsRefreshedRef.current) {
