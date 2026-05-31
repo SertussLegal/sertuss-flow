@@ -43,9 +43,10 @@ Acepta `YYYY-MM-DD`, `DD-MM-YYYY`, `DD/MM/YYYY`. Día y año van en letras + par
 
 ### Montos
 
-`montoProsa(30000000)` → `"TREINTA MILLONES DE PESOS ($30.000.000)"`.
+`montoProsa(30000000)` → `"TREINTA MILLONES DE PESOS M/CTE ($30.000.000)"`.
 
-- Sin sufijo `M/CTE`, sin `,00` cuando los decimales son cero.
+- **Mantiene SIEMPRE el sufijo `M/CTE`** (Moneda Corriente — requisito de los registradores de instrumentos públicos en Colombia, NO removerlo).
+- Elimina únicamente el `,00` cuando los decimales son cero.
 - Idempotente: si ya viene formateado `"... ($NNN)"`, se devuelve intacto.
 - Para cuantías indeterminadas usar el patrón de la skill `extraccion-cuantia-semantica` (flag booleano + condicional Docxtemplater), NUNCA inyectar literales en el campo de monto.
 
@@ -66,7 +67,7 @@ const docxVars = {
 ## 4. Anti-ejemplos
 
 - ❌ `"27 de mayo de 2026"` en una minuta (sin letras + paréntesis).
-- ❌ `"$30.000.000,00"` o `"$ 30.000.000 M/CTE"` (sufijo legacy).
+- ❌ `"$30.000.000,00"` o `"TREINTA MILLONES DE PESOS ($30.000.000)"` (falta `M/CTE` — los registradores lo rechazan).
 - ❌ `"quinto (5)"` para notaría (debe ser **femenino**: `"quinta (5)"`).
 - ❌ Reimplementar `numberToWords` en una nueva edge function.
 - ❌ Concatenar `numeroConLetras(x) + " (" + x + ")"` (ya viene con paréntesis — produce doble envoltura).

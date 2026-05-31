@@ -155,25 +155,23 @@ export function escrituraProsa(data: EscrituraInput): string | null {
 // ── Montos ───────────────────────────────────────────────────────────────
 
 /**
- * Devuelve el monto en formato notarial:
- *   "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)".
- * Reusa `formatMonedaLegal` y elimina el sufijo "M/CTE ,00" para ajustarse
- * al estilo de minuta correcta. Devuelve "" si el valor no es positivo.
+ * Devuelve el monto en formato notarial colombiano exigido por registradores:
+ *   "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)".
+ * Reusa `formatMonedaLegal` y elimina ÚNICAMENTE el sufijo decimal ",00";
+ * el término "M/CTE" se mantiene siempre (requisito registral).
+ * Devuelve "" si el valor no es positivo.
  */
 export function montoProsa(valor: string | number): string {
   if (valor === null || valor === undefined || valor === "") return "";
-  // Idempotencia: si ya viene formateado tipo "... ($NNN...)", devolverlo.
+  // Idempotencia: si ya viene formateado tipo "... ($NNN)" o "... ($NNN,00)", devolverlo.
   if (typeof valor === "string" && /\(\$[\d.,]+\)\s*$/.test(valor.trim())) {
-    return valor.trim();
+    return valor.trim().replace(/,00\)$/, ")");
   }
   const raw = typeof valor === "number" ? valor.toString() : valor;
   const formatted = formatMonedaLegal(raw);
   if (!formatted) return "";
   // formatMonedaLegal → "CIENTO ... DE PESOS M/CTE ($185.000.000,00)"
-  // Normalizamos al estilo de minuta correcta:
-  //   "CIENTO ... DE PESOS ($185.000.000)"
-  return formatted
-    .replace(/\s+M\/CTE\s+/i, " ")
-    .replace(/,00\)$/, ")")
-    .trim();
+  // Estilo notarial registral: mantener M/CTE, quitar solo ",00".
+  return formatted.replace(/,00\)$/, ")").trim();
 }
+

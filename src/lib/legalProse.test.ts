@@ -56,16 +56,27 @@ describe("legalProse — escrituraProsa", () => {
 });
 
 describe("legalProse — montoProsa", () => {
-  it("formato notarial mayúsculas + paréntesis", () => {
+  it("formato notarial registral colombiano: mayúsculas + M/CTE + paréntesis sin ,00", () => {
     expect(montoProsa("185000000")).toBe(
-      "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)",
+      "CIENTO OCHENTA Y CINCO MILLONES DE PESOS M/CTE ($185.000.000)",
+    );
+  });
+  it("preserva M/CTE (requisito registral colombiano)", () => {
+    expect(montoProsa(30000000)).toBe(
+      "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)",
     );
   });
   it("idempotencia: no re-envuelve montos ya formateados", () => {
-    const formatted = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)";
+    const formatted = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS M/CTE ($185.000.000)";
     expect(montoProsa(formatted)).toBe(formatted);
   });
+  it("idempotencia: normaliza ,00 residual a formato limpio", () => {
+    expect(montoProsa("TREINTA MILLONES DE PESOS M/CTE ($30.000.000,00)")).toBe(
+      "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)",
+    );
+  });
 });
+
 
 describe("legalProse — idempotencia numeroConLetras", () => {
   it("no re-envuelve cadenas ya formateadas tipo 'palabra (NNN)'", () => {
