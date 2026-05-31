@@ -11,6 +11,9 @@ interface PdfViewerPaneProps {
   refreshKey?: string | number;
   isLoading?: boolean;
   downloadName?: string;
+  /** Si es true, intercepta la descarga y dispara onBlockedDownload en lugar de descargar. */
+  blockDownload?: boolean;
+  onBlockedDownload?: () => void;
 }
 
 type ViewerState = "idle" | "loading" | "ready" | "error";
@@ -58,6 +61,8 @@ export const PdfViewerPane = ({
   refreshKey,
   isLoading: externalLoading,
   downloadName,
+  blockDownload,
+  onBlockedDownload,
 }: PdfViewerPaneProps) => {
   const [state, setState] = useState<ViewerState>("idle");
   const [html, setHtml] = useState<string>("");
@@ -114,6 +119,10 @@ export const PdfViewerPane = ({
   }, [load]);
 
   const handleDownload = () => {
+    if (blockDownload) {
+      onBlockedDownload?.();
+      return;
+    }
     if (!signedUrl) return;
     const link = document.createElement("a");
     link.href = signedUrl;
