@@ -632,6 +632,15 @@ function buildDocxVars(data: CancelacionData) {
     fondo_nacional: ne.fondo_nacional || undefined,
     iva: ne.iva || undefined,
     valor_acto: valorActoFinal || undefined,
+    // FASE 2 — Capa protocolo TEXTO (NÚMERO). Idempotente. Las atómicas siguen intactas arriba.
+    escritura_hipoteca_numero_letras: escrituraHipotecaNumLetras || undefined,
+    notaria_hipoteca_numero_letras: notariaHipotecaNumLetras || undefined,
+    escritura_nueva_numero_letras: escrituraNuevaNumLetras || (ne as Record<string, string>).numero_escritura_nueva_letras || undefined,
+    notaria_emisora_numero_letras: notariaEmisoraNumLetras || undefined,
+    fecha_escritura_hipoteca_letras: fechaEscrituraHipotecaLetras || undefined,
+    fecha_otorgamiento_nueva_prosa: fechaOtorgamientoNuevaLetras || (ne as Record<string, string>).fecha_otorgamiento_nueva_letras || undefined,
+    apoderado_fecha_letras: apoderadoFechaLetras || undefined,
+    valor_hipoteca_protocolo: valorHipotecaProtocolo,
     // Tokens de flexión de género gramatical (motor compartido)
     ...tokensDeudor,
     ...tokensApoderado,
