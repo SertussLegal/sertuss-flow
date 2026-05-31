@@ -449,11 +449,6 @@ export const CancelacionValidar = () => {
             </TabsList>
           </Tabs>
           <div className="ml-auto flex items-center gap-2">
-            {saving && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" /> Guardando…
-              </span>
-            )}
             {previewRefreshing && (
               <span className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Loader2 className="h-3 w-3 animate-spin" /> Actualizando vista…
@@ -462,22 +457,14 @@ export const CancelacionValidar = () => {
             <Button size="sm" variant="outline" onClick={handleManualRegen} disabled={previewRefreshing || saving} className="gap-1.5 text-xs">
               <RefreshCw className="h-3.5 w-3.5" /> Regenerar
             </Button>
-            {isDirty ? (
-              <Button
-                size="sm"
-                onClick={handleManualSave}
-                disabled={saving || previewRefreshing}
-                className="gap-1.5 text-xs bg-notarial-gold text-slate-950 hover:bg-notarial-gold/90"
-              >
-                <Save className="h-3.5 w-3.5" /> Guardar cambios
-              </Button>
-            ) : row.status === "completed" ? (
-              <Badge variant="outline" className="capitalize gap-1.5 border-emerald-500/40 text-emerald-600">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Guardado
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="capitalize">{row.status}</Badge>
-            )}
+            <Button
+              size="sm"
+              onClick={handleManualSave}
+              disabled={!isDirty || saving || previewRefreshing}
+              className="gap-1.5 text-xs bg-notarial-gold text-slate-950 hover:bg-notarial-gold/90 disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" /> Guardar cambios
+            </Button>
           </div>
         </div>
       </div>
