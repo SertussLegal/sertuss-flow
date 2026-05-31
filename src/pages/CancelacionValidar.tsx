@@ -19,6 +19,7 @@ import PdfViewerPane from "@/components/tramites/PdfViewerPane";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
+import { useSaveStatus } from "@/contexts/SaveStatusContext";
 
 type NotariaEmisora = {
   notario_nombre?: string;
