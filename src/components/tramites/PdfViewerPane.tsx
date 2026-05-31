@@ -11,6 +11,9 @@ interface PdfViewerPaneProps {
   refreshKey?: string | number;
   isLoading?: boolean;
   downloadName?: string;
+  /** Si es true, intercepta la descarga y dispara onBlockedDownload en lugar de descargar. */
+  blockDownload?: boolean;
+  onBlockedDownload?: () => void;
 }
 
 type ViewerState = "idle" | "loading" | "ready" | "error";
