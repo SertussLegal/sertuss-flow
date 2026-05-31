@@ -496,36 +496,75 @@ function buildDocxVars(data: CancelacionData) {
       : "";
 
   // Inmueble (CANCELACIÓN): segmentación estricta — sin linderos, sin áreas, sin coeficientes.
-  // Sufijo "(DIRECCION CATASTRAL)" + ciudad se inyectan UNA sola vez aquí (nunca en la plantilla, nunca por el OCR).
-  const ciudadInmueble = (data.inmueble.ciudad || "").trim();
+  // FASE 2: sufijo "(DIRECCION CATASTRAL)" SOLO si la ciudad es Bogotá (formato SNR capital).
+  // Para Villeta, Girardot y cualquier otro municipio, se omite.
+  const ciudadInmueble = fixOcrTypos((data.inmueble.ciudad || "").trim());
+  const ciudadNorm = ciudadInmueble
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().trim();
+  const esBogota = /^BOGOTA(\s|,|\.|$|D)/i.test(ciudadNorm);
+
   // Red de seguridad determinista: aunque Gemini se desborde, descartamos áreas,
   // linderos y coeficientes en el servidor antes de mapear a la plantilla.
-  const descripcionPredio = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
+  const descripcionPredioBase = (data.inmueble.descripcion_predio ?? data.inmueble.descripcion ?? "")
     .replace(/(?:CON\s+UN\s+[ÁA]REA|[ÁA]REA\s+(?:PRIVADA|CONSTRUIDA|TOTAL)|LINDEROS?\s+(?:HORIZONTALES?|T[EÉ]CNICOS?|GENERALES?|VERTICALES?)|COEFICIENTE\s+DE\s+COPROPIEDAD|ENTRE\s+LOS\s+PUNTOS).*$/i, "")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  // Inyección de régimen PH como cláusula intercalada notarial (Ley 675 de 2001).
+  const descripcionPredio = inyectarRegimenPH(fixOcrTypos(descripcionPredioBase));
 
   let nomenclaturaBase = (data.inmueble.nomenclatura_predio ?? data.inmueble.direccion_completa ?? "").trim();
-  // Colapsa cualquier sufijo catastral pre-existente (con o sin paréntesis) y la cola
-  // de ciudad redundante en todas sus variantes OCR ("Y/O", "Y O", "YO").
-  nomenclaturaBase = nomenclaturaBase
-    .replace(/\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
-    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO\s+DE\s+.+$/i, "")
+  // FASE 2: limpieza estricta en este orden:
+  //  1) fixOcrTypos  2) quitar sufijo catastral pre-existente (lo re-inyectamos sólo si Bogotá)
+  //  3) colapsar coletilla "DE LA CIUDAD Y/O MUNICIPIO ..." final, incluso TRUNCADA en seco.
+  nomenclaturaBase = fixOcrTypos(nomenclaturaBase)
+    .replace(/\s*\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
+    // Regex tolerante: la cola "DE ..." final es opcional (cubre los 3 residuos OCR reales)
+    .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO(?:\s+DE\s+.+)?\s*$/i, "")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+
+  const departamentoInmueble = fixOcrTypos(((data.inmueble as Record<string, string>).departamento || "").trim().toUpperCase());
+  const coletillaCiudad = ciudadInmueble
+    ? ` DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble.toUpperCase()}${departamentoInmueble ? ` DEPARTAMENTO DE ${departamentoInmueble}` : ""}`
+    : "";
   const nomenclaturaFinal = nomenclaturaBase
-    ? (ciudadInmueble
-        ? `${nomenclaturaBase} (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble}`
-        : `${nomenclaturaBase} (DIRECCION CATASTRAL)`)
+    ? (esBogota
+        ? `${nomenclaturaBase} (DIRECCION CATASTRAL)${coletillaCiudad}`
+        : `${nomenclaturaBase}${coletillaCiudad}`)
     : undefined;
 
-  // Notaría origen: anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
-  const notariaHipotecaSanitizada = ciudadInmueble
-    ? joinSinDuplicar(data.hipoteca_anterior.notaria_hipoteca || "", "", "")
-        .replace(new RegExp(`\\b${ciudadInmueble}\\b\\s+DEL?\\s+\\b${ciudadInmueble}\\b`, "gi"), ciudadInmueble)
-    : data.hipoteca_anterior.notaria_hipoteca;
+  // Notaría origen: typos OCR + anti-duplicación "BOGOTA D.C. DEL BOGOTA D.C."
+  const notariaHipotecaSanitizada = (() => {
+    const fixed = fixOcrTypos(data.hipoteca_anterior.notaria_hipoteca || "");
+    if (!ciudadInmueble) return fixed;
+    return fixed.replace(new RegExp(`\\b${ciudadInmueble}\\b\\s+DEL?\\s+\\b${ciudadInmueble}\\b`, "gi"), ciudadInmueble);
+  })();
+
+  // FASE 2 — Capa protocolo TEXTO (NÚMERO). Idempotente, con género gramatical.
+  // Heurística "ÚNICA": si el nombre/título contiene la palabra, forzamos número 1 femenino.
+  const _esNotariaUnica = (s?: string) => !!s && /\b[ÚU]?NICA\b/i.test(s);
+  const notariaHipotecaNumLetras = _esNotariaUnica(notariaHipotecaSanitizada)
+    ? numeroConLetras(1, "feminine")
+    : numeroConLetras(notariaOrigenNum || "", "feminine");
+  const notariaEmisoraNumLetras = _esNotariaUnica(ne.notaria_emisora_titulo || ne.notario_nombre || "")
+    ? numeroConLetras(1, "feminine")
+    : numeroConLetras(ne.notaria_emisora_numero || "", "feminine");
+  const escrituraHipotecaNumLetras = numeroConLetras(
+    extractCorto(data.hipoteca_anterior.numero_escritura_hipoteca || "") || data.hipoteca_anterior.numero_escritura_hipoteca || "",
+    "masculine",
+  );
+  const escrituraNuevaNumLetras = numeroConLetras(
+    extractCorto(ne.numero_escritura_nueva || "") || ne.numero_escritura_nueva || "",
+    "masculine",
+  );
+  const fechaEscrituraHipotecaLetras = fechaProsaUpper(data.hipoteca_anterior.fecha_escritura_hipoteca || "");
+  const fechaOtorgamientoNuevaLetras = fechaProsaUpper(ne.fecha_otorgamiento_nueva || "");
+  const apoderadoFechaLetras = fechaProsaUpper(pb.apoderado_fecha || "");
+  const valorHipotecaProtocolo = esCuantiaIndeterminada ? undefined : (montoProsaProtocolo(valorRaw) || undefined);
+
 
   return {
     // Hipoteca anterior
