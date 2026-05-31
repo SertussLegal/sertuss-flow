@@ -205,6 +205,20 @@ export const CancelacionValidar = () => {
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+  const { setStatus: setSaveStatus } = useSaveStatus();
+
+  // Sincroniza chip global de guardado
+  useEffect(() => {
+    if (saving) setSaveStatus("saving");
+    else if (isDirty) setSaveStatus("dirty");
+    else if (row?.status === "completed") setSaveStatus("saved");
+    else setSaveStatus(null);
+  }, [saving, isDirty, row?.status, setSaveStatus]);
+
+  // Limpia chip al salir de la página
+  useEffect(() => {
+    return () => setSaveStatus(null);
+  }, [setSaveStatus]);
 
   useEffect(() => {
     if (!row) return;
