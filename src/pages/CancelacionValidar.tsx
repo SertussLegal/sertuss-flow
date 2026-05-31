@@ -197,11 +197,13 @@ export const CancelacionValidar = () => {
 
   const [data, setData] = useState<Data | null>(null);
   const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado">("minuta");
   const [viewerKey, setViewerKey] = useState(0);
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
+  const lastSavedSnapshotRef = useRef<string>("");
 
   useEffect(() => {
     if (!row) return;
