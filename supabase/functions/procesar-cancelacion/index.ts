@@ -518,6 +518,74 @@ function inyectarRegimenPH(descripcion: string): string {
   return `${limpio}, bajo el régimen de PROPIEDAD HORIZONTAL,`;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// HELPERS DECLARATIVOS V2 — Post-Merge (se ejecutan sobre data_final ya
+// unificado). Permiten que la plantilla v2 contenga UN SOLO tag agnóstico
+// y que el backend recomponga la prosa correcta tras cada edición manual.
+// ──────────────────────────────────────────────────────────────────────
+
+// Bogotá vs. resto del país: la coletilla "(DIRECCION CATASTRAL)" solo
+// aplica en Bogotá. En otros municipios se omite (regla SNR).
+function buildDireccionCompletaSaneada(opts: {
+  nomenclaturaBase: string;
+  ciudad: string;
+  departamento: string;
+  esBogota: boolean;
+}): string | undefined {
+  const { nomenclaturaBase, ciudad, departamento, esBogota } = opts;
+  if (!nomenclaturaBase) return undefined;
+  const coletilla = ciudad
+    ? ` DE LA CIUDAD Y/O MUNICIPIO DE ${ciudad.toUpperCase()}${departamento ? ` DEPARTAMENTO DE ${departamento}` : ""}`
+    : "";
+  return esBogota
+    ? `${nomenclaturaBase} (DIRECCION CATASTRAL)${coletilla}`
+    : `${nomenclaturaBase}${coletilla}`;
+}
+
+// Cláusula de pago coherente con el flag de cuantía: la plantilla v2
+// renderiza UN ÚNICO tag y nunca contradice SEGUNDO/QUINTO.
+function buildClausulaPagoHipoteca(opts: {
+  esCuantiaIndeterminada: boolean;
+  valorRaw: string;
+}): string {
+  if (opts.esCuantiaIndeterminada) {
+    return "Conforme a la cláusula primera de la escritura referida, la hipoteca se constituyó como HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA, por lo cual no se hace referencia a una suma específica de mutuo. Las obligaciones que esta garantía amparaba se encuentran satisfechas en su totalidad.";
+  }
+  const monto = montoProsaProtocolo(opts.valorRaw);
+  if (!monto) {
+    return "La cuantía de la obligación garantizada por la hipoteca consta en la escritura referida en la cláusula segunda y se encuentra satisfecha en su totalidad.";
+  }
+  return `La obligación garantizada por la hipoteca, por la suma de ${monto}, se encuentra satisfecha en su totalidad.`;
+}
+
+// Parágrafo registral: cuando concurren limitaciones (Ley 258/1996 y/o
+// Ley 70/1931 + 495/1999) en la misma escritura, el documento debe
+// declarar expresamente que subsisten para evitar que el registrador
+// las cancele junto con la hipoteca.
+function buildClausulaLimitacionesSubsisten(ha: {
+  concurre_afectacion_vivienda?: boolean;
+  afectacion_vivienda_anotacion?: string;
+  concurre_patrimonio_familia?: boolean;
+  patrimonio_familia_anotacion?: string;
+}): string | undefined {
+  const aff = ha.concurre_afectacion_vivienda === true;
+  const pat = ha.concurre_patrimonio_familia === true;
+  if (!aff && !pat) return undefined;
+
+  const anotacionAff = (ha.afectacion_vivienda_anotacion || "").trim();
+  const anotacionPat = (ha.patrimonio_familia_anotacion || "").trim();
+  const refAff = anotacionAff ? ` (anotación No. ${anotacionAff})` : "";
+  const refPat = anotacionPat ? ` (anotación No. ${anotacionPat})` : "";
+
+  if (aff && pat) {
+    return `La presente cancelación de hipoteca NO afecta la AFECTACIÓN A VIVIENDA FAMILIAR${refAff} (Ley 258 de 1996) ni el PATRIMONIO DE FAMILIA INEMBARGABLE${refPat} (Ley 70 de 1931, modificada por la Ley 495 de 1999) que recaen sobre el inmueble, los cuales SUBSISTEN por ministerio de la ley. Se solicita al señor Registrador de Instrumentos Públicos mantener vigentes dichas limitaciones registrales.`;
+  }
+  if (aff) {
+    return `La presente cancelación de hipoteca NO afecta la AFECTACIÓN A VIVIENDA FAMILIAR${refAff} (Ley 258 de 1996) que recae sobre el inmueble, la cual SUBSISTE por ministerio de la ley. Se solicita al señor Registrador de Instrumentos Públicos mantener vigente dicha limitación registral.`;
+  }
+  return `La presente cancelación de hipoteca NO afecta el PATRIMONIO DE FAMILIA INEMBARGABLE${refPat} (Ley 70 de 1931, modificada por la Ley 495 de 1999) constituido sobre el inmueble, el cual SUBSISTE por ministerio de la ley. Se solicita al señor Registrador de Instrumentos Públicos mantener vigente dicha limitación registral.`;
+}
+
 // Build the variable map sent to Docxtemplater
 function buildDocxVars(data: CancelacionData) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
