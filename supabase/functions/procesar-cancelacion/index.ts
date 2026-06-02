@@ -269,6 +269,24 @@ CONTRATO DE SALIDA (TYPE-SAFE — CRÍTICO):
 
 PROHIBIDO ABSOLUTO: copiar el precio de la compraventa, el avalúo, el abono parcial, el saldo pendiente, o cualquier monto que no esté inequívocamente gobernado por un verbo rector del crédito.
 
+CAMPOS ATÓMICOS DE HIPOTECA ANTERIOR (NUEVO — OBLIGATORIO):
+Además de la prosa notarial, DEBES poblar SIEMPRE los siguientes campos atómicos que el backend usará directamente para celdas de tabla SNR (sin parsers inversos):
+- 'hipoteca_anterior.numero_escritura': SOLO dígitos arábigos del número de escritura (ej: '3866').
+- 'hipoteca_anterior.fecha_escritura': objeto con { dia: '01', mes: '06', ano: '2011' } — dos dígitos en día/mes, cuatro en año.
+- 'hipoteca_anterior.notaria': objeto con { numero: '72', ciudad: 'BOGOTA D.C.' } — número solo en dígitos.
+La prosa formateada ('numero_escritura_hipoteca', 'fecha_escritura_hipoteca', 'notaria_hipoteca') sigue siendo obligatoria para los párrafos del cuerpo.
+
+LIMITACIONES REGISTRALES CONCURRENTES (BLINDAJE — Anotaciones del Certificado de Tradición):
+En el Certificado de Tradición y Libertad, EXAMINA TODAS LAS ANOTACIONES en busca de limitaciones que se hayan constituido en la MISMA ESCRITURA PÚBLICA que la hipoteca a cancelar (mismo número de escritura, año y notaría que aparecen en la anotación de la hipoteca).
+
+- 'analisis_legal.concurre_afectacion_vivienda' = true SOLO si existe una anotación tipo 'AFECTACIÓN A VIVIENDA FAMILIAR' (Ley 258 de 1996) cuyo documento de origen coincida con la escritura de la hipoteca. En ese caso 'afectacion_vivienda_anotacion' DEBE ser el número de anotación EXACTAMENTE en formato de 4 dígitos como aparece en la SNR (ej: '0007', '0012', '0123'). Rellenar a 4 dígitos con ceros a la izquierda es obligatorio para pulcritud de trazabilidad.
+
+- 'analisis_legal.concurre_patrimonio_familia' = true SOLO si existe una anotación tipo 'PATRIMONIO DE FAMILIA INEMBARGABLE' (Ley 70 de 1931, modificada por Ley 495 de 1999) cuyo documento de origen coincida con la escritura de la hipoteca. En ese caso 'patrimonio_familia_anotacion' DEBE ir en formato 4 dígitos (ej: '0008').
+
+- 'analisis_legal.tipo_credito': VIVIENDA_LEY_546 si aplica_ley_546=true; VIVIENDA_NO_LEY_546 si es para vivienda pero acto separado; COMERCIAL si es para destino distinto; DESCONOCIDO si no es claro.
+
+Si una limitación NO concurre con la escritura de la hipoteca a cancelar (es de otra escritura), el campo concurrente DEBE ser false aunque la anotación exista en el certificado.
+
 Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
 // Helpers
