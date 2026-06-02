@@ -66,21 +66,25 @@ interface PoderBanco {
 
 interface CancelacionData {
   hipoteca_anterior: {
+    // Prosa notarial (legacy / fuente de verdad para texto completo)
     numero_escritura_hipoteca: string;
     fecha_escritura_hipoteca: string;
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
     valor_hipoteca_es_indeterminada?: boolean;
+    // ── Campos ATÓMICOS (preferidos) — evitan regex inversos sobre prosa ──
+    numero_escritura?: string;          // "3866"
+    fecha_escritura?: { dia?: string; mes?: string; ano?: string }; // dia/mes 2 dígitos, ano 4
+    notaria?: { numero?: string; ciudad?: string };
   };
   inmueble: {
     matricula_inmobiliaria: string;
-    // Compatibilidad legacy
     direccion_completa?: string;
     descripcion?: string;
-    // Nuevos campos atómicos (preferidos)
     descripcion_predio?: string;
     nomenclatura_predio?: string;
     ciudad: string;
+    departamento?: string;
   };
   partes: {
     deudor_nombre: string;
@@ -94,6 +98,12 @@ interface CancelacionData {
   analisis_legal: {
     aplica_ley_546: boolean;
     explicacion_ley: string;
+    tipo_credito?: "VIVIENDA_LEY_546" | "VIVIENDA_NO_LEY_546" | "COMERCIAL" | "DESCONOCIDO";
+    // Limitaciones registrales concurrentes (Ley 258/1996, Ley 70/1931 + 495/1999)
+    concurre_afectacion_vivienda?: boolean;
+    afectacion_vivienda_anotacion?: string;   // "0007" (4 dígitos, formato SNR)
+    concurre_patrimonio_familia?: boolean;
+    patrimonio_familia_anotacion?: string;    // "0008" (4 dígitos, formato SNR)
   };
   notaria_emisora?: NotariaEmisora;
   poder_banco?: PoderBanco & { apoderado_genero?: "M" | "F" | "" };
