@@ -693,6 +693,53 @@ function buildDocxVars(data: CancelacionData) {
   const apoderadoFechaLetras = fechaProsaUpper(pb.apoderado_fecha || "");
   const valorHipotecaProtocolo = esCuantiaIndeterminada ? undefined : (montoProsaProtocolo(valorRaw) || undefined);
 
+  // ── MAPEO ATÓMICO SNR (sin parsers inversos) ──
+  const haAtom = data.hipoteca_anterior as Record<string, unknown>;
+  const fechaAtom = (haAtom.fecha_escritura as { dia?: string; mes?: string; ano?: string } | undefined) || {};
+  const notariaAtom = (haAtom.notaria as { numero?: string; ciudad?: string } | undefined) || {};
+  const numeroEscrituraAtom = typeof haAtom.numero_escritura === "string" ? haAtom.numero_escritura : "";
+  const snrNumeroEscritura = numeroEscrituraAtom || extractCorto(data.hipoteca_anterior.numero_escritura_hipoteca || "");
+  const snrFechaDia = (fechaAtom.dia || fp.dia || "").toString().padStart(2, "0").slice(0, 2);
+  const snrFechaMes = (fechaAtom.mes || fp.mes || "").toString().padStart(2, "0").slice(0, 2);
+  const snrFechaAno = (fechaAtom.ano || fp.ano || extractAno(data.hipoteca_anterior.fecha_escritura_hipoteca) || "").toString();
+  const snrNotariaNumero = (notariaAtom.numero || notariaOrigenNum || "").toString();
+  const snrNotariaCiudad = (notariaAtom.ciudad || ciudadHipoteca || "").toString();
+
+  // ── Helpers V2 (Post-Merge) ──
+  const direccionCompletaSaneada = buildDireccionCompletaSaneada({
+    nomenclaturaBase, ciudad: ciudadInmueble, departamento: departamentoInmueble, esBogota,
+  });
+  const clausulaPagoHipoteca = buildClausulaPagoHipoteca({ esCuantiaIndeterminada, valorRaw });
+  const clausulaLimitacionesSubsisten = buildClausulaLimitacionesSubsisten({
+    concurre_afectacion_vivienda: data.analisis_legal.concurre_afectacion_vivienda,
+    afectacion_vivienda_anotacion: data.analisis_legal.afectacion_vivienda_anotacion,
+    concurre_patrimonio_familia: data.analisis_legal.concurre_patrimonio_familia,
+    patrimonio_familia_anotacion: data.analisis_legal.patrimonio_familia_anotacion,
+  });
+  const limitacionesConcurrentes =
+    data.analisis_legal.concurre_afectacion_vivienda === true ||
+    data.analisis_legal.concurre_patrimonio_familia === true;
+
+  const _v2Overrides = {
+    // SNR atómico (sobreescribe los regex-inverso del return original)
+    numero_escritura_hipoteca_corto: snrNumeroEscritura || undefined,
+    fecha_escritura_hipoteca_dia: snrFechaDia || undefined,
+    fecha_escritura_hipoteca_mes: snrFechaMes || undefined,
+    fecha_escritura_hipoteca_ano: snrFechaAno || undefined,
+    notaria_hipoteca_numero: snrNotariaNumero || undefined,
+    ciudad_hipoteca: snrNotariaCiudad || undefined,
+    ciudad_hipoteca_corto: snrNotariaCiudad || undefined,
+    // V2 — tags agnósticos para plantilla saneada
+    direccion_completa_saneada: direccionCompletaSaneada,
+    clausula_pago_hipoteca: clausulaPagoHipoteca,
+    clausula_limitaciones_subsisten: clausulaLimitacionesSubsisten,
+    limitaciones_concurrentes: limitacionesConcurrentes || undefined,
+    concurre_afectacion_vivienda: data.analisis_legal.concurre_afectacion_vivienda || undefined,
+    afectacion_vivienda_anotacion: data.analisis_legal.afectacion_vivienda_anotacion || undefined,
+    concurre_patrimonio_familia: data.analisis_legal.concurre_patrimonio_familia || undefined,
+    patrimonio_familia_anotacion: data.analisis_legal.patrimonio_familia_anotacion || undefined,
+    tipo_credito: data.analisis_legal.tipo_credito || undefined,
+  };
 
   return {
     // Hipoteca anterior
