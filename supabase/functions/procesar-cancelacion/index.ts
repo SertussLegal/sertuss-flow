@@ -124,8 +124,29 @@ const tools = [
               numero_escritura_hipoteca: { type: "string", description: "Número de escritura en LETRAS Y NÚMEROS, ej: 'CUATRO MIL CIENTO SESENTA Y CINCO (4165)'" },
               fecha_escritura_hipoteca: { type: "string", description: "Fecha en LETRAS Y NÚMEROS, ej: 'NUEVE (09) DE OCTUBRE DE DOS MIL VEINTE (2020)'" },
               notaria_hipoteca: { type: "string", description: "Notaría en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y OCHO (38) DE BOGOTA D.C.'" },
-              valor_hipoteca_original: { type: "string", description: "Monto del CRÉDITO HIPOTECARIO original que la entidad financiera concedió al deudor. ANCLAJE SINTÁCTICO OBLIGATORIO: la cifra DEBE estar gobernada gramaticalmente por un verbo rector del gravamen ('constituye', 'grava', 'hipoteca', 'garantiza', 'otorga garantía hipotecaria', 'presta', 'concede', 'desembolsa') sobre el mismo inmueble. La proximidad física no basta. LISTA NEGRA DE CONCEPTOS — IGNORA toda cifra cuyo sujeto sintáctico sea: 'precio de venta', 'valor de la compraventa', 'avalúo catastral', 'avalúo comercial', 'liberación de gravamen', 'subrogación', 'abono', 'saldo pendiente', 'subsidio', 'cesantías'. Si el párrafo menciona estos conceptos como referencia descriptiva pero el verbo rector apunta al mutuo, EXTRAE únicamente la cifra anclada al crédito (no descartes el párrafo completo). JERARQUÍA DE BÚSQUEDA: (a) MUTUO — el banco 'presta/otorga/concede/desembolsa/entrega'; (b) PAGO — el saldo de la compraventa se cubre con 'el producto del crédito que le concede [BANCO]'; (c) LIQUIDACIÓN — casillas anexas tipo 'CUANTÍA DEL MUTUO', 'VALOR DEL CRÉDITO', 'MONTO DEL PRÉSTAMO'. FALLBACK DE CUERPO: si la carátula/hoja de calificación no está, recorre cláusulas del cuerpo buscando 'CUANTÍA', 'GARANTÍA HIPOTECARIA', 'MUTUO HIPOTECARIO', 'VALOR DEL CRÉDITO' ancladas a la misma hipoteca. FORMATO: '<MONTO EN LETRAS> DE PESOS ($<NÚMERO CON PUNTOS DE MILES>)' en MAYÚSCULAS. CASOS ESPECIALES — Cuantía indeterminada / hipoteca abierta / sin límite de cuantía: devuelve cadena vacía '' en este campo y marca valor_hipoteca_es_indeterminada=true. ANTI-ALUCINACIÓN: si dos cifras compiten sin desambiguación posible, devuelve '' y valor_hipoteca_es_indeterminada=false. NUNCA inyectes literales descriptivos en este campo numérico — solo monto formateado o ''." },
-              valor_hipoteca_es_indeterminada: { type: "boolean", description: "true SOLO si la hipoteca es declarada expresamente ABIERTA, SIN LÍMITE DE CUANTÍA, o de CUANTÍA INDETERMINADA. En cualquier otro caso (incluyendo monto desconocido, ambigüedad o falta de evidencia) devuelve false." },
+              valor_hipoteca_original: { type: "string", description: "Monto del CRÉDITO HIPOTECARIO original. ANCLAJE SINTÁCTICO OBLIGATORIO al verbo rector del gravamen ('constituye', 'grava', 'hipoteca', 'garantiza', 'presta', 'concede', 'desembolsa'). LISTA NEGRA: 'precio de venta', 'avalúo', 'subrogación', 'abono', 'saldo pendiente', 'subsidio', 'cesantías'. Cuantía indeterminada / hipoteca abierta → cadena vacía '' y valor_hipoteca_es_indeterminada=true. Ambigüedad sin desambiguación → '' y false. Formato: '<MONTO EN LETRAS> DE PESOS ($<NÚMERO CON PUNTOS DE MILES>)' MAYÚSCULAS." },
+              valor_hipoteca_es_indeterminada: { type: "boolean", description: "true SOLO si la hipoteca es declarada expresamente ABIERTA, SIN LÍMITE DE CUANTÍA, o de CUANTÍA INDETERMINADA." },
+              // ── ATÓMICOS (preferidos) — eliminan necesidad de parsers inversos en backend ──
+              numero_escritura: { type: "string", description: "Número de escritura SOLO en DÍGITOS ARÁBIGOS, sin paréntesis ni letras. Ej: '3866'. Estricto: solo dígitos." },
+              fecha_escritura: {
+                type: "object",
+                description: "Fecha de la escritura desglosada en partes atómicas.",
+                properties: {
+                  dia: { type: "string", description: "Día con 2 dígitos, ej: '01', '15'." },
+                  mes: { type: "string", description: "Mes con 2 dígitos, ej: '06' para junio." },
+                  ano: { type: "string", description: "Año con 4 dígitos, ej: '2011'." },
+                },
+                additionalProperties: false,
+              },
+              notaria: {
+                type: "object",
+                description: "Notaría de origen desglosada en partes atómicas.",
+                properties: {
+                  numero: { type: "string", description: "Número de notaría SOLO en dígitos arábigos, ej: '72'." },
+                  ciudad: { type: "string", description: "Ciudad de la notaría, MAYÚSCULAS, ej: 'BOGOTA D.C.'." },
+                },
+                additionalProperties: false,
+              },
             },
             required: ["numero_escritura_hipoteca", "fecha_escritura_hipoteca", "notaria_hipoteca", "valor_hipoteca_original"],
             additionalProperties: false,
@@ -134,9 +155,10 @@ const tools = [
             type: "object",
             properties: {
               matricula_inmobiliaria: { type: "string", description: "Matrícula ESTRICTAMENTE alfanumérica con guión, ej: '50C-2085432'. SIN palabras en letras, SIN paréntesis." },
-              descripcion_predio: { type: "string", description: "Identificación ARQUITECTÓNICA del predio en formato notarial corto, MAYÚSCULAS, con números en LETRAS seguidos del número entre paréntesis. Ej EXACTO: 'APARTAMENTO NUMERO MIL CUATROCIENTOS DOS (1402) TORRE DOS (2) QUE HACE PARTE DEL CONJUNTO RESIDENCIAL SALITRE LIVING – PROPIEDAD HORIZONTAL'. PROHIBIDO incluir áreas privadas/construidas/totales, metros cuadrados (M2), coeficiente de copropiedad (%), linderos, puntos cardinales, dimensiones ni nomenclatura urbana. Si encuentras ese contenido en los PDFs, descártalo." },
-              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio en formato notarial, MAYÚSCULAS. Ej EXACTO: 'CALLE 66 C NUMERO 60-65'. PROHIBIDO incluir apartamento/torre, ciudad, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los agrega automáticamente." },
+              descripcion_predio: { type: "string", description: "Identificación ARQUITECTÓNICA del predio en formato notarial corto, MAYÚSCULAS, con números en LETRAS seguidos del número entre paréntesis. PROHIBIDO incluir áreas, M2, coeficientes, linderos, dimensiones ni nomenclatura urbana." },
+              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio en formato notarial, MAYÚSCULAS. Ej: 'CALLE 66 C NUMERO 60-65'. PROHIBIDO incluir apartamento/torre, ciudad ni el sufijo '(DIRECCION CATASTRAL)' — el backend los agrega." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
+              departamento: { type: "string", description: "Departamento del inmueble en mayúsculas, ej: 'CUNDINAMARCA'. Opcional." },
             },
             required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
             additionalProperties: false,
@@ -158,6 +180,16 @@ const tools = [
             properties: {
               aplica_ley_546: { type: "boolean", description: "true si la hipoteca se constituyó conjuntamente con la compraventa de vivienda (Ley 546 de 1999)" },
               explicacion_ley: { type: "string", description: "Explicación detallada del análisis" },
+              tipo_credito: {
+                type: "string",
+                enum: ["VIVIENDA_LEY_546", "VIVIENDA_NO_LEY_546", "COMERCIAL", "DESCONOCIDO"],
+                description: "Tipificación del crédito hipotecario. VIVIENDA_LEY_546 si se constituyó simultáneamente con compraventa de vivienda; VIVIENDA_NO_LEY_546 si es vivienda pero acto separado; COMERCIAL si es para otro destino; DESCONOCIDO si no es claro.",
+              },
+              // ── Limitaciones registrales concurrentes (BLINDAJE REGISTRAL) ──
+              concurre_afectacion_vivienda: { type: "boolean", description: "true SOLO si el certificado de tradición tiene una anotación de AFECTACIÓN A VIVIENDA FAMILIAR (Ley 258 de 1996) constituida en la MISMA ESCRITURA PÚBLICA que la hipoteca a cancelar (mismo número, año y notaría)." },
+              afectacion_vivienda_anotacion: { type: "string", description: "Número de la anotación de afectación a vivienda familiar en el certificado, EXACTAMENTE en formato de 4 dígitos como aparece en la SNR. Ej: '0007'. Solo si concurre_afectacion_vivienda=true." },
+              concurre_patrimonio_familia: { type: "boolean", description: "true SOLO si el certificado de tradición tiene una anotación de PATRIMONIO DE FAMILIA INEMBARGABLE (Ley 70 de 1931 + Ley 495 de 1999) constituido en la MISMA ESCRITURA PÚBLICA que la hipoteca a cancelar." },
+              patrimonio_familia_anotacion: { type: "string", description: "Número de la anotación de patrimonio de familia inembargable, EXACTAMENTE en formato de 4 dígitos como aparece en la SNR. Ej: '0008'. Solo si concurre_patrimonio_familia=true." },
             },
             required: ["aplica_ley_546", "explicacion_ley"],
             additionalProperties: false,
