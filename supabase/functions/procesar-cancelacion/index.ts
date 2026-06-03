@@ -841,7 +841,8 @@ export function buildDocxVars(data: CancelacionData) {
     // ── MERGE FINAL — los overrides V2 atómicos pisan defaults derivados ──
     // Orden de precedencia: defaults (regex IA) ← _v2Overrides (atómicos del
     // schema/builder) ← edición manual (ya inyectada en `data.*` desde data_final).
-    ..._v2Overrides,
+    // ts-ignore: el override intencional dispara TS2783/2785 sobre claves repetidas.
+    ...(_v2Overrides as Record<string, unknown>),
   };
 }
 
