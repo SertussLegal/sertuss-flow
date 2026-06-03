@@ -847,7 +847,8 @@ export function buildDocxVars(data: CancelacionData) {
 }
 
 async function fillTemplate(
-  supabase: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
   templateName: string,
   vars: Record<string, unknown>,
 ): Promise<Uint8Array> {
@@ -886,7 +887,8 @@ async function fillTemplate(
 }
 
 async function createSignedStorageUrl(
-  supabase: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
   path: string,
 ): Promise<string> {
   const { data, error } = await supabase.storage
