@@ -526,7 +526,7 @@ function inyectarRegimenPH(descripcion: string): string {
 
 // Bogotá vs. resto del país: la coletilla "(DIRECCION CATASTRAL)" solo
 // aplica en Bogotá. En otros municipios se omite (regla SNR).
-function buildDireccionCompletaSaneada(opts: {
+export function buildDireccionCompletaSaneada(opts: {
   nomenclaturaBase: string;
   ciudad: string;
   departamento: string;
@@ -544,7 +544,7 @@ function buildDireccionCompletaSaneada(opts: {
 
 // Cláusula de pago coherente con el flag de cuantía: la plantilla v2
 // renderiza UN ÚNICO tag y nunca contradice SEGUNDO/QUINTO.
-function buildClausulaPagoHipoteca(opts: {
+export function buildClausulaPagoHipoteca(opts: {
   esCuantiaIndeterminada: boolean;
   valorRaw: string;
 }): string {
@@ -562,7 +562,7 @@ function buildClausulaPagoHipoteca(opts: {
 // Ley 70/1931 + 495/1999) en la misma escritura, el documento debe
 // declarar expresamente que subsisten para evitar que el registrador
 // las cancele junto con la hipoteca.
-function buildClausulaLimitacionesSubsisten(ha: {
+export function buildClausulaLimitacionesSubsisten(ha: {
   concurre_afectacion_vivienda?: boolean;
   afectacion_vivienda_anotacion?: string;
   concurre_patrimonio_familia?: boolean;
@@ -587,7 +587,7 @@ function buildClausulaLimitacionesSubsisten(ha: {
 }
 
 // Padding 4 dígitos para celdas SNR (ej. notaría '72' → '0072', escritura '3866' → '3866').
-function pad4(s: string | number | undefined | null): string {
+export function pad4(s: string | number | undefined | null): string {
   const raw = (s === null || s === undefined ? "" : String(s)).trim();
   if (!raw) return "";
   const digits = raw.replace(/\D/g, "");
