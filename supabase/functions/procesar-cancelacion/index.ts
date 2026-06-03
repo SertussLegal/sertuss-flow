@@ -31,7 +31,7 @@ const corsHeaders = {
 const BUCKET_PLANTILLAS = "cancelaciones-plantillas";
 const BUCKET_OUTPUT = "expediente-files";
 const PREFIX_DAVIVIENDA = "davivienda/";
-const TEMPLATE_MINUTA = "formato cancelacion hipoteca blanqueado.docx";
+const TEMPLATE_MINUTA = "formato cancelacion hipoteca blanqueado v2.docx";
 const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
 
 // NO hay apoderado hardcodeado. Si no se carga el Poder General, los campos
@@ -526,7 +526,7 @@ function inyectarRegimenPH(descripcion: string): string {
 
 // Bogotá vs. resto del país: la coletilla "(DIRECCION CATASTRAL)" solo
 // aplica en Bogotá. En otros municipios se omite (regla SNR).
-function buildDireccionCompletaSaneada(opts: {
+export function buildDireccionCompletaSaneada(opts: {
   nomenclaturaBase: string;
   ciudad: string;
   departamento: string;
@@ -544,7 +544,7 @@ function buildDireccionCompletaSaneada(opts: {
 
 // Cláusula de pago coherente con el flag de cuantía: la plantilla v2
 // renderiza UN ÚNICO tag y nunca contradice SEGUNDO/QUINTO.
-function buildClausulaPagoHipoteca(opts: {
+export function buildClausulaPagoHipoteca(opts: {
   esCuantiaIndeterminada: boolean;
   valorRaw: string;
 }): string {
@@ -562,7 +562,7 @@ function buildClausulaPagoHipoteca(opts: {
 // Ley 70/1931 + 495/1999) en la misma escritura, el documento debe
 // declarar expresamente que subsisten para evitar que el registrador
 // las cancele junto con la hipoteca.
-function buildClausulaLimitacionesSubsisten(ha: {
+export function buildClausulaLimitacionesSubsisten(ha: {
   concurre_afectacion_vivienda?: boolean;
   afectacion_vivienda_anotacion?: string;
   concurre_patrimonio_familia?: boolean;
@@ -586,8 +586,17 @@ function buildClausulaLimitacionesSubsisten(ha: {
   return `La presente cancelación de hipoteca NO afecta el PATRIMONIO DE FAMILIA INEMBARGABLE${refPat} (Ley 70 de 1931, modificada por la Ley 495 de 1999) constituido sobre el inmueble, el cual SUBSISTE por ministerio de la ley. Se solicita al señor Registrador de Instrumentos Públicos mantener vigente dicha limitación registral.`;
 }
 
+// Padding 4 dígitos para celdas SNR (ej. notaría '72' → '0072', escritura '3866' → '3866').
+export function pad4(s: string | number | undefined | null): string {
+  const raw = (s === null || s === undefined ? "" : String(s)).trim();
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return raw;
+  return digits.padStart(4, "0");
+}
+
 // Build the variable map sent to Docxtemplater
-function buildDocxVars(data: CancelacionData) {
+export function buildDocxVars(data: CancelacionData) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
   const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
   // Tolerancia retro: si una versión vieja inyectó el literal en el campo de monto, lo normalizamos al flag.
@@ -720,13 +729,20 @@ function buildDocxVars(data: CancelacionData) {
     data.analisis_legal.concurre_afectacion_vivienda === true ||
     data.analisis_legal.concurre_patrimonio_familia === true;
 
+  // Letras del valor con fallback de cuantía indeterminada (plantilla v2 envuelve
+  // ($ {numeros}) con sección inversa, así que numeros queda en blanco cuando
+  // esCuantiaIndeterminada=true).
+  const valorLetrasOIndeterminado = esCuantiaIndeterminada
+    ? "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA"
+    : (valor.letras || undefined);
+
   const _v2Overrides = {
     // SNR atómico (sobreescribe los regex-inverso del return original)
-    numero_escritura_hipoteca_corto: snrNumeroEscritura || undefined,
+    numero_escritura_hipoteca_corto: pad4(snrNumeroEscritura) || undefined,
     fecha_escritura_hipoteca_dia: snrFechaDia || undefined,
     fecha_escritura_hipoteca_mes: snrFechaMes || undefined,
     fecha_escritura_hipoteca_ano: snrFechaAno || undefined,
-    notaria_hipoteca_numero: snrNotariaNumero || undefined,
+    notaria_hipoteca_numero: pad4(snrNotariaNumero) || undefined,
     ciudad_hipoteca: snrNotariaCiudad || undefined,
     ciudad_hipoteca_corto: snrNotariaCiudad || undefined,
     // V2 — tags agnósticos para plantilla saneada
@@ -739,6 +755,8 @@ function buildDocxVars(data: CancelacionData) {
     concurre_patrimonio_familia: data.analisis_legal.concurre_patrimonio_familia || undefined,
     patrimonio_familia_anotacion: data.analisis_legal.patrimonio_familia_anotacion || undefined,
     tipo_credito: data.analisis_legal.tipo_credito || undefined,
+    // V2 — fallback de cuantía indeterminada (consumido por la plantilla v2)
+    valor_hipoteca_letras_o_indeterminado: valorLetrasOIndeterminado,
   };
 
   return {
@@ -820,11 +838,17 @@ function buildDocxVars(data: CancelacionData) {
     ...tokensDeudor,
     ...tokensApoderado,
     ...tokensBanco,
+    // ── MERGE FINAL — los overrides V2 atómicos pisan defaults derivados ──
+    // Orden de precedencia: defaults (regex IA) ← _v2Overrides (atómicos del
+    // schema/builder) ← edición manual (ya inyectada en `data.*` desde data_final).
+    // ts-ignore: el override intencional dispara TS2783/2785 sobre claves repetidas.
+    ...(_v2Overrides as Record<string, unknown>),
   };
 }
 
 async function fillTemplate(
-  supabase: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
   templateName: string,
   vars: Record<string, unknown>,
 ): Promise<Uint8Array> {
@@ -863,7 +887,8 @@ async function fillTemplate(
 }
 
 async function createSignedStorageUrl(
-  supabase: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
   path: string,
 ): Promise<string> {
   const { data, error } = await supabase.storage
@@ -873,7 +898,7 @@ async function createSignedStorageUrl(
   return data.signedUrl;
 }
 
-serve(async (req) => {
+if (import.meta.main) serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
