@@ -895,7 +895,7 @@ async function createSignedStorageUrl(
   return data.signedUrl;
 }
 
-serve(async (req) => {
+if (import.meta.main) serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
