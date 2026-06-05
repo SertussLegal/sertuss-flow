@@ -385,7 +385,17 @@ LÓGICA LEGAL (Compraventa):
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible y no hay ambigüedad
 - "media": el dato es parcialmente legible o podría tener variaciones menores  
-- "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
+- "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"
+
+BLINDAJE v2 — HIPOTECA A CANCELAR (nodo hipoteca_anterior):
+
+1. ORIGEN ATÓMICO: Llena hipoteca_anterior EXCLUSIVAMENTE desde la sección de Anotaciones del certificado (acto de hipoteca vigente). NUNCA parsees prosa de cláusulas, títulos antecedentes ni resúmenes. Si no hay hipoteca vigente, omite el nodo completo.
+
+2. PADDING SNR (exclusivo de anotaciones): Los campos afectacion_vivienda_anotacion y patrimonio_familia_anotacion DEBEN entregarse con padding a 4 dígitos. Ej: "7" → "0007", "14" → "0014". NO apliques este padding al número de notaría ni al número de escritura: esos van como dígitos puros ("72", "3866"), sin ceros a la izquierda.
+
+3. CONCURRENCIA CRUZADA (tríada familiar): concurre_afectacion_vivienda y concurre_patrimonio_familia son true ÚNICAMENTE si la anotación SNR cita la MISMA tripleta Escritura + Año + Notaría que hipoteca_anterior. Si la anotación pertenece a otra escritura distinta, devuelve false y deja *_anotacion vacío. No asumas concurrencia por el solo hecho de que ambas anotaciones existan en el folio.
+
+4. ENUM tipo_credito: Solo admite los strings exactos en mayúsculas: "VIS", "NO_VIS", "LEASING", "ABIERTA", "DESCONOCIDO". Nada de minúsculas, espacios, guiones ni sinónimos. Si no puedes determinarlo, usa "DESCONOCIDO".`,
 
   predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles.
 
