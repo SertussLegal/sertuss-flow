@@ -1,8 +1,11 @@
 ---
 name: cuantia-indeterminada-cancelacion
-description: Manejo de hipotecas abiertas / de cuantía indeterminada en cancelaciones Davivienda. Aplica al construir la cláusula de pago, la prosa de la cláusula tercera y la sección inversa de la plantilla v2.
+description: Renderizado en plantilla v2 de cancelaciones Davivienda cuando la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA. Suprime `$___` mediante sección inversa de Docxtemplater y reescribe la cláusula tercera. Aplica al construir las variables docx, después de la extracción IA.
 type: feature
 ---
+
+> La detección de la cuantía (anclaje sintáctico, jerarquía mutuo/pago/liquidación) la regula el skill `extraccion-cuantia-semantica`. Este skill define qué hacer con la salida cuando se marca como indeterminada.
+
 
 # Cuantía indeterminada (Cancelaciones)
 

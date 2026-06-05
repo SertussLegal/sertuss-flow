@@ -1,8 +1,11 @@
 ---
 name: direccion-completa-saneada-cancelacion
-description: Construcción geográfica única del campo dirección en minutas de cancelación de hipoteca. Aplica cuando se mapea `direccion_completa_saneada` desde el formulario o el OCR del certificado de tradición.
+description: Construcción geográfica única del tag `{direccion_completa_saneada}` en la plantilla v2 de cancelación de hipoteca Davivienda. Decide cuándo añadir "(DIRECCION CATASTRAL)" (solo Bogotá D.C.) y la coletilla "DE LA CIUDAD Y/O MUNICIPIO DE …" según el municipio del inmueble. Aplica al mapear datos hacia la plantilla, no a la extracción IA.
 type: feature
 ---
+
+> Complementa (no reemplaza) al skill `sanitizar-direccion`, que regula la limpieza regex previa de la nomenclatura. Este skill define la salida final hacia la plantilla v2.
+
 
 # Dirección completa saneada (Cancelaciones)
 
