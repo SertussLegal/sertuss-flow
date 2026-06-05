@@ -171,6 +171,36 @@ const toolsByCertificado = [
             required: ["tipo_documento"],
             additionalProperties: false,
           },
+          hipoteca_anterior: {
+            type: "object",
+            description: "Bloque atómico de la hipoteca a cancelar + concurrencias familiares ligadas a ella. NO parsear de prosa. Llenar SOLO desde la sección Anotaciones (acto de hipoteca vigente). Omitir si no hay hipoteca vigente.",
+            properties: {
+              numero_escritura: confField("Número de la escritura de constitución de la hipoteca. Solo dígitos, SIN padding. Ej: '3866'."),
+              fecha_escritura: {
+                type: "object",
+                properties: {
+                  dia: confField("Día (DD) de la escritura de hipoteca"),
+                  mes: confField("Mes (MM) de la escritura de hipoteca"),
+                  ano: confField("Año (AAAA) de la escritura de hipoteca"),
+                },
+                additionalProperties: false,
+              },
+              notaria: {
+                type: "object",
+                properties: {
+                  numero: confField("Número de la notaría origen. Solo dígitos, SIN padding. Ej: '72'."),
+                  ciudad: confField("Ciudad/círculo de la notaría origen, en MAYÚSCULAS"),
+                },
+                additionalProperties: false,
+              },
+              tipo_credito: confField("ÚNICOS valores admitidos (estrictamente mayúsculas): 'VIS' | 'NO_VIS' | 'LEASING' | 'ABIERTA' | 'DESCONOCIDO'"),
+              concurre_afectacion_vivienda: confBoolField("true SOLO si la anotación de Afectación a Vivienda Familiar (Ley 258/1996) referencia la MISMA Escritura+Año+Notaría que hipoteca_anterior. false si pertenece a otra escritura."),
+              afectacion_vivienda_anotacion: confField("Número de anotación SNR de la afectación, con padding a 4 dígitos. Ej: '0007'. Vacío si concurre=false."),
+              concurre_patrimonio_familia: confBoolField("true SOLO si la anotación de Patrimonio de Familia Inembargable (Ley 70/1931 + 495/1999) referencia la MISMA Escritura+Año+Notaría que hipoteca_anterior. false si pertenece a otra escritura."),
+              patrimonio_familia_anotacion: confField("Número de anotación SNR del patrimonio, con padding a 4 dígitos. Ej: '0008'. Vacío si concurre=false."),
+            },
+            additionalProperties: false,
+          },
         },
         required: ["documento", "inmueble", "personas", "actos", "titulo_antecedente"],
         additionalProperties: false,
