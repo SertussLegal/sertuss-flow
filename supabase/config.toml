@@ -5,6 +5,3 @@ verify_jwt = false
 
 [functions.validar-con-claude]
 verify_jwt = false
-
-[functions.tpl-surgery]
-verify_jwt = false

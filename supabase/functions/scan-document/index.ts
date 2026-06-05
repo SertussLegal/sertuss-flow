@@ -171,6 +171,36 @@ const toolsByCertificado = [
             required: ["tipo_documento"],
             additionalProperties: false,
           },
+          hipoteca_anterior: {
+            type: "object",
+            description: "Bloque atómico de la hipoteca a cancelar + concurrencias familiares ligadas a ella. NO parsear de prosa. Llenar SOLO desde la sección Anotaciones (acto de hipoteca vigente). Omitir si no hay hipoteca vigente.",
+            properties: {
+              numero_escritura: confField("Número de la escritura de constitución de la hipoteca. Solo dígitos, SIN padding. Ej: '3866'."),
+              fecha_escritura: {
+                type: "object",
+                properties: {
+                  dia: confField("Día (DD) de la escritura de hipoteca"),
+                  mes: confField("Mes (MM) de la escritura de hipoteca"),
+                  ano: confField("Año (AAAA) de la escritura de hipoteca"),
+                },
+                additionalProperties: false,
+              },
+              notaria: {
+                type: "object",
+                properties: {
+                  numero: confField("Número de la notaría origen. Solo dígitos, SIN padding. Ej: '72'."),
+                  ciudad: confField("Ciudad/círculo de la notaría origen, en MAYÚSCULAS"),
+                },
+                additionalProperties: false,
+              },
+              tipo_credito: confField("ÚNICOS valores admitidos (estrictamente mayúsculas): 'VIS' | 'NO_VIS' | 'LEASING' | 'ABIERTA' | 'DESCONOCIDO'"),
+              concurre_afectacion_vivienda: confBoolField("true SOLO si la anotación de Afectación a Vivienda Familiar (Ley 258/1996) referencia la MISMA Escritura+Año+Notaría que hipoteca_anterior. false si pertenece a otra escritura."),
+              afectacion_vivienda_anotacion: confField("Número de anotación SNR de la afectación, con padding a 4 dígitos. Ej: '0007'. Vacío si concurre=false."),
+              concurre_patrimonio_familia: confBoolField("true SOLO si la anotación de Patrimonio de Familia Inembargable (Ley 70/1931 + 495/1999) referencia la MISMA Escritura+Año+Notaría que hipoteca_anterior. false si pertenece a otra escritura."),
+              patrimonio_familia_anotacion: confField("Número de anotación SNR del patrimonio, con padding a 4 dígitos. Ej: '0008'. Vacío si concurre=false."),
+            },
+            additionalProperties: false,
+          },
         },
         required: ["documento", "inmueble", "personas", "actos", "titulo_antecedente"],
         additionalProperties: false,
@@ -355,7 +385,17 @@ LÓGICA LEGAL (Compraventa):
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible y no hay ambigüedad
 - "media": el dato es parcialmente legible o podría tener variaciones menores  
-- "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"`,
+- "baja": el dato es difícil de leer, está borroso, o podrías estar equivocado. Si no encuentras un dato obligatorio, márcalo con confianza "baja"
+
+BLINDAJE v2 — HIPOTECA A CANCELAR (nodo hipoteca_anterior):
+
+1. ORIGEN ATÓMICO: Llena hipoteca_anterior EXCLUSIVAMENTE desde la sección de Anotaciones del certificado (acto de hipoteca vigente). NUNCA parsees prosa de cláusulas, títulos antecedentes ni resúmenes. Si no hay hipoteca vigente, omite el nodo completo.
+
+2. PADDING SNR (exclusivo de anotaciones): Los campos afectacion_vivienda_anotacion y patrimonio_familia_anotacion DEBEN entregarse con padding a 4 dígitos. Ej: "7" → "0007", "14" → "0014". NO apliques este padding al número de notaría ni al número de escritura: esos van como dígitos puros ("72", "3866"), sin ceros a la izquierda.
+
+3. CONCURRENCIA CRUZADA (tríada familiar): concurre_afectacion_vivienda y concurre_patrimonio_familia son true ÚNICAMENTE si la anotación SNR cita la MISMA tripleta Escritura + Año + Notaría que hipoteca_anterior. Si la anotación pertenece a otra escritura distinta, devuelve false y deja *_anotacion vacío. No asumas concurrencia por el solo hecho de que ambas anotaciones existan en el folio.
+
+4. ENUM tipo_credito: Solo admite los strings exactos en mayúsculas: "VIS", "NO_VIS", "LEASING", "ABIERTA", "DESCONOCIDO". Nada de minúsculas, espacios, guiones ni sinónimos. Si no puedes determinarlo, usa "DESCONOCIDO".`,
 
   predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles.
 
