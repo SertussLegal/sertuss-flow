@@ -602,7 +602,7 @@ const DocxPreview = ({
         const normalized = normalizeTemplateTags(result.value);
         
         const templatePlaceholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
-        if (templatePlaceholders.length > 0) {
+        if (import.meta.env.DEV && templatePlaceholders.length > 0) {
           console.debug("[DocxPreview] Template loaded with", templatePlaceholders.length, "placeholders");
         }
         setBaseHtml(normalized);
