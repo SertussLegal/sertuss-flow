@@ -218,6 +218,7 @@ export const ALL_KNOWN_KEYS: ReadonlySet<string> = new Set(
  * de la plantilla con los registrados aquí. NO falla el build; solo loggea.
  */
 export function reportTagCoverage(templateTags: string[]): void {
+  if (!import.meta.env.DEV) return;
   if (typeof console === "undefined") return;
   const known = ALL_KNOWN_KEYS;
   const total = templateTags.length;
