@@ -395,7 +395,59 @@ BLINDAJE v2 — HIPOTECA A CANCELAR (nodo hipoteca_anterior):
 
 3. CONCURRENCIA CRUZADA (tríada familiar): concurre_afectacion_vivienda y concurre_patrimonio_familia son true ÚNICAMENTE si la anotación SNR cita la MISMA tripleta Escritura + Año + Notaría que hipoteca_anterior. Si la anotación pertenece a otra escritura distinta, devuelve false y deja *_anotacion vacío. No asumas concurrencia por el solo hecho de que ambas anotaciones existan en el folio.
 
-4. ENUM tipo_credito: Solo admite los strings exactos en mayúsculas: "VIS", "NO_VIS", "LEASING", "ABIERTA", "DESCONOCIDO". Nada de minúsculas, espacios, guiones ni sinónimos. Si no puedes determinarlo, usa "DESCONOCIDO".`,
+4. ENUM tipo_credito: Solo admite los strings exactos en mayúsculas: "VIS", "NO_VIS", "LEASING", "ABIERTA", "DESCONOCIDO". Nada de minúsculas, espacios, guiones ni sinónimos. Si no puedes determinarlo, usa "DESCONOCIDO".
+
+═══════════════════════════════════════════════════════════════
+BLOQUE A — DETECCIÓN TOLERANTE DE GRAVÁMENES FAMILIARES (OCR-RESISTENTE)
+═══════════════════════════════════════════════════════════════
+
+Los certificados reales llegan torcidos, con sellos encima y abreviaciones notariales. Debes detectar estos tres gravámenes ACEPTANDO variantes ortográficas, abreviaciones, tildes faltantes y micro-errores típicos de OCR (O↔0, I↔1↔l, S↔5, B↔8, G↔6, espacios duplicados, puntos abreviativos).
+
+1) AFECTACIÓN A VIVIENDA FAMILIAR (Ley 258/1996) — dispara actos.afectacion_vivienda_familiar=true y, si concurre con la tripleta de la hipoteca, hipoteca_anterior.concurre_afectacion_vivienda=true.
+   Disparadores aceptados (case-insensitive, con/sin tildes, con/sin puntos):
+   • "AFECTACION A VIVIENDA FAMILIAR", "AFECT. VIV. FAM.", "AFECT VIV FAM"
+   • "Afectacion", "Afectación", "Vivienda Fam.", "Vivienda Familiar"
+   • "Ley 258", "Ley 258 de 1996", "L. 258/96"
+
+2) PATRIMONIO DE FAMILIA INEMBARGABLE (Ley 70/1931 + Ley 495/1999):
+   • "PATRIMONIO DE FAMILIA", "PATRIM. FAMILIA", "Patrim. Inembargable"
+   • "Patrimonio Inembargable", "Patrim. de Familia"
+   • "Ley 70", "Ley 70 de 1931", "Ley 495", "Ley 495 de 1999"
+
+3) INMOVILIZACIÓN (Ley 495/1999) — si aparece en una anotación, repórtala como una concurrencia familiar adicional dentro del razonamiento; aunque no exista un campo booleano específico, NO descartes la anotación: úsala para confirmar el bloqueo registral.
+   • "INMOVILIZACION", "INMOVILIZACIÓN", "Inmovil.", "Inmovilizacion del inmueble"
+   • "Ley 495 de 1999" cuando aparece junto a "INMOVIL"
+
+REGLA DE MATCHING: si el contexto literal ("Ley 258", "VIVIENDA FAMILIAR") confirma el gravamen, NO descartes la anotación por una sola letra mal leída. Pero NO inventes el gravamen si solo ves "Ley" sin número o "Familiar" sin "Vivienda/Patrimonio".
+
+═══════════════════════════════════════════════════════════════
+BLOQUE B — PURIFICACIÓN DE NÚMEROS CRÍTICOS (DIGIT-ONLY)
+═══════════════════════════════════════════════════════════════
+
+Para los siguientes campos, antes de emitir el valor ELIMINA: signos "$", puntos de miles, guiones, espacios, letras, asteriscos, caracteres invisibles, sufijos ",00" o ".00". Devuelve ÚNICAMENTE los dígitos consecutivos. NO apliques esta limpieza a campos textuales (ciudad, nombre, dirección, linderos):
+
+- documento.numero_escritura → solo dígitos. Ej: "Esc. 3.866" → "3866".
+- inmueble.matricula_inmobiliaria → solo dígitos (acepta el guion como separador SOLO si el formato oficial lo exige; en duda, dígitos puros). Ej: "50C-1.234.567" → "50C1234567" (mantén la letra de ORIP si forma parte del código oficial); si solo es numérico, "1.234.567" → "1234567".
+- actos.entidad_nit → CONSERVA el dígito de verificación, elimina puntos y guiones. Ej: "860.034.313-7" → "860034313-7" (el guion del DV es el ÚNICO admitido).
+- actos.valor_compraventa, actos.valor_hipoteca → solo dígitos enteros, sin "$", sin puntos de miles, sin ",00". Ej: "$ 180.000.000,00" → "180000000".
+- hipoteca_anterior.numero_escritura → solo dígitos sin padding. Ej: "03866" → "3866".
+- hipoteca_anterior.notaria.numero → solo dígitos sin padding. Ej: "072" → "72".
+- hipoteca_anterior.fecha_escritura.dia/mes/ano → solo dígitos.
+- afectacion_vivienda_anotacion, patrimonio_familia_anotacion → primero PURIFICA a dígitos puros, DESPUÉS aplica el padding a 4 ("7" → "0007").
+
+═══════════════════════════════════════════════════════════════
+BLOQUE C — MANEJO ESTRICTO DE LA INCERTIDUMBRE (ANTI-ALUCINACIÓN)
+═══════════════════════════════════════════════════════════════
+
+Cuando un dato sea humanamente ilegible por degradación, sello que lo tapa, marca de agua, baja resolución o página cortada:
+
+1. Devuelve cadena vacía "" (NUNCA "N/A", "ilegible", "no visible", "-", "(?)", ni notas entre paréntesis, ni comentarios explicativos).
+2. Asigna confianza: "baja" al campo.
+3. NO reconstruyas, NO deduzcas, NO extrapoles a partir de otras páginas si el dato no aparece en el fragmento analizado.
+4. Para campos booleanos sin evidencia clara, devuelve false con confianza "baja".
+5. Para nodos opcionales (hipoteca_anterior, titulo_antecedente.*) si la sección completa es ilegible, omite el subcampo en vez de inventar.
+
+Filosofía: la UI tiene un semáforo rojo que captura los "" y obliga al abogado a completar manualmente. Un campo vacío es transparente y corregible; un campo inventado es un error invisible que puede llegar a un documento notarial firmado.`,
 
   predial: `Eres un sistema OCR especializado en documentos prediales y boletines catastrales colombianos. Extrae TODOS los datos disponibles.
 
