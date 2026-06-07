@@ -279,6 +279,29 @@ const purifyConfig = {
 
 const sanitize = (html: string) => DOMPurify.sanitize(html, purifyConfig);
 
+// ── Cache singleton del template ────────────────────────────────────
+// Evita re-fetch + re-conversión de mammoth cuando el componente se
+// remonta (cambios de pestaña, autosave, etc.). Una sola promesa viva
+// por sesión de navegador.
+let __templatePromise: Promise<string> | null = null;
+const loadTemplateOnce = (): Promise<string> => {
+  if (__templatePromise) return __templatePromise;
+  __templatePromise = (async () => {
+    const response = await fetch("/template_venta_hipoteca.docx");
+    if (!response.ok) {
+      __templatePromise = null;
+      throw new Error("No se pudo cargar la plantilla");
+    }
+    const buffer = await response.arrayBuffer();
+    const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+    return normalizeTemplateTags(result.value);
+  })().catch((err) => {
+    __templatePromise = null;
+    throw err;
+  });
+  return __templatePromise;
+};
+
 /**
  * Normaliza placeholders fragmentados por mammoth.
  * Word divide internamente los "runs" XML, así que `{comparecientes_vendedor}`
@@ -587,33 +610,32 @@ const DocxPreview = ({
     return () => ro.disconnect();
   }, []);
 
-  // Load template once
+  // Load template (cached singleton — sólo un fetch+mammoth por sesión)
   useEffect(() => {
-    const loadTemplate = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch("/template_venta_hipoteca.docx");
-        if (!response.ok) {
-          setError("No se pudo cargar la plantilla");
-          return;
-        }
-        const buffer = await response.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-        const normalized = normalizeTemplateTags(result.value);
-        
-        const templatePlaceholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
-        if (import.meta.env.DEV && templatePlaceholders.length > 0) {
-          console.debug("[DocxPreview] Template loaded with", templatePlaceholders.length, "placeholders");
+    let cancelled = false;
+    setLoading(true);
+    loadTemplateOnce()
+      .then((normalized) => {
+        if (cancelled) return;
+        if (import.meta.env.DEV) {
+          const placeholders = normalized.match(/\{[a-zA-Z_#/^][a-zA-Z0-9_.#/^]*\}/g) || [];
+          if (placeholders.length > 0) {
+            console.debug("[DocxPreview] Template loaded with", placeholders.length, "placeholders");
+          }
         }
         setBaseHtml(normalized);
-      } catch (err: any) {
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
         console.error("Template load error:", err);
-        setError("Error al cargar plantilla: " + err.message);
-      } finally {
-        setLoading(false);
-      }
+        setError("Error al cargar plantilla: " + (err?.message ?? "desconocido"));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    loadTemplate();
   }, []);
 
   // Build replacement map
