@@ -124,7 +124,7 @@ export const AppSidebar = () => {
     }
   };
 
-  const showWorkGroup = loadingModules || visibleWorkModules.length > 0 || superAdmin;
+  const showWorkGroup = moduleColdStart || visibleWorkModules.length > 0 || superAdmin;
   const showOfficeGroup = isOwnerOfActiveOrg && OFFICE_NAV.length > 0;
   const showPlatformGroup = superAdmin && PLATFORM_NAV.length > 0;
 
@@ -196,7 +196,7 @@ export const AppSidebar = () => {
               </SidebarGroupLabel>
             )}
             <SidebarGroupContent>
-              {loadingModules && !superAdmin ? (
+              {moduleColdStart && !superAdmin ? (
                 <div className="space-y-2 px-2 py-2">
                   <Skeleton className="h-8 w-full" />
                   <Skeleton className="h-8 w-full" />
