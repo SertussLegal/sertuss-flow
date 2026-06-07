@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, Save, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, Save, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+// Catálogo de campos obligatorios para cancelación Davivienda.
+// Se importa para mantener el binding vivo (consumido por la prop `required`
+// en los Fields críticos y reservado para futuras validaciones pre-generación).
+import "@/lib/cancelacionCriticalFields";
 
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
@@ -149,32 +153,66 @@ const Field = ({
   onChange,
   disabled,
   copyable = true,
+  required = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
   copyable?: boolean;
-}) => (
-  <div className="space-y-1">
-    <Label className="text-xs">{label}</Label>
-    <div className="flex items-center gap-1.5">
-      <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} disabled={disabled} className="h-9 text-sm" />
-      {copyable && (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 shrink-0"
-          onClick={() => copyToClipboard(value ?? "", label)}
-          title={`Copiar ${label}`}
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
+  required?: boolean;
+}) => {
+  const isEmpty = !value || !value.trim() || value.trim() === "___________";
+  const showMissing = required && isEmpty && !disabled;
+  return (
+    <div className="space-y-1">
+      {label && (
+        <Label className="text-xs flex items-center gap-1">
+          {label}
+          {required && <span className="text-destructive" aria-label="obligatorio">*</span>}
+        </Label>
+      )}
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <Input
+            value={value ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            className={`h-9 text-sm ${
+              showMissing
+                ? "border-destructive/70 focus-visible:ring-destructive/40 pr-8"
+                : ""
+            }`}
+            aria-invalid={showMissing || undefined}
+          />
+          {showMissing && (
+            <AlertCircle
+              className="h-3.5 w-3.5 text-destructive absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden
+            />
+          )}
+        </div>
+        {copyable && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            onClick={() => copyToClipboard(value ?? "", label)}
+            title={`Copiar ${label}`}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+      {showMissing && (
+        <p className="text-[11px] text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" /> Campo obligatorio sin completar
+        </p>
       )}
     </div>
-  </div>
-);
+  );
+};
 
 export const CancelacionValidar = () => {
   const { id } = useParams<{ id: string }>();
@@ -205,14 +243,16 @@ export const CancelacionValidar = () => {
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
-  const { setStatus: setSaveStatus } = useSaveStatus();
+  const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
-  // Sincroniza chip global de guardado
+  // Sincroniza chip global de guardado.
+  // No forzamos `null` cuando ninguna condición aplica: eso permite que
+  // `flashSaved(2000)` del autosave silencioso muestre el chip "Guardado"
+  // sin ser pisado inmediatamente por este effect.
   useEffect(() => {
     if (saving) setSaveStatus("saving");
     else if (isDirty) setSaveStatus("dirty");
     else if (row?.status === "completed") setSaveStatus("saved");
-    else setSaveStatus(null);
   }, [saving, isDirty, row?.status, setSaveStatus]);
 
   // Limpia chip al salir de la página
@@ -261,14 +301,8 @@ export const CancelacionValidar = () => {
       lastSavedSnapshotRef.current = JSON.stringify(hydrated);
       setIsDirty(false);
       initialHydrationRef.current = true;
-      // Aviso semántico: valor del crédito no detectado por la IA.
-      const valorCredito = (source.hipoteca_anterior?.valor_hipoteca_original ?? "").trim();
-      if (!valorCredito) {
-        toast.warning("Valor del crédito hipotecario no detectado", {
-          description: "Verifícalo manualmente en la escritura antecedente antes de generar.",
-          duration: 6000,
-        });
-      }
+      // Aviso del valor del crédito ahora se muestra como banner inline
+      // persistente dentro de la sección "Hipoteca anterior" (no toast).
     }
   }, [row]);
 
@@ -319,13 +353,18 @@ export const CancelacionValidar = () => {
       if (!regenErr) {
         setViewerKey((k) => k + 1);
         queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-        if (!opts.silent) toast.success("Cambios guardados");
+        if (opts.silent) {
+          // Confirmación pasiva: chip "Guardado" durante 2s.
+          flashSaved(2000);
+        } else {
+          toast.success("Cambios guardados");
+        }
       } else if (!opts.silent) {
         toast.warning("Cambios guardados, pero la vista previa no se actualizó");
       }
       return true;
     },
-    [id, data, queryClient],
+    [id, data, queryClient, flashSaved],
   );
 
   // Debounce inteligente: 3s si cambió poder_banco, 15s en otros casos.
@@ -337,7 +376,8 @@ export const CancelacionValidar = () => {
 
     const currentPoder = JSON.stringify(data.poder_banco ?? {});
     const poderChanged = prevPoderRef.current !== "" && prevPoderRef.current !== currentPoder;
-    const delay = poderChanged ? 3000 : 15000;
+    // Debounce ajustado: 3s para poder_banco (alta sensibilidad), 5s para el resto.
+    const delay = poderChanged ? 3000 : 5000;
 
     const t = setTimeout(async () => {
       await persistData({ silent: true });
@@ -504,21 +544,54 @@ export const CancelacionValidar = () => {
           {data && (
             <>
               <Section title="Hipoteca anterior">
-                <Field label="Número de escritura" value={data.hipoteca_anterior.numero_escritura_hipoteca}
+                <Field label="Número de escritura" required value={data.hipoteca_anterior.numero_escritura_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, numero_escritura_hipoteca: v } })} />
-                <Field label="Fecha" value={data.hipoteca_anterior.fecha_escritura_hipoteca}
+                <Field label="Fecha" required value={data.hipoteca_anterior.fecha_escritura_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, fecha_escritura_hipoteca: v } })} />
                 <Field label="Notaría" value={data.hipoteca_anterior.notaria_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, notaria_hipoteca: v } })} />
+                {!data.hipoteca_anterior.valor_hipoteca_original?.trim() && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-[12px] leading-snug"
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold text-destructive">
+                          Valor del crédito hipotecario no detectado
+                        </p>
+                        <p className="text-foreground/90">
+                          La IA no logró identificar el monto. Verifícalo manualmente en la escritura
+                          antecedente antes de generar el documento final. Esta alerta desaparecerá
+                          al completar el campo.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
-                  <Label className="text-xs">Valor del crédito hipotecario original</Label>
+                  <Label className="text-xs flex items-center gap-1">
+                    Valor del crédito hipotecario original
+                    <span className="text-destructive" aria-label="obligatorio">*</span>
+                  </Label>
                   <div className="flex items-center gap-1.5">
-                    <Input
-                      value={data.hipoteca_anterior.valor_hipoteca_original ?? ""}
-                      onChange={(e) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: e.target.value } })}
-                      className={`h-9 text-sm ${!data.hipoteca_anterior.valor_hipoteca_original?.trim() ? "border-amber-500/60 focus-visible:ring-amber-500/40" : ""}`}
-                      placeholder="CIENTO… DE PESOS ($000.000.000)"
-                    />
+                    <div className="relative flex-1">
+                      <Input
+                        value={data.hipoteca_anterior.valor_hipoteca_original ?? ""}
+                        onChange={(e) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: e.target.value } })}
+                        className={`h-9 text-sm ${
+                          !data.hipoteca_anterior.valor_hipoteca_original?.trim()
+                            ? "border-destructive/70 focus-visible:ring-destructive/40 pr-8"
+                            : ""
+                        }`}
+                        placeholder="CIENTO… DE PESOS ($000.000.000)"
+                        aria-invalid={!data.hipoteca_anterior.valor_hipoteca_original?.trim() || undefined}
+                      />
+                      {!data.hipoteca_anterior.valor_hipoteca_original?.trim() && (
+                        <AlertCircle className="h-3.5 w-3.5 text-destructive absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      )}
+                    </div>
                     <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
                       onClick={() => copyToClipboard(data.hipoteca_anterior.valor_hipoteca_original ?? "", "Valor")}
                       title="Copiar valor">
@@ -535,7 +608,7 @@ export const CancelacionValidar = () => {
               </Section>
 
               <Section title="Inmueble">
-                <Field label="Matrícula" value={data.inmueble.matricula_inmobiliaria}
+                <Field label="Matrícula" required value={data.inmueble.matricula_inmobiliaria}
                   onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, matricula_inmobiliaria: v } })} />
                 <Field label="Ciudad" value={data.inmueble.ciudad}
                   onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, ciudad: v } })} />
@@ -555,7 +628,7 @@ export const CancelacionValidar = () => {
               </Section>
 
               <Section title="Partes">
-                <Field label="Deudor" value={data.partes.deudor_nombre}
+                <Field label="Deudor" required value={data.partes.deudor_nombre}
                   onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_nombre: v } })} />
                 <SegmentedChoice
                   label="Género gramatical del deudor"
@@ -570,7 +643,7 @@ export const CancelacionValidar = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Tipo ID" value={data.partes.deudor_tipo_id} copyable={false}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_tipo_id: v } })} />
-                  <Field label="Número ID" value={data.partes.deudor_identificacion}
+                  <Field label="Número ID" required value={data.partes.deudor_identificacion}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_identificacion: v } })} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
