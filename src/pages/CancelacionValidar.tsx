@@ -543,21 +543,54 @@ export const CancelacionValidar = () => {
           {data && (
             <>
               <Section title="Hipoteca anterior">
-                <Field label="Número de escritura" value={data.hipoteca_anterior.numero_escritura_hipoteca}
+                <Field label="Número de escritura" required value={data.hipoteca_anterior.numero_escritura_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, numero_escritura_hipoteca: v } })} />
-                <Field label="Fecha" value={data.hipoteca_anterior.fecha_escritura_hipoteca}
+                <Field label="Fecha" required value={data.hipoteca_anterior.fecha_escritura_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, fecha_escritura_hipoteca: v } })} />
                 <Field label="Notaría" value={data.hipoteca_anterior.notaria_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, notaria_hipoteca: v } })} />
+                {!data.hipoteca_anterior.valor_hipoteca_original?.trim() && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-[12px] leading-snug"
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold text-destructive">
+                          Valor del crédito hipotecario no detectado
+                        </p>
+                        <p className="text-foreground/90">
+                          La IA no logró identificar el monto. Verifícalo manualmente en la escritura
+                          antecedente antes de generar el documento final. Esta alerta desaparecerá
+                          al completar el campo.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
-                  <Label className="text-xs">Valor del crédito hipotecario original</Label>
+                  <Label className="text-xs flex items-center gap-1">
+                    Valor del crédito hipotecario original
+                    <span className="text-destructive" aria-label="obligatorio">*</span>
+                  </Label>
                   <div className="flex items-center gap-1.5">
-                    <Input
-                      value={data.hipoteca_anterior.valor_hipoteca_original ?? ""}
-                      onChange={(e) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: e.target.value } })}
-                      className={`h-9 text-sm ${!data.hipoteca_anterior.valor_hipoteca_original?.trim() ? "border-amber-500/60 focus-visible:ring-amber-500/40" : ""}`}
-                      placeholder="CIENTO… DE PESOS ($000.000.000)"
-                    />
+                    <div className="relative flex-1">
+                      <Input
+                        value={data.hipoteca_anterior.valor_hipoteca_original ?? ""}
+                        onChange={(e) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: e.target.value } })}
+                        className={`h-9 text-sm ${
+                          !data.hipoteca_anterior.valor_hipoteca_original?.trim()
+                            ? "border-destructive/70 focus-visible:ring-destructive/40 pr-8"
+                            : ""
+                        }`}
+                        placeholder="CIENTO… DE PESOS ($000.000.000)"
+                        aria-invalid={!data.hipoteca_anterior.valor_hipoteca_original?.trim() || undefined}
+                      />
+                      {!data.hipoteca_anterior.valor_hipoteca_original?.trim() && (
+                        <AlertCircle className="h-3.5 w-3.5 text-destructive absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      )}
+                    </div>
                     <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
                       onClick={() => copyToClipboard(data.hipoteca_anterior.valor_hipoteca_original ?? "", "Valor")}
                       title="Copiar valor">
@@ -594,7 +627,7 @@ export const CancelacionValidar = () => {
               </Section>
 
               <Section title="Partes">
-                <Field label="Deudor" value={data.partes.deudor_nombre}
+                <Field label="Deudor" required value={data.partes.deudor_nombre}
                   onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_nombre: v } })} />
                 <SegmentedChoice
                   label="Género gramatical del deudor"
