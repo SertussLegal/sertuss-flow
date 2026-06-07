@@ -3,11 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, Save, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import {
-  CANCELACION_CRITICAL_FIELDS,
-  isCancelacionFieldEmpty,
-  readCancelacionPath,
-} from "@/lib/cancelacionCriticalFields";
+// Catálogo de campos obligatorios para cancelación Davivienda.
+// Se importa para mantener el binding vivo (consumido por la prop `required`
+// en los Fields críticos y reservado para futuras validaciones pre-generación).
+import "@/lib/cancelacionCriticalFields";
 
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
