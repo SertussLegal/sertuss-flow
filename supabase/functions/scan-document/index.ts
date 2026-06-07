@@ -463,9 +463,21 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "media": parcialmente legible
 - "baja": difícil de leer o ambiguo
 
-NÚMEROS PUROS: cédula catastral, avalúo, año gravable y valor pagado → SOLO dígitos. Elimina "$", puntos de miles, guiones y espacios. Ej: "$ 1.234.000" → "1234000".
+PUREZA DE DÍGITOS (estricto):
+- Campos NUMÉRICOS PUROS (solo [0-9]): avalúo catastral, valor pagado, año gravable, número de recibo, estrato. Elimina "$", puntos/comas de miles, guiones, espacios, letras parásitas, caracteres invisibles y sufijos ",00" / ".00". Ej: "$ 1.234.000,00" → "1234000".
+- Tolerancia micro-OCR cuando el contexto confirma numérico: O→0, I/l→1, S→5, B→8, g→9.
 
-ANTI-ALUCINACIÓN: si un campo es ilegible (sello, mancha, marca de agua), devuelve "" (NO "N/A", NO "ilegible") con confianza "baja". NUNCA inventes ni deduzcas datos faltantes.`,
+EXCEPCIÓN ALFANUMÉRICA (CHIP y Cédula Catastral):
+- chip_nupre, cedula_catastral e identificador_predial NO son numéricos puros. Son ALFANUMÉRICOS LIMPIOS [A-Z0-9]: el CHIP de Bogotá obligatoriamente lleva letras (ej: AAA0264SBWW).
+- Elimina SOLO: espacios (incluso fantasmas/dobles), asteriscos "*", "#", guiones decorativos, puntos. CONSERVA letras y dígitos intactos, en mayúsculas.
+- Nunca conviertas letras legítimas a dígitos en estos tres campos (NO apliques O→0, I→1, etc.).
+
+ANTI-ALUCINACIÓN (estricto):
+- Si un campo es humanamente ilegible (sello, mancha, marca de agua, escaneo borroso o torcido), devuelve "" con confianza "baja".
+- PROHIBIDO devolver "N/A", "ilegible", "no visible", "---", "?", comentarios entre paréntesis ni reconstrucciones deducidas de páginas adyacentes.
+- Booleanos sin evidencia clara → false con confianza "baja".
+- Filosofía: el "" activa el semáforo rojo en UI y obliga captura manual; un valor inventado es un error invisible que puede llegar a documento firmado.`,
+
 
   escritura_antecedente: `Eres un sistema OCR especializado en escrituras públicas colombianas. Extrae los linderos del inmueble de la escritura antecedente. Diferencia entre linderos especiales (del inmueble particular) y linderos generales (del edificio o conjunto). Transcribe TEXTUALMENTE cada lindero, palabra por palabra.
 
