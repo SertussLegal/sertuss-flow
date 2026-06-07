@@ -22,7 +22,10 @@ const resolveTitle = (pathname: string) =>
   SECTION_TITLES.find((s) => s.match.test(pathname))?.title ?? "";
 
 export const AppLayout = () => {
-  const { loadingModules } = useModules();
+  const { loadingModules, enabledModules } = useModules();
+  // Cold-start: sólo mostramos skeleton si no tenemos módulos previos.
+  // Los refetches en segundo plano mantienen el shell montado y eliminan el parpadeo.
+  const coldStart = loadingModules && enabledModules.length === 0;
   const { organization } = useAuth();
   const { status: saveStatus } = useSaveStatus();
   const { pathname } = useLocation();
