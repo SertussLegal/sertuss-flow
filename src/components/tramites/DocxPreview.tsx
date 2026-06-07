@@ -1093,7 +1093,9 @@ const DocxPreview = ({
         }).join("");
       }
 
-      setHtml(sanitize(result));
+      const next = sanitize(result);
+      // Skip si el HTML resultante es idéntico → evita reconciliación inútil
+      setHtml((prev) => (prev === next ? prev : next));
     }, 80);
 
     return () => {
