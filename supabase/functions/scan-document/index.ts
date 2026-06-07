@@ -461,7 +461,11 @@ Extrae: CHIP/NUPRE (si existe), cédula catastral (si existe), avalúo catastral
 CONFIANZA: Para cada campo, asigna un nivel de confianza:
 - "alta": el dato es claramente legible
 - "media": parcialmente legible
-- "baja": difícil de leer o ambiguo`,
+- "baja": difícil de leer o ambiguo
+
+NÚMEROS PUROS: cédula catastral, avalúo, año gravable y valor pagado → SOLO dígitos. Elimina "$", puntos de miles, guiones y espacios. Ej: "$ 1.234.000" → "1234000".
+
+ANTI-ALUCINACIÓN: si un campo es ilegible (sello, mancha, marca de agua), devuelve "" (NO "N/A", NO "ilegible") con confianza "baja". NUNCA inventes ni deduzcas datos faltantes.`,
 
   escritura_antecedente: `Eres un sistema OCR especializado en escrituras públicas colombianas. Extrae los linderos del inmueble de la escritura antecedente. Diferencia entre linderos especiales (del inmueble particular) y linderos generales (del edificio o conjunto). Transcribe TEXTUALMENTE cada lindero, palabra por palabra.
 
