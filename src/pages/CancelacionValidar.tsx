@@ -300,14 +300,8 @@ export const CancelacionValidar = () => {
       lastSavedSnapshotRef.current = JSON.stringify(hydrated);
       setIsDirty(false);
       initialHydrationRef.current = true;
-      // Aviso semántico: valor del crédito no detectado por la IA.
-      const valorCredito = (source.hipoteca_anterior?.valor_hipoteca_original ?? "").trim();
-      if (!valorCredito) {
-        toast.warning("Valor del crédito hipotecario no detectado", {
-          description: "Verifícalo manualmente en la escritura antecedente antes de generar.",
-          duration: 6000,
-        });
-      }
+      // Aviso del valor del crédito ahora se muestra como banner inline
+      // persistente dentro de la sección "Hipoteca anterior" (no toast).
     }
   }, [row]);
 
@@ -358,13 +352,18 @@ export const CancelacionValidar = () => {
       if (!regenErr) {
         setViewerKey((k) => k + 1);
         queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-        if (!opts.silent) toast.success("Cambios guardados");
+        if (opts.silent) {
+          // Confirmación pasiva: chip "Guardado" durante 2s.
+          flashSaved(2000);
+        } else {
+          toast.success("Cambios guardados");
+        }
       } else if (!opts.silent) {
         toast.warning("Cambios guardados, pero la vista previa no se actualizó");
       }
       return true;
     },
-    [id, data, queryClient],
+    [id, data, queryClient, flashSaved],
   );
 
   // Debounce inteligente: 3s si cambió poder_banco, 15s en otros casos.
@@ -376,7 +375,8 @@ export const CancelacionValidar = () => {
 
     const currentPoder = JSON.stringify(data.poder_banco ?? {});
     const poderChanged = prevPoderRef.current !== "" && prevPoderRef.current !== currentPoder;
-    const delay = poderChanged ? 3000 : 15000;
+    // Debounce ajustado: 3s para poder_banco (alta sensibilidad), 5s para el resto.
+    const delay = poderChanged ? 3000 : 5000;
 
     const t = setTimeout(async () => {
       await persistData({ silent: true });
