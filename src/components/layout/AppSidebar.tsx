@@ -75,7 +75,9 @@ export const AppSidebar = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isModuleEnabled, loadingModules } = useModules();
+  const { isModuleEnabled, loadingModules, enabledModules } = useModules();
+  // Cold-start sólo cuando NO tenemos módulos previos en memoria.
+  const moduleColdStart = loadingModules && enabledModules.length === 0;
   const { profile, memberships, activeOrgId, organization, switchContext } = useAuth();
   const [switching, setSwitching] = useState(false);
 

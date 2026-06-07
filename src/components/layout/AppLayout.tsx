@@ -75,7 +75,7 @@ export const AppLayout = () => {
           </header>
 
           <main className="flex-1 min-w-0">
-            {loadingModules ? (
+            {coldStart ? (
               <div className="p-6 space-y-4">
                 <Skeleton className="h-8 w-1/3" />
                 <Skeleton className="h-32 w-full" />
