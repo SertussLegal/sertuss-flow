@@ -170,30 +170,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [user, fetchProfile]);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          setTimeout(() => fetchProfile(session.user), 0);
-        } else {
+    let lastUserId: string | null = null;
+    let profileFetched = false;
+
+    const applySession = (nextSession: Session | null) => {
+      setSession(nextSession);
+      const nextUser = nextSession?.user ?? null;
+      const nextId = nextUser?.id ?? null;
+
+      // Solo emitimos nuevo `user` cuando la identidad cambia.
+      // Evita que TOKEN_REFRESHED / USER_UPDATED retrigeren ModuleContext
+      // y desmonten <main> (causa raíz del parpadeo al cambiar de módulo).
+      if (nextId !== lastUserId) {
+        lastUserId = nextId;
+        setUser(nextUser);
+        if (!nextUser) {
           setProfile(null);
           setOrganization(null);
           setMemberships([]);
           setActiveOrgId(null);
           setNeedsOrgSetup(false);
+          profileFetched = false;
+        } else if (!profileFetched) {
+          profileFetched = true;
+          setTimeout(() => fetchProfile(nextUser), 0);
         }
-        setLoading(false);
-      }
-    );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user);
       }
       setLoading(false);
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, nextSession) => applySession(nextSession),
+    );
+
+    supabase.auth.getSession().then(({ data: { session: initial } }) => {
+      applySession(initial);
     });
 
     return () => subscription.unsubscribe();

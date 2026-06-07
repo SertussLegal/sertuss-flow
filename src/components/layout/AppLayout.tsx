@@ -22,7 +22,10 @@ const resolveTitle = (pathname: string) =>
   SECTION_TITLES.find((s) => s.match.test(pathname))?.title ?? "";
 
 export const AppLayout = () => {
-  const { loadingModules } = useModules();
+  const { loadingModules, enabledModules } = useModules();
+  // Cold-start: sólo mostramos skeleton si no tenemos módulos previos.
+  // Los refetches en segundo plano mantienen el shell montado y eliminan el parpadeo.
+  const coldStart = loadingModules && enabledModules.length === 0;
   const { organization } = useAuth();
   const { status: saveStatus } = useSaveStatus();
   const { pathname } = useLocation();
@@ -72,7 +75,7 @@ export const AppLayout = () => {
           </header>
 
           <main className="flex-1 min-w-0">
-            {loadingModules ? (
+            {coldStart ? (
               <div className="p-6 space-y-4">
                 <Skeleton className="h-8 w-1/3" />
                 <Skeleton className="h-32 w-full" />

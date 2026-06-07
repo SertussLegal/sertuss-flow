@@ -40,13 +40,13 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const fetchModules = useCallback(
-    async (orgId: string) => {
-      setLoadingModules(true);
+    async (orgId: string, { silent }: { silent: boolean } = { silent: false }) => {
+      if (!silent) setLoadingModules(true);
       const first = await fetchOnce(orgId);
 
       if (first.error) {
         console.error("[ModuleContext] fetch error", first.error);
-        setEnabledModules([]);
+        if (!silent) setEnabledModules([]);
         setLoadingModules(false);
         return;
       }
@@ -56,7 +56,7 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
         const retry = await fetchOnce(orgId);
         if (retry.error) {
           console.error("[ModuleContext] retry error", retry.error);
-          setEnabledModules([]);
+          if (!silent) setEnabledModules([]);
         } else {
           setEnabledModules(retry.data.map((r) => r.module_slug));
         }
@@ -68,8 +68,10 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
     [fetchOnce],
   );
 
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setEnabledModules([]);
       setLoadingModules(false);
       return;
@@ -87,8 +89,10 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
       setLoadingModules(true);
       return;
     }
+    // Dep estable: usamos userId (string) en lugar del objeto `user`
+    // para no refetchear en cada TOKEN_REFRESHED.
     void fetchModules(activeOrgId);
-  }, [activeOrgId, user, superAdmin, fetchModules]);
+  }, [activeOrgId, userId, superAdmin, fetchModules]);
 
   const isModuleEnabled = useCallback(
     (slug: string) => (superAdmin ? true : enabledModules.includes(slug)),

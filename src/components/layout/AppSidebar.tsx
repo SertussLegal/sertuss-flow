@@ -75,7 +75,9 @@ export const AppSidebar = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isModuleEnabled, loadingModules } = useModules();
+  const { isModuleEnabled, loadingModules, enabledModules } = useModules();
+  // Cold-start sólo cuando NO tenemos módulos previos en memoria.
+  const moduleColdStart = loadingModules && enabledModules.length === 0;
   const { profile, memberships, activeOrgId, organization, switchContext } = useAuth();
   const [switching, setSwitching] = useState(false);
 
@@ -122,7 +124,7 @@ export const AppSidebar = () => {
     }
   };
 
-  const showWorkGroup = loadingModules || visibleWorkModules.length > 0 || superAdmin;
+  const showWorkGroup = moduleColdStart || visibleWorkModules.length > 0 || superAdmin;
   const showOfficeGroup = isOwnerOfActiveOrg && OFFICE_NAV.length > 0;
   const showPlatformGroup = superAdmin && PLATFORM_NAV.length > 0;
 
@@ -194,7 +196,7 @@ export const AppSidebar = () => {
               </SidebarGroupLabel>
             )}
             <SidebarGroupContent>
-              {loadingModules && !superAdmin ? (
+              {moduleColdStart && !superAdmin ? (
                 <div className="space-y-2 px-2 py-2">
                   <Skeleton className="h-8 w-full" />
                   <Skeleton className="h-8 w-full" />
