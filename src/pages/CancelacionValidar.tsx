@@ -246,12 +246,14 @@ export const CancelacionValidar = () => {
   const lastSavedSnapshotRef = useRef<string>("");
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
-  // Sincroniza chip global de guardado
+  // Sincroniza chip global de guardado.
+  // No forzamos `null` cuando ninguna condición aplica: eso permite que
+  // `flashSaved(2000)` del autosave silencioso muestre el chip "Guardado"
+  // sin ser pisado inmediatamente por este effect.
   useEffect(() => {
     if (saving) setSaveStatus("saving");
     else if (isDirty) setSaveStatus("dirty");
     else if (row?.status === "completed") setSaveStatus("saved");
-    else setSaveStatus(null);
   }, [saving, isDirty, row?.status, setSaveStatus]);
 
   // Limpia chip al salir de la página
