@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, Save, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, Save, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  CANCELACION_CRITICAL_FIELDS,
+  isCancelacionFieldEmpty,
+  readCancelacionPath,
+} from "@/lib/cancelacionCriticalFields";
 
 import { supabase } from "@/integrations/supabase/client";
 import { monitored } from "@/services/monitoredClient";
@@ -149,32 +154,66 @@ const Field = ({
   onChange,
   disabled,
   copyable = true,
+  required = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
   copyable?: boolean;
-}) => (
-  <div className="space-y-1">
-    <Label className="text-xs">{label}</Label>
-    <div className="flex items-center gap-1.5">
-      <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} disabled={disabled} className="h-9 text-sm" />
-      {copyable && (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 shrink-0"
-          onClick={() => copyToClipboard(value ?? "", label)}
-          title={`Copiar ${label}`}
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
+  required?: boolean;
+}) => {
+  const isEmpty = !value || !value.trim() || value.trim() === "___________";
+  const showMissing = required && isEmpty && !disabled;
+  return (
+    <div className="space-y-1">
+      {label && (
+        <Label className="text-xs flex items-center gap-1">
+          {label}
+          {required && <span className="text-destructive" aria-label="obligatorio">*</span>}
+        </Label>
+      )}
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <Input
+            value={value ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            className={`h-9 text-sm ${
+              showMissing
+                ? "border-destructive/70 focus-visible:ring-destructive/40 pr-8"
+                : ""
+            }`}
+            aria-invalid={showMissing || undefined}
+          />
+          {showMissing && (
+            <AlertCircle
+              className="h-3.5 w-3.5 text-destructive absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden
+            />
+          )}
+        </div>
+        {copyable && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            onClick={() => copyToClipboard(value ?? "", label)}
+            title={`Copiar ${label}`}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+      {showMissing && (
+        <p className="text-[11px] text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" /> Campo obligatorio sin completar
+        </p>
       )}
     </div>
-  </div>
-);
+  );
+};
 
 export const CancelacionValidar = () => {
   const { id } = useParams<{ id: string }>();
@@ -205,7 +244,7 @@ export const CancelacionValidar = () => {
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
-  const { setStatus: setSaveStatus } = useSaveStatus();
+  const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
   // Sincroniza chip global de guardado
   useEffect(() => {
