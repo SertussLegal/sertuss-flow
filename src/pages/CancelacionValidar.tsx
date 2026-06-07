@@ -607,7 +607,7 @@ export const CancelacionValidar = () => {
               </Section>
 
               <Section title="Inmueble">
-                <Field label="Matrícula" value={data.inmueble.matricula_inmobiliaria}
+                <Field label="Matrícula" required value={data.inmueble.matricula_inmobiliaria}
                   onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, matricula_inmobiliaria: v } })} />
                 <Field label="Ciudad" value={data.inmueble.ciudad}
                   onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, ciudad: v } })} />
@@ -642,7 +642,7 @@ export const CancelacionValidar = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Tipo ID" value={data.partes.deudor_tipo_id} copyable={false}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_tipo_id: v } })} />
-                  <Field label="Número ID" value={data.partes.deudor_identificacion}
+                  <Field label="Número ID" required value={data.partes.deudor_identificacion}
                     onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_identificacion: v } })} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
