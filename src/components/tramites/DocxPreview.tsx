@@ -867,69 +867,73 @@ const DocxPreview = ({
   useEffect(() => {
     // If we have AI-generated text, use it instead of template
     if (textoFinalWord) {
-      let result = textoFinalWord;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        let result = textoFinalWord;
 
-      // ── Pase A: limpieza tipográfica defensiva (paréntesis vacíos / dobles) ──
-      result = result
-        .replace(/\)\s*\)+/g, ")")                 // "))" → ")"
-        .replace(/\(\s*\(+/g, "(")                 // "((" → "("
-        .replace(/(_{6,})\s*\(\s*_{6,}\s*\)/g, "$1") // "_____ (_____)" → "_____"
-        .replace(/\(\s*\)/g, "")                    // "( )" → ""
-        .replace(/[ \t]{2,}/g, " ")
-        .replace(/\s+([,.;:])/g, "$1");
+        // ── Pase A: limpieza tipográfica defensiva (paréntesis vacíos / dobles) ──
+        result = result
+          .replace(/\)\s*\)+/g, ")")                 // "))" → ")"
+          .replace(/\(\s*\(+/g, "(")                 // "((" → "("
+          .replace(/(_{6,})\s*\(\s*_{6,}\s*\)/g, "$1") // "_____ (_____)" → "_____"
+          .replace(/\(\s*\)/g, "")                    // "( )" → ""
+          .replace(/[ \t]{2,}/g, " ")
+          .replace(/\s+([,.;:])/g, "$1");
 
-      // ── Pase B: inferir data-field semántico para blanks de notario ──
-      // Reusa la misma clase var-pending y estilo rojo del template branch.
-      const pendingRedStyle = "background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer";
-      const makePendingSpan = (field: string) => {
-        const isNotaria = field.startsWith("notaria_");
-        const tip = isNotaria ? "Editar en Datos de la Notaría →" : "Haz clic para editar";
-        return `<span data-field="${field}" class="var-pending" style="${pendingRedStyle}" title="${tip}">___________</span>`;
+        // ── Pase B: inferir data-field semántico para blanks de notario ──
+        const pendingRedStyle = "background:hsl(0 84% 95%);color:hsl(0 72% 51%);text-decoration:underline;cursor:pointer";
+        const makePendingSpan = (field: string) => {
+          const isNotaria = field.startsWith("notaria_");
+          const tip = isNotaria ? "Editar en Datos de la Notaría →" : "Haz clic para editar";
+          return `<span data-field="${field}" class="var-pending" style="${pendingRedStyle}" title="${tip}">___________</span>`;
+        };
+
+        result = result.replace(
+          /(NOTAR[IÍ]O|NOTAR[IÍ]A)(\s+)(_{6,})/gi,
+          (_m, word, sp) => `${word}${sp}${makePendingSpan("notaria_numero_letras")}`,
+        );
+        result = result.replace(
+          /(C[IÍ]RCULO\s+DE\s+)(_{6,})/gi,
+          (_m, prefix) => `${prefix}${makePendingSpan("notaria_circulo")}`,
+        );
+        result = result.replace(
+          /(DEPARTAMENTO\s+DE\s+)(_{6,})/gi,
+          (_m, prefix) => `${prefix}${makePendingSpan("notaria_departamento")}`,
+        );
+
+        // ── Pase C: envolver blanks restantes como genéricos clickeables ──
+        const genericPendingSpan = `<span data-field="__ai_blank__" class="var-pending" style="${pendingRedStyle}" title="Haz clic para editar">___________</span>`;
+        const segments = result.split(/_{6,}/);
+        if (segments.length > 1) {
+          result = segments.map((segment, i, arr) => {
+            if (i === arr.length - 1) return segment;
+            const lastAttrOpen = Math.max(segment.lastIndexOf('="'), segment.lastIndexOf("='"));
+            const lastTagClose = segment.lastIndexOf(">");
+            if (lastAttrOpen > lastTagClose) return segment + "___________";
+            const lastLt = segment.lastIndexOf("<");
+            const lastGt = segment.lastIndexOf(">");
+            if (lastLt > lastGt) return segment + "___________";
+            return segment + genericPendingSpan;
+          }).join("");
+        }
+
+        if (sugerenciasIA.length > 0) {
+          result = applySugerenciaHighlights(result, sugerenciasIA);
+        }
+
+        result = adaptiveCollapse(result, inmueble?.es_propiedad_horizontal === true);
+        const next = sanitize(result);
+        // Skip si el HTML resultante es idéntico → evita reconciliación inútil
+        setHtml((prev) => (prev === next ? prev : next));
+      }, 250);
+      return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
       };
-
-      // NOTARIO/NOTARÍA ___________ → notaria_numero_letras
-      result = result.replace(
-        /(NOTAR[IÍ]O|NOTAR[IÍ]A)(\s+)(_{6,})/gi,
-        (_m, word, sp) => `${word}${sp}${makePendingSpan("notaria_numero_letras")}`,
-      );
-      // CÍRCULO DE ___________ → notaria_circulo
-      result = result.replace(
-        /(C[IÍ]RCULO\s+DE\s+)(_{6,})/gi,
-        (_m, prefix) => `${prefix}${makePendingSpan("notaria_circulo")}`,
-      );
-      // DEPARTAMENTO DE ___________ → notaria_departamento
-      result = result.replace(
-        /(DEPARTAMENTO\s+DE\s+)(_{6,})/gi,
-        (_m, prefix) => `${prefix}${makePendingSpan("notaria_departamento")}`,
-      );
-
-      // ── Pase C: envolver blanks restantes como genéricos clickeables ──
-      const genericPendingSpan = `<span data-field="__ai_blank__" class="var-pending" style="${pendingRedStyle}" title="Haz clic para editar">___________</span>`;
-      const segments = result.split(/_{6,}/);
-      if (segments.length > 1) {
-        result = segments.map((segment, i, arr) => {
-          if (i === arr.length - 1) return segment;
-          // No envolver si está dentro de un atributo HTML abierto
-          const lastAttrOpen = Math.max(segment.lastIndexOf('="'), segment.lastIndexOf("='"));
-          const lastTagClose = segment.lastIndexOf(">");
-          if (lastAttrOpen > lastTagClose) return segment + "___________";
-          // No envolver si estamos dentro de una etiqueta <span ...> aún sin cerrar
-          const lastLt = segment.lastIndexOf("<");
-          const lastGt = segment.lastIndexOf(">");
-          if (lastLt > lastGt) return segment + "___________";
-          return segment + genericPendingSpan;
-        }).join("");
-      }
-
-      // Apply sugerencias_ia highlights
-      if (sugerenciasIA.length > 0) {
-        result = applySugerenciaHighlights(result, sugerenciasIA);
-      }
-
-      result = adaptiveCollapse(result, inmueble?.es_propiedad_horizontal === true);
-      setHtml(sanitize(result));
-      return;
     }
+
+    if (!baseHtml) return;
+
+
 
     if (!baseHtml) return;
 
