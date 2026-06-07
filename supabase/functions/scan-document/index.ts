@@ -497,7 +497,11 @@ CONFIANZA: Para cada campo, asigna un nivel de confianza:
 
   poder_banco: `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el poder otorgado por una entidad bancaria y extrae TODOS los datos disponibles: nombre de la entidad bancaria, nombre completo del apoderado, número de cédula, lugar de expedición de la cédula, número de escritura pública del poder, fecha de otorgamiento, nombre/número de la notaría del poder, ciudad de la notaría, y correo electrónico del apoderado (si aparece).
 
-CONFIANZA: Para cada campo, asigna un nivel de confianza: "alta", "media" o "baja".`,
+CONFIANZA: Para cada campo, asigna un nivel de confianza: "alta", "media" o "baja".
+
+NÚMEROS PUROS: número de escritura del poder y número de cédula → SOLO dígitos, sin puntos de miles ni guiones (ej: "1.234.567" → "1234567").
+
+ANTI-ALUCINACIÓN: si un campo es ilegible (sello, mancha, marca de agua), devuelve "" (NO "N/A", NO "ilegible") con confianza "baja". NUNCA inventes ni deduzcas datos faltantes.`,
 
   carta_credito: `Eres un sistema OCR especializado en documentos bancarios colombianos. Analiza la carta de aprobación de crédito hipotecario y extrae el valor aprobado del crédito y la entidad bancaria.
 
