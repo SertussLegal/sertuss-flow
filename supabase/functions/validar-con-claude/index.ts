@@ -253,7 +253,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         estado: "error_sistema",
-        mensaje: error instanceof Error ? error.message : "Unknown error",
+        mensaje: "Error interno del servidor. Intente de nuevo.",
         validaciones: [],
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
