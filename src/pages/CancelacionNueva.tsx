@@ -130,10 +130,20 @@ export const CancelacionNueva = () => {
       });
 
       if (error) {
-        toast.error("No se pudo contactar al servidor", { description: error.message });
-        setSaving(false);
+        // El borrador ya existe y la edge function pudo haber iniciado el
+        // procesamiento en background antes de que la respuesta HTTP fallara
+        // (timeout de red, conexión inestable). Navegamos al validar para que
+        // el polling muestre el estado real (processing / completed / error)
+        // en lugar de dejar al usuario varado en la pantalla de subida.
+        toast.warning("Conexión inestable", {
+          description: "Verificando estado del procesamiento…",
+        });
+        await refreshCredits();
+        queryClient.invalidateQueries({ queryKey: ["cancelaciones"] });
+        navigate(`/cancelaciones/${cancelacionId}/validar`);
         return;
       }
+
 
       if (data && data.ok === false) {
         const code = data.code ?? "internal";
