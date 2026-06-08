@@ -469,11 +469,67 @@ export const CancelacionValidar = () => {
   }
 
   if (row.status === "processing") {
+    // Hallazgo 9: si lleva más de 5 minutos en "processing" sin actualizarse,
+    // mostramos un banner accionable en vez del spinner infinito.
+    const stalledMs = Date.now() - new Date(row.updated_at).getTime();
+    const stalled = stalledMs > 5 * 60 * 1000;
+    if (stalled) {
+      return (
+        <div className="h-screen bg-muted/30 flex items-center justify-center p-8 overflow-hidden">
+          <div className="max-w-md text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
+              <AlertTriangle className="h-6 w-6 text-amber-500" />
+            </div>
+            <p className="text-base font-semibold">Procesamiento demorado</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              El análisis lleva más de 5 minutos. Puede haber un problema con el servicio de IA.
+              Vuelve al listado y reintenta más tarde o contacta a soporte.
+            </p>
+            <div className="mt-6 flex justify-center gap-2">
+              <Button variant="outline" onClick={() => navigate("/cancelaciones")} className="gap-2">
+                <ArrowLeft className="h-4 w-4" /> Volver al listado
+              </Button>
+              <Button variant="default" onClick={() => queryClient.invalidateQueries({ queryKey: ["cancelacion", id] })} className="gap-2">
+                <RefreshCw className="h-4 w-4" /> Reintentar
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="h-screen bg-muted/30 flex items-center justify-center overflow-hidden">
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
           <p className="mt-4 text-sm text-muted-foreground">Procesando documentos con IA…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Hallazgo 5: borrador sin data_ia ⇒ el procesamiento no llegó a iniciarse
+  // (típicamente por un fallo de red en CancelacionNueva). No dejar al usuario
+  // varado: explicar y ofrecer acción concreta.
+  if (row.status === "draft" && !row.data_ia) {
+    return (
+      <div className="h-screen bg-muted/30 flex items-center justify-center p-8 overflow-hidden">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
+            <AlertTriangle className="h-6 w-6 text-amber-500" />
+          </div>
+          <p className="text-base font-semibold">Procesamiento no iniciado</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Este borrador quedó sin análisis. Lo más probable es que la conexión se interrumpió antes
+            de enviar los documentos a la IA. Vuelve a iniciar la cancelación con los mismos archivos.
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Button variant="outline" onClick={() => navigate("/cancelaciones")} className="gap-2">
+              <ArrowLeft className="h-4 w-4" /> Volver al listado
+            </Button>
+            <Button variant="default" onClick={() => navigate("/cancelaciones/nueva")} className="gap-2">
+              <RefreshCw className="h-4 w-4" /> Reintentar carga
+            </Button>
+          </div>
         </div>
       </div>
     );
