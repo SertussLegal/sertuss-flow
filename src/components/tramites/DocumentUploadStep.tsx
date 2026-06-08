@@ -110,14 +110,25 @@ const DocumentUploadStep = () => {
 
   const processFile = useCallback(async (file: File, type: string): Promise<any> => {
     const base64 = await fileToBase64(file);
-    const { data, error } = await monitored.invoke("scan-document", { image: base64, type });
+    // Hallazgo 11: timeout defensivo. Si el OCR tarda más de 60s (PDF grande
+    // o servicio colgado), abortamos en el cliente para que el slot no quede
+    // en "uploading" indefinidamente y el usuario pueda reintentar.
+    const TIMEOUT_MS = 60_000;
+    const invokePromise = monitored.invoke("scan-document", { image: base64, type });
+    const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
+      setTimeout(() => resolve({ data: null, error: new Error("__timeout__") }), TIMEOUT_MS),
+    );
+    const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
     if (error) {
+      if (error.message === "__timeout__") {
+        throw new Error("Tiempo de espera agotado (60s). Intenta con un archivo más pequeño o comprime el PDF.");
+      }
       if (isCreditsBlockedError(error, data)) {
         emitCreditsBlocked({ source: "scan-document" });
       }
       throw new Error(error.message);
     }
-    return data?.data || null;
+    return (data as any)?.data || null;
   }, []);
 
   const handlePersonaFile = useCallback(async (
