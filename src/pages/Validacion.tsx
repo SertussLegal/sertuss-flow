@@ -2016,8 +2016,15 @@ const Validacion = () => {
     const unlocked = await ensureUnlocked();
     if (!unlocked) return;
 
+    // Hallazgo 8: cancelar el timer del autosave debounced para evitar
+    // que dispare en paralelo con el guardado manual previo a la generación.
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
     // Save current data first
     await handleAutoSave();
+
 
     setGenerating(true);
     setGeneratingWord(true);
