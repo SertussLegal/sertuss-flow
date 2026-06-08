@@ -100,6 +100,9 @@ export const CancelacionNueva = () => {
     }
 
     setSaving(true);
+    // Capturamos el id fuera del try para que el catch externo pueda redirigir
+    // al usuario al borrador si algo falla después de crearse el registro.
+    let cancelacionId: string | null = null;
     try {
       setStepLabel("Creando borrador…");
       const { data: inserted, error: insErr } = await supabase
@@ -108,7 +111,7 @@ export const CancelacionNueva = () => {
         .select("id")
         .single();
       if (insErr || !inserted) throw insErr ?? new Error("No se pudo crear");
-      const cancelacionId = inserted.id;
+      cancelacionId = inserted.id;
 
       const certificadoImagePaths = await uploadPdfAsImages(cancelacionId, certificado, "certificado", CERTIFICADO_MAX_PAGES);
       const escrituraImagePaths = await uploadPdfAsImages(cancelacionId, escritura, "escritura", ESCRITURA_MAX_PAGES);
