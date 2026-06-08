@@ -335,6 +335,11 @@ export const CancelacionValidar = () => {
   const persistData = useCallback(
     async (opts: { silent?: boolean } = {}): Promise<boolean> => {
       if (!id || !data) return false;
+      // Hallazgo 7/8: mutex de regeneración. Si ya hay una en vuelo, no
+      // disparamos otra (el autosave silencioso reintentará).
+      if (isRegenInFlightRef.current) {
+        if (opts.silent) return false;
+      }
       setSaving(true);
       const snapshot = JSON.stringify(data);
       const { error } = await supabase.from("cancelaciones").update({
@@ -353,12 +358,21 @@ export const CancelacionValidar = () => {
       lastSavedSnapshotRef.current = snapshot;
       setIsDirty(false);
       // Regen silencioso con SSOT del frontend (manualOverrides).
+      if (isRegenInFlightRef.current) {
+        // Otro regen en curso: marcamos stale y dejamos que el siguiente
+        // ciclo (manual o nuevo autosave) lo refresque.
+        setPreviewStale(true);
+        return true;
+      }
+      isRegenInFlightRef.current = true;
       setPreviewRefreshing(true);
       const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
         cancelacionId: id, regen: true, manualOverrides: data,
       });
       setPreviewRefreshing(false);
+      isRegenInFlightRef.current = false;
       if (!regenErr) {
+        setPreviewStale(false);
         setViewerKey((k) => k + 1);
         queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
         if (opts.silent) {
@@ -367,8 +381,13 @@ export const CancelacionValidar = () => {
         } else {
           toast.success("Cambios guardados");
         }
-      } else if (!opts.silent) {
-        toast.warning("Cambios guardados, pero la vista previa no se actualizó");
+      } else {
+        // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
+        // actualizó. Mostrar chip persistente "vista desactualizada".
+        setPreviewStale(true);
+        if (!opts.silent) {
+          toast.warning("Cambios guardados, pero la vista previa no se actualizó");
+        }
       }
       return true;
     },
@@ -400,22 +419,29 @@ export const CancelacionValidar = () => {
 
   const handleManualRegen = async () => {
     if (!id || !data) return;
-    // Si hay cambios pendientes, guárdalos primero.
+    // Hallazgo 7: mutex compartido con autosave silencioso.
+    if (isRegenInFlightRef.current) return;
+    // Si hay cambios pendientes, guárdalos primero (que también regenera).
     if (isDirty) {
       await persistData({ silent: true });
       return;
     }
+    isRegenInFlightRef.current = true;
     setPreviewRefreshing(true);
     const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
     setPreviewRefreshing(false);
+    isRegenInFlightRef.current = false;
     if (error) {
+      setPreviewStale(true);
       toast.error("No se pudo regenerar", { description: error.message });
       return;
     }
+    setPreviewStale(false);
     toast.success("Documento actualizado");
     setViewerKey((k) => k + 1);
     queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
+
 
   // Aviso si el usuario cierra/recarga la pestaña con cambios sin guardar.
   useEffect(() => {
