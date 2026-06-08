@@ -238,12 +238,20 @@ export const CancelacionValidar = () => {
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
+  // Hallazgo 2: cuando un autosave silencioso guarda pero la regeneración
+  // del documento falla, marcamos la vista como desactualizada en lugar de
+  // mostrar el chip "Guardado ✓" mentiroso.
+  const [previewStale, setPreviewStale] = useState(false);
   const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado">("minuta");
   const [viewerKey, setViewerKey] = useState(0);
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+  // Hallazgo 7: evita que dos regeneraciones (manual + autosave silencioso)
+  // se ejecuten en paralelo y crucen sus respuestas.
+  const isRegenInFlightRef = useRef(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
+
 
   // Sincroniza chip global de guardado.
   // No forzamos `null` cuando ninguna condición aplica: eso permite que
