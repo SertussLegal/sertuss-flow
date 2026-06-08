@@ -1805,25 +1805,11 @@ const Validacion = () => {
         navigate(`/tramite/${tid}`, { replace: true });
       } else {
         await supabase.from("tramites").update({ status: "validado" as any, updated_at: new Date().toISOString(), metadata: metadata as any }).eq("id", tid);
-        await supabase.from("personas").delete().eq("tramite_id", tid);
-        await supabase.from("inmuebles").delete().eq("tramite_id", tid);
-        await supabase.from("actos").delete().eq("tramite_id", tid);
       }
 
-      const personasToInsert = [
-        ...vendedores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "vendedor" as any })),
-        ...compradores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "comprador" as any })),
-      ];
-      if (personasToInsert.length) {
-        const { error } = await supabase.from("personas").insert(personasToInsert);
-        if (error) throw error;
-      }
-
-      const { error: inmError } = await supabase.from("inmuebles").insert({ ...inmuebleToRow(inmueble), tramite_id: tid! });
-      if (inmError) throw inmError;
-
-      const { error: actError } = await supabase.from("actos").insert({ ...actosToRow(actos), tramite_id: tid! });
-      if (actError) throw actError;
+      // Hallazgo 3: upsert atómico + delete selectivo (no destructivo).
+      // Si esto falla, los datos previos siguen intactos en BD.
+      await syncTramiteChildren(tid!);
 
       // --- Logging de correcciones ---
       if (dataIaSnapshot.current && tid) {
