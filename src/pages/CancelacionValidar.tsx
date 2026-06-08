@@ -584,7 +584,21 @@ export const CancelacionValidar = () => {
                 <Loader2 className="h-3 w-3 animate-spin" /> Actualizando vista…
               </span>
             )}
-            <Button size="sm" variant="outline" onClick={handleManualRegen} disabled={previewRefreshing || saving} className="gap-1.5 text-xs">
+            {previewStale && !previewRefreshing && (
+              <span
+                className="text-[11px] flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-600 dark:text-amber-400"
+                title="Los cambios se guardaron, pero el documento mostrado puede estar desactualizado. Pulsa Regenerar."
+              >
+                <AlertTriangle className="h-3 w-3" /> Vista desactualizada
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant={previewStale ? "default" : "outline"}
+              onClick={handleManualRegen}
+              disabled={previewRefreshing || saving}
+              className="gap-1.5 text-xs"
+            >
               <RefreshCw className="h-3.5 w-3.5" /> Regenerar
             </Button>
             <Button
