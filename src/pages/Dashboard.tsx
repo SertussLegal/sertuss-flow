@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, AlertTriangle, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Building2 } from "lucide-react";
+import { Plus, Search, AlertTriangle, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Building2, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import SetupOrgModal from "@/components/SetupOrgModal";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -36,6 +36,8 @@ const Dashboard = () => {
   const [tramites, setTramites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [draftToDelete, setDraftToDelete] = useState<any | null>(null);
+  // Hallazgo 6: evita doble click → 4 deletes en paralelo. Disabled + spinner.
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -72,7 +74,8 @@ const Dashboard = () => {
   };
 
   const handleDeleteDraft = async () => {
-    if (!draftToDelete) return;
+    if (!draftToDelete || deleting) return;
+    setDeleting(true);
     try {
       await supabase.from("logs_extraccion").delete().eq("tramite_id", draftToDelete.id);
       await supabase.from("personas").delete().eq("tramite_id", draftToDelete.id);
@@ -85,6 +88,7 @@ const Dashboard = () => {
     } catch (err: any) {
       toast({ title: "Error al eliminar", description: err?.message ?? "Intenta de nuevo", variant: "destructive" });
     } finally {
+      setDeleting(false);
       setDraftToDelete(null);
     }
   };
@@ -294,7 +298,7 @@ const Dashboard = () => {
         </Card>
       </main>
 
-      <AlertDialog open={!!draftToDelete} onOpenChange={(open) => !open && setDraftToDelete(null)}>
+      <AlertDialog open={!!draftToDelete} onOpenChange={(open) => { if (!open && !deleting) setDraftToDelete(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar borrador?</AlertDialogTitle>
@@ -303,9 +307,14 @@ const Dashboard = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteDraft} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Eliminar
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleDeleteDraft(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {deleting ? "Eliminando…" : "Eliminar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

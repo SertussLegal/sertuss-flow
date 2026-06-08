@@ -238,12 +238,20 @@ export const CancelacionValidar = () => {
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
+  // Hallazgo 2: cuando un autosave silencioso guarda pero la regeneración
+  // del documento falla, marcamos la vista como desactualizada en lugar de
+  // mostrar el chip "Guardado ✓" mentiroso.
+  const [previewStale, setPreviewStale] = useState(false);
   const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado">("minuta");
   const [viewerKey, setViewerKey] = useState(0);
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+  // Hallazgo 7: evita que dos regeneraciones (manual + autosave silencioso)
+  // se ejecuten en paralelo y crucen sus respuestas.
+  const isRegenInFlightRef = useRef(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
+
 
   // Sincroniza chip global de guardado.
   // No forzamos `null` cuando ninguna condición aplica: eso permite que
@@ -327,6 +335,11 @@ export const CancelacionValidar = () => {
   const persistData = useCallback(
     async (opts: { silent?: boolean } = {}): Promise<boolean> => {
       if (!id || !data) return false;
+      // Hallazgo 7/8: mutex de regeneración. Si ya hay una en vuelo, no
+      // disparamos otra (el autosave silencioso reintentará).
+      if (isRegenInFlightRef.current) {
+        if (opts.silent) return false;
+      }
       setSaving(true);
       const snapshot = JSON.stringify(data);
       const { error } = await supabase.from("cancelaciones").update({
@@ -345,12 +358,21 @@ export const CancelacionValidar = () => {
       lastSavedSnapshotRef.current = snapshot;
       setIsDirty(false);
       // Regen silencioso con SSOT del frontend (manualOverrides).
+      if (isRegenInFlightRef.current) {
+        // Otro regen en curso: marcamos stale y dejamos que el siguiente
+        // ciclo (manual o nuevo autosave) lo refresque.
+        setPreviewStale(true);
+        return true;
+      }
+      isRegenInFlightRef.current = true;
       setPreviewRefreshing(true);
       const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
         cancelacionId: id, regen: true, manualOverrides: data,
       });
       setPreviewRefreshing(false);
+      isRegenInFlightRef.current = false;
       if (!regenErr) {
+        setPreviewStale(false);
         setViewerKey((k) => k + 1);
         queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
         if (opts.silent) {
@@ -359,8 +381,13 @@ export const CancelacionValidar = () => {
         } else {
           toast.success("Cambios guardados");
         }
-      } else if (!opts.silent) {
-        toast.warning("Cambios guardados, pero la vista previa no se actualizó");
+      } else {
+        // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
+        // actualizó. Mostrar chip persistente "vista desactualizada".
+        setPreviewStale(true);
+        if (!opts.silent) {
+          toast.warning("Cambios guardados, pero la vista previa no se actualizó");
+        }
       }
       return true;
     },
@@ -392,22 +419,29 @@ export const CancelacionValidar = () => {
 
   const handleManualRegen = async () => {
     if (!id || !data) return;
-    // Si hay cambios pendientes, guárdalos primero.
+    // Hallazgo 7: mutex compartido con autosave silencioso.
+    if (isRegenInFlightRef.current) return;
+    // Si hay cambios pendientes, guárdalos primero (que también regenera).
     if (isDirty) {
       await persistData({ silent: true });
       return;
     }
+    isRegenInFlightRef.current = true;
     setPreviewRefreshing(true);
     const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
     setPreviewRefreshing(false);
+    isRegenInFlightRef.current = false;
     if (error) {
+      setPreviewStale(true);
       toast.error("No se pudo regenerar", { description: error.message });
       return;
     }
+    setPreviewStale(false);
     toast.success("Documento actualizado");
     setViewerKey((k) => k + 1);
     queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
+
 
   // Aviso si el usuario cierra/recarga la pestaña con cambios sin guardar.
   useEffect(() => {
@@ -435,11 +469,67 @@ export const CancelacionValidar = () => {
   }
 
   if (row.status === "processing") {
+    // Hallazgo 9: si lleva más de 5 minutos en "processing" sin actualizarse,
+    // mostramos un banner accionable en vez del spinner infinito.
+    const stalledMs = Date.now() - new Date(row.updated_at).getTime();
+    const stalled = stalledMs > 5 * 60 * 1000;
+    if (stalled) {
+      return (
+        <div className="h-screen bg-muted/30 flex items-center justify-center p-8 overflow-hidden">
+          <div className="max-w-md text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
+              <AlertTriangle className="h-6 w-6 text-amber-500" />
+            </div>
+            <p className="text-base font-semibold">Procesamiento demorado</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              El análisis lleva más de 5 minutos. Puede haber un problema con el servicio de IA.
+              Vuelve al listado y reintenta más tarde o contacta a soporte.
+            </p>
+            <div className="mt-6 flex justify-center gap-2">
+              <Button variant="outline" onClick={() => navigate("/cancelaciones")} className="gap-2">
+                <ArrowLeft className="h-4 w-4" /> Volver al listado
+              </Button>
+              <Button variant="default" onClick={() => queryClient.invalidateQueries({ queryKey: ["cancelacion", id] })} className="gap-2">
+                <RefreshCw className="h-4 w-4" /> Reintentar
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="h-screen bg-muted/30 flex items-center justify-center overflow-hidden">
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
           <p className="mt-4 text-sm text-muted-foreground">Procesando documentos con IA…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Hallazgo 5: borrador sin data_ia ⇒ el procesamiento no llegó a iniciarse
+  // (típicamente por un fallo de red en CancelacionNueva). No dejar al usuario
+  // varado: explicar y ofrecer acción concreta.
+  if (row.status === "draft" && !row.data_ia) {
+    return (
+      <div className="h-screen bg-muted/30 flex items-center justify-center p-8 overflow-hidden">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
+            <AlertTriangle className="h-6 w-6 text-amber-500" />
+          </div>
+          <p className="text-base font-semibold">Procesamiento no iniciado</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Este borrador quedó sin análisis. Lo más probable es que la conexión se interrumpió antes
+            de enviar los documentos a la IA. Vuelve a iniciar la cancelación con los mismos archivos.
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Button variant="outline" onClick={() => navigate("/cancelaciones")} className="gap-2">
+              <ArrowLeft className="h-4 w-4" /> Volver al listado
+            </Button>
+            <Button variant="default" onClick={() => navigate("/cancelaciones/nueva")} className="gap-2">
+              <RefreshCw className="h-4 w-4" /> Reintentar carga
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -494,7 +584,21 @@ export const CancelacionValidar = () => {
                 <Loader2 className="h-3 w-3 animate-spin" /> Actualizando vista…
               </span>
             )}
-            <Button size="sm" variant="outline" onClick={handleManualRegen} disabled={previewRefreshing || saving} className="gap-1.5 text-xs">
+            {previewStale && !previewRefreshing && (
+              <span
+                className="text-[11px] flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-600 dark:text-amber-400"
+                title="Los cambios se guardaron, pero el documento mostrado puede estar desactualizado. Pulsa Regenerar."
+              >
+                <AlertTriangle className="h-3 w-3" /> Vista desactualizada
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant={previewStale ? "default" : "outline"}
+              onClick={handleManualRegen}
+              disabled={previewRefreshing || saving}
+              className="gap-1.5 text-xs"
+            >
               <RefreshCw className="h-3.5 w-3.5" /> Regenerar
             </Button>
             <Button
