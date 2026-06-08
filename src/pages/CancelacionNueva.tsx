@@ -204,6 +204,17 @@ export const CancelacionNueva = () => {
       navigate(`/cancelaciones/${cancelacionId}/validar`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Hallazgo 1+4: si el borrador llegó a crearse, llevamos al usuario al
+      // validador en lugar de dejarlo varado en la pantalla de subida con un
+      // toast genérico. Allí el polling le mostrará el estado real.
+      if (cancelacionId) {
+        toast.warning("Procesamiento interrumpido", {
+          description: "Te llevamos al borrador para reintentar.",
+        });
+        queryClient.invalidateQueries({ queryKey: ["cancelaciones"] });
+        navigate(`/cancelaciones/${cancelacionId}/validar`);
+        return;
+      }
       toast.error("No se pudo procesar", { description: msg });
     } finally {
       setSaving(false);
