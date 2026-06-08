@@ -920,8 +920,76 @@ const Validacion = () => {
     return total > 0 ? Math.round((filled / total) * 100) : 0;
   };
 
+  // Helper: sincroniza hijos del trámite usando `upsert(onConflict:'id')`
+  // + delete selectivo. Sustituye al antiguo patrón `delete + insert` que era
+  // NO atómico: si el insert fallaba, las tablas quedaban vacías (pérdida de
+  // datos). Ahora, si el upsert falla, los datos previos sobreviven.
+  // IDs: cada persona ya trae un UUID generado en el frontend
+  // (createEmptyPersona / crypto.randomUUID); para inmueble/actos (1:1)
+  // reutilizamos el id existente en BD si lo hay para que el upsert sea un UPDATE.
+  const syncTramiteChildren = async (tid: string) => {
+    const personasRows = [
+      ...vendedores.map((p) => ({
+        ...personaToRow(p),
+        id: p.id ?? crypto.randomUUID(),
+        tramite_id: tid,
+        rol: "vendedor" as any,
+      })),
+      ...compradores.map((p) => ({
+        ...personaToRow(p),
+        id: p.id ?? crypto.randomUUID(),
+        tramite_id: tid,
+        rol: "comprador" as any,
+      })),
+    ];
+    const newPersonasIds = new Set(personasRows.map((r) => r.id));
+
+    const [{ data: existingPersonas }, { data: existingInmuebles }, { data: existingActos }] = await Promise.all([
+      supabase.from("personas").select("id").eq("tramite_id", tid),
+      supabase.from("inmuebles").select("id").eq("tramite_id", tid),
+      supabase.from("actos").select("id").eq("tramite_id", tid),
+    ]);
+
+    const inmuebleId = existingInmuebles?.[0]?.id ?? crypto.randomUUID();
+    const actoId = existingActos?.[0]?.id ?? crypto.randomUUID();
+    const inmuebleRow = { ...inmuebleToRow(inmueble), id: inmuebleId, tramite_id: tid };
+    const actoRow = { ...actosToRow(actos), id: actoId, tramite_id: tid };
+
+    // ── Fase 1: upserts (no destructivos). Si falla, datos viejos siguen vivos.
+    if (personasRows.length) {
+      const { error } = await supabase.from("personas").upsert(personasRows, { onConflict: "id" });
+      if (error) throw error;
+    }
+    {
+      const { error } = await supabase.from("inmuebles").upsert(inmuebleRow, { onConflict: "id" });
+      if (error) throw error;
+    }
+    {
+      const { error } = await supabase.from("actos").upsert(actoRow, { onConflict: "id" });
+      if (error) throw error;
+    }
+
+    // ── Fase 2: delete selectivo de IDs huérfanos (sólo tras upsert exitoso).
+    const personasToDelete = (existingPersonas ?? []).map((r: any) => r.id).filter((rid: string) => !newPersonasIds.has(rid));
+    if (personasToDelete.length) {
+      await supabase.from("personas").delete().in("id", personasToDelete);
+    }
+    const inmueblesToDelete = (existingInmuebles ?? []).map((r: any) => r.id).filter((rid: string) => rid !== inmuebleId);
+    if (inmueblesToDelete.length) {
+      await supabase.from("inmuebles").delete().in("id", inmueblesToDelete);
+    }
+    const actosToDelete = (existingActos ?? []).map((r: any) => r.id).filter((rid: string) => rid !== actoId);
+    if (actosToDelete.length) {
+      await supabase.from("actos").delete().in("id", actosToDelete);
+    }
+  };
+
   const handleAutoSave = async () => {
     if (!profile?.organization_id) return;
+    // Hallazgo 8: mutex — si ya hay un save en vuelo, ignorar (volverá a
+    // dispararse cuando isDirty siga true).
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setSyncStatus("saving");
     try {
       let tid = tramiteIdRef.current;
@@ -958,28 +1026,20 @@ const Validacion = () => {
         }).eq("id", tid);
       }
 
-      // Upsert related data: delete and re-insert
-      await supabase.from("personas").delete().eq("tramite_id", tid!);
-      await supabase.from("inmuebles").delete().eq("tramite_id", tid!);
-      await supabase.from("actos").delete().eq("tramite_id", tid!);
-
-      const personasToInsert = [
-        ...vendedores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "vendedor" as any })),
-        ...compradores.map((p) => ({ ...personaToRow(p), tramite_id: tid!, rol: "comprador" as any })),
-      ];
-      if (personasToInsert.length) {
-        await supabase.from("personas").insert(personasToInsert);
-      }
-      await supabase.from("inmuebles").insert({ ...inmuebleToRow(inmueble), tramite_id: tid! });
-      await supabase.from("actos").insert({ ...actosToRow(actos), tramite_id: tid! });
+      // Hallazgo 3: upsert atómico (sin delete previo) — si falla, los datos
+      // previos siguen intactos en BD.
+      await syncTramiteChildren(tid!);
 
       setIsDirty(false);
       setSyncStatus("saved");
       setLastSavedAt(new Date());
     } catch {
       setSyncStatus("unsaved");
+    } finally {
+      isSavingRef.current = false;
     }
   };
+
 
   // Bidirectional sync: preview → form data
   const handleFieldEdit = useCallback((field: string, value: string, anchorText?: string) => {
