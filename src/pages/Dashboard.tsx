@@ -74,7 +74,8 @@ const Dashboard = () => {
   };
 
   const handleDeleteDraft = async () => {
-    if (!draftToDelete) return;
+    if (!draftToDelete || deleting) return;
+    setDeleting(true);
     try {
       await supabase.from("logs_extraccion").delete().eq("tramite_id", draftToDelete.id);
       await supabase.from("personas").delete().eq("tramite_id", draftToDelete.id);
@@ -87,6 +88,7 @@ const Dashboard = () => {
     } catch (err: any) {
       toast({ title: "Error al eliminar", description: err?.message ?? "Intenta de nuevo", variant: "destructive" });
     } finally {
+      setDeleting(false);
       setDraftToDelete(null);
     }
   };
