@@ -102,7 +102,7 @@ const toolsByCertificado = [
             properties: {
               matricula_inmobiliaria: confField("Número de matrícula inmobiliaria"),
               codigo_orip: confField("Código o nombre de la Oficina de Registro (ORIP)"),
-              direccion: confField("Dirección del inmueble"),
+              direccion: confField("Dirección OFICIAL VIGENTE del inmueble en formato notarial colombiano TEXTO (NÚMERO). SELECCIÓN: si el bloque 'DIRECCION DEL INMUEBLE/PREDIO' lista nomenclaturas numeradas (1), 2), 3)…), tomar SIEMPRE la del ÍNDICE MÁS ALTO (es la vigente de Catastro/ORIP); ignorar las anteriores. FORMATO: vías y números en letras seguidos del dígito entre paréntesis; sufijos cardinales SUR/NORTE/ESTE/OESTE preservados en MAYÚSCULAS; guion entre placa y complemento escrito literalmente como 'GUION'; sufijos alfabéticos pegados al número (62A, 53B) escritos como 'SESENTA Y DOS A', 'CINCUENTA Y TRES B' (NUNCA 'ALFA'/'BETA'/'BIS' inventado). Ej: 'CL 59 SUR 60 84 TO 5 AP 501' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)'. NO incluir nombre del conjunto/edificio, ni ciudad/municipio, ni la coletilla '(DIRECCION CATASTRAL)'."),
               municipio: confField("Municipio del inmueble"),
               departamento: confField("Departamento del inmueble"),
               linderos: confField("Linderos completos del inmueble, transcribir textualmente. Si el certificado los presenta indistintos, ponerlos aquí"),
