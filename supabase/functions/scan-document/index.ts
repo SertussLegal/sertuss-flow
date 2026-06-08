@@ -102,7 +102,7 @@ const toolsByCertificado = [
             properties: {
               matricula_inmobiliaria: confField("Número de matrícula inmobiliaria"),
               codigo_orip: confField("Código o nombre de la Oficina de Registro (ORIP)"),
-              direccion: confField("Dirección del inmueble"),
+              direccion: confField("Dirección OFICIAL VIGENTE del inmueble en formato notarial colombiano TEXTO (NÚMERO). SELECCIÓN: si el bloque 'DIRECCION DEL INMUEBLE/PREDIO' lista nomenclaturas numeradas (1), 2), 3)…), tomar SIEMPRE la del ÍNDICE MÁS ALTO (es la vigente de Catastro/ORIP); ignorar las anteriores. FORMATO: vías y números en letras seguidos del dígito entre paréntesis; sufijos cardinales SUR/NORTE/ESTE/OESTE preservados en MAYÚSCULAS; guion entre placa y complemento escrito literalmente como 'GUION'; sufijos alfabéticos pegados al número (62A, 53B) escritos como 'SESENTA Y DOS A', 'CINCUENTA Y TRES B' (NUNCA 'ALFA'/'BETA'/'BIS' inventado). Ej: 'CL 59 SUR 60 84 TO 5 AP 501' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)'. NO incluir nombre del conjunto/edificio, ni ciudad/municipio, ni la coletilla '(DIRECCION CATASTRAL)'."),
               municipio: confField("Municipio del inmueble"),
               departamento: confField("Departamento del inmueble"),
               linderos: confField("Linderos completos del inmueble, transcribir textualmente. Si el certificado los presenta indistintos, ponerlos aquí"),
@@ -351,6 +351,33 @@ INFERENCIA JURÍDICA PH: Si detectas las palabras "Régimen de Propiedad Horizon
 - Marca es_propiedad_horizontal: true
 - Busca OBLIGATORIAMENTE: nombre del conjunto/edificio/agrupación, coeficiente de copropiedad, matrícula inmobiliaria matriz, escritura de constitución PH con su número, fecha, notaría y ciudad
 - El nombre del conjunto suele aparecer como "CONJUNTO CERRADO [NOMBRE]" o "EDIFICIO [NOMBRE]" o "AGRUPACIÓN [NOMBRE]"
+
+REGLA ESPECIAL inmueble.direccion (DIRECCION DEL INMUEBLE / PREDIO):
+
+a) SELECCIÓN POR ÍNDICE MÁS ALTO. La sección "DIRECCION DEL INMUEBLE" suele traer renglones numerados "1) …", "2) …", "3) …" (o numerales romanos I, II, III). Representan el historial cronológico de Catastro/ORIP; la vigente es SIEMPRE la del índice MÁS ALTO. Toma exclusivamente esa línea e ignora las anteriores aunque sean más descriptivas o incluyan el nombre del conjunto. Si solo hay un renglón sin numerar, tómalo.
+
+b) FORMATO LEGAL OBLIGATORIO TEXTO (NÚMERO) con concordancia colombiana:
+   - Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
+   - Número de la vía: en letras + "(N)". Conserva el sufijo cardinal (SUR/NORTE/ESTE/OESTE) en MAYÚSCULAS inmediatamente después del número.
+   - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
+   - Complementos: TO/TORRE → "TORRE <letras> (N)"; AP/APTO/APARTAMENTO → "APARTAMENTO <letras> (N)"; INT/INTERIOR → "INTERIOR <letras> (N)"; BL/BLOQUE → "BLOQUE <letras> (N)"; MZ/MANZANA → "MANZANA <letras> (N)"; CS/CASA → "CASA <letras> (N)".
+
+c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número). Si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL. Ejemplos:
+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
+   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA" o "DOBLE": la letra/sufijo se transcribe literal en mayúscula.
+
+d) STRIP DE BASURA: NO incluyas el nombre del conjunto/edificio (va en `nombre_conjunto_edificio`), NO incluyas la ciudad/municipio (va en `municipio`), NO incluyas la coletilla "(DIRECCION CATASTRAL)" (la inyecta el backend). Si la nomenclatura del índice más alto la trae, elimínala del valor devuelto.
+
+e) Los números van en CARDINALES MASCULINOS ("UNO", "DOS", "VEINTIUNO", "TREINTA Y UNO"…). La concordancia femenina de ordinales 1-10 NO aplica a direcciones.
+
+Ejemplo canónico (caso real Bogotá):
+  Input bloque OCR:
+    DIRECCION DEL INMUEBLE
+    1) CALLE 59 SUR 62A-84 APT 501 TORRE 5 CONJ RESD PIMIENTOS DE MADELENA
+    2) CL 59 SUR 60 84 TO 5 AP 501 (DIRECCION CATASTRAL)
+  Output esperado para inmueble.direccion:
+    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
 
 3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
 
