@@ -297,6 +297,12 @@ const Validacion = () => {
   const tramiteIdRef = useRef<string | null>(tramiteId);
   const dataIaSnapshot = useRef<Record<string, unknown> | null>(null);
   const manuallyEditedFieldsRef = useRef<Set<string>>(new Set());
+  // Hallazgo 8: mutex global de guardado para evitar dos autosaves
+  // simultáneos (timer 15s + Generar lanzados a la vez).
+  const isSavingRef = useRef(false);
+  // Hallazgo 8: handle del timer para poder cancelarlo antes de un guardado
+  // manual disparado por "Generar".
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleConfianzaChange = useCallback((field: string, confianza: NivelConfianza) => {
     setConfianzaFields(prev => {
