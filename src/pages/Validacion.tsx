@@ -338,10 +338,17 @@ const Validacion = () => {
   // Auto-save debounce: 15 seconds
   useEffect(() => {
     if (!isDirty || !profile?.organization_id) return;
-    const timer = setTimeout(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
       handleAutoSave();
     }, 15000);
-    return () => clearTimeout(timer);
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
   }, [isDirty, vendedores, compradores, inmueble, actos, overrides, notariaTramite, profile?.organization_id]);
 
   // beforeunload: force save before leaving
