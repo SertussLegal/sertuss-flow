@@ -36,6 +36,8 @@ const Dashboard = () => {
   const [tramites, setTramites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [draftToDelete, setDraftToDelete] = useState<any | null>(null);
+  // Hallazgo 6: evita doble click → 4 deletes en paralelo. Disabled + spinner.
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
