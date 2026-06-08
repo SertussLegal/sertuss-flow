@@ -637,7 +637,8 @@ serve(async (req) => {
         detalle: { message: e instanceof Error ? e.message : "Unknown", stack: e instanceof Error ? e.stack?.slice(0, 500) : null },
       });
     } catch { /* never break main flow */ }
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error desconocido" }), {
+    console.error("[scan-document] error:", e);
+    return new Response(JSON.stringify({ error: "Error interno del servidor. Intente de nuevo." }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
