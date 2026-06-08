@@ -1238,6 +1238,6 @@ if (import.meta.main) serve(async (req) => {
       return biz("ai_gateway_error", `Error del servicio de IA (${err.status}). Intenta de nuevo.`);
     }
 
-    return biz("internal", msg.slice(0, 300));
+    return biz("internal", "Error interno del servidor. Intente de nuevo.");
   }
 });
