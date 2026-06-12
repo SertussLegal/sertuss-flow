@@ -80,3 +80,44 @@ Deno.test("7) Sin limitaciones → cláusula undefined (parágrafo no se renderi
   });
   assertEquals(cl, undefined);
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Contrato de segregación topológica (postal vs arquitectónica)
+// Caso canónico Calle 59 Sur 60-84 Torre 5 Apartamento 501.
+// Valida que prompt + schema codifiquen la regla "índice más alto +
+// formato notarial + strip arquitectónico" para que Gemini no devuelva
+// la nomenclatura contaminada con TORRE/APARTAMENTO.
+// ─────────────────────────────────────────────────────────────────────
+const SRC = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+
+Deno.test("8) Schema nomenclatura_predio: ejemplo canónico 59 SUR 60-84 presente", () => {
+  assertStringIncludes(
+    SRC,
+    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)",
+  );
+});
+
+Deno.test("9) Schema nomenclatura_predio: prohíbe complementos arquitectónicos y catastral", () => {
+  // El description del schema debe nombrar la prohibición y la regla de índice más alto.
+  assertStringIncludes(SRC, "ÍNDICE MÁS ALTO");
+  assertStringIncludes(SRC, "apartamento/torre/interior/bloque/manzana/casa");
+  assertStringIncludes(SRC, "(DIRECCION CATASTRAL)");
+});
+
+Deno.test("10) SYSTEM_PROMPT: 5 sub-reglas de nomenclatura (índice, cardinales, letras, guion, strip)", () => {
+  assertStringIncludes(SRC, "REGLAS DE EXTRACCIÓN DE NOMENCLATURA DESDE EL CERTIFICADO DE TRADICIÓN");
+  assertStringIncludes(SRC, "STRIP DE BASURA");
+  assertStringIncludes(SRC, "Cardinales masculinos");
+  assertStringIncludes(SRC, "GUION");
+  assertStringIncludes(SRC, "TORRE <letras> (N)");
+  assertStringIncludes(SRC, "APARTAMENTO <letras> (N)");
+});
+
+Deno.test("11) Segregación: TORRE/APARTAMENTO se reubican en descripcion_predio (no en nomenclatura)", () => {
+  // descripcion_predio debe describir que captura los complementos arquitectónicos
+  // y aplicar el mismo formato TEXTO (NÚMERO) — esto es lo que produce
+  // "TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)" en el JSON de Gemini.
+  assertStringIncludes(SRC, "Identificación ARQUITECTÓNICA del predio en formato notarial");
+  assertStringIncludes(SRC, "reubícalos en su campo correspondiente");
+});
+
