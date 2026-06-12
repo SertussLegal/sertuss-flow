@@ -117,11 +117,14 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-muted/30">
-      {needsOrgSetup && user && (
+      {(needsOrgSetup || forceOrgSetup) && user && (
         <SetupOrgModal
           open={true}
           userId={user.id}
-          onComplete={() => refreshProfile()}
+          onComplete={() => {
+            setForceOrgSetup(false);
+            refreshProfile();
+          }}
         />
       )}
 
@@ -134,21 +137,27 @@ const Dashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {(!organization?.nit || !organization?.name) && (
-              <div className="flex items-center gap-1 text-sm text-destructive">
+            {!authLoading && (!organization?.nit || !organization?.name) && (
+              <button
+                type="button"
+                onClick={() => setForceOrgSetup(true)}
+                aria-label="Completar datos legales"
+                className="flex items-center gap-1 rounded-md -mx-2 -my-1 px-2 py-1 text-sm text-destructive cursor-pointer hover:bg-destructive/10 transition-colors"
+              >
                 <AlertTriangle className="h-4 w-4" />
-                <span>Completa los Datos Legales (Razón Social y NIT)</span>
-              </div>
+                <span>Completa los Datos Legales (Razón Social y NIT) →</span>
+              </button>
             )}
             <Button
               onClick={handleNewTramite}
               className="gap-2"
-              disabled={!organization?.nit || !organization?.name}
+              disabled={authLoading || !organization?.nit || !organization?.name}
             >
               <Plus className="h-4 w-4" /> Nueva Escritura
             </Button>
           </div>
         </header>
+
 
 
         {/* Drafts section */}
