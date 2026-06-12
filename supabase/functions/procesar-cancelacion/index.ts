@@ -156,7 +156,7 @@ const tools = [
             properties: {
               matricula_inmobiliaria: { type: "string", description: "Matrícula ESTRICTAMENTE alfanumérica con guión, ej: '50C-2085432'. SIN palabras en letras, SIN paréntesis." },
               descripcion_predio: { type: "string", description: "Identificación ARQUITECTÓNICA del predio en formato notarial corto, MAYÚSCULAS, con números en LETRAS seguidos del número entre paréntesis. PROHIBIDO incluir áreas, M2, coeficientes, linderos, dimensiones ni nomenclatura urbana." },
-              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio en formato notarial, MAYÚSCULAS. Ej: 'CALLE 66 C NUMERO 60-65'. PROHIBIDO incluir apartamento/torre, ciudad ni el sufijo '(DIRECCION CATASTRAL)' — el backend los agrega." },
+              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio, MAYÚSCULAS, en formato notarial TEXTO (NÚMERO). Tomada EXCLUSIVAMENTE del renglón de ÍNDICE MÁS ALTO de la sección 'DIRECCION DEL INMUEBLE' del certificado de tradición (renglones '1)','2)','3)' o romanos — la vigente es la del índice mayor). Vía y números en letras con dígito entre paréntesis, sufijos cardinales SUR/NORTE/ESTE/OESTE en MAYÚSCULA pegados al número, guion literal como 'GUION'. Letras pegadas (62A, 53B, 'BIS') se transcriben literales en MAYÚSCULA. Cardinales masculinos ('UNO','DOS','VEINTIUNO'). Ej: 'CL 59 SUR 60 84' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)'. PROHIBIDO incluir apartamento/torre/interior/bloque/manzana/casa (van en descripcion_predio), ciudad (va en ciudad), nombre de conjunto/edificio, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los inyecta." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
               departamento: { type: "string", description: "Departamento del inmueble en mayúsculas, ej: 'CUNDINAMARCA'. Opcional." },
             },
@@ -240,6 +240,30 @@ Las cancelaciones de Davivienda NO requieren ni admiten linderos técnicos, medi
   ✅ CORRECTO: "CALLE 66 C NUMERO 60-65"
   ❌ INCORRECTO: "CALLE 66 C NUMERO 60-65, APARTAMENTO 1402 (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE BOGOTA D.C."
   → NO añadas '(DIRECCION CATASTRAL)', NO añadas la ciudad, NO añadas apartamento ni torre. El backend los inyecta una sola vez.
+
+REGLAS DE EXTRACCIÓN DE NOMENCLATURA DESDE EL CERTIFICADO DE TRADICIÓN (CRÍTICAS — aplican SOLO a 'nomenclatura_predio'):
+
+a) SELECCIÓN POR ÍNDICE MÁS ALTO: la sección "DIRECCION DEL INMUEBLE" del certificado suele traer renglones numerados "1) ...", "2) ...", "3) ..." (o numerales romanos I, II, III). Representan el historial cronológico de Catastro/ORIP; la vigente es SIEMPRE la del índice numérico MÁS ALTO. Toma EXCLUSIVAMENTE esa línea e ignora las anteriores aunque sean más descriptivas o incluyan el nombre del conjunto. Si solo hay un renglón sin numerar, tómalo.
+
+b) FORMATO TEXTO (NÚMERO) OBLIGATORIO con concordancia colombiana:
+   - Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
+   - Número de la vía en letras + "(N)". Conserva el sufijo cardinal (SUR/NORTE/ESTE/OESTE) en MAYÚSCULAS inmediatamente después del número.
+   - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
+   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)".
+
+c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número): si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL.
+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
+   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA" o "DOBLE": la letra/sufijo se transcribe literal en mayúscula.
+
+d) CARDINALES MASCULINOS: los números van en cardinales masculinos ("UNO", "DOS", "VEINTIUNO", "TREINTA Y UNO"…). La concordancia femenina de ordinales 1-10 NO aplica a direcciones.
+
+e) STRIP DE BASURA — qué NO incluir en 'nomenclatura_predio':
+   - NO incluyas el nombre del conjunto/edificio (no se devuelve en este flujo).
+   - NO incluyas la ciudad/municipio (va en el campo 'ciudad').
+   - NO incluyas la coletilla "(DIRECCION CATASTRAL)" (la inyecta el backend solo si la ciudad es Bogotá).
+   - NO incluyas complementos arquitectónicos (TORRE, APARTAMENTO, INTERIOR, BLOQUE, MANZANA, CASA): esos van en 'descripcion_predio' aplicando el mismo formato TEXTO (NÚMERO) — TO/TORRE → "TORRE <letras> (N)"; AP/APTO/APARTAMENTO → "APARTAMENTO <letras> (N)"; INT/INTERIOR → "INTERIOR <letras> (N)"; BL/BLOQUE → "BLOQUE <letras> (N)"; MZ/MANZANA → "MANZANA <letras> (N)"; CS/CASA → "CASA <letras> (N)".
+   Si el renglón del índice más alto trae cualquiera de estos elementos, elimínalos del valor devuelto en 'nomenclatura_predio' y reubícalos en su campo correspondiente.
 
 PODER GENERAL DEL BANCO (cuando se adjunte):
 - ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
