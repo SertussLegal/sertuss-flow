@@ -75,10 +75,12 @@ serve(async (req) => {
       throw err;
     }
 
-    console.log("=== SERTUSS EXTRACT: Parsed Data ===");
-    console.log("Doc type:", type);
-    console.log("Extracted fields:", Object.keys(extractedData));
-    console.log("Full extracted data:", JSON.stringify(extractedData, null, 2));
+    // PII-safe logging: never dump the extracted payload (cédulas, NITs, nombres, direcciones, banco).
+    console.log("scan-document ok", {
+      type,
+      fields_count: Object.keys(extractedData).length,
+      user: claimsData.claims.sub,
+    });
 
     return new Response(JSON.stringify({ data: extractedData }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
