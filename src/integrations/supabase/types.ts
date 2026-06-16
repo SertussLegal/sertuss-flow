@@ -560,6 +560,7 @@ export type Database = {
           data_final: Json | null
           data_ia: Json
           id: string
+          organization_id: string
           tramite_id: string
           updated_at: string | null
         }
@@ -568,6 +569,7 @@ export type Database = {
           data_final?: Json | null
           data_ia: Json
           id?: string
+          organization_id: string
           tramite_id: string
           updated_at?: string | null
         }
@@ -576,10 +578,18 @@ export type Database = {
           data_final?: Json | null
           data_ia?: Json
           id?: string
+          organization_id?: string
           tramite_id?: string
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "logs_extraccion_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "logs_extraccion_tramite_id_fkey"
             columns: ["tramite_id"]
