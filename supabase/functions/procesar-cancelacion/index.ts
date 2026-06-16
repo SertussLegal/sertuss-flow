@@ -1099,18 +1099,14 @@ if (import.meta.main) serve(async (req) => {
       ? poderImagePaths
       : (poderPath ? [poderPath] : []);
 
-    // ── GUARD ANTI-IDOR ──────────────────────────────────────────────
-    // Todo path enviado por el cliente DEBE pertenecer a esta cancelación.
-    // El bucket usa convención `${cancelacionId}/cancelaciones/soportes/...`
-    // (ver src/pages/CancelacionNueva.tsx). Esto bloquea que un atacante
-    // pase paths de OTRA organización para que el service_role los firme.
-    const assertOwnPath = (p: string) => {
-      if (typeof p !== "string" || !p.startsWith(`${cancelacionId}/`)) {
-        throw new Error(`Forbidden path: does not belong to cancelacion ${cancelacionId}`);
-      }
-    };
+    // ── GUARD ANTI-IDOR (helper compartido) ─────────────────────────
+    // Todo path del cliente DEBE pertenecer a esta cancelación.
+    // El bucket usa convención `${cancelacionId}/cancelaciones/soportes/...`.
     try {
-      [...certInputPaths, ...escInputPaths, ...poderInputPaths].forEach(assertOwnPath);
+      assertOwnPaths(
+        [...certInputPaths, ...escInputPaths, ...poderInputPaths],
+        cancelacionId,
+      );
     } catch (guardErr) {
       console.error("[procesar-cancelacion] path guard rejected request", {
         cancelacionId,
