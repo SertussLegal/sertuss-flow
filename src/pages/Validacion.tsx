@@ -1499,7 +1499,8 @@ const Validacion = () => {
       }
       await refreshCredits();
     } catch (err: any) {
-      await supabase.rpc("restore_credit", { org_id: profile.organization_id });
+      // Nota: no se hace refund en cliente. Si la edge function consumió un crédito y luego falló,
+      // el reembolso debe ocurrir server-side (service role) dentro de la propia function.
       await refreshCredits();
       if (isCreditsBlockedError(err)) {
         emitCreditsBlocked({ source: "scan-document" });
