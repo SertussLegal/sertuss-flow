@@ -2308,9 +2308,6 @@ const Validacion = () => {
             render_attempts: _renderAttempts,
             error_message: _renderError instanceof Error ? _renderError.message : null,
           },
-          _renderMs,
-          undefined,
-          tramiteId || undefined,
         );
         if (_debugOn && _auditPayload && !_renderError) {
           logDocxAuditToConsole(_auditPayload);
