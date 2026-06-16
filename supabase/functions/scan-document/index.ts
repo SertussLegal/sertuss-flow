@@ -86,8 +86,12 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("scan-document error:", e);
-    // Log to system_events
+    // PII-safe: nunca loguear el objeto error crudo ni el stack — las
+    // respuestas de error de Gemini pueden contener el prompt original con
+    // cédulas, nombres y otros datos sensibles.
+    const msg = e instanceof Error ? e.message : "Unknown";
+    const name = e instanceof Error ? e.name : "Error";
+    console.error("[scan-document] error:", name, msg);
     try {
       const sb = createClient(
         Deno.env.get("SUPABASE_URL")!,
@@ -97,10 +101,9 @@ serve(async (req) => {
         evento: "scan-document",
         resultado: "error",
         categoria: "edge_function",
-        detalle: { message: e instanceof Error ? e.message : "Unknown", stack: e instanceof Error ? e.stack?.slice(0, 500) : null },
+        detalle: { message: msg, name },
       });
     } catch { /* never break main flow */ }
-    console.error("[scan-document] error:", e);
     return new Response(JSON.stringify({ error: "Error interno del servidor. Intente de nuevo." }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
