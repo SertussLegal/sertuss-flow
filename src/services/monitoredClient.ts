@@ -1,122 +1,59 @@
 /**
- * Centralized Supabase wrapper that automatically logs all edge function
- * invocations and database errors to the `system_events` table.
+ * Centralized Supabase wrapper for edge function invocations.
  *
- * Usage:
- *   import { monitored } from "@/services/monitoredClient";
- *   const { data, error } = await monitored.invoke("scan-document", body);
+ * IMPORTANTE (seguridad): el cliente NO escribe directamente en `system_events`.
+ * La política RLS de INSERT para usuarios autenticados fue revocada para evitar
+ * polución del audit trail. Toda persistencia de eventos del sistema ocurre
+ * server-side (edge functions con service_role o RPC SECURITY DEFINER).
  *
- * Every call is measured (ms) and the result is persisted fire-and-forget,
- * so instrumentation never blocks or breaks the UI.
+ * Este wrapper mide latencia y emite logs locales (console) en errores,
+ * pero NO inserta filas. Las edge functions ya registran sus propios eventos.
  */
 
 import { supabase } from "@/integrations/supabase/client";
-
-// ── helpers ──────────────────────────────────────────────────────────────
-
-async function getContext() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return { user_id: null, organization_id: null };
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("organization_id")
-      .eq("id", session.user.id)
-      .maybeSingle();
-
-    return {
-      user_id: session.user.id,
-      organization_id: profile?.organization_id ?? null,
-    };
-  } catch {
-    return { user_id: null, organization_id: null };
-  }
-}
-
-/** Fire-and-forget insert into system_events — never throws */
-function logEvent(
-  evento: string,
-  resultado: "success" | "error" | "warning",
-  categoria: string,
-  detalle: Record<string, unknown> = {},
-  tiempo_ms?: number,
-  ctx?: { user_id: string | null; organization_id: string | null },
-  tramite_id?: string,
-) {
-  const doLog = async () => {
-    const context = ctx ?? await getContext();
-    await supabase.from("system_events" as any).insert({
-      evento,
-      resultado,
-      categoria,
-      detalle,
-      tiempo_ms: tiempo_ms ?? null,
-      user_id: context.user_id,
-      organization_id: context.organization_id,
-      tramite_id: tramite_id ?? null,
-    } as any);
-  };
-  doLog().catch(() => {});
-}
 
 // ── public API ───────────────────────────────────────────────────────────
 
 export const monitored = {
   /**
-   * Wrapper around supabase.functions.invoke that automatically logs
-   * timing, success and error to system_events.
+   * Wrapper around supabase.functions.invoke que mide latencia y emite
+   * logs locales en consola. NO persiste en system_events (server-side only).
    */
   async invoke<T = any>(
     functionName: string,
     body: Record<string, unknown>,
-    options?: { tramiteId?: string },
+    _options?: { tramiteId?: string },
   ): Promise<{ data: T | null; error: Error | null }> {
-    const ctx = await getContext();
     const start = performance.now();
-
     try {
       const { data, error } = await supabase.functions.invoke(functionName, { body });
       const elapsed = Math.round(performance.now() - start);
-
       if (error) {
-        logEvent(
-          functionName,
-          "error",
-          "edge_function",
-          { message: error.message, body_keys: Object.keys(body) },
-          elapsed,
-          ctx,
-          options?.tramiteId,
-        );
+        // Log local — no PII, solo metadata operativa.
+        console.warn(`[monitored] ${functionName} failed in ${elapsed}ms:`, error.message);
         return { data: null, error };
       }
-
-      logEvent(
-        functionName,
-        "success",
-        "edge_function",
-        { body_keys: Object.keys(body) },
-        elapsed,
-        ctx,
-        options?.tramiteId,
-      );
       return { data: data as T, error: null };
     } catch (err: any) {
       const elapsed = Math.round(performance.now() - start);
-      logEvent(
-        functionName,
-        "error",
-        "edge_function",
-        { message: err?.message ?? "Unknown", body_keys: Object.keys(body) },
-        elapsed,
-        ctx,
-        options?.tramiteId,
-      );
+      console.warn(`[monitored] ${functionName} threw in ${elapsed}ms:`, err?.message ?? String(err));
       return { data: null, error: err instanceof Error ? err : new Error(String(err)) };
     }
   },
 
-  /** Log a custom business event (manual, for specific cases) */
-  log: logEvent,
+  /**
+   * Log no-op para compatibilidad con call-sites legacy.
+   * Los eventos persistentes deben emitirse desde el servidor.
+   */
+  log(
+    evento: string,
+    resultado: "success" | "error" | "warning",
+    categoria: string,
+    detalle: Record<string, unknown> = {},
+  ) {
+    if (resultado === "error") {
+      console.warn(`[monitored:${categoria}] ${evento}`, detalle);
+    }
+  },
 };
+
