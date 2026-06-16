@@ -151,7 +151,7 @@ serve(async (req) => {
           { status: claudeResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      throw new Error(`Claude API error: ${JSON.stringify(claudeData)}`);
+      throw new Error(`Claude API error: status=${claudeResponse.status}`);
     }
 
     // 6. Parsear la respuesta de Claude
@@ -239,7 +239,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error en validar-con-claude:", error);
+    const _msg = error instanceof Error ? error.message : "Unknown";
+    const _name = error instanceof Error ? error.name : "Error";
+    console.error("[validar-con-claude] error:", _name, _msg);
     // Log to system_events
     try {
       const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

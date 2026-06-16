@@ -262,7 +262,11 @@ serve(async (req) => {
           // helper estándar para preservar el status code original.
           const r = aiGatewayErrorResponse(errFlash, corsHeaders);
           if (r && (r.status === 402 || r.status === 429)) return r;
-          console.error("[process-expediente] Pro y Flash saturados:", errFlash);
+          {
+            const _n = errFlash instanceof Error ? errFlash.name : "Error";
+            const _m = errFlash instanceof Error ? errFlash.message : "Unknown";
+            console.error("[process-expediente] Pro y Flash saturados:", _n, _m);
+          }
           return new Response(
             JSON.stringify({
               error:
@@ -369,7 +373,11 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("process-expediente error:", e);
+    {
+      const _n = e instanceof Error ? e.name : "Error";
+      const _m = e instanceof Error ? e.message : "Unknown";
+      console.error("[process-expediente] error:", _n, _m);
+    }
     return new Response(JSON.stringify({ error: "Error interno del servidor. Intente de nuevo." }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
