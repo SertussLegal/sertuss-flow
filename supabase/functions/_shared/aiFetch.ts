@@ -228,16 +228,20 @@ export async function parseToolCallArguments<T>(
   const args = result.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
 
   if (typeof args !== "string" || args.length === 0) {
-    const raw = JSON.stringify(result).slice(0, 500);
-    console.error(`[${tag}] No tool_call arguments in AI response: ${raw}`);
-    throw new AiGatewayError(502, raw, "AI did not return tool_call arguments", tag);
+    // PII-safe: no volcar el payload de la IA en logs. Solo metadata estructural.
+    console.error(`[${tag}] No tool_call arguments in AI response`, {
+      has_choices: Array.isArray(result.choices),
+      choices_count: result.choices?.length ?? 0,
+    });
+    throw new AiGatewayError(502, "no_tool_call", "AI did not return tool_call arguments", tag);
   }
 
   try {
     return JSON.parse(args) as T;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[${tag}] Failed to parse tool_call arguments JSON:`, msg, "raw:", args.slice(0, 500));
-    throw new AiGatewayError(502, args, "AI returned invalid JSON in tool_call arguments", tag);
+    // PII-safe: no logueamos el contenido de `args` (puede contener cédulas/nombres/etc.).
+    console.error(`[${tag}] Failed to parse tool_call arguments JSON:`, msg, { args_length: args.length });
+    throw new AiGatewayError(502, "invalid_json", "AI returned invalid JSON in tool_call arguments", tag);
   }
 }
