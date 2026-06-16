@@ -1099,6 +1099,29 @@ if (import.meta.main) serve(async (req) => {
       ? poderImagePaths
       : (poderPath ? [poderPath] : []);
 
+    // ── GUARD ANTI-IDOR ──────────────────────────────────────────────
+    // Todo path enviado por el cliente DEBE pertenecer a esta cancelación.
+    // El bucket usa convención `${cancelacionId}/cancelaciones/soportes/...`
+    // (ver src/pages/CancelacionNueva.tsx). Esto bloquea que un atacante
+    // pase paths de OTRA organización para que el service_role los firme.
+    const assertOwnPath = (p: string) => {
+      if (typeof p !== "string" || !p.startsWith(`${cancelacionId}/`)) {
+        throw new Error(`Forbidden path: does not belong to cancelacion ${cancelacionId}`);
+      }
+    };
+    try {
+      [...certInputPaths, ...escInputPaths, ...poderInputPaths].forEach(assertOwnPath);
+    } catch (guardErr) {
+      console.error("[procesar-cancelacion] path guard rejected request", {
+        cancelacionId,
+        userId,
+        message: guardErr instanceof Error ? guardErr.message : "unknown",
+      });
+      return new Response(JSON.stringify({ error: "Forbidden path" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ── Trabajo pesado en background — evita WORKER_RESOURCE_LIMIT ──
     const heavyWork = async () => {
       try {
