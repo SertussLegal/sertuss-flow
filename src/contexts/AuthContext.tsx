@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -210,27 +210,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        profile,
-        organization,
-        credits: organization?.credit_balance ?? 0,
-        loading,
-        needsOrgSetup,
-        memberships,
-        activeOrgId,
-        refreshProfile,
-        refreshCredits,
-        refreshMemberships,
-        switchContext,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  // Fix B: memoizar value para evitar re-renders en cascada de todos los consumidores.
+  // Las deps son primitivas/estables (refresh* son useCallback). credit_balance se incluye
+  // explícitamente porque deriva de organization pero queremos identidad fina.
+  const value = useMemo(
+    () => ({
+      user,
+      session,
+      profile,
+      organization,
+      credits: organization?.credit_balance ?? 0,
+      loading,
+      needsOrgSetup,
+      memberships,
+      activeOrgId,
+      refreshProfile,
+      refreshCredits,
+      refreshMemberships,
+      switchContext,
+    }),
+    [
+      user,
+      session,
+      profile,
+      organization,
+      loading,
+      needsOrgSetup,
+      memberships,
+      activeOrgId,
+      refreshProfile,
+      refreshCredits,
+      refreshMemberships,
+      switchContext,
+    ],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const ProtectedRoute = ({ children }: { children: ReactNode }) => {

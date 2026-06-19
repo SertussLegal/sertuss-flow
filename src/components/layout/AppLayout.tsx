@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
@@ -23,9 +24,11 @@ const resolveTitle = (pathname: string) =>
 
 export const AppLayout = () => {
   const { loadingModules, enabledModules } = useModules();
-  // Cold-start: sólo mostramos skeleton si no tenemos módulos previos.
-  // Los refetches en segundo plano mantienen el shell montado y eliminan el parpadeo.
-  const coldStart = loadingModules && enabledModules.length === 0;
+  // Fix E: warm-start permanente. Una vez vimos módulos, jamás volvemos a mostrar
+  // skeletons globales en navegaciones internas (aunque loadingModules vuelva a true).
+  const warmedUp = useRef(false);
+  if (enabledModules.length > 0) warmedUp.current = true;
+  const coldStart = !warmedUp.current && loadingModules && enabledModules.length === 0;
   const { organization } = useAuth();
   const { status: saveStatus } = useSaveStatus();
   const { pathname } = useLocation();
