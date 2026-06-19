@@ -89,7 +89,7 @@ const Dashboard = () => {
       const { error } = await supabase.from("tramites").delete().eq("id", draftToDelete.id);
       if (error) throw error;
       toast({ title: "Borrador eliminado" });
-      await fetchTramites();
+      await queryClient.invalidateQueries({ queryKey: ["tramites", activeOrgId] });
     } catch (err: any) {
       toast({ title: "Error al eliminar", description: err?.message ?? "Intenta de nuevo", variant: "destructive" });
     } finally {
@@ -290,7 +290,7 @@ const Dashboard = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {!loading && filtered.length === 0 && (
+                {!isInitialLoading && filtered.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} className="p-0">
                       <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
