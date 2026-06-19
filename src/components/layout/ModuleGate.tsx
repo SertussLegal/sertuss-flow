@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useModules } from "@/contexts/ModuleContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Forbidden403 } from "./Forbidden403";
@@ -13,7 +13,7 @@ interface ModuleGateProps {
 const GRACE_MS = 1500;
 
 const LoadingSkeleton = () => (
-  <div className="p-6 space-y-4">
+  <div data-testid="page-skeleton" className="p-6 space-y-4">
     <Skeleton className="h-8 w-1/3" />
     <Skeleton className="h-64 w-full" />
   </div>
@@ -22,21 +22,24 @@ const LoadingSkeleton = () => (
 export const ModuleGate = ({ slug, moduleName, children }: ModuleGateProps) => {
   const { isModuleEnabled, loadingModules, enabledModules } = useModules();
   const { activeOrgId } = useAuth();
-  const [graceElapsed, setGraceElapsed] = useState(false);
 
-  // Defensive grace window: if RLS hasn't returned data yet, wait before showing 403.
+  // Fix D: estado derivado en lugar de useState/useEffect que se desfasaba.
+  // mountedAt es estable; el tick programado solo re-evalúa el render una vez
+  // si el cold start excede GRACE_MS, sin loops y con cleanup automático.
+  const mountedAt = useRef(Date.now());
+  const [, forceUpdate] = useState({});
+
   useEffect(() => {
-    if (!activeOrgId) return;
-    if (enabledModules.length > 0) {
-      setGraceElapsed(true);
-      return;
+    if (loadingModules && enabledModules.length === 0) {
+      const timer = setTimeout(() => forceUpdate({}), GRACE_MS);
+      return () => clearTimeout(timer);
     }
-    setGraceElapsed(false);
-    const timeout = setTimeout(() => setGraceElapsed(true), GRACE_MS);
-    return () => clearTimeout(timeout);
-  }, [activeOrgId, enabledModules.length]);
+  }, [loadingModules, enabledModules.length]);
 
   if (loadingModules) return <LoadingSkeleton />;
+
+  const elapsed = Date.now() - mountedAt.current;
+  const graceElapsed = enabledModules.length > 0 || elapsed >= GRACE_MS;
 
   // Avoid false 403 right after login while modules query is still settling.
   if (!isModuleEnabled(slug) && activeOrgId && enabledModules.length === 0 && !graceElapsed) {

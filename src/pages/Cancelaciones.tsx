@@ -68,6 +68,9 @@ const Cancelaciones = () => {
 
   const { data, isLoading } = useQuery({
     queryKey: QUERY_KEY,
+    // Fix C: stale-while-revalidate. Background refetch silencioso al volver a la sección,
+    // sin parpadeo: la lista previa permanece en pantalla mientras se actualiza.
+    staleTime: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cancelaciones")
@@ -77,6 +80,9 @@ const Cancelaciones = () => {
       return (data ?? []) as CancelacionRow[];
     },
   });
+
+  // Fix F: skeleton SOLO en el primer fetch real (sin data previa).
+  const isInitialLoading = isLoading && !data;
 
   const rows = data ?? [];
   const hasRows = rows.length > 0;
@@ -100,8 +106,8 @@ const Cancelaciones = () => {
         <div className="border-b border-border px-6 py-4">
           <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
         </div>
-        {isLoading ? (
-          <div className="space-y-3 p-6">
+        {isInitialLoading ? (
+          <div data-testid="page-skeleton" className="space-y-3 p-6">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}

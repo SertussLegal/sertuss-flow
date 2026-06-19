@@ -1,14 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, AlertTriangle, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Building2, Loader2 } from "lucide-react";
+import { Plus, Search, AlertTriangle, FileEdit, ArrowRight, Clock, Trash2, Timer, User, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import SetupOrgModal from "@/components/SetupOrgModal";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -30,38 +32,40 @@ const statusLabels: Record<string, string> = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { user, profile, organization, refreshProfile, needsOrgSetup, loading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
+  const { user, profile, organization, refreshProfile, needsOrgSetup, loading: authLoading, activeOrgId } = useAuth();
   const [forceOrgSetup, setForceOrgSetup] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [tramites, setTramites] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [draftToDelete, setDraftToDelete] = useState<any | null>(null);
   // Hallazgo 6: evita doble click → 4 deletes en paralelo. Disabled + spinner.
   const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (profile?.organization_id) {
-      refreshProfile();
-      fetchTramites();
-    }
-  }, [profile?.organization_id]);
+  // Fix A+C+F: React Query con stale-while-revalidate. Cache estable entre navegaciones,
+  // background refetch silencioso para frescura notarial, skeleton solo en primer fetch.
+  // Eliminado refreshProfile() redundante: switchContext ya hidrata todo el AuthContext.
+  const { data: tramites, isLoading } = useQuery({
+    queryKey: ["tramites", activeOrgId],
+    enabled: !!profile?.organization_id,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("tramites")
+        .select("*, personas(count), inmuebles(count)")
+        .order("updated_at", { ascending: false });
+      return data ?? [];
+    },
+  });
 
-  const fetchTramites = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("tramites")
-      .select("*, personas(count), inmuebles(count)")
-      .order("updated_at", { ascending: false });
-    setTramites(data ?? []);
-    setLoading(false);
-  };
+  const tramitesList = tramites ?? [];
+  // Fix F: skeleton SOLO en el primer fetch real. Refetch en background nunca lo muestra.
+  const isInitialLoading = isLoading && !tramites;
 
-  const drafts = tramites.filter((t) => t.status === "pendiente");
-  const completedTramites = tramites.filter((t) => t.status !== "pendiente");
+  const drafts = tramitesList.filter((t: any) => t.status === "pendiente");
+  const completedTramites = tramitesList.filter((t: any) => t.status !== "pendiente");
 
-  const filtered = completedTramites.filter((t) => {
+  const filtered = completedTramites.filter((t: any) => {
     const matchSearch =
       (t.radicado ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (t.tipo ?? "").toLowerCase().includes(search.toLowerCase());
@@ -85,7 +89,7 @@ const Dashboard = () => {
       const { error } = await supabase.from("tramites").delete().eq("id", draftToDelete.id);
       if (error) throw error;
       toast({ title: "Borrador eliminado" });
-      await fetchTramites();
+      await queryClient.invalidateQueries({ queryKey: ["tramites", activeOrgId] });
     } catch (err: any) {
       toast({ title: "Error al eliminar", description: err?.message ?? "Intenta de nuevo", variant: "destructive" });
     } finally {
@@ -262,6 +266,13 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-lg">Historial de Escrituras</CardTitle></CardHeader>
           <CardContent>
+            {isInitialLoading ? (
+              <div data-testid="page-skeleton" className="space-y-3 py-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -286,7 +297,7 @@ const Dashboard = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {!loading && filtered.length === 0 && (
+                {!isInitialLoading && filtered.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} className="p-0">
                       <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
@@ -304,6 +315,7 @@ const Dashboard = () => {
               </TableBody>
 
             </Table>
+            )}
           </CardContent>
         </Card>
       </main>
