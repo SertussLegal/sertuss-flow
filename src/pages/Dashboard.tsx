@@ -266,6 +266,13 @@ const Dashboard = () => {
         <Card>
           <CardHeader><CardTitle className="text-lg">Historial de Escrituras</CardTitle></CardHeader>
           <CardContent>
+            {isInitialLoading ? (
+              <div data-testid="page-skeleton" className="space-y-3 py-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -308,6 +315,7 @@ const Dashboard = () => {
               </TableBody>
 
             </Table>
+            )}
           </CardContent>
         </Card>
       </main>
