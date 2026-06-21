@@ -1411,10 +1411,63 @@ if (import.meta.main) serve(async (req) => {
           tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
         };
 
-        const aiResp = await fetchAiGateway({ apiKey: LOVABLE_API_KEY, body: aiBody, tag: "procesar-cancelacion" });
-        const extracted = await parseToolCallArguments<CancelacionData>(aiResp, "procesar-cancelacion");
+        // ── Eje B v3 — PARALELISMO BALANCEADO (2 promesas, no 30) ──
+        // Promesa 1: análisis monolítico con Gemini 2.5 Pro (3 docs juntos).
+        // Promesa 2: OCR dedicado del Poder con Gemini 2.5 Flash en UN SOLO
+        // turno multimodal con TODAS las páginas → respeta el RPM del gateway
+        // y elimina el riesgo de que el modelo monolítico priorice cert+escr
+        // y devuelva el bloque poder_banco vacío.
+        const tPoderStart = Date.now();
+        const [monoSettled, dedicatedSettled] = await Promise.allSettled([
+          (async () => {
+            const aiResp = await fetchAiGateway({ apiKey: LOVABLE_API_KEY, body: aiBody, tag: "procesar-cancelacion" });
+            return await parseToolCallArguments<CancelacionData>(aiResp, "procesar-cancelacion");
+          })(),
+          poderUrls.length > 0
+            ? extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY)
+            : Promise.resolve(null),
+        ]);
+
+        // El monolítico es obligatorio — si falla, levantamos el error.
+        if (monoSettled.status !== "fulfilled") {
+          throw monoSettled.reason;
+        }
+        const extracted = monoSettled.value;
+        const dedicatedResult: PoderDedicadoResult | null =
+          dedicatedSettled.status === "fulfilled" ? dedicatedSettled.value : null;
+
+        // Read-then-Merge: el OCR dedicado rellena huecos del monolítico.
+        const mergedPoder = mergePoderBanco(extracted.poder_banco, dedicatedResult);
+        if (mergedPoder) {
+          extracted.poder_banco = mergedPoder;
+        } else if (poderUrls.length === 0) {
+          // No se adjuntó poder → no debe existir el objeto.
+          delete (extracted as { poder_banco?: unknown }).poder_banco;
+        }
+
+        // Telemetría no bloqueante (Eje A v3).
+        const pbFilled = extracted.poder_banco
+          ? Object.values(extracted.poder_banco).filter((v) => v != null && String(v).trim() !== "").length
+          : 0;
+        void logPoderEvent(supabaseService, {
+          orgId, cancelacionId, userId,
+          resultado: poderUrls.length === 0
+            ? "sin_poder"
+            : pbFilled >= 3 ? "exito" : pbFilled > 0 ? "parcial" : "fallo",
+          paginas_enviadas: poderUrls.length,
+          poder_banco_presente: !!extracted.poder_banco,
+          campos_llenos: pbFilled,
+          tiempo_ms: Date.now() - tPoderStart,
+          extra: {
+            dedicated_status: dedicatedSettled.status,
+            dedicated_error: dedicatedSettled.status === "rejected"
+              ? String((dedicatedSettled as PromiseRejectedResult).reason).slice(0, 200)
+              : undefined,
+          },
+        });
 
         const vars = buildDocxVars(extracted);
+
         const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
         const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
 
