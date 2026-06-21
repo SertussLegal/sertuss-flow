@@ -309,8 +309,29 @@ export const CancelacionValidar = () => {
         apoderado_genero:        src_pb.apoderado_genero        ?? ia_pb.apoderado_genero,
       };
       // Inferencia inicial de género (no sobrescribe si ya existe en data_final).
+      const onlyDigitsClient = (s: unknown) => String(s ?? "").replace(/\D+/g, "");
+      const existingDeudores = (source.partes as { deudores?: unknown[] })?.deudores;
+      const hidratadosDesdeSingular = (source.partes?.deudor_nombre || source.partes?.deudor_identificacion)
+        ? [{
+            nombre: (source.partes.deudor_nombre || "").toString(),
+            identificacion: onlyDigitsClient(source.partes.deudor_identificacion),
+            tipo_id: (source.partes.deudor_tipo_id || "CEDULA DE CIUDADANIA") as
+              "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
+            genero: (source.partes.deudor_genero ?? inferGeneroFromNombre(source.partes.deudor_nombre ?? "")) as "M" | "F" | "",
+          }]
+        : [];
+      const deudoresHidratados = Array.isArray(existingDeudores) && existingDeudores.length > 0
+        ? (existingDeudores as Array<Record<string, unknown>>).map((d) => ({
+            nombre: String(d?.nombre ?? "").toUpperCase(),
+            identificacion: onlyDigitsClient(d?.identificacion),
+            tipo_id: (typeof d?.tipo_id === "string" && d.tipo_id ? d.tipo_id : "CEDULA DE CIUDADANIA") as
+              "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
+            genero: ((d?.genero as "M" | "F" | "" | undefined) ?? inferGeneroFromNombre(String(d?.nombre ?? ""))) as "M" | "F" | "",
+          }))
+        : hidratadosDesdeSingular;
       const partes = {
         ...source.partes,
+        deudores: deudoresHidratados,
         deudor_genero: source.partes?.deudor_genero ?? inferGeneroFromNombre(source.partes?.deudor_nombre ?? ""),
         tratamiento_entidad: source.partes?.tratamiento_entidad ?? "",
       };
