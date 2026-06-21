@@ -1535,14 +1535,10 @@ if (import.meta.main) serve(async (req) => {
       const cleanedIa = { ...prevDataIa, hipoteca_anterior: cleanedIaHA };
       await supabaseService.from("cancelaciones").update({ data_ia: cleanedIa }).eq("id", cancelacionId);
 
-      // 2) Ejecutar OCR dedicado.
+      // 2) Ejecutar OCR dedicado (con head+tail si la escritura es larga).
       const tStart = Date.now();
-      let dedicada: CuantiaDedicadaResult | null = null;
-      try {
-        dedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
-      } catch (e) {
-        console.error("[procesar-cancelacion reprocess_cuantia] dedicated OCR failed:", e);
-      }
+      const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
+      const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
@@ -1581,14 +1577,26 @@ if (import.meta.main) serve(async (req) => {
 
       void logCuantiaEvent(supabaseService, {
         orgId, cancelacionId, userId,
-        resultado: dedicadaMonto ? "exito" : "fallo",
-        paginas_enviadas: escUrls.length,
+        resultado: dedicadaMonto
+          ? "exito"
+          : (cuantiaRun.error_status === 413 ? "fallo_413"
+            : cuantiaRun.error_status === "network" ? "fallo_red"
+            : cuantiaRun.error_status ? `fallo_${cuantiaRun.error_status}`
+            : "fallo_ambiguo"),
+        paginas_enviadas: cuantiaRun.paginas_enviadas,
         cert_indeterminada: true,
         monto_encontrado: !!dedicadaMonto,
         aplicado,
         tiempo_ms: Date.now() - tStart,
-        extra: { trigger: "reprocess_cuantia" },
+        extra: {
+          trigger: "reprocess_cuantia",
+          paginas_totales: cuantiaRun.paginas_totales,
+          truncado: cuantiaRun.truncado,
+          error_status: cuantiaRun.error_status,
+          error_msg: cuantiaRun.error_msg,
+        },
       });
+
 
       return new Response(JSON.stringify({
         ok: true,
