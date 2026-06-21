@@ -73,6 +73,9 @@ interface CancelacionData {
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
     valor_hipoteca_es_indeterminada?: boolean;
+    /** Metadata para UI: "escritura" cuando el monto vino del OCR dedicado
+     *  a la escritura antecedente porque el certificado estaba indeterminado. */
+    cuantia_origen?: "escritura" | "certificado" | "manual";
     // ── Campos ATÓMICOS (preferidos) — evitan regex inversos sobre prosa ──
     numero_escritura?: string;          // "3866"
     fecha_escritura?: { dia?: string; mes?: string; ano?: string }; // dia/mes 2 dígitos, ano 4
