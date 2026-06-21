@@ -256,6 +256,9 @@ export const CancelacionValidar = () => {
   // Eje A/Re-proceso v3: mutex anti doble-click + estado para UI del botón.
   const isReprocessingRef = useRef(false);
   const [reprocessing, setReprocessing] = useState(false);
+  // Re-proceso de cuantía (escritura antecedente) — mutex independiente.
+  const isReprocessingCuantiaRef = useRef(false);
+  const [reprocessingCuantia, setReprocessingCuantia] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
 
