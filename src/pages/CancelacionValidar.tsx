@@ -686,14 +686,13 @@ export const CancelacionValidar = () => {
             >
               <RefreshCw className="h-3.5 w-3.5" /> Regenerar
             </Button>
-            <Button
-              size="sm"
-              onClick={handleManualSave}
-              disabled={!isDirty || saving || previewRefreshing}
-              className="gap-1.5 text-xs bg-notarial-gold text-slate-950 hover:bg-notarial-gold/90 disabled:opacity-50"
-            >
-              <Save className="h-3.5 w-3.5" /> Guardar cambios
-            </Button>
+            <SaveStatusChip
+              isDirty={isDirty}
+              saving={saving}
+              previewRefreshing={previewRefreshing}
+              lastError={saveError}
+              onRetry={handleManualSave}
+            />
           </div>
         </div>
       </div>
@@ -711,7 +710,7 @@ export const CancelacionValidar = () => {
               toast.warning("Tienes cambios sin guardar", {
                 description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
                 action: {
-                  label: "Guardar ahora",
+                  label: "Guardar y descargar ahora",
                   onClick: () => handleManualSave(),
                 },
                 duration: 6000,
