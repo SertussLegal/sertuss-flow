@@ -980,6 +980,7 @@ export const CancelacionValidar = () => {
                             <Field
                               label="Nombre completo" required value={d.nombre || ""}
                               onChange={(v) => updateAt(idx, { nombre: v })}
+                              uppercaseOnBlur
                             />
                             <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
                               <div className="space-y-1">
