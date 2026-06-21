@@ -164,6 +164,7 @@ export type Database = {
           notaria_hipoteca: string | null
           numero_escritura_hipoteca: string | null
           organization_id: string
+          poder_adjuntado: boolean
           status: string
           updated_at: string
           url_certificado_generado: string | null
@@ -192,6 +193,7 @@ export type Database = {
           notaria_hipoteca?: string | null
           numero_escritura_hipoteca?: string | null
           organization_id: string
+          poder_adjuntado?: boolean
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
@@ -220,6 +222,7 @@ export type Database = {
           notaria_hipoteca?: string | null
           numero_escritura_hipoteca?: string | null
           organization_id?: string
+          poder_adjuntado?: boolean
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null

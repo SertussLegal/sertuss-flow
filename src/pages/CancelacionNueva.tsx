@@ -119,6 +119,18 @@ export const CancelacionNueva = () => {
         ? await uploadPdfAsImages(cancelacionId, poder, "poder", PODER_MAX_PAGES)
         : [];
 
+      // Eje A — Fuente de verdad emitida por el cliente, ANTES de invocar la
+      // edge function: evita la race condition donde la UI lee la fila antes
+      // de que el background processing arranque y deje la bandera en false.
+      if (poderImagePaths.length > 0) {
+        await supabase
+          .from("cancelaciones")
+          .update({ poder_adjuntado: true })
+          .eq("id", cancelacionId);
+      }
+
+
+
       setStepLabel("Iniciando análisis con IA…");
       const { data, error } = await monitored.invoke<{
         ok: boolean;

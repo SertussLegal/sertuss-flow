@@ -250,7 +250,11 @@ export const CancelacionValidar = () => {
   // Hallazgo 7: evita que dos regeneraciones (manual + autosave silencioso)
   // se ejecuten en paralelo y crucen sus respuestas.
   const isRegenInFlightRef = useRef(false);
+  // Eje A/Re-proceso v3: mutex anti doble-click + estado para UI del botón.
+  const isReprocessingRef = useRef(false);
+  const [reprocessing, setReprocessing] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
+
 
 
   // Sincroniza chip global de guardado.
@@ -441,6 +445,38 @@ export const CancelacionValidar = () => {
     setViewerKey((k) => k + 1);
     queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
+
+  // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
+  // (la edge function limpia data_ia.poder_banco antes de re-inyectar).
+  // No cobra créditos (unlock_expediente ya consumió los 2).
+  const handleReprocessPoder = async () => {
+    if (!id) return;
+    if (isReprocessingRef.current) return;
+    isReprocessingRef.current = true;
+    setReprocessing(true);
+    try {
+      const { data: resp, error } = await monitored.invoke<{
+        ok?: boolean; code?: string; message?: string; reprocessed?: boolean;
+      }>("procesar-cancelacion", { cancelacionId: id, action: "reprocess_poder" });
+      if (error) {
+        toast.error("No se pudo re-procesar el Poder", { description: error.message });
+        return;
+      }
+      if (resp && resp.ok === false) {
+        toast.error("Re-procesamiento incompleto", { description: resp.message ?? "Intenta de nuevo." });
+        return;
+      }
+      toast.success("Poder re-procesado");
+      // Forzar re-hidratación desde data_final actualizada.
+      initialHydrationRef.current = false;
+      await queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+    } finally {
+      isReprocessingRef.current = false;
+      setReprocessing(false);
+    }
+  };
+
+
 
 
   // Aviso si el usuario cierra/recarga la pestaña con cambios sin guardar.
@@ -795,13 +831,54 @@ export const CancelacionValidar = () => {
                 };
                 const empty = !pb.apoderado_nombre && !pb.apoderado_cedula && !pb.apoderado_escritura
                   && !pb.apoderado_fecha && !pb.apoderado_notaria_poder;
+                // Eje A v3 — bandera de verdad emitida por el cliente al subir.
+                const poderAdjuntado = (row as { poder_adjuntado?: boolean })?.poder_adjuntado === true;
                 return (
                   <Section title="Apoderado del Banco (Poder General)">
-                    {empty && (
+                    {empty && !poderAdjuntado && (
                       <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-500">
                         No se adjuntó Poder General. Los campos quedarán en blanco en el documento.
                       </p>
                     )}
+                    {empty && poderAdjuntado && (
+                      <div
+                        role="alert"
+                        className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-[12px] leading-snug"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                          <div className="space-y-2 flex-1">
+                            <p className="font-semibold text-destructive">
+                              Adjuntaste un Poder General pero la IA no logró capturar los datos
+                            </p>
+                            <p className="text-foreground/90">
+                              Captúralos manualmente abajo o pulsa <span className="font-medium">Re-procesar poder</span> para que el sistema vuelva a intentarlo con un análisis dedicado.
+                            </p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="default"
+                              onClick={handleReprocessPoder}
+                              disabled={reprocessing}
+                              className="gap-1.5 text-xs"
+                            >
+                              {reprocessing ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Procesando Poder...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  Re-procesar poder
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <Field label="Nombre apoderado" value={pb.apoderado_nombre ?? ""}
                       onChange={(v) => setPB({ apoderado_nombre: v })} />
                     <SegmentedChoice
