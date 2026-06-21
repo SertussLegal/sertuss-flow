@@ -516,6 +516,42 @@ function fechaProsaUpper(fecha: string): string {
   return `${numeroConLetras(dia)} DE ${_MESES_PROSA[mes - 1].toUpperCase()} DE ${numeroConLetras(anio)}`;
 }
 
+// ── Helpers de protocolo TEXTO (NÚMERO) para el Poder General ──
+// Red de seguridad determinista cuando Gemini emite el dato en dígitos crudos.
+// Idempotentes: si ya viene formateado "LETRAS (NNN)" o contiene alfabéticos
+// estructurados (>=3 letras consecutivas), se devuelve intacto en MAYÚSCULAS.
+function _yaTieneLetrasEstructuradas(s: string): boolean {
+  return /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(s) && /\(\s*\d+\s*\)/.test(s);
+}
+
+function formatProtocoloEscritura(raw: string): string | undefined {
+  const s = (raw || "").trim();
+  if (!s) return undefined;
+  if (_yaTieneLetrasEstructuradas(s)) return s.toLocaleUpperCase("es-CO");
+  const m = s.match(/\d{1,7}/);
+  if (!m) return s.toLocaleUpperCase("es-CO");
+  const formatted = numeroConLetras(m[0], "masculine");
+  return formatted || s.toLocaleUpperCase("es-CO");
+}
+
+function formatProtocoloNotaria(raw: string): string | undefined {
+  const s = (raw || "").trim();
+  if (!s) return undefined;
+  if (_yaTieneLetrasEstructuradas(s)) return s.toLocaleUpperCase("es-CO");
+  // Heurística "ÚNICA" — mismo criterio que el bloque existente de hipoteca.
+  const esUnica = /\b[ÚU]?NICA\b/i.test(s);
+  // Extraer número y coletilla de ubicación (todo lo que viene después del dígito).
+  const m = s.match(/(\d{1,4})\s*(.*)$/);
+  const num = esUnica ? 1 : (m ? m[1] : "");
+  const colaRaw = m ? (m[2] || "") : s;
+  // Limpieza de la cola: conserva "DE BOGOTA D.C.", "DEL CIRCULO DE …", etc.
+  const cola = colaRaw.replace(/\s+/g, " ").trim();
+  const numLetras = num ? numeroConLetras(num, "feminine") : "";
+  if (!numLetras) return s.toLocaleUpperCase("es-CO");
+  const colaUp = cola ? ` ${cola.toLocaleUpperCase("es-CO")}` : "";
+  return `${numLetras}${colaUp}`.replace(/\s+/g, " ").trim();
+}
+
 // formatMonedaLegal idéntica al frontend (preserva ",00" + "M/CTE").
 function formatMonedaLegal(valor: string): string {
   if (!valor) return "";
