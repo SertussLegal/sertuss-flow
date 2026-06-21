@@ -954,9 +954,11 @@ export function buildDocxVars(data: CancelacionData) {
     ciudad_inmueble: ciudadInmueble || undefined,
     descripcion_inmueble: descripcionPredio || undefined,
     // Partes
-    deudor_nombre: data.partes.deudor_nombre,
-    deudor_identificacion: data.partes.deudor_identificacion,
-    deudor_tipo_id: data.partes.deudor_tipo_id,
+    deudor_nombre: deudoresNombres || data.partes.deudor_nombre,
+    deudor_identificacion: deudoresCedulas || data.partes.deudor_identificacion,
+    deudor_tipo_id: deudorTipoIdMostrado,
+    comparecientes_deudores_prosa: comparecientesDeudoresProsa || undefined,
+    firmas_deudores_prosa: firmasDeudoresProsa || undefined,
     banco_acreedor: data.partes.banco_acreedor,
     banco_nit: data.partes.banco_nit,
     // Ley 546
