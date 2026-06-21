@@ -91,6 +91,14 @@ interface CancelacionData {
     departamento?: string;
   };
   partes: {
+    // ── Array canónico (NUEVO) — preferido por buildDocxVars ──
+    deudores?: Array<{
+      nombre: string;
+      identificacion: string; // SOLO DÍGITOS limpios (sin puntos)
+      tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
+      genero?: "M" | "F" | "";
+    }>;
+    // ── Legacy singulares (compat lectura; se hidratan desde deudores[0] si faltan) ──
     deudor_nombre: string;
     deudor_identificacion: string;
     deudor_tipo_id: string;
