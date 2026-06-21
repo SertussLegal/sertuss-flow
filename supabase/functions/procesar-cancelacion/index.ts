@@ -695,6 +695,55 @@ export function pad4(s: string | number | undefined | null): string {
   return digits.padStart(4, "0");
 }
 
+// ── Helpers de saneamiento para deudores (plural N) ──
+const VALID_TIPO_ID = new Set([
+  "CEDULA DE CIUDADANIA",
+  "CEDULA DE EXTRANJERIA",
+  "PASAPORTE",
+]);
+const TIPO_ID_LABEL: Record<string, string> = {
+  "CEDULA DE CIUDADANIA": "cédula de ciudadanía",
+  "CEDULA DE EXTRANJERIA": "cédula de extranjería",
+  "PASAPORTE": "pasaporte",
+};
+const onlyDigits = (s: unknown): string => String(s ?? "").replace(/\D+/g, "");
+const formatCC = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+/**
+ * Normaliza el array de deudores con compatibilidad legacy:
+ *  - Si `partes.deudores[]` existe → se usa tal cual.
+ *  - Si NO existe pero hay `deudor_*` singulares → se hidrata como array de 1.
+ *  - Si tampoco hay singulares → devuelve [] (la plantilla pintará subrayados).
+ * Cada ítem queda saneado: nombre MAYÚSCULAS, identificación solo dígitos,
+ * tipo_id validado contra enum, género inferido si no viene.
+ */
+function normalizeDeudores(partes: CancelacionData["partes"]) {
+  const raw = Array.isArray(partes?.deudores) && partes.deudores.length > 0
+    ? partes.deudores
+    : (partes?.deudor_nombre || partes?.deudor_identificacion)
+      ? [{
+          nombre: partes.deudor_nombre,
+          identificacion: partes.deudor_identificacion,
+          tipo_id: partes.deudor_tipo_id,
+          genero: partes.deudor_genero,
+        }]
+      : [];
+  return raw.map((d) => {
+    const nombre = String(d?.nombre ?? "").toUpperCase().trim();
+    const ident = onlyDigits(d?.identificacion);
+    const tipoIn = String(d?.tipo_id ?? "").toUpperCase().trim();
+    const tipo_id = VALID_TIPO_ID.has(tipoIn) ? tipoIn : "CEDULA DE CIUDADANIA";
+    const genero = (d?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(nombre) || "";
+    return {
+      nombre,
+      identificacion: ident,
+      identificacion_formateada: formatCC(ident),
+      tipo_id,
+      genero,
+    };
+  });
+}
+
 // Build the variable map sent to Docxtemplater
 export function buildDocxVars(data: CancelacionData) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
