@@ -1818,29 +1818,38 @@ if (import.meta.main) serve(async (req) => {
         const certIndet = monoValor === "" || monoIndet;
         const debeReintentar = certIndet && escUrls.length > 0;
         const tCuantiaStart = Date.now();
-        let cuantiaDedicada: CuantiaDedicadaResult | null = null;
+        let cuantiaRun: CuantiaDedicadaRun | null = null;
         let cuantiaAplicada = false;
         if (debeReintentar) {
-          try {
-            cuantiaDedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
-          } catch (e) {
-            console.error("[procesar-cancelacion cuantia] dedicated OCR failed:", e);
-          }
-          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaDedicada);
+          cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
+          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaRun.result);
           cuantiaAplicada = mergeResult.applied;
         }
+        const cuantiaMontoOk = !!(cuantiaRun?.result?.valor_hipoteca_original);
         void logCuantiaEvent(supabaseService, {
           orgId, cancelacionId, userId,
           resultado: !debeReintentar
             ? "no_aplica"
-            : (cuantiaDedicada?.valor_hipoteca_original ? "exito" : "fallo"),
-          paginas_enviadas: debeReintentar ? escUrls.length : 0,
+            : cuantiaMontoOk
+              ? "exito"
+              : (cuantiaRun?.error_status === 413 ? "fallo_413"
+                : cuantiaRun?.error_status === "network" ? "fallo_red"
+                : cuantiaRun?.error_status ? `fallo_${cuantiaRun.error_status}`
+                : "fallo_ambiguo"),
+          paginas_enviadas: cuantiaRun?.paginas_enviadas ?? 0,
           cert_indeterminada: certIndet,
-          monto_encontrado: !!(cuantiaDedicada?.valor_hipoteca_original),
+          monto_encontrado: cuantiaMontoOk,
           aplicado: cuantiaAplicada,
           tiempo_ms: debeReintentar ? Date.now() - tCuantiaStart : 0,
-          extra: { trigger: "auto" },
+          extra: {
+            trigger: "auto",
+            paginas_totales: cuantiaRun?.paginas_totales ?? 0,
+            truncado: cuantiaRun?.truncado ?? false,
+            error_status: cuantiaRun?.error_status,
+            error_msg: cuantiaRun?.error_msg,
+          },
         });
+
 
         const vars = buildDocxVars(extracted);
 
