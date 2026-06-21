@@ -766,10 +766,29 @@ export function buildDocxVars(data: CancelacionData) {
 
   // Motor de flexión de género gramatical (módulo compartido _shared/genero.ts).
   // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
-  const generoDeudor = data.partes.deudor_genero || inferGeneroFromNombre(data.partes.deudor_nombre || "") || "";
+  // ── DEUDORES (plural N) — fuente única para nombres, cédulas, tokens, prosa ──
+  const deudoresArr = normalizeDeudores(data.partes);
+  const tokensDeudor = deudoresTokens(deudoresArr);
+  const deudoresNombres = deudoresArr.map((d) => d.nombre).filter(Boolean).join(" Y ");
+  const deudoresCedulas = deudoresArr.map((d) => d.identificacion_formateada).filter(Boolean).join(" Y ");
+  const deudorTipoIdMostrado = deudoresArr[0]?.tipo_id || data.partes.deudor_tipo_id || "CEDULA DE CIUDADANIA";
+  // Prosa de comparecencia per-deudor — tag opcional para plantillas v3.
+  const comparecientesDeudoresProsa = deudoresArr
+    .map((d) => {
+      const t = deudorTokens(d.genero);
+      const tipoLabel = TIPO_ID_LABEL[d.tipo_id] || "cédula de ciudadanía";
+      return `${t.art_deudor.toUpperCase()} ${d.nombre}, ${t.id_deudor} con ${tipoLabel} número ${d.identificacion_formateada}`;
+    })
+    .join(", Y ");
+  // Bloque de firmas — orden alfabético estable en español, INDEPENDIENTE
+  // del orden registral. Tag opcional para plantillas futuras.
+  const firmasDeudoresProsa = [...deudoresArr]
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+    .map((d) => `${d.nombre}\nC.C. ${d.identificacion_formateada}`)
+    .join("\n\n");
+
   const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(pb.apoderado_nombre || "") || "";
   const tratamientoBanco = data.partes.tratamiento_entidad || "";
-  const tokensDeudor = deudorTokens(generoDeudor);
   const tokensApoderado = apoderadoTokens(generoApoderado);
   const tokensBanco = bancoTokens(tratamientoBanco);
 
