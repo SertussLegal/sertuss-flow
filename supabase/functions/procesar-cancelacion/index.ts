@@ -178,13 +178,29 @@ const tools = [
           partes: {
             type: "object",
             properties: {
-              deudor_nombre: { type: "string", description: "Nombre completo del deudor en mayúsculas" },
-              deudor_identificacion: { type: "string", description: "Número de identificación ESTRICTAMENTE NUMÉRICO con puntos de miles, ej: '1.018.440.535'. SIN letras." },
-              deudor_tipo_id: { type: "string", description: "Tipo de identificación, ej: 'CEDULA DE CIUDADANIA'" },
+              deudores: {
+                type: "array",
+                minItems: 1,
+                description: "TODOS los deudores hipotecantes (personas naturales). Fuente PRIMARIA: cada fila 'DE: NOMBRE / CC#/CE#/PA# NUMERO' de la anotación 0205 HIPOTECA del Certificado de Tradición es UN ítem distinto. Fuente SECUNDARIA de cruce: COMPARECENCIA de la escritura antecedente.",
+                items: {
+                  type: "object",
+                  properties: {
+                    nombre: { type: "string", description: "Nombre completo en MAYÚSCULAS, idéntico al certificado." },
+                    identificacion: { type: "string", description: "Número de identificación ESTRICTAMENTE NUMÉRICO sin puntos ni espacios ni letras. Solo dígitos 0-9. Ej: '20549804'. Si es ilegible, devuelve cadena vacía — NO inventes." },
+                    tipo_id: {
+                      type: "string",
+                      enum: ["CEDULA DE CIUDADANIA", "CEDULA DE EXTRANJERIA", "PASAPORTE"],
+                      description: "Detéctalo LITERAL del texto del certificado/escritura. 'CC' → CEDULA DE CIUDADANIA; 'CE' → CEDULA DE EXTRANJERIA; 'PA' / 'PASAPORTE' → PASAPORTE. NO asumas CC por defecto."
+                    },
+                  },
+                  required: ["nombre", "identificacion", "tipo_id"],
+                  additionalProperties: false,
+                }
+              },
               banco_acreedor: { type: "string", description: "Razón social del banco, normalmente 'BANCO DAVIVIENDA S.A.'" },
               banco_nit: { type: "string", description: "NIT ESTRICTAMENTE NUMÉRICO con puntos y guión, ej: '860.034.313-7'. SIN letras." },
             },
-            required: ["deudor_nombre", "deudor_identificacion", "deudor_tipo_id", "banco_acreedor", "banco_nit"],
+            required: ["deudores", "banco_acreedor", "banco_nit"],
             additionalProperties: false,
           },
           analisis_legal: {
