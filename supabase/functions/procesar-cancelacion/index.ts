@@ -73,6 +73,9 @@ interface CancelacionData {
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
     valor_hipoteca_es_indeterminada?: boolean;
+    /** Metadata para UI: "escritura" cuando el monto vino del OCR dedicado
+     *  a la escritura antecedente porque el certificado estaba indeterminado. */
+    cuantia_origen?: "escritura" | "certificado" | "manual";
     // ── Campos ATÓMICOS (preferidos) — evitan regex inversos sobre prosa ──
     numero_escritura?: string;          // "3866"
     fecha_escritura?: { dia?: string; mes?: string; ano?: string }; // dia/mes 2 dígitos, ano 4
@@ -1076,6 +1079,185 @@ async function logPoderEvent(
 }
 
 
+// ──────────────────────────────────────────────────────────────────────
+// CUANTÍA DEL CRÉDITO — OCR DEDICADO (Eje B v3)
+// Cuando el Certificado de Tradición registra la hipoteca como "CUANTÍA
+// INDETERMINADA" / "ABIERTA", el monto efectivo SOLO existe dentro de la
+// escritura escaneada (cláusula de Mutuo / cláusula de Pago de la
+// compraventa). El monolítico Gemini 2.5 Pro tiende a respetar la marca
+// del certificado y deja `valor_hipoteca_original = ""`. Este handler
+// corre en PARALELO al monolítico únicamente cuando se detecta el caso,
+// usa Gemini 2.5 Flash con TODAS las páginas de la escritura en un solo
+// turno multimodal, y devuelve la cifra anclada sintácticamente al verbo
+// rector del gravamen (skill `extraccion-cuantia-semantica`).
+// ──────────────────────────────────────────────────────────────────────
+const cuantiaDedicadaTool = [
+  {
+    type: "function" as const,
+    function: {
+      name: "extract_cuantia_credito_dedicada",
+      description: "Extrae el monto del crédito hipotecario a partir de TODAS las páginas de la escritura antecedente. Aplicar anclaje sintáctico al verbo rector del gravamen e ignorar lista negra (precio, avalúo, subsidio, UVR/UPAC).",
+      parameters: {
+        type: "object",
+        properties: {
+          valor_hipoteca_original: {
+            type: ["string", "null"],
+            description: "Monto del MUTUO anclado al verbo rector ('constituye', 'grava', 'hipoteca', 'garantiza', 'presta', 'concede', 'desembolsa'). Formato OBLIGATORIO: '<LETRAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)' en MAYÚSCULAS, ej: 'OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)'. Devuelve `null` (JSON null, NUNCA cadena vacía) si la hipoteca es ABIERTA / CUANTÍA INDETERMINADA, si el monto es ambiguo, o si no hay evidencia clara.",
+          },
+          valor_hipoteca_es_indeterminada: {
+            type: "boolean",
+            description: "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA', o 'DE CUANTÍA INDETERMINADA'. En cualquier otro caso false.",
+          },
+          confianza: {
+            type: "string",
+            enum: ["alta", "media", "baja"],
+            description: "Nivel de confianza en la extracción.",
+          },
+        },
+        required: ["valor_hipoteca_original", "valor_hipoteca_es_indeterminada"],
+        additionalProperties: false,
+      },
+    },
+  },
+];
+
+const CUANTIA_DEDICADA_SYSTEM = `Eres un sistema OCR jurídico-notarial colombiano especializado EXCLUSIVAMENTE en extraer la cuantía del crédito hipotecario (mutuo) a partir de las páginas de una Escritura Pública de Constitución de Hipoteca.
+
+CONTEXTO: el Certificado de Tradición y Libertad de este expediente registra la hipoteca como "CUANTÍA INDETERMINADA" y por eso te llamamos para encontrar el monto real dentro de la escritura.
+
+ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula del mutuo / cláusula de pago puede estar en cualquier parte del documento — revisa TODAS las páginas.
+
+JERARQUÍA DE BÚSQUEDA (en orden):
+1. MUTUO — el banco "presta / otorga / concede / desembolsa / entrega" una suma al deudor como crédito.
+2. PAGO — cláusula de compraventa: "el saldo del precio se cubrirá con el producto del crédito que le concede [BANCO] por valor de…".
+3. LIQUIDACIÓN — casilla anexa "CUANTÍA DEL MUTUO", "VALOR DEL CRÉDITO", "MONTO DEL PRÉSTAMO".
+
+ANCLAJE SINTÁCTICO (obligatorio): la cifra DEBE estar gobernada gramaticalmente por un verbo rector del gravamen: 'constituye', 'grava', 'hipoteca', 'garantiza', 'otorga garantía hipotecaria', 'presta', 'concede', 'desembolsa', 'entrega'. La proximidad física a la palabra "hipoteca" NO basta.
+
+LISTA NEGRA (ignora estas cifras, NO el párrafo):
+- precio de venta / valor de la compraventa
+- avalúo catastral / avalúo comercial
+- liberación de gravamen / subrogación
+- abono / saldo pendiente
+- subsidio / cesantías
+- DENOMINACIONES UVR / UPAC (busca SIEMPRE la cifra principal en PESOS M/CTE).
+
+FORMATO DE SALIDA (estricto):
+- valor_hipoteca_original: "<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)". Ej: "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)".
+- valor_hipoteca_es_indeterminada: true SOLO si la escritura misma declara la hipoteca como abierta / sin límite / de cuantía indeterminada.
+
+ANTI-ALUCINACIÓN (estricto):
+- Si no encuentras evidencia clara, devuelve \`valor_hipoteca_original = null\` (JSON null, NUNCA cadena vacía) y \`valor_hipoteca_es_indeterminada = false\`.
+- Si encuentras dos cifras candidatas ambiguas y no puedes desambiguar, devuelve \`null\` y \`false\`.
+- Si la escritura declara la hipoteca como ABIERTA / SIN LÍMITE / INDETERMINADA, devuelve \`valor_hipoteca_original = null\` y \`valor_hipoteca_es_indeterminada = true\`.
+- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---', literales descriptivos en el campo de monto, o cifras inventadas.
+
+Llama SIEMPRE a la herramienta extract_cuantia_credito_dedicada.`;
+
+interface CuantiaDedicadaResult {
+  valor_hipoteca_original?: string | null;
+  valor_hipoteca_es_indeterminada?: boolean;
+  confianza?: "alta" | "media" | "baja";
+}
+
+async function extractCuantiaDedicada(
+  escUrls: string[],
+  apiKey: string,
+): Promise<CuantiaDedicadaResult | null> {
+  if (escUrls.length === 0) return null;
+  const userContent: Array<Record<string, unknown>> = [
+    {
+      type: "text",
+      text: `Analiza las ${escUrls.length} páginas adjuntas como una única Escritura Pública de Constitución de Hipoteca y extrae la cuantía del crédito (mutuo). Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`,
+    },
+    ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+  ];
+  const aiResp = await fetchAiGateway({
+    apiKey,
+    body: {
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: CUANTIA_DEDICADA_SYSTEM },
+        { role: "user", content: userContent },
+      ],
+      tools: cuantiaDedicadaTool,
+      tool_choice: { type: "function", function: { name: "extract_cuantia_credito_dedicada" } },
+    },
+    tag: "procesar-cancelacion.cuantia",
+  });
+  return await parseToolCallArguments<CuantiaDedicadaResult>(aiResp, "procesar-cancelacion.cuantia");
+}
+
+/**
+ * Read-then-Merge específico para la cuantía. Reglas:
+ *  - El monolítico Gemini 2.5 Pro produce `valor_hipoteca_original` y
+ *    `valor_hipoteca_es_indeterminada` leyendo el certificado.
+ *  - El OCR dedicado solo PISA al monolítico si éste dejó la cuantía
+ *    vacía o marcada como indeterminada (caso típico: cert "INDETERMINADA",
+ *    escritura sí trae cifra). Cuando la cuantía del dedicado se inyecta,
+ *    se etiqueta con `cuantia_origen = "escritura"` para que la UI muestre
+ *    el banner informativo azul.
+ *  - Edición manual (data_final) SIEMPRE gana — este merge solo aplica
+ *    sobre el resultado fresco del monolítico, no sobrescribe humano.
+ */
+function mergeCuantiaIntoExtracted(
+  extracted: CancelacionData,
+  dedicada: CuantiaDedicadaResult | null,
+): { applied: boolean; monto: string | null } {
+  if (!dedicada) return { applied: false, monto: null };
+  const monoMonto = (extracted.hipoteca_anterior.valor_hipoteca_original ?? "").trim();
+  const monoIndet = extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
+  const certVacio = monoMonto === "" || monoIndet;
+  const dedicadaMonto = (dedicada.valor_hipoteca_original ?? "").trim();
+  if (!certVacio) return { applied: false, monto: null };
+  if (!dedicadaMonto) return { applied: false, monto: null };
+  extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
+  extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
+  extracted.hipoteca_anterior.cuantia_origen = "escritura";
+  return { applied: true, monto: dedicadaMonto };
+}
+
+// Telemetría no bloqueante.
+async function logCuantiaEvent(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  opts: {
+    orgId: string;
+    cancelacionId: string;
+    userId: string;
+    resultado: "exito" | "fallo" | "no_aplica" | "sin_escritura";
+    paginas_enviadas: number;
+    cert_indeterminada: boolean;
+    monto_encontrado: boolean;
+    aplicado: boolean;
+    tiempo_ms?: number;
+    extra?: Record<string, unknown>;
+  },
+) {
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: opts.orgId,
+      tramite_id: opts.cancelacionId,
+      user_id: opts.userId,
+      evento: "procesar-cancelacion.cuantia",
+      resultado: opts.resultado,
+      categoria: "ocr_cuantia_credito",
+      detalle: {
+        paginas_enviadas: opts.paginas_enviadas,
+        cert_indeterminada: opts.cert_indeterminada,
+        monto_encontrado: opts.monto_encontrado,
+        aplicado: opts.aplicado,
+        ...(opts.extra ?? {}),
+      },
+      tiempo_ms: opts.tiempo_ms ?? null,
+    });
+  } catch (_) { /* telemetría no bloqueante */ }
+}
+
+
+
+
+
 
 if (import.meta.main) serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -1116,8 +1298,11 @@ if (import.meta.main) serve(async (req) => {
     poderImagePaths?: string[];
     regen?: boolean;
     manualOverrides?: CancelacionData;
-    /** "reprocess_poder" → re-extrae solo el Poder con OCR dedicado, sin cobrar créditos. */
-    action?: "reprocess_poder";
+    /** "reprocess_poder"   → re-extrae solo el Poder con OCR dedicado.
+     *  "reprocess_cuantia" → re-extrae solo la cuantía del crédito a partir
+     *                        de la escritura antecedente (cuando el certificado
+     *                        vino como indeterminado). Ninguno cobra créditos. */
+    action?: "reprocess_poder" | "reprocess_cuantia";
   };
   try {
     body = await req.json();
@@ -1126,6 +1311,7 @@ if (import.meta.main) serve(async (req) => {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
 
   const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides, action } = body;
 
@@ -1259,6 +1445,117 @@ if (import.meta.main) serve(async (req) => {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // MODO REPROCESS_CUANTIA: re-extrae sólo la cuantía del crédito
+    // a partir de la escritura antecedente (caso típico: el certificado
+    // viene como CUANTÍA INDETERMINADA y el monolítico dejó el campo
+    // vacío). Idempotente: limpia el monto antes de re-inyectar.
+    // No cobra créditos.
+    // ─────────────────────────────────────────────────────────────
+    if (action === "reprocess_cuantia") {
+      const LOVABLE_API_KEY_RC = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY_RC) {
+        return biz("internal", "LOVABLE_API_KEY no configurada");
+      }
+
+      const escPrefix = `${cancelacionId}/cancelaciones/soportes/escritura`;
+      const { data: escFiles, error: listErr } = await supabaseService.storage
+        .from(BUCKET_OUTPUT)
+        .list(escPrefix);
+      if (listErr || !escFiles || escFiles.length === 0) {
+        return biz("no_escritura_attached", "No se encontraron páginas de la escritura antecedente para re-procesar.");
+      }
+      const escPaths = escFiles
+        .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+        .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
+        .map((f: { name: string }) => `${escPrefix}/${f.name}`);
+      if (escPaths.length === 0) {
+        return biz("no_escritura_attached", "No se encontraron páginas válidas de la escritura.");
+      }
+
+      const escUrls = await Promise.all(
+        escPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+      );
+
+      // 1) Idempotencia: limpiar el monto y la metadata antes de re-inyectar.
+      const prevDataIa = (cancRow.data_ia ?? {}) as Record<string, unknown>;
+      const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
+      const cleanedIaHA = {
+        ...((prevDataIa.hipoteca_anterior ?? {}) as Record<string, unknown>),
+      };
+      delete cleanedIaHA.cuantia_origen;
+      // Sólo limpiamos el monto si está vacío o marcado como indeterminado
+      // (idempotente para reintentos sobre el mismo caso). Si el humano ya lo
+      // escribió manualmente, se respeta y no se ejecuta el reproceso encima.
+      const cleanedIa = { ...prevDataIa, hipoteca_anterior: cleanedIaHA };
+      await supabaseService.from("cancelaciones").update({ data_ia: cleanedIa }).eq("id", cancelacionId);
+
+      // 2) Ejecutar OCR dedicado.
+      const tStart = Date.now();
+      let dedicada: CuantiaDedicadaResult | null = null;
+      try {
+        dedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
+      } catch (e) {
+        console.error("[procesar-cancelacion reprocess_cuantia] dedicated OCR failed:", e);
+      }
+      const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
+
+      // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
+      //    valor vacío (o si el certificado estaba indeterminado y el humano
+      //    no ha intervenido). Nunca pisamos un monto manual.
+      const finalHA = { ...((prevDataFinal.hipoteca_anterior ?? cleanedIaHA) as Record<string, unknown>) };
+      const finalMontoActual = String((finalHA as { valor_hipoteca_original?: string }).valor_hipoteca_original ?? "").trim();
+      const finalIndet = (finalHA as { valor_hipoteca_es_indeterminada?: boolean }).valor_hipoteca_es_indeterminada === true;
+      let aplicado = false;
+      if (dedicadaMonto && (finalMontoActual === "" || finalIndet)) {
+        (finalHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
+        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
+        aplicado = true;
+      }
+
+      const newDataIaHA = { ...cleanedIaHA };
+      if (dedicadaMonto) {
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
+      }
+      const newDataIa = { ...cleanedIa, hipoteca_anterior: newDataIaHA };
+      const newDataFinal = { ...prevDataFinal, hipoteca_anterior: finalHA };
+
+      const updatePayload: Record<string, unknown> = {
+        data_ia: newDataIa,
+        data_final: newDataFinal,
+        updated_at: new Date().toISOString(),
+      };
+      // Espejo en columna plana — solo si efectivamente aplicamos el nuevo valor.
+      if (aplicado) {
+        updatePayload.valor_hipoteca_original = dedicadaMonto;
+      }
+      await supabaseService.from("cancelaciones").update(updatePayload).eq("id", cancelacionId);
+
+      void logCuantiaEvent(supabaseService, {
+        orgId, cancelacionId, userId,
+        resultado: dedicadaMonto ? "exito" : "fallo",
+        paginas_enviadas: escUrls.length,
+        cert_indeterminada: true,
+        monto_encontrado: !!dedicadaMonto,
+        aplicado,
+        tiempo_ms: Date.now() - tStart,
+        extra: { trigger: "reprocess_cuantia" },
+      });
+
+      return new Response(JSON.stringify({
+        ok: true,
+        reprocessed: true,
+        aplicado,
+        valor_hipoteca_original: dedicadaMonto || null,
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
 
     // ─────────────────────────────────────────────────────────────
     // MODO REGEN: solo re-mapeo docx con data_final, sin cobrar
@@ -1466,7 +1763,43 @@ if (import.meta.main) serve(async (req) => {
           },
         });
 
+        // ── Eje B v3 — CUANTÍA DEDICADA (secuencial condicional) ──
+        // Sólo disparamos el extractor dedicado de cuantía cuando el monolítico
+        // dejó el valor vacío o lo marcó como indeterminada (caso típico: el
+        // certificado registra la hipoteca como "CUANTÍA INDETERMINADA"). Así
+        // evitamos costo y latencia en el caso común donde el monolítico ya
+        // resuelve bien la cuantía desde el certificado.
+        const monoValor = (extracted.hipoteca_anterior.valor_hipoteca_original ?? "").trim();
+        const monoIndet = extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
+        const certIndet = monoValor === "" || monoIndet;
+        const debeReintentar = certIndet && escUrls.length > 0;
+        const tCuantiaStart = Date.now();
+        let cuantiaDedicada: CuantiaDedicadaResult | null = null;
+        let cuantiaAplicada = false;
+        if (debeReintentar) {
+          try {
+            cuantiaDedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
+          } catch (e) {
+            console.error("[procesar-cancelacion cuantia] dedicated OCR failed:", e);
+          }
+          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaDedicada);
+          cuantiaAplicada = mergeResult.applied;
+        }
+        void logCuantiaEvent(supabaseService, {
+          orgId, cancelacionId, userId,
+          resultado: !debeReintentar
+            ? "no_aplica"
+            : (cuantiaDedicada?.valor_hipoteca_original ? "exito" : "fallo"),
+          paginas_enviadas: debeReintentar ? escUrls.length : 0,
+          cert_indeterminada: certIndet,
+          monto_encontrado: !!(cuantiaDedicada?.valor_hipoteca_original),
+          aplicado: cuantiaAplicada,
+          tiempo_ms: debeReintentar ? Date.now() - tCuantiaStart : 0,
+          extra: { trigger: "auto" },
+        });
+
         const vars = buildDocxVars(extracted);
+
 
         const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
         const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);

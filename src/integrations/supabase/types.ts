@@ -157,6 +157,7 @@ export type Database = {
           deudor_tipo_id: string | null
           direccion_inmueble: string | null
           error_message: string | null
+          escritura_antecedente_adjunta: boolean
           explicacion_ley: string | null
           fecha_escritura_hipoteca: string | null
           id: string
@@ -186,6 +187,7 @@ export type Database = {
           deudor_tipo_id?: string | null
           direccion_inmueble?: string | null
           error_message?: string | null
+          escritura_antecedente_adjunta?: boolean
           explicacion_ley?: string | null
           fecha_escritura_hipoteca?: string | null
           id?: string
@@ -215,6 +217,7 @@ export type Database = {
           deudor_tipo_id?: string | null
           direccion_inmueble?: string | null
           error_message?: string | null
+          escritura_antecedente_adjunta?: boolean
           explicacion_ley?: string | null
           fecha_escritura_hipoteca?: string | null
           id?: string
