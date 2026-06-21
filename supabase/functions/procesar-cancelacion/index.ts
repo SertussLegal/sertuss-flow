@@ -1997,6 +1997,39 @@ if (import.meta.main) serve(async (req) => {
         });
 
 
+        // ── Hidratación legacy: rellena `deudor_*` singulares desde el array
+        //     para mantener compatibilidad con queries/columnas existentes.
+        //     Telemetría no bloqueante: si algún deudor llega sin cédula, lo
+        //     registramos como advertencia para auditoría posterior.
+        try {
+          const deudoresExtraidos = normalizeDeudores(extracted.partes);
+          if (deudoresExtraidos.length > 0) {
+            extracted.partes.deudores = deudoresExtraidos.map((d) => ({
+              nombre: d.nombre,
+              identificacion: d.identificacion,
+              tipo_id: d.tipo_id,
+              genero: d.genero,
+            }));
+            extracted.partes.deudor_nombre = deudoresExtraidos.map((d) => d.nombre).join(" Y ");
+            extracted.partes.deudor_identificacion = deudoresExtraidos.map((d) => d.identificacion_formateada).join(" Y ");
+            extracted.partes.deudor_tipo_id = deudoresExtraidos[0].tipo_id;
+            const faltantes = deudoresExtraidos.filter((d) => !d.identificacion).map((d) => d.nombre);
+            if (faltantes.length > 0) {
+              void supabaseService.from("system_events").insert({
+                organization_id: orgId,
+                tramite_id: cancelacionId,
+                user_id: userId,
+                evento: "procesar-cancelacion.deudores",
+                resultado: "parcial",
+                categoria: "DEUDOR_CEDULA_MISMATCH",
+                detalle: { faltantes, total: deudoresExtraidos.length },
+              }).then(() => {}, () => {});
+            }
+          }
+        } catch (e) {
+          console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
+        }
+
         const vars = buildDocxVars(extracted);
 
 
