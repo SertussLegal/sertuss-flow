@@ -1763,7 +1763,43 @@ if (import.meta.main) serve(async (req) => {
           },
         });
 
+        // ── Eje B v3 — CUANTÍA DEDICADA (secuencial condicional) ──
+        // Sólo disparamos el extractor dedicado de cuantía cuando el monolítico
+        // dejó el valor vacío o lo marcó como indeterminada (caso típico: el
+        // certificado registra la hipoteca como "CUANTÍA INDETERMINADA"). Así
+        // evitamos costo y latencia en el caso común donde el monolítico ya
+        // resuelve bien la cuantía desde el certificado.
+        const monoValor = (extracted.hipoteca_anterior.valor_hipoteca_original ?? "").trim();
+        const monoIndet = extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
+        const certIndet = monoValor === "" || monoIndet;
+        const debeReintentar = certIndet && escUrls.length > 0;
+        const tCuantiaStart = Date.now();
+        let cuantiaDedicada: CuantiaDedicadaResult | null = null;
+        let cuantiaAplicada = false;
+        if (debeReintentar) {
+          try {
+            cuantiaDedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
+          } catch (e) {
+            console.error("[procesar-cancelacion cuantia] dedicated OCR failed:", e);
+          }
+          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaDedicada);
+          cuantiaAplicada = mergeResult.applied;
+        }
+        void logCuantiaEvent(supabaseService, {
+          orgId, cancelacionId, userId,
+          resultado: !debeReintentar
+            ? "no_aplica"
+            : (cuantiaDedicada?.valor_hipoteca_original ? "exito" : "fallo"),
+          paginas_enviadas: debeReintentar ? escUrls.length : 0,
+          cert_indeterminada: certIndet,
+          monto_encontrado: !!(cuantiaDedicada?.valor_hipoteca_original),
+          aplicado: cuantiaAplicada,
+          tiempo_ms: debeReintentar ? Date.now() - tCuantiaStart : 0,
+          extra: { trigger: "auto" },
+        });
+
         const vars = buildDocxVars(extracted);
+
 
         const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
         const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
