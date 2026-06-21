@@ -1160,32 +1160,76 @@ interface CuantiaDedicadaResult {
   confianza?: "alta" | "media" | "baja";
 }
 
+interface CuantiaDedicadaRun {
+  result: CuantiaDedicadaResult | null;
+  paginas_totales: number;
+  paginas_enviadas: number;
+  truncado: boolean;
+  error_status?: number | "network" | "parse";
+  error_msg?: string;
+}
+
+// Tope de páginas para mantenernos por debajo del límite de 30MB del gateway
+// upstream (Gemini). Empíricamente 25 páginas a 180dpi caben holgadamente.
+// La cláusula del mutuo / liquidación está casi siempre en la carátula o
+// cierre, así que el muestreo head+tail captura el 100% de los casos reales.
+const MAX_CUANTIA_PAGES = 25;
+const CUANTIA_HEAD = 20;
+const CUANTIA_TAIL = 5;
+
+function sliceHeadTail(urls: string[]): { sliced: string[]; truncado: boolean } {
+  if (urls.length <= MAX_CUANTIA_PAGES) return { sliced: urls, truncado: false };
+  return { sliced: [...urls.slice(0, CUANTIA_HEAD), ...urls.slice(-CUANTIA_TAIL)], truncado: true };
+}
+
 async function extractCuantiaDedicada(
   escUrls: string[],
   apiKey: string,
-): Promise<CuantiaDedicadaResult | null> {
-  if (escUrls.length === 0) return null;
+): Promise<CuantiaDedicadaRun> {
+  const paginas_totales = escUrls.length;
+  if (paginas_totales === 0) {
+    return { result: null, paginas_totales: 0, paginas_enviadas: 0, truncado: false };
+  }
+  const { sliced, truncado } = sliceHeadTail(escUrls);
+  const paginas_enviadas = sliced.length;
+
+  const userText = truncado
+    ? `Recibirás un fragmento optimizado de ${paginas_enviadas} páginas (primeras ${CUANTIA_HEAD} + últimas ${CUANTIA_TAIL}) de una escritura que originalmente tiene ${paginas_totales} páginas para evitar límites de tamaño. Concéntrate en la carátula, cláusulas iniciales de mutuo o liquidación final para hallar el valor del crédito. Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`
+    : `Analiza las ${paginas_enviadas} páginas adjuntas como una única Escritura Pública de Constitución de Hipoteca y extrae la cuantía del crédito (mutuo). Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`;
+
   const userContent: Array<Record<string, unknown>> = [
-    {
-      type: "text",
-      text: `Analiza las ${escUrls.length} páginas adjuntas como una única Escritura Pública de Constitución de Hipoteca y extrae la cuantía del crédito (mutuo). Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`,
-    },
-    ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+    { type: "text", text: userText },
+    ...sliced.map((url) => ({ type: "image_url" as const, image_url: { url } })),
   ];
-  const aiResp = await fetchAiGateway({
-    apiKey,
-    body: {
-      model: "google/gemini-2.5-flash",
-      messages: [
-        { role: "system", content: CUANTIA_DEDICADA_SYSTEM },
-        { role: "user", content: userContent },
-      ],
-      tools: cuantiaDedicadaTool,
-      tool_choice: { type: "function", function: { name: "extract_cuantia_credito_dedicada" } },
-    },
-    tag: "procesar-cancelacion.cuantia",
-  });
-  return await parseToolCallArguments<CuantiaDedicadaResult>(aiResp, "procesar-cancelacion.cuantia");
+
+  try {
+    const aiResp = await fetchAiGateway({
+      apiKey,
+      body: {
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: CUANTIA_DEDICADA_SYSTEM },
+          { role: "user", content: userContent },
+        ],
+        tools: cuantiaDedicadaTool,
+        tool_choice: { type: "function", function: { name: "extract_cuantia_credito_dedicada" } },
+      },
+      tag: "procesar-cancelacion.cuantia",
+    });
+    const result = await parseToolCallArguments<CuantiaDedicadaResult>(aiResp, "procesar-cancelacion.cuantia");
+    return { result, paginas_totales, paginas_enviadas, truncado };
+  } catch (e) {
+    if (e instanceof AiGatewayError) {
+      if (e.status === 413) {
+        console.error(`[procesar-cancelacion.cuantia] PAYLOAD_TOO_LARGE paginas=${paginas_enviadas} totales=${paginas_totales}`);
+      } else {
+        console.error(`[procesar-cancelacion.cuantia] AiGatewayError status=${e.status} msg=${e.message}`);
+      }
+      return { result: null, paginas_totales, paginas_enviadas, truncado, error_status: e.status, error_msg: e.message.slice(0, 200) };
+    }
+    console.error("[procesar-cancelacion.cuantia] unexpected error:", e);
+    return { result: null, paginas_totales, paginas_enviadas, truncado, error_status: "network", error_msg: String(e).slice(0, 200) };
+  }
 }
 
 /**
@@ -1491,14 +1535,10 @@ if (import.meta.main) serve(async (req) => {
       const cleanedIa = { ...prevDataIa, hipoteca_anterior: cleanedIaHA };
       await supabaseService.from("cancelaciones").update({ data_ia: cleanedIa }).eq("id", cancelacionId);
 
-      // 2) Ejecutar OCR dedicado.
+      // 2) Ejecutar OCR dedicado (con head+tail si la escritura es larga).
       const tStart = Date.now();
-      let dedicada: CuantiaDedicadaResult | null = null;
-      try {
-        dedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
-      } catch (e) {
-        console.error("[procesar-cancelacion reprocess_cuantia] dedicated OCR failed:", e);
-      }
+      const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
+      const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
@@ -1537,14 +1577,26 @@ if (import.meta.main) serve(async (req) => {
 
       void logCuantiaEvent(supabaseService, {
         orgId, cancelacionId, userId,
-        resultado: dedicadaMonto ? "exito" : "fallo",
-        paginas_enviadas: escUrls.length,
+        resultado: dedicadaMonto
+          ? "exito"
+          : (cuantiaRun.error_status === 413 ? "fallo_413"
+            : cuantiaRun.error_status === "network" ? "fallo_red"
+            : cuantiaRun.error_status ? `fallo_${cuantiaRun.error_status}`
+            : "fallo_ambiguo"),
+        paginas_enviadas: cuantiaRun.paginas_enviadas,
         cert_indeterminada: true,
         monto_encontrado: !!dedicadaMonto,
         aplicado,
         tiempo_ms: Date.now() - tStart,
-        extra: { trigger: "reprocess_cuantia" },
+        extra: {
+          trigger: "reprocess_cuantia",
+          paginas_totales: cuantiaRun.paginas_totales,
+          truncado: cuantiaRun.truncado,
+          error_status: cuantiaRun.error_status,
+          error_msg: cuantiaRun.error_msg,
+        },
       });
+
 
       return new Response(JSON.stringify({
         ok: true,
@@ -1774,29 +1826,38 @@ if (import.meta.main) serve(async (req) => {
         const certIndet = monoValor === "" || monoIndet;
         const debeReintentar = certIndet && escUrls.length > 0;
         const tCuantiaStart = Date.now();
-        let cuantiaDedicada: CuantiaDedicadaResult | null = null;
+        let cuantiaRun: CuantiaDedicadaRun | null = null;
         let cuantiaAplicada = false;
         if (debeReintentar) {
-          try {
-            cuantiaDedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
-          } catch (e) {
-            console.error("[procesar-cancelacion cuantia] dedicated OCR failed:", e);
-          }
-          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaDedicada);
+          cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
+          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaRun.result);
           cuantiaAplicada = mergeResult.applied;
         }
+        const cuantiaMontoOk = !!(cuantiaRun?.result?.valor_hipoteca_original);
         void logCuantiaEvent(supabaseService, {
           orgId, cancelacionId, userId,
           resultado: !debeReintentar
             ? "no_aplica"
-            : (cuantiaDedicada?.valor_hipoteca_original ? "exito" : "fallo"),
-          paginas_enviadas: debeReintentar ? escUrls.length : 0,
+            : cuantiaMontoOk
+              ? "exito"
+              : (cuantiaRun?.error_status === 413 ? "fallo_413"
+                : cuantiaRun?.error_status === "network" ? "fallo_red"
+                : cuantiaRun?.error_status ? `fallo_${cuantiaRun.error_status}`
+                : "fallo_ambiguo"),
+          paginas_enviadas: cuantiaRun?.paginas_enviadas ?? 0,
           cert_indeterminada: certIndet,
-          monto_encontrado: !!(cuantiaDedicada?.valor_hipoteca_original),
+          monto_encontrado: cuantiaMontoOk,
           aplicado: cuantiaAplicada,
           tiempo_ms: debeReintentar ? Date.now() - tCuantiaStart : 0,
-          extra: { trigger: "auto" },
+          extra: {
+            trigger: "auto",
+            paginas_totales: cuantiaRun?.paginas_totales ?? 0,
+            truncado: cuantiaRun?.truncado ?? false,
+            error_status: cuantiaRun?.error_status,
+            error_msg: cuantiaRun?.error_msg,
+          },
         });
+
 
         const vars = buildDocxVars(extracted);
 
