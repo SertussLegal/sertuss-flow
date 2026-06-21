@@ -1116,6 +1116,8 @@ if (import.meta.main) serve(async (req) => {
     poderImagePaths?: string[];
     regen?: boolean;
     manualOverrides?: CancelacionData;
+    /** "reprocess_poder" → re-extrae solo el Poder con OCR dedicado, sin cobrar créditos. */
+    action?: "reprocess_poder";
   };
   try {
     body = await req.json();
@@ -1125,7 +1127,8 @@ if (import.meta.main) serve(async (req) => {
     });
   }
 
-  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides } = body;
+  const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides, action } = body;
+
   if (!cancelacionId) {
     return new Response(JSON.stringify({ error: "cancelacionId requerido" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1161,9 +1164,107 @@ if (import.meta.main) serve(async (req) => {
 
   try {
     // ─────────────────────────────────────────────────────────────
+    // MODO REPROCESS_PODER: re-extrae solo el Poder con OCR dedicado.
+    // Idempotente: limpia data_ia.poder_banco antes de re-inyectar.
+    // No cobra créditos (unlock_expediente ya consumió los 2).
+    // ─────────────────────────────────────────────────────────────
+    if (action === "reprocess_poder") {
+      const LOVABLE_API_KEY_RP = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY_RP) {
+        return biz("internal", "LOVABLE_API_KEY no configurada");
+      }
+
+      // Listar páginas del poder desde el bucket bajo la convención conocida.
+      const poderPrefix = `${cancelacionId}/cancelaciones/soportes/poder`;
+      const { data: poderFiles, error: listErr } = await supabaseService.storage
+        .from(BUCKET_OUTPUT)
+        .list(poderPrefix);
+      if (listErr || !poderFiles || poderFiles.length === 0) {
+        return biz("no_poder_attached", "No se encontraron páginas del Poder General para re-procesar.");
+      }
+      const poderPaths = poderFiles
+        .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+        .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
+        .map((f: { name: string }) => `${poderPrefix}/${f.name}`);
+
+      if (poderPaths.length === 0) {
+        return biz("no_poder_attached", "No se encontraron páginas válidas del Poder General.");
+      }
+
+      const poderUrls = await Promise.all(
+        poderPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+      );
+
+      // 1) Idempotencia: limpiar data_ia.poder_banco antes de re-inyectar.
+      const prevDataIa = (cancRow.data_ia ?? {}) as Record<string, unknown>;
+      const cleanedIa = { ...prevDataIa };
+      delete cleanedIa.poder_banco;
+      await supabaseService.from("cancelaciones").update({ data_ia: cleanedIa }).eq("id", cancelacionId);
+
+      // 2) Ejecutar OCR dedicado en una sola llamada multimodal.
+      const tStart = Date.now();
+      let dedicated: PoderDedicadoResult | null = null;
+      let resultado: "exito" | "fallo" | "parcial" = "fallo";
+      try {
+        dedicated = await extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY_RP);
+        const fieldsFilled = dedicated
+          ? Object.values(dedicated).filter((v) => v != null && String(v).trim() !== "").length
+          : 0;
+        resultado = fieldsFilled >= 3 ? "exito" : fieldsFilled > 0 ? "parcial" : "fallo";
+      } catch (e) {
+        console.error("[procesar-cancelacion reprocess_poder] dedicated OCR failed:", e);
+      }
+
+      // 3) Merge en data_ia y data_final (humano > dedicado).
+      const finalPoder = mergePoderBanco(undefined, dedicated);
+      const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
+      const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
+      const existingFinalPoder = (prevDataFinal.poder_banco ?? {}) as PoderBanco;
+      // En data_final, humano gana: dedicado solo rellena huecos.
+      const mergedFinalPoder: PoderBanco | undefined = finalPoder
+        ? {
+            apoderado_nombre: existingFinalPoder.apoderado_nombre || finalPoder.apoderado_nombre,
+            apoderado_cedula: existingFinalPoder.apoderado_cedula || finalPoder.apoderado_cedula,
+            apoderado_escritura: existingFinalPoder.apoderado_escritura || finalPoder.apoderado_escritura,
+            apoderado_fecha: existingFinalPoder.apoderado_fecha || finalPoder.apoderado_fecha,
+            apoderado_notaria_poder: existingFinalPoder.apoderado_notaria_poder || finalPoder.apoderado_notaria_poder,
+            apoderado_fecha_dia: existingFinalPoder.apoderado_fecha_dia,
+            apoderado_fecha_mes: existingFinalPoder.apoderado_fecha_mes,
+            apoderado_fecha_anio: existingFinalPoder.apoderado_fecha_anio,
+          }
+        : existingFinalPoder;
+      const newDataFinal = {
+        ...prevDataFinal,
+        ...(mergedFinalPoder && Object.values(mergedFinalPoder).some((v) => v) ? { poder_banco: mergedFinalPoder } : {}),
+      };
+
+      await supabaseService.from("cancelaciones").update({
+        data_ia: newDataIa,
+        data_final: newDataFinal,
+        updated_at: new Date().toISOString(),
+      }).eq("id", cancelacionId);
+
+      // Telemetría no bloqueante.
+      void logPoderEvent(supabaseService, {
+        orgId, cancelacionId, userId,
+        resultado: resultado === "fallo" ? "fallo" : resultado === "parcial" ? "parcial" : "exito",
+        paginas_enviadas: poderUrls.length,
+        poder_banco_presente: !!finalPoder,
+        campos_llenos: finalPoder ? Object.values(finalPoder).filter((v) => v != null && String(v).trim() !== "").length : 0,
+        tiempo_ms: Date.now() - tStart,
+        extra: { trigger: "reprocess_poder" },
+      });
+
+      return new Response(JSON.stringify({ ok: true, reprocessed: true, poder_banco: finalPoder ?? null }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // MODO REGEN: solo re-mapeo docx con data_final, sin cobrar
     // ─────────────────────────────────────────────────────────────
     if (regen) {
+
       // SSOT: frontend payload manda. Permite vaciar campos intencionalmente.
       const data: CancelacionData = (manualOverrides ?? cancRow.data_final ?? cancRow.data_ia) as CancelacionData;
       if (!data) {
