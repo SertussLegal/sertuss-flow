@@ -927,6 +927,156 @@ async function createSignedStorageUrl(
   return data.signedUrl;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// PODER BANCARIO — OCR DEDICADO (Eje B v2)
+// Una sola llamada multimodal a gemini-2.5-flash con TODAS las páginas del
+// poder. Salida tipada exactamente al sub-schema PoderBanco que consume
+// buildDocxVars → permite Read-then-Merge directo sin mapeo intermedio.
+// ──────────────────────────────────────────────────────────────────────
+const poderDedicadoTool = [
+  {
+    type: "function" as const,
+    function: {
+      name: "extract_poder_banco_dedicado",
+      description: "Extrae los datos del apoderado del banco a partir de TODAS las páginas del Poder General adjunto. La cláusula de designación suele estar al final del documento.",
+      parameters: {
+        type: "object",
+        properties: {
+          apoderado_nombre: { type: "string", description: "Nombre completo del apoderado en MAYÚSCULAS." },
+          apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. null si es ilegible." },
+          apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. null si es ilegible." },
+          apoderado_fecha: { type: "string", description: "Fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. null si es ilegible." },
+          apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. null si es ilegible." },
+        },
+        required: ["apoderado_nombre"],
+        additionalProperties: false,
+      },
+    },
+  },
+];
+
+const PODER_DEDICADO_SYSTEM = `Eres un sistema OCR jurídico especializado EXCLUSIVAMENTE en extraer la designación de apoderado y sus datos de identificación a partir de un Poder General otorgado por un banco colombiano (típicamente Banco Davivienda S.A.).
+
+ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula que designa al apoderado y enumera sus facultades suele aparecer en las PÁGINAS FINALES — revisa TODAS las páginas, no solo las primeras.
+
+PALABRAS CLAVE para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
+
+FORMATO DE SALIDA (estricto):
+- apoderado_nombre: nombre completo en MAYÚSCULAS.
+- apoderado_cedula: solo dígitos con puntos de miles, ej: '79.123.456'.
+- apoderado_escritura: 'DOS MIL CUATROCIENTOS QUINCE (2415)'.
+- apoderado_fecha: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
+- apoderado_notaria_poder: 'TREINTA Y DOS (32) DE BOGOTA D.C.'.
+
+ANTI-ALUCINACIÓN:
+- Si un campo individual es humanamente ilegible, devuelve **\`null\` (JSON null, NO cadena vacía '')**.
+- Si encuentras al menos el nombre del apoderado, devuelve el objeto con los demás campos en null cuando no los puedas confirmar.
+- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---' o reconstrucciones inventadas.
+
+Llama SIEMPRE a la herramienta extract_poder_banco_dedicado.`;
+
+interface PoderDedicadoResult {
+  apoderado_nombre?: string | null;
+  apoderado_cedula?: string | null;
+  apoderado_escritura?: string | null;
+  apoderado_fecha?: string | null;
+  apoderado_notaria_poder?: string | null;
+}
+
+async function extractPoderBancoDedicado(
+  poderUrls: string[],
+  apiKey: string,
+): Promise<PoderDedicadoResult | null> {
+  if (poderUrls.length === 0) return null;
+  const userContent: Array<Record<string, unknown>> = [
+    {
+      type: "text",
+      text: `Analiza las ${poderUrls.length} páginas adjuntas como un único Poder General bancario y extrae los datos del apoderado. Llama a extract_poder_banco_dedicado.`,
+    },
+    ...poderUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+  ];
+  const aiResp = await fetchAiGateway({
+    apiKey,
+    body: {
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: PODER_DEDICADO_SYSTEM },
+        { role: "user", content: userContent },
+      ],
+      tools: poderDedicadoTool,
+      tool_choice: { type: "function", function: { name: "extract_poder_banco_dedicado" } },
+    },
+    tag: "procesar-cancelacion.poder",
+  });
+  return await parseToolCallArguments<PoderDedicadoResult>(aiResp, "procesar-cancelacion.poder");
+}
+
+// Read-then-Merge: el OCR dedicado rellena los huecos del monolítico.
+// Humano (data_final) > OCR dedicado > OCR monolítico.
+function mergePoderBanco(
+  monolitico: PoderBanco | undefined,
+  dedicado: PoderDedicadoResult | null,
+): PoderBanco | undefined {
+  if (!monolitico && !dedicado) return undefined;
+  const pick = (m?: string | null, d?: string | null): string | undefined => {
+    // Dedicado pisa monolítico si el monolítico es null/empty.
+    if (m && m.trim()) return m;
+    if (d && d.trim()) return d;
+    return undefined;
+  };
+  const merged: PoderBanco = {
+    apoderado_nombre: pick(monolitico?.apoderado_nombre, dedicado?.apoderado_nombre),
+    apoderado_cedula: pick(monolitico?.apoderado_cedula, dedicado?.apoderado_cedula),
+    apoderado_escritura: pick(monolitico?.apoderado_escritura, dedicado?.apoderado_escritura),
+    apoderado_fecha: pick(monolitico?.apoderado_fecha, dedicado?.apoderado_fecha),
+    apoderado_notaria_poder: pick(monolitico?.apoderado_notaria_poder, dedicado?.apoderado_notaria_poder),
+  };
+  // Preserva atómicos de fecha si vinieron del monolítico (no los rompemos).
+  if (monolitico?.apoderado_fecha_dia) merged.apoderado_fecha_dia = monolitico.apoderado_fecha_dia;
+  if (monolitico?.apoderado_fecha_mes) merged.apoderado_fecha_mes = monolitico.apoderado_fecha_mes;
+  if (monolitico?.apoderado_fecha_anio) merged.apoderado_fecha_anio = monolitico.apoderado_fecha_anio;
+  // Si TODOS los campos quedaron undefined, devuelve undefined (no objeto fantasma).
+  const hasAny = Object.values(merged).some((v) => v !== undefined && v !== "");
+  return hasAny ? merged : undefined;
+}
+
+// Telemetría no bloqueante a system_events (Eje A v3).
+async function logPoderEvent(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  opts: {
+    orgId: string;
+    cancelacionId: string;
+    userId: string;
+    resultado: "exito" | "fallo" | "parcial" | "sin_poder";
+    paginas_enviadas: number;
+    poder_banco_presente: boolean;
+    campos_llenos: number;
+    tiempo_ms?: number;
+    extra?: Record<string, unknown>;
+  },
+) {
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: opts.orgId,
+      tramite_id: opts.cancelacionId,
+      user_id: opts.userId,
+      evento: "procesar-cancelacion.poder",
+      resultado: opts.resultado,
+      categoria: "ocr_poder_banco",
+      detalle: {
+        paginas_enviadas: opts.paginas_enviadas,
+        poder_banco_presente: opts.poder_banco_presente,
+        campos_llenos: opts.campos_llenos,
+        ...(opts.extra ?? {}),
+      },
+      tiempo_ms: opts.tiempo_ms ?? null,
+    });
+  } catch (_) { /* telemetría no bloqueante */ }
+}
+
+
+
 if (import.meta.main) serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
