@@ -60,6 +60,9 @@ type Data = {
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
     valor_hipoteca_es_indeterminada?: boolean;
+    /** Metadata UI: "escritura" cuando el monto vino del OCR dedicado a la
+     *  escritura antecedente porque el certificado estaba indeterminado. */
+    cuantia_origen?: "escritura" | "certificado" | "manual";
   };
   inmueble: {
     matricula_inmobiliaria: string;
