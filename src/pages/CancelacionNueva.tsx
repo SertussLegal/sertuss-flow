@@ -122,10 +122,15 @@ export const CancelacionNueva = () => {
       // Eje A — Fuente de verdad emitida por el cliente, ANTES de invocar la
       // edge function: evita la race condition donde la UI lee la fila antes
       // de que el background processing arranque y deje la bandera en false.
-      if (poderImagePaths.length > 0) {
+      // Aplica a Poder General y a Escritura Antecedente (ambas habilitan
+      // banners y botones de "Re-procesar" cuando la IA falla en silencio).
+      const flagPatch: { poder_adjuntado?: boolean; escritura_antecedente_adjunta?: boolean } = {};
+      if (poderImagePaths.length > 0) flagPatch.poder_adjuntado = true;
+      if (escrituraImagePaths.length > 0) flagPatch.escritura_antecedente_adjunta = true;
+      if (Object.keys(flagPatch).length > 0) {
         await supabase
           .from("cancelaciones")
-          .update({ poder_adjuntado: true })
+          .update(flagPatch)
           .eq("id", cancelacionId);
       }
 
