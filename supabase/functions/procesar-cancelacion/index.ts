@@ -1298,8 +1298,11 @@ if (import.meta.main) serve(async (req) => {
     poderImagePaths?: string[];
     regen?: boolean;
     manualOverrides?: CancelacionData;
-    /** "reprocess_poder" → re-extrae solo el Poder con OCR dedicado, sin cobrar créditos. */
-    action?: "reprocess_poder";
+    /** "reprocess_poder"   → re-extrae solo el Poder con OCR dedicado.
+     *  "reprocess_cuantia" → re-extrae solo la cuantía del crédito a partir
+     *                        de la escritura antecedente (cuando el certificado
+     *                        vino como indeterminado). Ninguno cobra créditos. */
+    action?: "reprocess_poder" | "reprocess_cuantia";
   };
   try {
     body = await req.json();
@@ -1308,6 +1311,7 @@ if (import.meta.main) serve(async (req) => {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
 
   const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides, action } = body;
 
