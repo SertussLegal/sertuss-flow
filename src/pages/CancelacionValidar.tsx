@@ -250,7 +250,11 @@ export const CancelacionValidar = () => {
   // Hallazgo 7: evita que dos regeneraciones (manual + autosave silencioso)
   // se ejecuten en paralelo y crucen sus respuestas.
   const isRegenInFlightRef = useRef(false);
+  // Eje A/Re-proceso v3: mutex anti doble-click + estado para UI del botón.
+  const isReprocessingRef = useRef(false);
+  const [reprocessing, setReprocessing] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
+
 
 
   // Sincroniza chip global de guardado.
@@ -441,6 +445,38 @@ export const CancelacionValidar = () => {
     setViewerKey((k) => k + 1);
     queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
+
+  // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
+  // (la edge function limpia data_ia.poder_banco antes de re-inyectar).
+  // No cobra créditos (unlock_expediente ya consumió los 2).
+  const handleReprocessPoder = async () => {
+    if (!id) return;
+    if (isReprocessingRef.current) return;
+    isReprocessingRef.current = true;
+    setReprocessing(true);
+    try {
+      const { data: resp, error } = await monitored.invoke<{
+        ok?: boolean; code?: string; message?: string; reprocessed?: boolean;
+      }>("procesar-cancelacion", { cancelacionId: id, action: "reprocess_poder" });
+      if (error) {
+        toast.error("No se pudo re-procesar el Poder", { description: error.message });
+        return;
+      }
+      if (resp && resp.ok === false) {
+        toast.error("Re-procesamiento incompleto", { description: resp.message ?? "Intenta de nuevo." });
+        return;
+      }
+      toast.success("Poder re-procesado");
+      // Forzar re-hidratación desde data_final actualizada.
+      initialHydrationRef.current = false;
+      await queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+    } finally {
+      isReprocessingRef.current = false;
+      setReprocessing(false);
+    }
+  };
+
+
 
 
   // Aviso si el usuario cierra/recarga la pestaña con cambios sin guardar.
