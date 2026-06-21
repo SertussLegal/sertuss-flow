@@ -74,6 +74,13 @@ type Data = {
     nomenclatura_predio?: string;
   };
   partes: {
+    // Array canónico (preferido). Si no existe, se hidrata desde los singulares.
+    deudores?: Array<{
+      nombre: string;
+      identificacion: string; // SOLO dígitos
+      tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
+      genero?: "M" | "F" | "";
+    }>;
     deudor_nombre: string;
     deudor_identificacion: string;
     deudor_tipo_id: string;
@@ -158,6 +165,7 @@ const Field = ({
   disabled,
   copyable = true,
   required = false,
+  uppercaseOnBlur = false,
 }: {
   label: string;
   value: string;
@@ -165,6 +173,7 @@ const Field = ({
   disabled?: boolean;
   copyable?: boolean;
   required?: boolean;
+  uppercaseOnBlur?: boolean;
 }) => {
   const isEmpty = !value || !value.trim() || value.trim() === "___________";
   const showMissing = required && isEmpty && !disabled;
@@ -181,6 +190,12 @@ const Field = ({
           <Input
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value)}
+            onBlur={(e) => {
+              if (uppercaseOnBlur) {
+                const up = (e.target.value || "").toUpperCase().trim();
+                if (up !== e.target.value) onChange(up);
+              }
+            }}
             disabled={disabled}
             className={`h-9 text-sm ${
               showMissing
@@ -302,8 +317,29 @@ export const CancelacionValidar = () => {
         apoderado_genero:        src_pb.apoderado_genero        ?? ia_pb.apoderado_genero,
       };
       // Inferencia inicial de género (no sobrescribe si ya existe en data_final).
+      const onlyDigitsClient = (s: unknown) => String(s ?? "").replace(/\D+/g, "");
+      const existingDeudores = (source.partes as { deudores?: unknown[] })?.deudores;
+      const hidratadosDesdeSingular = (source.partes?.deudor_nombre || source.partes?.deudor_identificacion)
+        ? [{
+            nombre: (source.partes.deudor_nombre || "").toString(),
+            identificacion: onlyDigitsClient(source.partes.deudor_identificacion),
+            tipo_id: (source.partes.deudor_tipo_id || "CEDULA DE CIUDADANIA") as
+              "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
+            genero: (source.partes.deudor_genero ?? inferGeneroFromNombre(source.partes.deudor_nombre ?? "")) as "M" | "F" | "",
+          }]
+        : [];
+      const deudoresHidratados = Array.isArray(existingDeudores) && existingDeudores.length > 0
+        ? (existingDeudores as Array<Record<string, unknown>>).map((d) => ({
+            nombre: String(d?.nombre ?? "").toUpperCase(),
+            identificacion: onlyDigitsClient(d?.identificacion),
+            tipo_id: (typeof d?.tipo_id === "string" && d.tipo_id ? d.tipo_id : "CEDULA DE CIUDADANIA") as
+              "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
+            genero: ((d?.genero as "M" | "F" | "" | undefined) ?? inferGeneroFromNombre(String(d?.nombre ?? ""))) as "M" | "F" | "",
+          }))
+        : hidratadosDesdeSingular;
       const partes = {
         ...source.partes,
+        deudores: deudoresHidratados,
         deudor_genero: source.partes?.deudor_genero ?? inferGeneroFromNombre(source.partes?.deudor_nombre ?? ""),
         tratamiento_entidad: source.partes?.tratamiento_entidad ?? "",
       };
@@ -867,24 +903,128 @@ export const CancelacionValidar = () => {
               </Section>
 
               <Section title="Partes">
-                <Field label="Deudor" required value={data.partes.deudor_nombre}
-                  onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_nombre: v } })} />
-                <SegmentedChoice
-                  label="Género gramatical del deudor"
-                  options={[
-                    { value: "M", label: "Masculino" },
-                    { value: "F", label: "Femenino" },
-                  ]}
-                  value={data.partes.deudor_genero ?? ""}
-                  onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_genero: v as "M" | "F" | "" } })}
-                  helper={`Define la concordancia: "el señor deudor identificado" vs "la señora deudora identificada". Vacío → "el(la) señor(a) deudor(a)".`}
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Tipo ID" value={data.partes.deudor_tipo_id} copyable={false}
-                    onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_tipo_id: v } })} />
-                  <Field label="Número ID" required value={data.partes.deudor_identificacion}
-                    onChange={(v) => setData({ ...data, partes: { ...data.partes, deudor_identificacion: v } })} />
-                </div>
+                {(() => {
+                  const onlyDigitsClient = (s: string) => (s ?? "").replace(/\D+/g, "");
+                  const formatCCClient = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+                  type Deudor = NonNullable<Data["partes"]["deudores"]>[number];
+                  const deudoresArr: Deudor[] = Array.isArray(data.partes.deudores) && data.partes.deudores.length > 0
+                    ? data.partes.deudores
+                    : [{
+                        nombre: data.partes.deudor_nombre || "",
+                        identificacion: onlyDigitsClient(data.partes.deudor_identificacion || ""),
+                        tipo_id: (data.partes.deudor_tipo_id || "CEDULA DE CIUDADANIA") as Deudor["tipo_id"],
+                        genero: data.partes.deudor_genero ?? "",
+                      }];
+                  const writeDeudores = (next: Deudor[]) => {
+                    const nombres = next.map((d) => (d.nombre || "").trim()).filter(Boolean).join(" Y ");
+                    const ceds = next.map((d) => formatCCClient(onlyDigitsClient(d.identificacion || ""))).filter(Boolean).join(" Y ");
+                    setData({
+                      ...data,
+                      partes: {
+                        ...data.partes,
+                        deudores: next,
+                        // Mirror legacy singulares (la BD y el chip rojo siguen leyéndolos).
+                        deudor_nombre: nombres,
+                        deudor_identificacion: ceds,
+                        deudor_tipo_id: next[0]?.tipo_id || "CEDULA DE CIUDADANIA",
+                        deudor_genero: next[0]?.genero ?? "",
+                      },
+                    });
+                  };
+                  const updateAt = (idx: number, patch: Partial<Deudor>) => {
+                    const next = deudoresArr.map((d, i) => i === idx ? { ...d, ...patch } : d);
+                    writeDeudores(next);
+                  };
+                  const addDeudor = () => {
+                    writeDeudores([
+                      ...deudoresArr,
+                      { nombre: "", identificacion: "", tipo_id: "CEDULA DE CIUDADANIA", genero: "" },
+                    ]);
+                  };
+                  const removeAt = (idx: number) => {
+                    if (deudoresArr.length <= 1) return;
+                    writeDeudores(deudoresArr.filter((_, i) => i !== idx));
+                  };
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-foreground">
+                          Deudores hipotecantes
+                          <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+                            ({deudoresArr.length})
+                          </span>
+                        </h4>
+                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={addDeudor}>
+                          + Agregar deudor
+                        </Button>
+                      </div>
+                      {deudoresArr.map((d, idx) => {
+                        const digits = onlyDigitsClient(d.identificacion || "");
+                        const masked = formatCCClient(digits);
+                        return (
+                          <div key={idx} className="rounded-md border border-border/70 bg-muted/20 p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-muted-foreground">
+                                Deudor {idx + 1}
+                              </span>
+                              <Button
+                                type="button" variant="ghost" size="sm"
+                                className="h-6 text-[11px] text-destructive hover:text-destructive"
+                                onClick={() => removeAt(idx)}
+                                disabled={deudoresArr.length <= 1}
+                                title={deudoresArr.length <= 1 ? "Debe existir al menos un deudor" : "Eliminar este deudor"}
+                              >
+                                Eliminar
+                              </Button>
+                            </div>
+                            <Field
+                              label="Nombre completo" required value={d.nombre || ""}
+                              onChange={(v) => updateAt(idx, { nombre: v })}
+                              uppercaseOnBlur
+                            />
+                            <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Número de identificación <span className="text-destructive">*</span></Label>
+                                <Input
+                                  className={`h-9 text-sm ${!digits ? "border-destructive/70 focus-visible:ring-destructive/40" : ""}`}
+                                  value={masked}
+                                  onChange={(e) => updateAt(idx, { identificacion: onlyDigitsClient(e.target.value) })}
+                                  inputMode="numeric"
+                                  placeholder="20.549.804"
+                                  aria-invalid={!digits || undefined}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Tipo</Label>
+                                <ToggleGroup
+                                  type="single"
+                                  value={d.tipo_id}
+                                  onValueChange={(v) => v && updateAt(idx, { tipo_id: v as Deudor["tipo_id"] })}
+                                  className="border border-border rounded-md bg-muted/40 p-0.5"
+                                >
+                                  <ToggleGroupItem value="CEDULA DE CIUDADANIA" className="h-8 px-2 text-[11px]">CC</ToggleGroupItem>
+                                  <ToggleGroupItem value="CEDULA DE EXTRANJERIA" className="h-8 px-2 text-[11px]">CE</ToggleGroupItem>
+                                  <ToggleGroupItem value="PASAPORTE" className="h-8 px-2 text-[11px]">PA</ToggleGroupItem>
+                                </ToggleGroup>
+                              </div>
+                            </div>
+                            <SegmentedChoice
+                              label="Género gramatical"
+                              options={[
+                                { value: "M", label: "Masculino" },
+                                { value: "F", label: "Femenino" },
+                              ]}
+                              value={d.genero ?? ""}
+                              onChange={(v) => updateAt(idx, { genero: v as "M" | "F" | "" })}
+                              size="sm"
+                              helper={idx === 0 ? `Vacío → "el(la) señor(a) deudor(a)".` : undefined}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Banco" value={data.partes.banco_acreedor} onChange={() => {}} disabled />
                   <Field label="NIT" value={data.partes.banco_nit} onChange={() => {}} disabled />

@@ -29,6 +29,33 @@ export function deudorTokens(g: GeneroGramatical | undefined) {
   };
 }
 
+/**
+ * Tokens plural-aware del deudor para casos con N deudores naturales.
+ * - 1 deudor → delega en `deudorTokens` (singular).
+ * - 2+ todos F → "las señoras / deudoras / identificadas".
+ * - 2+ todos M → "los señores / deudores / identificados".
+ * - Mixto u "" → fallback combinado "los(las) señores(as) / deudores(as) / identificados(as)".
+ * Mantiene EXACTAMENTE las mismas claves que `deudorTokens` (art_deudor, tit_deudor, id_deudor)
+ * → la plantilla v2 no nota la diferencia.
+ */
+export function deudoresTokens(deudores: Array<{ genero?: GeneroGramatical }>) {
+  const n = deudores.length;
+  if (n <= 1) return deudorTokens(deudores[0]?.genero);
+  const todosF = deudores.every((d) => d.genero === "F");
+  const todosM = deudores.every((d) => d.genero === "M");
+  if (todosF) {
+    return { art_deudor: "las señoras", tit_deudor: "deudoras", id_deudor: "identificadas" };
+  }
+  if (todosM) {
+    return { art_deudor: "los señores", tit_deudor: "deudores", id_deudor: "identificados" };
+  }
+  return {
+    art_deudor: "los(las) señores(as)",
+    tit_deudor: "deudores(as)",
+    id_deudor: "identificados(as)",
+  };
+}
+
 /** Tokens del apoderado del banco (persona natural / vocero). */
 export function apoderadoTokens(g: GeneroGramatical | undefined) {
   return {

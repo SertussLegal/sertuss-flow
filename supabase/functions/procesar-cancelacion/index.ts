@@ -12,7 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import PizZip from "https://esm.sh/pizzip@3.1.6";
 import Docxtemplater from "https://esm.sh/docxtemplater@3.50.0";
 import { fetchAiGateway, AiGatewayError, parseToolCallArguments } from "../_shared/aiFetch.ts";
-import { deudorTokens, apoderadoTokens, bancoTokens, inferGeneroFromNombre } from "../_shared/genero.ts";
+import { deudorTokens, deudoresTokens, apoderadoTokens, bancoTokens, inferGeneroFromNombre } from "../_shared/genero.ts";
 import { assertOwnPaths } from "../_shared/storagePaths.ts";
 
 // Envelope helper: 200 OK con { ok:false, code, message } para errores de negocio
@@ -91,6 +91,14 @@ interface CancelacionData {
     departamento?: string;
   };
   partes: {
+    // ── Array canónico (NUEVO) — preferido por buildDocxVars ──
+    deudores?: Array<{
+      nombre: string;
+      identificacion: string; // SOLO DÍGITOS limpios (sin puntos)
+      tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
+      genero?: "M" | "F" | "";
+    }>;
+    // ── Legacy singulares (compat lectura; se hidratan desde deudores[0] si faltan) ──
     deudor_nombre: string;
     deudor_identificacion: string;
     deudor_tipo_id: string;
@@ -170,13 +178,29 @@ const tools = [
           partes: {
             type: "object",
             properties: {
-              deudor_nombre: { type: "string", description: "Nombre completo del deudor en mayúsculas" },
-              deudor_identificacion: { type: "string", description: "Número de identificación ESTRICTAMENTE NUMÉRICO con puntos de miles, ej: '1.018.440.535'. SIN letras." },
-              deudor_tipo_id: { type: "string", description: "Tipo de identificación, ej: 'CEDULA DE CIUDADANIA'" },
+              deudores: {
+                type: "array",
+                minItems: 1,
+                description: "TODOS los deudores hipotecantes (personas naturales). Fuente PRIMARIA: cada fila 'DE: NOMBRE / CC#/CE#/PA# NUMERO' de la anotación 0205 HIPOTECA del Certificado de Tradición es UN ítem distinto. Fuente SECUNDARIA de cruce: COMPARECENCIA de la escritura antecedente.",
+                items: {
+                  type: "object",
+                  properties: {
+                    nombre: { type: "string", description: "Nombre completo en MAYÚSCULAS, idéntico al certificado." },
+                    identificacion: { type: "string", description: "Número de identificación ESTRICTAMENTE NUMÉRICO sin puntos ni espacios ni letras. Solo dígitos 0-9. Ej: '20549804'. Si es ilegible, devuelve cadena vacía — NO inventes." },
+                    tipo_id: {
+                      type: "string",
+                      enum: ["CEDULA DE CIUDADANIA", "CEDULA DE EXTRANJERIA", "PASAPORTE"],
+                      description: "Detéctalo LITERAL del texto del certificado/escritura. 'CC' → CEDULA DE CIUDADANIA; 'CE' → CEDULA DE EXTRANJERIA; 'PA' / 'PASAPORTE' → PASAPORTE. NO asumas CC por defecto."
+                    },
+                  },
+                  required: ["nombre", "identificacion", "tipo_id"],
+                  additionalProperties: false,
+                }
+              },
               banco_acreedor: { type: "string", description: "Razón social del banco, normalmente 'BANCO DAVIVIENDA S.A.'" },
               banco_nit: { type: "string", description: "NIT ESTRICTAMENTE NUMÉRICO con puntos y guión, ej: '860.034.313-7'. SIN letras." },
             },
-            required: ["deudor_nombre", "deudor_identificacion", "deudor_tipo_id", "banco_acreedor", "banco_nit"],
+            required: ["deudores", "banco_acreedor", "banco_nit"],
             additionalProperties: false,
           },
           analisis_legal: {
@@ -229,7 +253,15 @@ Recibes hasta tres documentos:
 
 REGLAS ESTRICTAS DE FORMATO:
 - Toda escritura, notaría, valor y fecha debe expresarse en DOBLE EXPRESIÓN: LETRAS y NÚMEROS entre paréntesis.
-- Las identificaciones (deudor_identificacion, banco_nit, apoderado_cedula) son ESTRICTAMENTE NUMÉRICAS con puntos de miles. NUNCA letras.
+- El NIT del banco y la cédula del apoderado son ESTRICTAMENTE NUMÉRICAS con puntos de miles. NUNCA letras.
+- Las identificaciones de los deudores (partes.deudores[].identificacion) son ESTRICTAMENTE NUMÉRICAS sin puntos ni espacios — solo dígitos 0-9. El frontend aplica la máscara visual con puntos.
+
+REGLAS DE DEUDORES (PLURAL OBLIGATORIO — CRÍTICAS):
+- Devuelve SIEMPRE el array 'partes.deudores' con UN ítem por cada fila de la anotación 0205 HIPOTECA del Certificado de Tradición ("DE: <NOMBRE>" + "CC#"/"CE#"/"PA# <NÚMERO>"). NO consolides en uno solo. NO uses las filas 'A:' (esas son el acreedor).
+- PAREO ESTRICTO: el orden de 'deudores[]' respeta el orden del certificado. Cada 'nombre' va con SU PROPIA cédula. PROHIBIDO mezclar cédulas entre personas.
+- DÍGITOS LIMPIOS: si el certificado dice '20.549.804', devuelves '20549804'. Si dice '1.018.440.535', devuelves '1018440535'.
+- TIPO DOC: detecta lo que aparece LITERAL en el certificado o la escritura ('CC' / 'C.C.' → CEDULA DE CIUDADANIA; 'CE' / 'C.E.' → CEDULA DE EXTRANJERIA; 'PA' / 'PASAPORTE' → PASAPORTE). NO asumas un default.
+- CRUCE CON ESCRITURA ANTECEDENTE: si la escritura trae COMPARECENCIA con cédulas, úsala para confirmar. El certificado es la fuente registral primaria; si discrepan, prevalece el certificado.
 - La matrícula inmobiliaria es ESTRICTAMENTE alfanumérica con guión (ej: '50C-2085432'). SIN letras en palabras, SIN paréntesis.
 - Texto siempre en MAYÚSCULAS para nombres, ciudades, notarías.
 - aplica_ley_546 = true cuando la constitución de la hipoteca se otorga en la misma escritura pública que la compraventa de vivienda de interés social/prioritario o vivienda financiada.
@@ -663,6 +695,55 @@ export function pad4(s: string | number | undefined | null): string {
   return digits.padStart(4, "0");
 }
 
+// ── Helpers de saneamiento para deudores (plural N) ──
+const VALID_TIPO_ID = new Set([
+  "CEDULA DE CIUDADANIA",
+  "CEDULA DE EXTRANJERIA",
+  "PASAPORTE",
+]);
+const TIPO_ID_LABEL: Record<string, string> = {
+  "CEDULA DE CIUDADANIA": "cédula de ciudadanía",
+  "CEDULA DE EXTRANJERIA": "cédula de extranjería",
+  "PASAPORTE": "pasaporte",
+};
+const onlyDigits = (s: unknown): string => String(s ?? "").replace(/\D+/g, "");
+const formatCC = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+/**
+ * Normaliza el array de deudores con compatibilidad legacy:
+ *  - Si `partes.deudores[]` existe → se usa tal cual.
+ *  - Si NO existe pero hay `deudor_*` singulares → se hidrata como array de 1.
+ *  - Si tampoco hay singulares → devuelve [] (la plantilla pintará subrayados).
+ * Cada ítem queda saneado: nombre MAYÚSCULAS, identificación solo dígitos,
+ * tipo_id validado contra enum, género inferido si no viene.
+ */
+function normalizeDeudores(partes: CancelacionData["partes"]) {
+  const raw = Array.isArray(partes?.deudores) && partes.deudores.length > 0
+    ? partes.deudores
+    : (partes?.deudor_nombre || partes?.deudor_identificacion)
+      ? [{
+          nombre: partes.deudor_nombre,
+          identificacion: partes.deudor_identificacion,
+          tipo_id: partes.deudor_tipo_id,
+          genero: partes.deudor_genero,
+        }]
+      : [];
+  return raw.map((d) => {
+    const nombre = String(d?.nombre ?? "").toUpperCase().trim();
+    const ident = onlyDigits(d?.identificacion);
+    const tipoIn = String(d?.tipo_id ?? "").toUpperCase().trim();
+    const tipo_id = VALID_TIPO_ID.has(tipoIn) ? tipoIn : "CEDULA DE CIUDADANIA";
+    const genero = (d?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(nombre) || "";
+    return {
+      nombre,
+      identificacion: ident,
+      identificacion_formateada: formatCC(ident),
+      tipo_id,
+      genero,
+    };
+  });
+}
+
 // Build the variable map sent to Docxtemplater
 export function buildDocxVars(data: CancelacionData) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
@@ -685,10 +766,29 @@ export function buildDocxVars(data: CancelacionData) {
 
   // Motor de flexión de género gramatical (módulo compartido _shared/genero.ts).
   // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
-  const generoDeudor = data.partes.deudor_genero || inferGeneroFromNombre(data.partes.deudor_nombre || "") || "";
+  // ── DEUDORES (plural N) — fuente única para nombres, cédulas, tokens, prosa ──
+  const deudoresArr = normalizeDeudores(data.partes);
+  const tokensDeudor = deudoresTokens(deudoresArr);
+  const deudoresNombres = deudoresArr.map((d) => d.nombre).filter(Boolean).join(" Y ");
+  const deudoresCedulas = deudoresArr.map((d) => d.identificacion_formateada).filter(Boolean).join(" Y ");
+  const deudorTipoIdMostrado = deudoresArr[0]?.tipo_id || data.partes.deudor_tipo_id || "CEDULA DE CIUDADANIA";
+  // Prosa de comparecencia per-deudor — tag opcional para plantillas v3.
+  const comparecientesDeudoresProsa = deudoresArr
+    .map((d) => {
+      const t = deudorTokens(d.genero);
+      const tipoLabel = TIPO_ID_LABEL[d.tipo_id] || "cédula de ciudadanía";
+      return `${t.art_deudor.toUpperCase()} ${d.nombre}, ${t.id_deudor} con ${tipoLabel} número ${d.identificacion_formateada}`;
+    })
+    .join(", Y ");
+  // Bloque de firmas — orden alfabético estable en español, INDEPENDIENTE
+  // del orden registral. Tag opcional para plantillas futuras.
+  const firmasDeudoresProsa = [...deudoresArr]
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
+    .map((d) => `${d.nombre}\nC.C. ${d.identificacion_formateada}`)
+    .join("\n\n");
+
   const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(pb.apoderado_nombre || "") || "";
   const tratamientoBanco = data.partes.tratamiento_entidad || "";
-  const tokensDeudor = deudorTokens(generoDeudor);
   const tokensApoderado = apoderadoTokens(generoApoderado);
   const tokensBanco = bancoTokens(tratamientoBanco);
 
@@ -854,9 +954,11 @@ export function buildDocxVars(data: CancelacionData) {
     ciudad_inmueble: ciudadInmueble || undefined,
     descripcion_inmueble: descripcionPredio || undefined,
     // Partes
-    deudor_nombre: data.partes.deudor_nombre,
-    deudor_identificacion: data.partes.deudor_identificacion,
-    deudor_tipo_id: data.partes.deudor_tipo_id,
+    deudor_nombre: deudoresNombres || data.partes.deudor_nombre,
+    deudor_identificacion: deudoresCedulas || data.partes.deudor_identificacion,
+    deudor_tipo_id: deudorTipoIdMostrado,
+    comparecientes_deudores_prosa: comparecientesDeudoresProsa || undefined,
+    firmas_deudores_prosa: firmasDeudoresProsa || undefined,
     banco_acreedor: data.partes.banco_acreedor,
     banco_nit: data.partes.banco_nit,
     // Ley 546
@@ -1894,6 +1996,39 @@ if (import.meta.main) serve(async (req) => {
           },
         });
 
+
+        // ── Hidratación legacy: rellena `deudor_*` singulares desde el array
+        //     para mantener compatibilidad con queries/columnas existentes.
+        //     Telemetría no bloqueante: si algún deudor llega sin cédula, lo
+        //     registramos como advertencia para auditoría posterior.
+        try {
+          const deudoresExtraidos = normalizeDeudores(extracted.partes);
+          if (deudoresExtraidos.length > 0) {
+            extracted.partes.deudores = deudoresExtraidos.map((d) => ({
+              nombre: d.nombre,
+              identificacion: d.identificacion,
+              tipo_id: d.tipo_id,
+              genero: d.genero,
+            }));
+            extracted.partes.deudor_nombre = deudoresExtraidos.map((d) => d.nombre).join(" Y ");
+            extracted.partes.deudor_identificacion = deudoresExtraidos.map((d) => d.identificacion_formateada).join(" Y ");
+            extracted.partes.deudor_tipo_id = deudoresExtraidos[0].tipo_id;
+            const faltantes = deudoresExtraidos.filter((d) => !d.identificacion).map((d) => d.nombre);
+            if (faltantes.length > 0) {
+              void supabaseService.from("system_events").insert({
+                organization_id: orgId,
+                tramite_id: cancelacionId,
+                user_id: userId,
+                evento: "procesar-cancelacion.deudores",
+                resultado: "parcial",
+                categoria: "DEUDOR_CEDULA_MISMATCH",
+                detalle: { faltantes, total: deudoresExtraidos.length },
+              }).then(() => {}, () => {});
+            }
+          }
+        } catch (e) {
+          console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
+        }
 
         const vars = buildDocxVars(extracted);
 
