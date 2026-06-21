@@ -74,6 +74,13 @@ type Data = {
     nomenclatura_predio?: string;
   };
   partes: {
+    // Array canónico (preferido). Si no existe, se hidrata desde los singulares.
+    deudores?: Array<{
+      nombre: string;
+      identificacion: string; // SOLO dígitos
+      tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
+      genero?: "M" | "F" | "";
+    }>;
     deudor_nombre: string;
     deudor_identificacion: string;
     deudor_tipo_id: string;
