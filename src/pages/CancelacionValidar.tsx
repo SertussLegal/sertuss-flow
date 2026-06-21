@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, Save, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, CheckCircle2, AlertCircle } from "lucide-react";
+import { SaveStatusChip } from "@/components/cancelaciones/SaveStatusChip";
 import { toast } from "sonner";
 // Catálogo de campos obligatorios para cancelación Davivienda.
 // Se importa para mantener el binding vivo (consumido por la prop `required`
@@ -240,6 +241,7 @@ export const CancelacionValidar = () => {
   const [data, setData] = useState<Data | null>(null);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   // Hallazgo 2: cuando un autosave silencioso guarda pero la regeneración
   // del documento falla, marcamos la vista como desactualizada en lugar de
@@ -352,74 +354,77 @@ export const CancelacionValidar = () => {
       }
       setSaving(true);
       const snapshot = JSON.stringify(data);
-      const { error } = await supabase.from("cancelaciones").update({
-        data_final: data,
-        deudor_nombre: data.partes.deudor_nombre,
-        deudor_cedula: data.partes.deudor_identificacion,
-        matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
-        aplica_ley_546: data.analisis_legal.aplica_ley_546,
-        explicacion_ley: data.analisis_legal.explicacion_ley,
-      }).eq("id", id);
-      setSaving(false);
-      if (error) {
-        toast.error("No se pudo guardar", { description: error.message });
+      try {
+        const { error } = await supabase.from("cancelaciones").update({
+          data_final: data,
+          deudor_nombre: data.partes.deudor_nombre,
+          deudor_cedula: data.partes.deudor_identificacion,
+          matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
+          aplica_ley_546: data.analisis_legal.aplica_ley_546,
+          explicacion_ley: data.analisis_legal.explicacion_ley,
+        }).eq("id", id);
+        setSaving(false);
+        if (error) {
+          setSaveError(error.message || "Error al guardar");
+          if (!opts.silent) toast.error("No se pudo guardar", { description: error.message });
+          return false;
+        }
+        setSaveError(null);
+        lastSavedSnapshotRef.current = snapshot;
+        setIsDirty(false);
+        // Regen silencioso con SSOT del frontend (manualOverrides).
+        if (isRegenInFlightRef.current) {
+          // Otro regen en curso: marcamos stale y dejamos que el siguiente
+          // ciclo (manual o nuevo autosave) lo refresque.
+          setPreviewStale(true);
+          return true;
+        }
+        isRegenInFlightRef.current = true;
+        setPreviewRefreshing(true);
+        const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
+          cancelacionId: id, regen: true, manualOverrides: data,
+        });
+        setPreviewRefreshing(false);
+        isRegenInFlightRef.current = false;
+        if (!regenErr) {
+          setPreviewStale(false);
+          setViewerKey((k) => k + 1);
+          queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+          if (!opts.silent) {
+            toast.success("Cambios guardados");
+          }
+        } else {
+          // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
+          // actualizó. Mostrar chip persistente "vista desactualizada".
+          setPreviewStale(true);
+          if (!opts.silent) {
+            toast.warning("Cambios guardados, pero la vista previa no se actualizó");
+          }
+        }
+        return true;
+      } catch (e) {
+        setSaving(false);
+        setPreviewRefreshing(false);
+        isRegenInFlightRef.current = false;
+        const msg = e instanceof Error ? e.message : "Error inesperado al guardar";
+        setSaveError(msg);
+        if (!opts.silent) toast.error("No se pudo guardar", { description: msg });
         return false;
       }
-      lastSavedSnapshotRef.current = snapshot;
-      setIsDirty(false);
-      // Regen silencioso con SSOT del frontend (manualOverrides).
-      if (isRegenInFlightRef.current) {
-        // Otro regen en curso: marcamos stale y dejamos que el siguiente
-        // ciclo (manual o nuevo autosave) lo refresque.
-        setPreviewStale(true);
-        return true;
-      }
-      isRegenInFlightRef.current = true;
-      setPreviewRefreshing(true);
-      const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
-        cancelacionId: id, regen: true, manualOverrides: data,
-      });
-      setPreviewRefreshing(false);
-      isRegenInFlightRef.current = false;
-      if (!regenErr) {
-        setPreviewStale(false);
-        setViewerKey((k) => k + 1);
-        queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-        if (opts.silent) {
-          // Confirmación pasiva: chip "Guardado" durante 2s.
-          flashSaved(2000);
-        } else {
-          toast.success("Cambios guardados");
-        }
-      } else {
-        // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
-        // actualizó. Mostrar chip persistente "vista desactualizada".
-        setPreviewStale(true);
-        if (!opts.silent) {
-          toast.warning("Cambios guardados, pero la vista previa no se actualizó");
-        }
-      }
-      return true;
     },
-    [id, data, queryClient, flashSaved],
+    [id, data, queryClient],
   );
 
-  // Debounce inteligente: 3s si cambió poder_banco, 15s en otros casos.
-  const prevPoderRef = useRef<string>("");
+  // Debounce unificado: 1500ms para todo el formulario. El chip vivo
+  // (SaveStatusChip) refleja el ciclo dirty → saving → actualizado.
   useEffect(() => {
     if (!data || !id) return;
     if (row?.status === "processing" || row?.status === "error") return;
     if (!initialHydrationRef.current) return;
 
-    const currentPoder = JSON.stringify(data.poder_banco ?? {});
-    const poderChanged = prevPoderRef.current !== "" && prevPoderRef.current !== currentPoder;
-    // Debounce ajustado: 3s para poder_banco (alta sensibilidad), 5s para el resto.
-    const delay = poderChanged ? 3000 : 5000;
-
     const t = setTimeout(async () => {
       await persistData({ silent: true });
-      prevPoderRef.current = currentPoder;
-    }, delay);
+    }, 1500);
     return () => clearTimeout(t);
   }, [data, id, row?.status, persistData]);
 
