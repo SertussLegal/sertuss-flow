@@ -165,6 +165,7 @@ const Field = ({
   disabled,
   copyable = true,
   required = false,
+  uppercaseOnBlur = false,
 }: {
   label: string;
   value: string;
@@ -172,6 +173,7 @@ const Field = ({
   disabled?: boolean;
   copyable?: boolean;
   required?: boolean;
+  uppercaseOnBlur?: boolean;
 }) => {
   const isEmpty = !value || !value.trim() || value.trim() === "___________";
   const showMissing = required && isEmpty && !disabled;
@@ -188,6 +190,12 @@ const Field = ({
           <Input
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value)}
+            onBlur={(e) => {
+              if (uppercaseOnBlur) {
+                const up = (e.target.value || "").toUpperCase().trim();
+                if (up !== e.target.value) onChange(up);
+              }
+            }}
             disabled={disabled}
             className={`h-9 text-sm ${
               showMissing
