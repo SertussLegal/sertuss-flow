@@ -482,6 +482,44 @@ export const CancelacionValidar = () => {
     }
   };
 
+  // Re-procesar SOLO la cuantía del crédito con OCR dedicado sobre la
+  // escritura antecedente. Caso típico: el certificado registró la hipoteca
+  // como "CUANTÍA INDETERMINADA" y el monolítico dejó el campo vacío. No
+  // cobra créditos. Idempotente.
+  const handleReprocessCuantia = async () => {
+    if (!id) return;
+    if (isReprocessingCuantiaRef.current) return;
+    isReprocessingCuantiaRef.current = true;
+    setReprocessingCuantia(true);
+    try {
+      const { data: resp, error } = await monitored.invoke<{
+        ok?: boolean; code?: string; message?: string; reprocessed?: boolean;
+        aplicado?: boolean; valor_hipoteca_original?: string | null;
+      }>("procesar-cancelacion", { cancelacionId: id, action: "reprocess_cuantia" });
+      if (error) {
+        toast.error("No se pudo re-procesar la escritura", { description: error.message });
+        return;
+      }
+      if (resp && resp.ok === false) {
+        toast.error("Re-procesamiento incompleto", { description: resp.message ?? "Intenta de nuevo." });
+        return;
+      }
+      if (resp?.aplicado && resp.valor_hipoteca_original) {
+        toast.success("Cuantía detectada en la escritura", { description: resp.valor_hipoteca_original });
+      } else {
+        toast.info("La IA no encontró un monto claro en la escritura", {
+          description: "Verifícalo manualmente o déjalo como HIPOTECA DE CUANTÍA INDETERMINADA.",
+        });
+      }
+      initialHydrationRef.current = false;
+      await queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+    } finally {
+      isReprocessingCuantiaRef.current = false;
+      setReprocessingCuantia(false);
+    }
+  };
+
+
 
 
 
