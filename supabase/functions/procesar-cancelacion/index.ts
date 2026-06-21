@@ -864,12 +864,12 @@ export function buildDocxVars(data: CancelacionData) {
     // Apoderado dinámico (sin hardcode). undefined → nullGetter → "___________"
     apoderado_nombre: pb.apoderado_nombre || undefined,
     apoderado_cedula: pb.apoderado_cedula || undefined,
-    apoderado_escritura: pb.apoderado_escritura || undefined,
+    apoderado_escritura: formatProtocoloEscritura(pb.apoderado_escritura || ""),
     apoderado_fecha: pb.apoderado_fecha || undefined,
     apoderado_fecha_dia: pb.apoderado_fecha_dia || fpPoder.dia || undefined,
     apoderado_fecha_mes: pb.apoderado_fecha_mes || fpPoder.mes || undefined,
     apoderado_fecha_ano: pb.apoderado_fecha_anio || fpPoder.ano || undefined,
-    apoderado_notaria_poder: pb.apoderado_notaria_poder || undefined,
+    apoderado_notaria_poder: formatProtocoloNotaria(pb.apoderado_notaria_poder || ""),
     // Notario emisor (editable; vacío → nullGetter "___________")
     notario_nombre: ne.notario_nombre || undefined,
     notaria_emisora_titulo: ne.notaria_emisora_titulo || undefined,
