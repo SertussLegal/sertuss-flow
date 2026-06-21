@@ -734,26 +734,57 @@ export const CancelacionValidar = () => {
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, fecha_escritura_hipoteca: v } })} />
                 <Field label="Notaría" value={data.hipoteca_anterior.notaria_hipoteca}
                   onChange={(v) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, notaria_hipoteca: v } })} />
-                {!data.hipoteca_anterior.valor_hipoteca_original?.trim() && (
-                  <div
-                    role="alert"
-                    className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-[12px] leading-snug"
-                  >
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                      <div className="space-y-1">
-                        <p className="font-semibold text-destructive">
-                          Valor del crédito hipotecario no detectado
-                        </p>
-                        <p className="text-foreground/90">
-                          La IA no logró identificar el monto. Verifícalo manualmente en la escritura
-                          antecedente antes de generar el documento final. Esta alerta desaparecerá
-                          al completar el campo.
-                        </p>
+                {(() => {
+                  const valor = (data.hipoteca_anterior.valor_hipoteca_original ?? "").trim();
+                  const indetMarcada = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
+                  const origenEscritura = data.hipoteca_anterior.cuantia_origen === "escritura";
+                  const escAdjunta = (row as { escritura_antecedente_adjunta?: boolean })?.escritura_antecedente_adjunta === true;
+                  // Texto "HIPOTECA DE CUANTÍA INDETERMINADA" en el campo no es vacío real.
+                  const esLiteralIndet = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valor);
+                  const vacioEfectivo = valor === "" && !indetMarcada && !esLiteralIndet;
+                  return vacioEfectivo ? (
+                    <div
+                      role="alert"
+                      className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-[12px] leading-snug"
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                        <div className="space-y-2 flex-1">
+                          <p className="font-semibold text-destructive">
+                            Valor del crédito hipotecario no detectado
+                          </p>
+                          <p className="text-foreground/90">
+                            {escAdjunta
+                              ? <>El certificado registró la hipoteca como cuantía indeterminada y la IA no encontró el monto. Pulsa <span className="font-medium">Re-procesar escritura</span> para un análisis dedicado de la escritura antecedente, o captúralo manualmente.</>
+                              : <>La IA no logró identificar el monto. Verifícalo manualmente en la escritura antecedente antes de generar el documento final. Esta alerta desaparecerá al completar el campo.</>}
+                          </p>
+                          {escAdjunta && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="default"
+                              onClick={handleReprocessCuantia}
+                              disabled={reprocessingCuantia}
+                              className="gap-1.5 text-xs"
+                            >
+                              {reprocessingCuantia ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Procesando escritura...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  Re-procesar escritura
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  ) : null;
+                })()}
                 <div className="space-y-1">
                   <Label className="text-xs flex items-center gap-1">
                     Valor del crédito hipotecario original
@@ -763,7 +794,16 @@ export const CancelacionValidar = () => {
                     <div className="relative flex-1">
                       <Input
                         value={data.hipoteca_anterior.valor_hipoteca_original ?? ""}
-                        onChange={(e) => setData({ ...data, hipoteca_anterior: { ...data.hipoteca_anterior, valor_hipoteca_original: e.target.value } })}
+                        onChange={(e) => setData({
+                          ...data,
+                          hipoteca_anterior: {
+                            ...data.hipoteca_anterior,
+                            valor_hipoteca_original: e.target.value,
+                            // Si el humano edita, deja de ser "origen escritura":
+                            // soberanía del usuario sobre la sugerencia de la IA.
+                            cuantia_origen: data.hipoteca_anterior.cuantia_origen === "escritura" ? "manual" : data.hipoteca_anterior.cuantia_origen,
+                          },
+                        })}
                         className={`h-9 text-sm ${
                           !data.hipoteca_anterior.valor_hipoteca_original?.trim()
                             ? "border-destructive/70 focus-visible:ring-destructive/40 pr-8"
@@ -782,12 +822,23 @@ export const CancelacionValidar = () => {
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   </div>
+                  {data.hipoteca_anterior.cuantia_origen === "escritura" && data.hipoteca_anterior.valor_hipoteca_original?.trim() && (
+                    <div
+                      role="status"
+                      className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-[11px] leading-snug text-foreground/90"
+                    >
+                      <span className="font-medium text-primary">Hipoteca registrada como cuantía indeterminada en el certificado</span>
+                      {" — "}monto tomado del OCR dedicado a la escritura antecedente. Puedes editarlo o borrarlo para dejar la cancelación como{" "}
+                      <span className="font-mono">HIPOTECA DE CUANTÍA INDETERMINADA</span>.
+                    </div>
+                  )}
                   <p className="text-[11px] text-muted-foreground leading-snug">
                     Monto que el banco le prestó al deudor. Búscalo en la escritura antecedente: cláusula de constitución
                     de hipoteca, cláusula de pago de la compraventa ("el saldo se cubrirá con el producto del crédito…"),
                     o en la hoja de calificación. <span className="font-medium">No es el precio de venta ni el avalúo.</span>
                     Si la hipoteca es abierta, escribe exactamente <span className="font-mono">HIPOTECA DE CUANTÍA INDETERMINADA</span>.
                   </p>
+
                 </div>
               </Section>
 
