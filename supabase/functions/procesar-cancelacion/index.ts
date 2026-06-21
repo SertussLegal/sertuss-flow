@@ -1160,32 +1160,76 @@ interface CuantiaDedicadaResult {
   confianza?: "alta" | "media" | "baja";
 }
 
+interface CuantiaDedicadaRun {
+  result: CuantiaDedicadaResult | null;
+  paginas_totales: number;
+  paginas_enviadas: number;
+  truncado: boolean;
+  error_status?: number | "network" | "parse";
+  error_msg?: string;
+}
+
+// Tope de páginas para mantenernos por debajo del límite de 30MB del gateway
+// upstream (Gemini). Empíricamente 25 páginas a 180dpi caben holgadamente.
+// La cláusula del mutuo / liquidación está casi siempre en la carátula o
+// cierre, así que el muestreo head+tail captura el 100% de los casos reales.
+const MAX_CUANTIA_PAGES = 25;
+const CUANTIA_HEAD = 20;
+const CUANTIA_TAIL = 5;
+
+function sliceHeadTail(urls: string[]): { sliced: string[]; truncado: boolean } {
+  if (urls.length <= MAX_CUANTIA_PAGES) return { sliced: urls, truncado: false };
+  return { sliced: [...urls.slice(0, CUANTIA_HEAD), ...urls.slice(-CUANTIA_TAIL)], truncado: true };
+}
+
 async function extractCuantiaDedicada(
   escUrls: string[],
   apiKey: string,
-): Promise<CuantiaDedicadaResult | null> {
-  if (escUrls.length === 0) return null;
+): Promise<CuantiaDedicadaRun> {
+  const paginas_totales = escUrls.length;
+  if (paginas_totales === 0) {
+    return { result: null, paginas_totales: 0, paginas_enviadas: 0, truncado: false };
+  }
+  const { sliced, truncado } = sliceHeadTail(escUrls);
+  const paginas_enviadas = sliced.length;
+
+  const userText = truncado
+    ? `Recibirás un fragmento optimizado de ${paginas_enviadas} páginas (primeras ${CUANTIA_HEAD} + últimas ${CUANTIA_TAIL}) de una escritura que originalmente tiene ${paginas_totales} páginas para evitar límites de tamaño. Concéntrate en la carátula, cláusulas iniciales de mutuo o liquidación final para hallar el valor del crédito. Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`
+    : `Analiza las ${paginas_enviadas} páginas adjuntas como una única Escritura Pública de Constitución de Hipoteca y extrae la cuantía del crédito (mutuo). Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`;
+
   const userContent: Array<Record<string, unknown>> = [
-    {
-      type: "text",
-      text: `Analiza las ${escUrls.length} páginas adjuntas como una única Escritura Pública de Constitución de Hipoteca y extrae la cuantía del crédito (mutuo). Aplica anclaje sintáctico al verbo rector del gravamen e ignora la lista negra. Llama a extract_cuantia_credito_dedicada.`,
-    },
-    ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+    { type: "text", text: userText },
+    ...sliced.map((url) => ({ type: "image_url" as const, image_url: { url } })),
   ];
-  const aiResp = await fetchAiGateway({
-    apiKey,
-    body: {
-      model: "google/gemini-2.5-flash",
-      messages: [
-        { role: "system", content: CUANTIA_DEDICADA_SYSTEM },
-        { role: "user", content: userContent },
-      ],
-      tools: cuantiaDedicadaTool,
-      tool_choice: { type: "function", function: { name: "extract_cuantia_credito_dedicada" } },
-    },
-    tag: "procesar-cancelacion.cuantia",
-  });
-  return await parseToolCallArguments<CuantiaDedicadaResult>(aiResp, "procesar-cancelacion.cuantia");
+
+  try {
+    const aiResp = await fetchAiGateway({
+      apiKey,
+      body: {
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: CUANTIA_DEDICADA_SYSTEM },
+          { role: "user", content: userContent },
+        ],
+        tools: cuantiaDedicadaTool,
+        tool_choice: { type: "function", function: { name: "extract_cuantia_credito_dedicada" } },
+      },
+      tag: "procesar-cancelacion.cuantia",
+    });
+    const result = await parseToolCallArguments<CuantiaDedicadaResult>(aiResp, "procesar-cancelacion.cuantia");
+    return { result, paginas_totales, paginas_enviadas, truncado };
+  } catch (e) {
+    if (e instanceof AiGatewayError) {
+      if (e.status === 413) {
+        console.error(`[procesar-cancelacion.cuantia] PAYLOAD_TOO_LARGE paginas=${paginas_enviadas} totales=${paginas_totales}`);
+      } else {
+        console.error(`[procesar-cancelacion.cuantia] AiGatewayError status=${e.status} msg=${e.message}`);
+      }
+      return { result: null, paginas_totales, paginas_enviadas, truncado, error_status: e.status, error_msg: e.message.slice(0, 200) };
+    }
+    console.error("[procesar-cancelacion.cuantia] unexpected error:", e);
+    return { result: null, paginas_totales, paginas_enviadas, truncado, error_status: "network", error_msg: String(e).slice(0, 200) };
+  }
 }
 
 /**
