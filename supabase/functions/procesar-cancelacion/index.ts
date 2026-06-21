@@ -253,7 +253,15 @@ Recibes hasta tres documentos:
 
 REGLAS ESTRICTAS DE FORMATO:
 - Toda escritura, notaría, valor y fecha debe expresarse en DOBLE EXPRESIÓN: LETRAS y NÚMEROS entre paréntesis.
-- Las identificaciones (deudor_identificacion, banco_nit, apoderado_cedula) son ESTRICTAMENTE NUMÉRICAS con puntos de miles. NUNCA letras.
+- El NIT del banco y la cédula del apoderado son ESTRICTAMENTE NUMÉRICAS con puntos de miles. NUNCA letras.
+- Las identificaciones de los deudores (partes.deudores[].identificacion) son ESTRICTAMENTE NUMÉRICAS sin puntos ni espacios — solo dígitos 0-9. El frontend aplica la máscara visual con puntos.
+
+REGLAS DE DEUDORES (PLURAL OBLIGATORIO — CRÍTICAS):
+- Devuelve SIEMPRE el array 'partes.deudores' con UN ítem por cada fila de la anotación 0205 HIPOTECA del Certificado de Tradición ("DE: <NOMBRE>" + "CC#"/"CE#"/"PA# <NÚMERO>"). NO consolides en uno solo. NO uses las filas 'A:' (esas son el acreedor).
+- PAREO ESTRICTO: el orden de 'deudores[]' respeta el orden del certificado. Cada 'nombre' va con SU PROPIA cédula. PROHIBIDO mezclar cédulas entre personas.
+- DÍGITOS LIMPIOS: si el certificado dice '20.549.804', devuelves '20549804'. Si dice '1.018.440.535', devuelves '1018440535'.
+- TIPO DOC: detecta lo que aparece LITERAL en el certificado o la escritura ('CC' / 'C.C.' → CEDULA DE CIUDADANIA; 'CE' / 'C.E.' → CEDULA DE EXTRANJERIA; 'PA' / 'PASAPORTE' → PASAPORTE). NO asumas un default.
+- CRUCE CON ESCRITURA ANTECEDENTE: si la escritura trae COMPARECENCIA con cédulas, úsala para confirmar. El certificado es la fuente registral primaria; si discrepan, prevalece el certificado.
 - La matrícula inmobiliaria es ESTRICTAMENTE alfanumérica con guión (ej: '50C-2085432'). SIN letras en palabras, SIN paréntesis.
 - Texto siempre en MAYÚSCULAS para nombres, ciudades, notarías.
 - aplica_ley_546 = true cuando la constitución de la hipoteca se otorga en la misma escritura pública que la compraventa de vivienda de interés social/prioritario o vivienda financiada.
