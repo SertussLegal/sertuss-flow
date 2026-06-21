@@ -1447,6 +1447,117 @@ if (import.meta.main) serve(async (req) => {
     }
 
     // ─────────────────────────────────────────────────────────────
+    // MODO REPROCESS_CUANTIA: re-extrae sólo la cuantía del crédito
+    // a partir de la escritura antecedente (caso típico: el certificado
+    // viene como CUANTÍA INDETERMINADA y el monolítico dejó el campo
+    // vacío). Idempotente: limpia el monto antes de re-inyectar.
+    // No cobra créditos.
+    // ─────────────────────────────────────────────────────────────
+    if (action === "reprocess_cuantia") {
+      const LOVABLE_API_KEY_RC = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY_RC) {
+        return biz("internal", "LOVABLE_API_KEY no configurada");
+      }
+
+      const escPrefix = `${cancelacionId}/cancelaciones/soportes/escritura`;
+      const { data: escFiles, error: listErr } = await supabaseService.storage
+        .from(BUCKET_OUTPUT)
+        .list(escPrefix);
+      if (listErr || !escFiles || escFiles.length === 0) {
+        return biz("no_escritura_attached", "No se encontraron páginas de la escritura antecedente para re-procesar.");
+      }
+      const escPaths = escFiles
+        .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+        .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
+        .map((f: { name: string }) => `${escPrefix}/${f.name}`);
+      if (escPaths.length === 0) {
+        return biz("no_escritura_attached", "No se encontraron páginas válidas de la escritura.");
+      }
+
+      const escUrls = await Promise.all(
+        escPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
+      );
+
+      // 1) Idempotencia: limpiar el monto y la metadata antes de re-inyectar.
+      const prevDataIa = (cancRow.data_ia ?? {}) as Record<string, unknown>;
+      const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
+      const cleanedIaHA = {
+        ...((prevDataIa.hipoteca_anterior ?? {}) as Record<string, unknown>),
+      };
+      delete cleanedIaHA.cuantia_origen;
+      // Sólo limpiamos el monto si está vacío o marcado como indeterminado
+      // (idempotente para reintentos sobre el mismo caso). Si el humano ya lo
+      // escribió manualmente, se respeta y no se ejecuta el reproceso encima.
+      const cleanedIa = { ...prevDataIa, hipoteca_anterior: cleanedIaHA };
+      await supabaseService.from("cancelaciones").update({ data_ia: cleanedIa }).eq("id", cancelacionId);
+
+      // 2) Ejecutar OCR dedicado.
+      const tStart = Date.now();
+      let dedicada: CuantiaDedicadaResult | null = null;
+      try {
+        dedicada = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
+      } catch (e) {
+        console.error("[procesar-cancelacion reprocess_cuantia] dedicated OCR failed:", e);
+      }
+      const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
+
+      // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
+      //    valor vacío (o si el certificado estaba indeterminado y el humano
+      //    no ha intervenido). Nunca pisamos un monto manual.
+      const finalHA = { ...((prevDataFinal.hipoteca_anterior ?? cleanedIaHA) as Record<string, unknown>) };
+      const finalMontoActual = String((finalHA as { valor_hipoteca_original?: string }).valor_hipoteca_original ?? "").trim();
+      const finalIndet = (finalHA as { valor_hipoteca_es_indeterminada?: boolean }).valor_hipoteca_es_indeterminada === true;
+      let aplicado = false;
+      if (dedicadaMonto && (finalMontoActual === "" || finalIndet)) {
+        (finalHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
+        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
+        aplicado = true;
+      }
+
+      const newDataIaHA = { ...cleanedIaHA };
+      if (dedicadaMonto) {
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
+      }
+      const newDataIa = { ...cleanedIa, hipoteca_anterior: newDataIaHA };
+      const newDataFinal = { ...prevDataFinal, hipoteca_anterior: finalHA };
+
+      const updatePayload: Record<string, unknown> = {
+        data_ia: newDataIa,
+        data_final: newDataFinal,
+        updated_at: new Date().toISOString(),
+      };
+      // Espejo en columna plana — solo si efectivamente aplicamos el nuevo valor.
+      if (aplicado) {
+        updatePayload.valor_hipoteca_original = dedicadaMonto;
+      }
+      await supabaseService.from("cancelaciones").update(updatePayload).eq("id", cancelacionId);
+
+      void logCuantiaEvent(supabaseService, {
+        orgId, cancelacionId, userId,
+        resultado: dedicadaMonto ? "exito" : "fallo",
+        paginas_enviadas: escUrls.length,
+        cert_indeterminada: true,
+        monto_encontrado: !!dedicadaMonto,
+        aplicado,
+        tiempo_ms: Date.now() - tStart,
+        extra: { trigger: "reprocess_cuantia" },
+      });
+
+      return new Response(JSON.stringify({
+        ok: true,
+        reprocessed: true,
+        aplicado,
+        valor_hipoteca_original: dedicadaMonto || null,
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
     // MODO REGEN: solo re-mapeo docx con data_final, sin cobrar
     // ─────────────────────────────────────────────────────────────
     if (regen) {
