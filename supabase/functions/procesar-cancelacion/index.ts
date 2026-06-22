@@ -168,7 +168,7 @@ const tools = [
             properties: {
               matricula_inmobiliaria: { type: "string", description: "Matrícula ESTRICTAMENTE alfanumérica con guión, ej: '50C-2085432'. SIN palabras en letras, SIN paréntesis." },
               descripcion_predio: { type: "string", description: "Identificación ARQUITECTÓNICA del predio en formato notarial corto, MAYÚSCULAS, con números en LETRAS seguidos del número entre paréntesis. PROHIBIDO incluir áreas, M2, coeficientes, linderos, dimensiones ni nomenclatura urbana." },
-              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio, MAYÚSCULAS, en formato notarial TEXTO (NÚMERO). Tomada EXCLUSIVAMENTE del renglón de ÍNDICE MÁS ALTO de la sección 'DIRECCION DEL INMUEBLE' del certificado de tradición (renglones '1)','2)','3)' o romanos — la vigente es la del índice mayor). Vía y números en letras con dígito entre paréntesis, sufijos cardinales SUR/NORTE/ESTE/OESTE en MAYÚSCULA pegados al número, guion literal como 'GUION'. Letras pegadas (62A, 53B, 'BIS') se transcriben literales en MAYÚSCULA. Cardinales masculinos ('UNO','DOS','VEINTIUNO'). Ej: 'CL 59 SUR 60 84' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)'. PROHIBIDO incluir apartamento/torre/interior/bloque/manzana/casa (van en descripcion_predio), ciudad (va en ciudad), nombre de conjunto/edificio, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los inyecta." },
+              nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio, MAYÚSCULAS, en formato notarial TEXTO (NÚMERO). Tomada EXCLUSIVAMENTE del renglón de ÍNDICE MÁS ALTO de la sección 'DIRECCION DEL INMUEBLE' del certificado de tradición (renglones '1)','2)','3)' o romanos — la vigente es la del índice mayor). Vía y números en letras con dígito entre paréntesis, sufijos cardinales SUR/NORTE/ESTE/OESTE en MAYÚSCULA pegados al número. SEPARADOR DE PLACA: se conserva como el SÍMBOLO '-' (un guion ASCII rodeado de espacios), NUNCA se verbaliza como la palabra 'GUION'. Letras pegadas (62A, 53B, 'BIS') se transcriben literales en MAYÚSCULA. Cardinales masculinos ('UNO','DOS','VEINTIUNO'). Ej: 'CL 59 SUR 60 84' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)'. PROHIBIDO incluir apartamento/torre/interior/bloque/manzana/casa (van en descripcion_predio), ciudad (va en ciudad), nombre de conjunto/edificio, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los inyecta." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
               departamento: { type: "string", description: "Departamento del inmueble en mayúsculas, ej: 'CUNDINAMARCA'. Opcional." },
             },
@@ -286,13 +286,13 @@ a) SELECCIÓN POR ÍNDICE MÁS ALTO: la sección "DIRECCION DEL INMUEBLE" del ce
 b) FORMATO TEXTO (NÚMERO) OBLIGATORIO con concordancia colombiana:
    - Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
    - Número de la vía en letras + "(N)". Conserva el sufijo cardinal (SUR/NORTE/ESTE/OESTE) en MAYÚSCULAS inmediatamente después del número.
-   - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
-   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)".
+   - Placa: literal "NÚMERO" + primer número en letras + " - " (SÍMBOLO GUION ASCII rodeado de espacios, NUNCA la palabra 'GUION') + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
+   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)".
 
-c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número): si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL.
-   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
-   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
-   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA" o "DOBLE": la letra/sufijo se transcribe literal en mayúscula.
+c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número): si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL. El separador sigue siendo el símbolo "-", NO la palabra "GUION".
+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)".
+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (13 BIS No. 85-32)".
+   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA", "DOBLE" o "GUION": la letra/sufijo se transcribe literal en mayúscula y el separador queda como el símbolo "-".
 
 d) CARDINALES MASCULINOS: los números van en cardinales masculinos ("UNO", "DOS", "VEINTIUNO", "TREINTA Y UNO"…). La concordancia femenina de ordinales 1-10 NO aplica a direcciones.
 
@@ -827,6 +827,10 @@ export function buildDocxVars(data: CancelacionData) {
     .replace(/\s*\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
     // Regex tolerante: la cola "DE ..." final es opcional (cubre los 3 residuos OCR reales)
     .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO(?:\s+DE\s+.+)?\s*$/i, "")
+    // Red de seguridad: el separador de placa es el SÍMBOLO '-', nunca la palabra 'GUION'.
+    // Sólo reemplazamos cuando aparece como palabra suelta entre espacios, para no tocar
+    // nombres propios ni el contenido dentro del paréntesis técnico "(... No. N-N)".
+    .replace(/\s+GUION(?:ES)?\s+/gi, " - ")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();

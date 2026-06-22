@@ -1,23 +1,58 @@
-Refinar skills y memoria del proyecto para sostenibilidad y escalabilidad. 5 pasos secuenciales:
+## Plan estricto para corregir `GUION` en nomenclatura urbana
 
-## Paso 1 — Aplicar borrador existente
-Activar `extraccion-cuantia-semantica` desde `.agents/skills/` al workspace con `skills--apply_draft`.
+### Objetivo
+Cambiar la regla de direcciones para que, en la parte escrita de la nomenclatura, el separador de placa se conserve como símbolo `-` y no como la palabra `GUION`.
 
-## Paso 2 — Crear 3 skills nuevas
-- **concordancia-genero-minutas**: contrato de tokens M/F/FALLBACK (art_deudor, tit_deudor, id_deudor, etc.) con referencias a `_shared/genero.ts` y `src/lib/genero.ts`. No duplica lógica, solo documenta contrato + anti-ejemplos.
-- **formato-texto-numero-notarial**: patrón `TEXTO (NÚMERO)` notarial colombiano. Referencia a `src/lib/legalProse.ts` y `supabase/functions/process-expediente/legalProse.ts` como espejos sincronizados. Documenta `numeroConLetras`, `fechaProsa`, `escrituraProsa`, `montoProsa`.
-- **componente-segmented-choice**: cuándo usar `SegmentedChoice` vs `Select`/`Radio`/`Switch`. Reglas visuales (diferenciado de botón CTA), API, accesibilidad, anti-ejemplos.
+Ejemplo esperado:
 
-## Paso 3 — Consolidar mem://index.md
-- Fusionar `[Formateo Legal]` → `[formato-texto-numero-notarial]` (skill cubre lo mismo + mantenimiento).
-- Fusionar `[Concordancia género]` → `[concordancia-genero-minutas]` (skill es contrato vivo).
-- Eliminar duplicados de dirección para mantener index limpio.
+```text
+CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A - CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)
+```
 
-## Paso 4 — Verificar coherencia backend-frontend
-- Comparar exports de `src/lib/legalProse.ts` vs `supabase/functions/process-expediente/legalProse.ts`.
-- Confirmar que `montoProsa` en backend tiene la corrección del regex `,00\)$`.
-- Alinear si hay divergencia.
+En vez de:
 
-## Paso 5 — Deploy y validación
-- `supabase--deploy_edge_functions(["procesar-cancelacion"])`.
-- Validar que no hay errores de compilación ni regressiones en el pipeline de generación docx.
+```text
+CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A GUION CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)
+```
+
+### Alcance exacto
+1. **Edge Function de cancelaciones**
+   - Actualizar el schema del tool en `procesar-cancelacion` para que `nomenclatura_predio` instruya explícitamente: `-` se conserva como símbolo, no se verbaliza como `GUION`.
+   - Actualizar el prompt de reglas críticas de nomenclatura con los ejemplos nuevos.
+
+2. **OCR del Certificado de Tradición**
+   - Actualizar la descripción del campo `inmueble.direccion` en el extractor del certificado para alinear el primer OCR con la misma regla.
+   - Evitar que el OCR vuelva a introducir `GUION` antes de llegar a `procesar-cancelacion`.
+
+3. **Red de seguridad determinista**
+   - Agregar saneamiento final en `buildDocxVars`/mapeo final de cancelación para convertir patrones residuales ` NÚMERO X GUION Y ` a ` NÚMERO X - Y ` dentro de `nomenclaturaBase`.
+   - Mantener intacto el formato técnico dentro del paréntesis: `(98B No. 61A-54 S)`.
+   - No tocar matrículas inmobiliarias ni NITs, porque ahí el guion sí tiene otra función jurídica/técnica.
+
+4. **No tocar**
+   - No se modifican plantillas Word.
+   - No se modifica frontend.
+   - No se cambia `descripcion_predio` arquitectónica salvo que traiga un `GUION` heredado por error dentro de la dirección.
+   - No se cambia el helper de dirección completa saneada ni la coletilla `(DIRECCION CATASTRAL)` salvo para recibir la nomenclatura ya corregida.
+
+### Validaciones mínimas
+- `CL 59 SUR 60 84` debe producir:
+
+```text
+CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)
+```
+
+- `CALLE 62A # 53B-21` debe producir:
+
+```text
+CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)
+```
+
+- Caso de la imagen:
+
+```text
+CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A - CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)
+```
+
+### Resultado
+La minuta dejará de describir el símbolo como palabra `GUION` en direcciones urbanas y conservará el separador visual `-`, que es lo que espera el usuario y evita una redacción artificial en la descripción de la dirección.
