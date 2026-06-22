@@ -827,6 +827,10 @@ export function buildDocxVars(data: CancelacionData) {
     .replace(/\s*\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
     // Regex tolerante: la cola "DE ..." final es opcional (cubre los 3 residuos OCR reales)
     .replace(/\s+DE\s+LA\s+CIUDAD\s+Y[\s\/]*O\s+MUNICIPIO(?:\s+DE\s+.+)?\s*$/i, "")
+    // Red de seguridad: el separador de placa es el SÍMBOLO '-', nunca la palabra 'GUION'.
+    // Sólo reemplazamos cuando aparece como palabra suelta entre espacios, para no tocar
+    // nombres propios ni el contenido dentro del paréntesis técnico "(... No. N-N)".
+    .replace(/\s+GUION(?:ES)?\s+/gi, " - ")
     .replace(/[\s,;.-]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
