@@ -109,3 +109,5 @@ Input atómico (nunca prosa):
 - ❌ Inyectar el sufijo desde el prompt de Gemini (responsabilidad ÚNICA del backend en `buildDocxVars`).
 - ❌ `replace(/?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*?/gi, "")` — paréntesis sin escapar = regex inválido.
 - ❌ `replace(/\s+DE\s+LA\s+CIUDAD\s+YO\s+MUNICIPIO\s+DE\s+.+$/i, "")` — no matchea `Y/O` real.
+- ❌ Verbalizar el separador de placa como `GUION` en la parte alfabética (`"NÚMERO SESENTA GUION OCHENTA Y CUATRO"`) — debe ser el símbolo `-`. Aplica la regex `\s+GUION(?:ES)?\s+ → " - "` como red de seguridad.
+- ❌ Aplicar la regex anti-`GUION` a `matricula_inmobiliaria` o `banco_nit` — el guion ASCII ahí es contrato técnico ORIP/DIAN y NO se altera.
