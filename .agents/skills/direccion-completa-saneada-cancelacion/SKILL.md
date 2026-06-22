@@ -37,11 +37,33 @@ function sanitizeNomenclaturaBase(input: string): string {
     .replace(/\(?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*\)?/gi, "")
     // 2) Remover redundancia de ciudad pegada por OCR
     .replace(/\s+DE\s+LA\s+CIUDAD\s+Y\/?O\s+MUNICIPIO\s+DE\s+.+$/i, "")
-    // 3) Colapsar espacios
+    // 3) Red de seguridad: separador de placa SIEMPRE como símbolo "-", nunca palabra "GUION"
+    .replace(/\s+GUION(?:ES)?\s+/gi, " - ")
+    // 4) Colapsar espacios
     .replace(/\s+/g, " ")
     .trim();
 }
 ```
+
+### Separador de placa: símbolo `-`, nunca la palabra `GUION`
+
+Regla notarial colombiana: en la parte ALFABÉTICA de la nomenclatura urbana, el separador entre el primer y el segundo número de placa va como el SÍMBOLO `-` (guion ASCII rodeado de espacios), NO como la palabra `GUION`. La verbalización rompe la lectura natural del registrador.
+
+- **Prompt + schema de Gemini** (`procesar-cancelacion` y `scan-document/core/certificadoTradicion`) ya instruyen explícitamente: `NÚMERO X - Y`, prohibido escribir `GUION`.
+- **Red de seguridad determinista** en `buildDocxVars`: la regex `\s+GUION(?:ES)?\s+ → " - "` se aplica DESPUÉS de los strips de catastral/ciudad y ANTES del colapso de espacios. Cubre regresiones del LLM.
+- **Excepciones explícitas — NO tocar:**
+  - `matricula_inmobiliaria` (ej. `50C-2085432`): el guion ASCII es parte del contrato técnico ORIP.
+  - `banco_nit` (ej. `860.034.313-7`): el guion del dígito de verificación DIAN es obligatorio.
+  - El contenido dentro del paréntesis técnico `(98B No. 61A-54 S)`: el `-` ahí es estructural, no se verbaliza ni se altera.
+  - La regex sólo matchea `GUION` como palabra suelta entre espacios, así que no afecta nombres propios.
+
+#### Tabla de validación (Fase A)
+
+| Input crudo | Output esperado |
+|---|---|
+| `CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A GUION CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)` | `CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A - CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)` |
+| `CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)` | `CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)` |
+| `CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)` | igual (ya viene correcto, idempotente) |
 
 ---
 
@@ -87,3 +109,5 @@ Input atómico (nunca prosa):
 - ❌ Inyectar el sufijo desde el prompt de Gemini (responsabilidad ÚNICA del backend en `buildDocxVars`).
 - ❌ `replace(/?\s*DIRECCI[OÓ]N\s+CATASTRAL\s*?/gi, "")` — paréntesis sin escapar = regex inválido.
 - ❌ `replace(/\s+DE\s+LA\s+CIUDAD\s+YO\s+MUNICIPIO\s+DE\s+.+$/i, "")` — no matchea `Y/O` real.
+- ❌ Verbalizar el separador de placa como `GUION` en la parte alfabética (`"NÚMERO SESENTA GUION OCHENTA Y CUATRO"`) — debe ser el símbolo `-`. Aplica la regex `\s+GUION(?:ES)?\s+ → " - "` como red de seguridad.
+- ❌ Aplicar la regex anti-`GUION` a `matricula_inmobiliaria` o `banco_nit` — el guion ASCII ahí es contrato técnico ORIP/DIAN y NO se altera.
