@@ -1,58 +1,31 @@
-## Plan estricto para corregir `GUION` en nomenclatura urbana
+# Plan: Reflejar toggles del SuperAdmin en vivo
 
-### Objetivo
-Cambiar la regla de direcciones para que, en la parte escrita de la nomenclatura, el separador de placa se conserve como símbolo `-` y no como la palabra `GUION`.
+## Problema
+Cuando el SuperAdmin activa/desactiva un módulo desde `/admin/entidad/:id`, la mutación se persiste y queda auditada, pero `ModuleContext` solo refetchea cuando cambia `activeOrgId` o `userId`. Por eso el sidebar y los `ModuleGate` se quedan con la lista vieja hasta recargar.
 
-Ejemplo esperado:
+## Solución (mínima, sin polling)
+Hacer un broadcast del cambio y que `ModuleContext` revalide cuando el toggle afecta a la organización activa del usuario actual.
 
-```text
-CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A - CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)
-```
+### 1. `src/pages/AdminOrgEdit.tsx`
+- Tras un `admin_toggle_module` exitoso, llamar a `refreshModules()` del `useModules()` **solo si** la org editada (`id`) coincide con el `activeOrgId` del SuperAdmin (caso típico: está parado sobre su propia org).
+- Cambiar el copy de la card de "se aplican en cuanto el usuario recarga la app" a "se aplican en vivo para los usuarios conectados a esta organización".
 
-En vez de:
+### 2. `src/contexts/ModuleContext.tsx`
+- Agregar suscripción a Postgres Changes (`supabase.channel`) sobre `public.organization_modules` filtrada por `organization_id=eq.${activeOrgId}`. En cualquier `INSERT/UPDATE/DELETE` → llamar `fetchModules(activeOrgId, { silent: true })`.
+  - Esto cubre a los **owners** de otras notarías: si el SuperAdmin les habilita/deshabilita un módulo, su sidebar se actualiza sin recargar.
+  - Cleanup del channel al cambiar `activeOrgId` o desmontar.
+- Mantener `refreshModules()` público para el caso 1 (refresco inmediato local cuando el SuperAdmin toca su propia org, sin esperar el round-trip de Realtime).
 
-```text
-CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A GUION CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)
-```
+## Seguridad (sin cambios de schema)
+- `admin_toggle_module` ya valida `is_platform_admin()` en backend → solo `info@sertuss.com` puede mutar.
+- Las políticas RLS de `organization_modules` siguen siendo la única fuente de verdad: el cliente que reciba el broadcast hará un SELECT que pasa por RLS (un owner solo ve su org).
+- Realtime respeta RLS en `postgres_changes`; un owner solo recibirá eventos de su propia org.
+- No se añaden nuevos grants, funciones ni se relaja el bypass eliminado en el cambio anterior.
 
-### Alcance exacto
-1. **Edge Function de cancelaciones**
-   - Actualizar el schema del tool en `procesar-cancelacion` para que `nomenclatura_predio` instruya explícitamente: `-` se conserva como símbolo, no se verbaliza como `GUION`.
-   - Actualizar el prompt de reglas críticas de nomenclatura con los ejemplos nuevos.
+## Fuera de alcance
+- Bus global de "credits:blocked" estilo eventos custom — innecesario, Realtime ya entrega la señal.
+- Cambios al RPC, RLS o tablas.
 
-2. **OCR del Certificado de Tradición**
-   - Actualizar la descripción del campo `inmueble.direccion` en el extractor del certificado para alinear el primer OCR con la misma regla.
-   - Evitar que el OCR vuelva a introducir `GUION` antes de llegar a `procesar-cancelacion`.
-
-3. **Red de seguridad determinista**
-   - Agregar saneamiento final en `buildDocxVars`/mapeo final de cancelación para convertir patrones residuales ` NÚMERO X GUION Y ` a ` NÚMERO X - Y ` dentro de `nomenclaturaBase`.
-   - Mantener intacto el formato técnico dentro del paréntesis: `(98B No. 61A-54 S)`.
-   - No tocar matrículas inmobiliarias ni NITs, porque ahí el guion sí tiene otra función jurídica/técnica.
-
-4. **No tocar**
-   - No se modifican plantillas Word.
-   - No se modifica frontend.
-   - No se cambia `descripcion_predio` arquitectónica salvo que traiga un `GUION` heredado por error dentro de la dirección.
-   - No se cambia el helper de dirección completa saneada ni la coletilla `(DIRECCION CATASTRAL)` salvo para recibir la nomenclatura ya corregida.
-
-### Validaciones mínimas
-- `CL 59 SUR 60 84` debe producir:
-
-```text
-CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)
-```
-
-- `CALLE 62A # 53B-21` debe producir:
-
-```text
-CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)
-```
-
-- Caso de la imagen:
-
-```text
-CARRERA NOVENTA Y OCHO B NÚMERO SESENTA Y UN A - CINCUENTA Y CUATRO SUR (98B No. 61A-54 S)
-```
-
-### Resultado
-La minuta dejará de describir el símbolo como palabra `GUION` en direcciones urbanas y conservará el separador visual `-`, que es lo que espera el usuario y evita una redacción artificial en la descripción de la dirección.
+## Verificación
+- Owner conectado en `/escrituras`. SuperAdmin desactiva Escrituras para esa org → sidebar del owner pierde el item y `/escrituras` muestra `Forbidden403` sin reload.
+- SuperAdmin sobre su propia org desactiva Cancelaciones → su sidebar se actualiza instantáneamente vía `refreshModules()`.

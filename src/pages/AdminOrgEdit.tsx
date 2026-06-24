@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useModules } from "@/contexts/ModuleContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
 import { Save, Loader2, Puzzle, Users, ShieldAlert, Eye, EyeOff, Copy, Check } from "lucide-react";
@@ -26,7 +27,8 @@ interface ModuleRow {
 const AdminOrgEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile, loading: authLoading } = useAuth();
+  const { profile, loading: authLoading, activeOrgId } = useAuth();
+  const { refreshModules } = useModules();
   const { toast } = useToast();
 
   const [name, setName] = useState("");
@@ -214,9 +216,14 @@ const AdminOrgEdit = () => {
       setModules((prev) => prev.map((m) => (m.slug === slug ? { ...m, enabled: !next } : m)));
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      // Si el SuperAdmin está parado sobre la org editada, refresca local
+      // de inmediato (sin esperar el round-trip de Realtime).
+      if (id === activeOrgId) {
+        void refreshModules();
+      }
       toast({
         title: next ? "Módulo activado" : "Módulo desactivado",
-        description: `${slug} · cambio registrado en activity_logs`,
+        description: `${slug} · aplicado en vivo a los usuarios conectados`,
       });
     }
     setTogglingSlug(null);
@@ -271,7 +278,7 @@ const AdminOrgEdit = () => {
             </CardTitle>
             <CardDescription>
               Activa o desactiva las secciones visibles para esta organización. Los cambios se aplican
-              en cuanto el usuario recarga la app y quedan registrados en el log de actividad.
+              en vivo a los usuarios conectados y quedan registrados en el log de actividad.
             </CardDescription>
           </CardHeader>
           <CardContent>
