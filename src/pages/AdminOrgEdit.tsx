@@ -40,6 +40,21 @@ const AdminOrgEdit = () => {
   const [modulesLoading, setModulesLoading] = useState(true);
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
 
+  // Usuarios de la organización (sólo SuperAdmin)
+  interface OrgUser {
+    user_id: string;
+    email: string;
+    full_name: string | null;
+    role: "owner" | "admin" | "operator";
+    is_personal: boolean;
+    joined_at: string;
+    last_sign_in_at: string | null;
+  }
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [revealedEmails, setRevealedEmails] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   const isAllowed = isSuperAdmin(profile?.email);
 
   useEffect(() => {
