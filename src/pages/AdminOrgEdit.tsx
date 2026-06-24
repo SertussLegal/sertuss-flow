@@ -9,7 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
-import { Save, Loader2, Puzzle } from "lucide-react";
+import { Save, Loader2, Puzzle, Users, ShieldAlert, Eye, EyeOff, Copy, Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const NIT_REGEX = /^\d{9}-\d{1}$/;
 
@@ -37,6 +39,21 @@ const AdminOrgEdit = () => {
   const [modules, setModules] = useState<ModuleRow[]>([]);
   const [modulesLoading, setModulesLoading] = useState(true);
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
+
+  // Usuarios de la organización (sólo SuperAdmin)
+  interface OrgUser {
+    user_id: string;
+    email: string;
+    full_name: string | null;
+    role: "owner" | "admin" | "operator";
+    is_personal: boolean;
+    joined_at: string;
+    last_sign_in_at: string | null;
+  }
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [revealedEmails, setRevealedEmails] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const isAllowed = isSuperAdmin(profile?.email);
 
@@ -82,6 +99,56 @@ const AdminOrgEdit = () => {
     setModulesLoading(false);
   };
 
+  const loadUsers = async (orgId: string) => {
+    setUsersLoading(true);
+    const { data, error } = await supabase.rpc("admin_list_org_users" as any, { p_org_id: orgId });
+    if (error) {
+      toast({ title: "Error al cargar usuarios", description: error.message, variant: "destructive" });
+      setUsers([]);
+    } else {
+      setUsers((data as any as OrgUser[]) ?? []);
+    }
+    setUsersLoading(false);
+  };
+
+  // Cleanup de timeout del portapapeles al desmontar
+  useEffect(() => {
+    return () => setCopiedId(null);
+  }, []);
+
+  const toggleReveal = (uid: string) => {
+    setRevealedEmails((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid); else next.add(uid);
+      return next;
+    });
+  };
+
+  const handleCopyEmail = async (uid: string, email: string) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopiedId(uid);
+      window.setTimeout(() => {
+        setCopiedId((curr) => (curr === uid ? null : curr));
+      }, 2000);
+    } catch {
+      toast({ title: "Error", description: "No se pudo copiar el correo", variant: "destructive" });
+    }
+  };
+
+  const formatDate = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("es-CO", {
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  };
+
+  const roleBadge = (r: OrgUser["role"]) => {
+    if (r === "owner") return <Badge className="bg-notarial-gold/15 text-notarial-gold border-notarial-gold/30" variant="outline">Owner</Badge>;
+    if (r === "admin") return <Badge className="bg-notarial-blue/15 text-notarial-blue border-notarial-blue/30" variant="outline">Admin</Badge>;
+    return <Badge variant="outline">Operator</Badge>;
+  };
+
   useEffect(() => {
     if (isAllowed && id) {
       (async () => {
@@ -102,6 +169,7 @@ const AdminOrgEdit = () => {
         setAddress(org.address ?? "");
         setLoading(false);
         await loadModules(id);
+        await loadUsers(id);
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,6 +319,107 @@ const AdminOrgEdit = () => {
                   );
                 })}
               </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-notarial-blue" />
+              Usuarios de la organización
+            </CardTitle>
+            <CardDescription>
+              Listado de personas con acceso a esta entidad. Visible únicamente para el SuperAdmin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-start gap-2 rounded-md border border-notarial-gold/30 bg-notarial-gold/10 px-3 py-2 text-xs text-notarial-gold">
+              <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                <strong>Acceso auditado (Ley 1581 de 2012).</strong> Cada visualización de correos queda
+                registrada en el log de actividad con tu identidad y la dirección IP de origen.
+              </p>
+            </div>
+
+            {usersLoading ? (
+              <div className="flex items-center justify-center py-6 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Cargando usuarios…
+              </div>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No hay miembros asociados a esta organización.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Correo</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Rol</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Ingresó</TableHead>
+                      <TableHead>Último acceso</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u) => {
+                      const revealed = revealedEmails.has(u.user_id);
+                      const copied = copiedId === u.user_id;
+                      return (
+                        <TableRow key={u.user_id}>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`font-mono text-xs transition-all duration-200 ${
+                                  revealed ? "" : "blur-sm select-none"
+                                }`}
+                              >
+                                {u.email}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => toggleReveal(u.user_id)}
+                                aria-label={revealed ? "Ocultar correo" : "Mostrar correo"}
+                              >
+                                {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => handleCopyEmail(u.user_id, u.email)}
+                                aria-label="Copiar correo"
+                              >
+                                {copied ? (
+                                  <Check className="h-3.5 w-3.5 text-notarial-green" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm">{u.full_name ?? "—"}</TableCell>
+                          <TableCell>{roleBadge(u.role)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {u.is_personal ? "Personal" : "Compartida"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {formatDate(u.joined_at)}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {formatDate(u.last_sign_in_at)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
