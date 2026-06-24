@@ -1162,6 +1162,18 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { p_invitation_id: string }; Returns: string }
+      admin_list_org_users: {
+        Args: { p_org_id: string }
+        Returns: {
+          email: string
+          full_name: string
+          is_personal: boolean
+          joined_at: string
+          last_sign_in_at: string
+          role: Database["public"]["Enums"]["org_role"]
+          user_id: string
+        }[]
+      }
       admin_set_debug_tools: {
         Args: { enabled: boolean; target_org_id: string }
         Returns: undefined
