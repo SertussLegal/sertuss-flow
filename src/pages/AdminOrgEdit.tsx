@@ -216,9 +216,14 @@ const AdminOrgEdit = () => {
       setModules((prev) => prev.map((m) => (m.slug === slug ? { ...m, enabled: !next } : m)));
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
+      // Si el SuperAdmin está parado sobre la org editada, refresca local
+      // de inmediato (sin esperar el round-trip de Realtime).
+      if (id === activeOrgId) {
+        void refreshModules();
+      }
       toast({
         title: next ? "Módulo activado" : "Módulo desactivado",
-        description: `${slug} · cambio registrado en activity_logs`,
+        description: `${slug} · aplicado en vivo a los usuarios conectados`,
       });
     }
     setTogglingSlug(null);
