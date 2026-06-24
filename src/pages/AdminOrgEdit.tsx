@@ -99,6 +99,56 @@ const AdminOrgEdit = () => {
     setModulesLoading(false);
   };
 
+  const loadUsers = async (orgId: string) => {
+    setUsersLoading(true);
+    const { data, error } = await supabase.rpc("admin_list_org_users" as any, { p_org_id: orgId });
+    if (error) {
+      toast({ title: "Error al cargar usuarios", description: error.message, variant: "destructive" });
+      setUsers([]);
+    } else {
+      setUsers((data as any as OrgUser[]) ?? []);
+    }
+    setUsersLoading(false);
+  };
+
+  // Cleanup de timeout del portapapeles al desmontar
+  useEffect(() => {
+    return () => setCopiedId(null);
+  }, []);
+
+  const toggleReveal = (uid: string) => {
+    setRevealedEmails((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid); else next.add(uid);
+      return next;
+    });
+  };
+
+  const handleCopyEmail = async (uid: string, email: string) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopiedId(uid);
+      window.setTimeout(() => {
+        setCopiedId((curr) => (curr === uid ? null : curr));
+      }, 2000);
+    } catch {
+      toast({ title: "Error", description: "No se pudo copiar el correo", variant: "destructive" });
+    }
+  };
+
+  const formatDate = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("es-CO", {
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  };
+
+  const roleBadge = (r: OrgUser["role"]) => {
+    if (r === "owner") return <Badge className="bg-notarial-gold/15 text-notarial-gold border-notarial-gold/30" variant="outline">Owner</Badge>;
+    if (r === "admin") return <Badge className="bg-notarial-blue/15 text-notarial-blue border-notarial-blue/30" variant="outline">Admin</Badge>;
+    return <Badge variant="outline">Operator</Badge>;
+  };
+
   useEffect(() => {
     if (isAllowed && id) {
       (async () => {
