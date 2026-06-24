@@ -169,6 +169,7 @@ const AdminOrgEdit = () => {
         setAddress(org.address ?? "");
         setLoading(false);
         await loadModules(id);
+        await loadUsers(id);
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
