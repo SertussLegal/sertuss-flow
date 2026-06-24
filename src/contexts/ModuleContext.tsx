@@ -81,9 +81,30 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
       setLoadingModules(true);
       return;
     }
-    // Dep estable: usamos userId (string) en lugar del objeto `user`
-    // para no refetchear en cada TOKEN_REFRESHED.
     void fetchModules(activeOrgId);
+
+    // Realtime: cualquier toggle del SuperAdmin sobre la org activa refresca
+    // en vivo. RLS de organization_modules sigue siendo la fuente de verdad,
+    // así que un owner solo recibe eventos de su propia organización.
+    const channel = supabase
+      .channel(`org-modules:${activeOrgId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "organization_modules",
+          filter: `organization_id=eq.${activeOrgId}`,
+        },
+        () => {
+          void fetchModules(activeOrgId, { silent: true });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [activeOrgId, userId, fetchModules]);
 
   const isModuleEnabled = useCallback(
