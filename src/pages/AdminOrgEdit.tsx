@@ -278,7 +278,7 @@ const AdminOrgEdit = () => {
             </CardTitle>
             <CardDescription>
               Activa o desactiva las secciones visibles para esta organización. Los cambios se aplican
-              en cuanto el usuario recarga la app y quedan registrados en el log de actividad.
+              en vivo a los usuarios conectados y quedan registrados en el log de actividad.
             </CardDescription>
           </CardHeader>
           <CardContent>
