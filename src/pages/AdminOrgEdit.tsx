@@ -9,7 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
-import { Save, Loader2, Puzzle } from "lucide-react";
+import { Save, Loader2, Puzzle, Users, ShieldAlert, Eye, EyeOff, Copy, Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const NIT_REGEX = /^\d{9}-\d{1}$/;
 
