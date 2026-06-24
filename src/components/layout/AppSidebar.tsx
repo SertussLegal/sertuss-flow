@@ -124,7 +124,7 @@ export const AppSidebar = () => {
     }
   };
 
-  const showWorkGroup = moduleColdStart || visibleWorkModules.length > 0 || superAdmin;
+  const showWorkGroup = moduleColdStart || visibleWorkModules.length > 0;
   const showOfficeGroup = isOwnerOfActiveOrg && OFFICE_NAV.length > 0;
   const showPlatformGroup = superAdmin && PLATFORM_NAV.length > 0;
 

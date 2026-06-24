@@ -1,7 +1,6 @@
-import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { isSuperAdmin } from "@/lib/superAdmin";
 
 interface ModuleContextType {
   enabledModules: string[];
@@ -20,15 +19,16 @@ export const useModules = () => {
 
 const RETRY_DELAY_MS = 400;
 
-// Catálogo conocido de módulos. El SuperAdmin obtiene bypass total sobre estos.
-const SUPER_ADMIN_MODULES = ["escrituras", "cancelaciones"];
-
+// Nota de seguridad y producto:
+// Los módulos visibles dependen EXCLUSIVAMENTE de organization_modules para
+// la organización activa. El SuperAdmin (info@sertuss.com) NO recibe bypass
+// aquí — sus privilegios de plataforma se limitan a /admin (controlado por
+// is_platform_admin() en backend y isSuperAdmin() en frontend). Esto permite
+// que al cambiar a su perfil owner vea exactamente lo que un owner real vería.
 export const ModuleProvider = ({ children }: { children: ReactNode }) => {
-  const { activeOrgId, user, profile } = useAuth();
+  const { activeOrgId, user } = useAuth();
   const [enabledModules, setEnabledModules] = useState<string[]>([]);
   const [loadingModules, setLoadingModules] = useState(true);
-
-  const superAdmin = useMemo(() => isSuperAdmin(profile?.email), [profile?.email]);
 
   const fetchOnce = useCallback(async (orgId: string) => {
     const { data, error } = await supabase
@@ -77,14 +77,6 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    // BYPASS SuperAdmin: nunca se queda sin módulos, sin importar el contexto
-    // activo ni la respuesta de RLS sobre organization_modules.
-    if (superAdmin) {
-      setEnabledModules(SUPER_ADMIN_MODULES);
-      setLoadingModules(false);
-      return;
-    }
-
     if (!activeOrgId) {
       setLoadingModules(true);
       return;
@@ -92,20 +84,16 @@ export const ModuleProvider = ({ children }: { children: ReactNode }) => {
     // Dep estable: usamos userId (string) en lugar del objeto `user`
     // para no refetchear en cada TOKEN_REFRESHED.
     void fetchModules(activeOrgId);
-  }, [activeOrgId, userId, superAdmin, fetchModules]);
+  }, [activeOrgId, userId, fetchModules]);
 
   const isModuleEnabled = useCallback(
-    (slug: string) => (superAdmin ? true : enabledModules.includes(slug)),
-    [enabledModules, superAdmin],
+    (slug: string) => enabledModules.includes(slug),
+    [enabledModules],
   );
 
   const refreshModules = useCallback(async () => {
-    if (superAdmin) {
-      setEnabledModules(SUPER_ADMIN_MODULES);
-      return;
-    }
     if (activeOrgId) await fetchModules(activeOrgId);
-  }, [activeOrgId, fetchModules, superAdmin]);
+  }, [activeOrgId, fetchModules]);
 
   return (
     <ModuleContext.Provider
