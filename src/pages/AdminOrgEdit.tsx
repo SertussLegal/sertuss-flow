@@ -322,6 +322,107 @@ const AdminOrgEdit = () => {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-notarial-blue" />
+              Usuarios de la organización
+            </CardTitle>
+            <CardDescription>
+              Listado de personas con acceso a esta entidad. Visible únicamente para el SuperAdmin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-start gap-2 rounded-md border border-notarial-gold/30 bg-notarial-gold/10 px-3 py-2 text-xs text-notarial-gold">
+              <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                <strong>Acceso auditado (Ley 1581 de 2012).</strong> Cada visualización de correos queda
+                registrada en el log de actividad con tu identidad y la dirección IP de origen.
+              </p>
+            </div>
+
+            {usersLoading ? (
+              <div className="flex items-center justify-center py-6 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Cargando usuarios…
+              </div>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No hay miembros asociados a esta organización.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Correo</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Rol</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Ingresó</TableHead>
+                      <TableHead>Último acceso</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u) => {
+                      const revealed = revealedEmails.has(u.user_id);
+                      const copied = copiedId === u.user_id;
+                      return (
+                        <TableRow key={u.user_id}>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`font-mono text-xs transition-all duration-200 ${
+                                  revealed ? "" : "blur-sm select-none"
+                                }`}
+                              >
+                                {u.email}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => toggleReveal(u.user_id)}
+                                aria-label={revealed ? "Ocultar correo" : "Mostrar correo"}
+                              >
+                                {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => handleCopyEmail(u.user_id, u.email)}
+                                aria-label="Copiar correo"
+                              >
+                                {copied ? (
+                                  <Check className="h-3.5 w-3.5 text-notarial-green" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm">{u.full_name ?? "—"}</TableCell>
+                          <TableCell>{roleBadge(u.role)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {u.is_personal ? "Personal" : "Compartida"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {formatDate(u.joined_at)}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {formatDate(u.last_sign_in_at)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
