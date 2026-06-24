@@ -27,7 +27,8 @@ interface ModuleRow {
 const AdminOrgEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile, loading: authLoading } = useAuth();
+  const { profile, loading: authLoading, activeOrgId } = useAuth();
+  const { refreshModules } = useModules();
   const { toast } = useToast();
 
   const [name, setName] = useState("");
