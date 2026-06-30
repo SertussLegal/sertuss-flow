@@ -1580,11 +1580,29 @@ if (import.meta.main) serve(async (req) => {
       await supabaseService.from("cancelaciones").update({ data_ia: cleanedIa }).eq("id", cancelacionId);
 
       // 2) Ejecutar OCR dedicado en una sola llamada multimodal.
+      //    Plan v5/B1: cuando POWER_V5_ENABLED, envuelve con caché inmutable
+      //    `ocr_raw_cache` indexada por SHA-256 de las páginas JPEG ordenadas.
       const tStart = Date.now();
       let dedicated: PoderDedicadoResult | null = null;
       let resultado: "exito" | "fallo" | "parcial" = "fallo";
+      let cacheHitRP = false;
+      let cacheReasonRP = "v5_disabled";
       try {
-        dedicated = await extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY_RP);
+        if (POWER_V5_ENABLED) {
+          const r = await runWithPoderCache<PoderDedicadoResult>({
+            supabase: supabaseService,
+            organizationId: orgId,
+            bucket: BUCKET_OUTPUT,
+            paths: poderPaths,
+            docType: POWER_DOC_TYPE,
+            extractor: () => extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY_RP),
+          });
+          dedicated = r.payload;
+          cacheHitRP = r.cacheHit;
+          cacheReasonRP = r.reason;
+        } else {
+          dedicated = await extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY_RP);
+        }
         const fieldsFilled = dedicated
           ? Object.values(dedicated).filter((v) => v != null && String(v).trim() !== "").length
           : 0;
@@ -1592,6 +1610,7 @@ if (import.meta.main) serve(async (req) => {
       } catch (e) {
         console.error("[procesar-cancelacion reprocess_poder] dedicated OCR failed:", e);
       }
+
 
       // 3) Merge en data_ia y data_final (humano > dedicado).
       const finalPoder = mergePoderBanco(undefined, dedicated);
