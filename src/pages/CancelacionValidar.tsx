@@ -272,7 +272,7 @@ export const CancelacionValidar = () => {
   // del documento falla, marcamos la vista como desactualizada en lugar de
   // mostrar el chip "Guardado ✓" mentiroso.
   const [previewStale, setPreviewStale] = useState(false);
-  const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado">("minuta");
+  const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado" | "poder">("minuta");
   const [viewerKey, setViewerKey] = useState(0);
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
