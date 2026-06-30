@@ -14,6 +14,12 @@ import Docxtemplater from "https://esm.sh/docxtemplater@3.50.0";
 import { fetchAiGateway, AiGatewayError, parseToolCallArguments } from "../_shared/aiFetch.ts";
 import { deudorTokens, deudoresTokens, apoderadoTokens, bancoTokens, inferGeneroFromNombre } from "../_shared/genero.ts";
 import { assertOwnPaths } from "../_shared/storagePaths.ts";
+import { POWER_V5_ENABLED } from "../_shared/poderBancoSchemaVersion.ts";
+import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
+
+// Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
+// Constante local; se usa al instanciar el wrapper de caché v5.
+const POWER_DOC_TYPE = "poder_banco_dedicado";
 
 // Envelope helper: 200 OK con { ok:false, code, message } para errores de negocio
 function biz(code: string, message: string, extra: Record<string, unknown> = {}) {
