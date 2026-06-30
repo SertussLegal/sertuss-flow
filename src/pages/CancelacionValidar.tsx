@@ -21,6 +21,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
+import { PoderViewerTab } from "@/components/cancelaciones/PoderViewerTab";
+import { PoderBannersV5 } from "@/components/cancelaciones/PoderBannersV5";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
@@ -52,6 +54,14 @@ type PoderBanco = {
   apoderado_fecha_anio?: string;
   apoderado_notaria_poder?: string;
   apoderado_genero?: "M" | "F" | "";
+  // ── Plan v5 — campos opcionales del schema profundo. Pueden venir
+  //    rellenos por el extractor v5 o quedar `undefined` en cancelaciones
+  //    legacy. La UI los lee de forma defensiva.
+  has_apoderado_banco?: boolean | null;
+  vigencia?: {
+    tipo?: "indefinida" | "hasta_fecha" | "hasta_terminacion_contrato" | null;
+    fecha_limite?: string | null;
+  };
 };
 
 type Data = {
@@ -262,7 +272,7 @@ export const CancelacionValidar = () => {
   // del documento falla, marcamos la vista como desactualizada en lugar de
   // mostrar el chip "Guardado ✓" mentiroso.
   const [previewStale, setPreviewStale] = useState(false);
-  const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado">("minuta");
+  const [activeDoc, setActiveDoc] = useState<"minuta" | "certificado" | "poder">("minuta");
   const [viewerKey, setViewerKey] = useState(0);
   const creditsRefreshedRef = useRef(false);
   const initialHydrationRef = useRef(false);
@@ -577,7 +587,9 @@ export const CancelacionValidar = () => {
 
   const activePath = useMemo(() => {
     if (!row) return null;
-    return activeDoc === "minuta" ? row.url_minuta_generada : row.url_certificado_generado;
+    if (activeDoc === "minuta") return row.url_minuta_generada;
+    if (activeDoc === "certificado") return row.url_certificado_generado;
+    return null; // "poder" se renderiza con PoderViewerTab, no necesita path docx.
   }, [row, activeDoc]);
 
   if (isLoading || !row) {
@@ -693,10 +705,11 @@ export const CancelacionValidar = () => {
             <ArrowLeft className="h-4 w-4" /> Volver
           </Button>
           <span className="text-sm text-muted-foreground">Validación de Cancelación</span>
-          <Tabs value={activeDoc} onValueChange={(v) => { setActiveDoc(v as "minuta" | "certificado"); setViewerKey((k) => k + 1); }} className="ml-4">
+          <Tabs value={activeDoc} onValueChange={(v) => { setActiveDoc(v as "minuta" | "certificado" | "poder"); setViewerKey((k) => k + 1); }} className="ml-4">
             <TabsList className="h-8">
               <TabsTrigger value="minuta" className="text-xs">Minuta</TabsTrigger>
               <TabsTrigger value="certificado" className="text-xs">Certificado</TabsTrigger>
+              <TabsTrigger value="poder" className="text-xs">Poder</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="ml-auto flex items-center gap-2">
@@ -737,22 +750,28 @@ export const CancelacionValidar = () => {
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_450px]">
         {/* Visor */}
         <div className="h-full overflow-hidden relative bg-slate-100 order-1">
-          <PdfViewerPane
-            key={`${activeDoc}-${viewerKey}`}
-            filePath={activePath}
-            refreshKey={`${activeDoc}-${viewerKey}`}
-            blockDownload={isDirty}
-            onBlockedDownload={() => {
-              toast.warning("Tienes cambios sin guardar", {
-                description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
-                action: {
-                  label: "Guardar y descargar ahora",
-                  onClick: () => handleManualSave(),
-                },
-                duration: 6000,
-              });
-            }}
-          />
+          {activeDoc === "poder" ? (
+            // Plan v5/B4: Visor del Poder General. PoderViewerTab desmonta
+            // todo el estado de URL firmadas al salir de esta pestaña.
+            <PoderViewerTab key={`poder-${viewerKey}`} cancelacionId={row.id} />
+          ) : (
+            <PdfViewerPane
+              key={`${activeDoc}-${viewerKey}`}
+              filePath={activePath}
+              refreshKey={`${activeDoc}-${viewerKey}`}
+              blockDownload={isDirty}
+              onBlockedDownload={() => {
+                toast.warning("Tienes cambios sin guardar", {
+                  description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
+                  action: {
+                    label: "Guardar y descargar ahora",
+                    onClick: () => handleManualSave(),
+                  },
+                  duration: 6000,
+                });
+              }}
+            />
+          )}
           {previewRefreshing && (
             <div className="absolute inset-0 bg-background/40 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20">
               <div className="rounded-md bg-background/95 px-4 py-2 shadow-lg border border-border flex items-center gap-2">
@@ -1074,6 +1093,14 @@ export const CancelacionValidar = () => {
                 const poderAdjuntado = (row as { poder_adjuntado?: boolean })?.poder_adjuntado === true;
                 return (
                   <Section title="Apoderado del Banco (Poder General)">
+                    {/* Plan v5/B4 — Banners K3 (ambigüedad) + L3 (vigencia). */}
+                    <PoderBannersV5
+                      hasApoderadoBanco={pb.has_apoderado_banco}
+                      vigencia={pb.vigencia}
+                      fechaOtorgamientoNueva={ne.fecha_otorgamiento_nueva}
+                      poderAdjuntado={poderAdjuntado}
+                      onResolveAmbiguity={(value) => setPB({ has_apoderado_banco: value })}
+                    />
                     {empty && !poderAdjuntado && (
                       <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-500">
                         No se adjuntó Poder General. Los campos quedarán en blanco en el documento.
