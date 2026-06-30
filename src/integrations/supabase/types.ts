@@ -735,6 +735,50 @@ export type Database = {
           },
         ]
       }
+      ocr_raw_cache: {
+        Row: {
+          created_at: string
+          doc_type: string
+          gemini_model: string
+          id: string
+          organization_id: string
+          pdf_sha256: string
+          prompt_version: string
+          raw_payload: Json
+          schema_version: string
+        }
+        Insert: {
+          created_at?: string
+          doc_type: string
+          gemini_model: string
+          id?: string
+          organization_id: string
+          pdf_sha256: string
+          prompt_version: string
+          raw_payload: Json
+          schema_version: string
+        }
+        Update: {
+          created_at?: string
+          doc_type?: string
+          gemini_model?: string
+          id?: string
+          organization_id?: string
+          pdf_sha256?: string
+          prompt_version?: string
+          raw_payload?: Json
+          schema_version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ocr_raw_cache_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_modules: {
         Row: {
           enabled: boolean
