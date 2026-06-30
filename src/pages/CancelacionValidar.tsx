@@ -750,22 +750,28 @@ export const CancelacionValidar = () => {
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_450px]">
         {/* Visor */}
         <div className="h-full overflow-hidden relative bg-slate-100 order-1">
-          <PdfViewerPane
-            key={`${activeDoc}-${viewerKey}`}
-            filePath={activePath}
-            refreshKey={`${activeDoc}-${viewerKey}`}
-            blockDownload={isDirty}
-            onBlockedDownload={() => {
-              toast.warning("Tienes cambios sin guardar", {
-                description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
-                action: {
-                  label: "Guardar y descargar ahora",
-                  onClick: () => handleManualSave(),
-                },
-                duration: 6000,
-              });
-            }}
-          />
+          {activeDoc === "poder" ? (
+            // Plan v5/B4: Visor del Poder General. PoderViewerTab desmonta
+            // todo el estado de URL firmadas al salir de esta pestaña.
+            <PoderViewerTab key={`poder-${viewerKey}`} cancelacionId={row.id} />
+          ) : (
+            <PdfViewerPane
+              key={`${activeDoc}-${viewerKey}`}
+              filePath={activePath}
+              refreshKey={`${activeDoc}-${viewerKey}`}
+              blockDownload={isDirty}
+              onBlockedDownload={() => {
+                toast.warning("Tienes cambios sin guardar", {
+                  description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
+                  action: {
+                    label: "Guardar y descargar ahora",
+                    onClick: () => handleManualSave(),
+                  },
+                  duration: 6000,
+                });
+              }}
+            />
+          )}
           {previewRefreshing && (
             <div className="absolute inset-0 bg-background/40 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20">
               <div className="rounded-md bg-background/95 px-4 py-2 shadow-lg border border-border flex items-center gap-2">
