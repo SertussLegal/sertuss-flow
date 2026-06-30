@@ -1649,7 +1649,7 @@ if (import.meta.main) serve(async (req) => {
         poder_banco_presente: !!finalPoder,
         campos_llenos: finalPoder ? Object.values(finalPoder).filter((v) => v != null && String(v).trim() !== "").length : 0,
         tiempo_ms: Date.now() - tStart,
-        extra: { trigger: "reprocess_poder" },
+        extra: { trigger: "reprocess_poder", cache_hit: cacheHitRP, cache_reason: cacheReasonRP },
       });
 
       return new Response(JSON.stringify({ ok: true, reprocessed: true, poder_banco: finalPoder ?? null }), {
