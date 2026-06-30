@@ -705,10 +705,11 @@ export const CancelacionValidar = () => {
             <ArrowLeft className="h-4 w-4" /> Volver
           </Button>
           <span className="text-sm text-muted-foreground">Validación de Cancelación</span>
-          <Tabs value={activeDoc} onValueChange={(v) => { setActiveDoc(v as "minuta" | "certificado"); setViewerKey((k) => k + 1); }} className="ml-4">
+          <Tabs value={activeDoc} onValueChange={(v) => { setActiveDoc(v as "minuta" | "certificado" | "poder"); setViewerKey((k) => k + 1); }} className="ml-4">
             <TabsList className="h-8">
               <TabsTrigger value="minuta" className="text-xs">Minuta</TabsTrigger>
               <TabsTrigger value="certificado" className="text-xs">Certificado</TabsTrigger>
+              <TabsTrigger value="poder" className="text-xs">Poder</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="ml-auto flex items-center gap-2">
