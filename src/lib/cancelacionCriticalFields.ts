@@ -27,6 +27,35 @@ export const CANCELACION_CRITICAL_FIELDS: CancelacionCriticalDescriptor[] = [
   { path: "partes.banco_nit", label: "NIT del banco" },
 ];
 
+/**
+ * Campos críticos del bloque "Poder General del Banco". Solo aplican cuando
+ * el usuario adjuntó el poder (`poder_adjuntado === true`); si el banco firma
+ * directo, deben quedar fuera del cómputo de campos faltantes.
+ *
+ * Plan v5/B2: se invocan exclusivamente desde el contexto donde se conoce
+ * el flag `poder_adjuntado` del trámite.
+ */
+const PODER_CRITICAL_FIELDS: CancelacionCriticalDescriptor[] = [
+  { path: "poder_banco.apoderado_nombre", label: "Nombre del apoderado del banco" },
+  { path: "poder_banco.apoderado_cedula", label: "Cédula del apoderado del banco" },
+  { path: "poder_banco.apoderado_escritura", label: "Escritura del Poder General" },
+  { path: "poder_banco.apoderado_fecha", label: "Fecha del Poder General" },
+  { path: "poder_banco.apoderado_notaria_poder", label: "Notaría del Poder General" },
+];
+
+/**
+ * Devuelve la lista efectiva de campos críticos según si el usuario adjuntó
+ * el Poder General del Banco. Mantener separado de la constante estática
+ * `CANCELACION_CRITICAL_FIELDS` evita romper consumidores legacy.
+ */
+export function getCancelacionCriticalFields(opts: {
+  poderAdjuntado: boolean;
+}): CancelacionCriticalDescriptor[] {
+  return opts.poderAdjuntado
+    ? [...CANCELACION_CRITICAL_FIELDS, ...PODER_CRITICAL_FIELDS]
+    : CANCELACION_CRITICAL_FIELDS;
+}
+
 const PLACEHOLDER = "___________";
 
 export function isCancelacionFieldEmpty(value: unknown): boolean {
