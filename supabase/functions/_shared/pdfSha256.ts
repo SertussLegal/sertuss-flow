@@ -13,8 +13,11 @@
  * nativo de Deno. Salida: string de 64 caracteres hex en minúscula.
  */
 export async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  const buf = bytes instanceof Uint8Array ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) : bytes;
-  const digest = await crypto.subtle.digest("SHA-256", buf);
+  // Copy into a fresh ArrayBuffer to satisfy BufferSource (rejects SharedArrayBuffer).
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const copy = new Uint8Array(view.byteLength);
+  copy.set(view);
+  const digest = await crypto.subtle.digest("SHA-256", copy.buffer);
   const hex = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
