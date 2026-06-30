@@ -54,6 +54,14 @@ type PoderBanco = {
   apoderado_fecha_anio?: string;
   apoderado_notaria_poder?: string;
   apoderado_genero?: "M" | "F" | "";
+  // ── Plan v5 — campos opcionales del schema profundo. Pueden venir
+  //    rellenos por el extractor v5 o quedar `undefined` en cancelaciones
+  //    legacy. La UI los lee de forma defensiva.
+  has_apoderado_banco?: boolean | null;
+  vigencia?: {
+    tipo?: "indefinida" | "hasta_fecha" | "hasta_terminacion_contrato" | null;
+    fecha_limite?: string | null;
+  };
 };
 
 type Data = {
