@@ -587,7 +587,9 @@ export const CancelacionValidar = () => {
 
   const activePath = useMemo(() => {
     if (!row) return null;
-    return activeDoc === "minuta" ? row.url_minuta_generada : row.url_certificado_generado;
+    if (activeDoc === "minuta") return row.url_minuta_generada;
+    if (activeDoc === "certificado") return row.url_certificado_generado;
+    return null; // "poder" se renderiza con PoderViewerTab, no necesita path docx.
   }, [row, activeDoc]);
 
   if (isLoading || !row) {
