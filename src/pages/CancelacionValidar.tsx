@@ -21,6 +21,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
+import { PoderViewerTab } from "@/components/cancelaciones/PoderViewerTab";
+import { PoderBannersV5 } from "@/components/cancelaciones/PoderBannersV5";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
