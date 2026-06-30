@@ -1934,14 +1934,35 @@ if (import.meta.main) serve(async (req) => {
         // y elimina el riesgo de que el modelo monolítico priorice cert+escr
         // y devuelva el bloque poder_banco vacío.
         const tPoderStart = Date.now();
+        // Plan v5/B1: cuando POWER_V5_ENABLED, el OCR dedicado del Poder pasa
+        // por `ocr_raw_cache`. El monolítico Gemini 2.5 Pro NO se cachea
+        // (depende de cert+escr+poder juntos → SHA combinado inestable).
+        let cacheHitHW = false;
+        let cacheReasonHW = poderUrls.length === 0 ? "sin_poder" : "v5_disabled";
+        const dedicatedRunner = async (): Promise<PoderDedicadoResult | null> => {
+          if (poderUrls.length === 0) return null;
+          if (!POWER_V5_ENABLED) {
+            return await extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY);
+          }
+          const r = await runWithPoderCache<PoderDedicadoResult>({
+            supabase: supabaseService,
+            organizationId: orgId,
+            bucket: BUCKET_OUTPUT,
+            paths: poderInputPaths,
+            docType: POWER_DOC_TYPE,
+            extractor: () => extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY),
+          });
+          cacheHitHW = r.cacheHit;
+          cacheReasonHW = r.reason;
+          return r.payload;
+        };
+
         const [monoSettled, dedicatedSettled] = await Promise.allSettled([
           (async () => {
             const aiResp = await fetchAiGateway({ apiKey: LOVABLE_API_KEY, body: aiBody, tag: "procesar-cancelacion" });
             return await parseToolCallArguments<CancelacionData>(aiResp, "procesar-cancelacion");
           })(),
-          poderUrls.length > 0
-            ? extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY)
-            : Promise.resolve(null),
+          dedicatedRunner(),
         ]);
 
         // El monolítico es obligatorio — si falla, levantamos el error.
@@ -1953,6 +1974,8 @@ if (import.meta.main) serve(async (req) => {
           dedicatedSettled.status === "fulfilled" ? dedicatedSettled.value : null;
 
         // Read-then-Merge: el OCR dedicado rellena huecos del monolítico.
+        // Plan v5: el cache_hit devuelve `raw_payload` PURO de Gemini —
+        // jamás contaminado por ediciones humanas de otra cancelación.
         const mergedPoder = mergePoderBanco(extracted.poder_banco, dedicatedResult);
         if (mergedPoder) {
           extracted.poder_banco = mergedPoder;
@@ -1961,7 +1984,7 @@ if (import.meta.main) serve(async (req) => {
           delete (extracted as { poder_banco?: unknown }).poder_banco;
         }
 
-        // Telemetría no bloqueante (Eje A v3).
+        // Telemetría no bloqueante (Eje A v3 + Plan v5/B5).
         const pbFilled = extracted.poder_banco
           ? Object.values(extracted.poder_banco).filter((v) => v != null && String(v).trim() !== "").length
           : 0;
@@ -1979,8 +2002,12 @@ if (import.meta.main) serve(async (req) => {
             dedicated_error: dedicatedSettled.status === "rejected"
               ? String((dedicatedSettled as PromiseRejectedResult).reason).slice(0, 200)
               : undefined,
+            cache_hit: cacheHitHW,
+            cache_reason: cacheReasonHW,
+            v5_enabled: POWER_V5_ENABLED,
           },
         });
+
 
         // ── Eje B v3 — CUANTÍA DEDICADA (secuencial condicional) ──
         // Sólo disparamos el extractor dedicado de cuantía cuando el monolítico
