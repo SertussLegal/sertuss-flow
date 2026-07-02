@@ -798,6 +798,25 @@ export function buildDocxVars(data: CancelacionData) {
   // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
   // ── DEUDORES (plural N) — fuente única para nombres, cédulas, tokens, prosa ──
   const deudoresArr = normalizeDeudores(data.partes);
+
+  // ── V5/B3: filtro de firmantes para el loop {#apoderado_representantes} ──
+  // Solo aplica cuando el schema v5 (`apoderado.tipo === 'juridica'`) trae
+  // el array de RLs designados. Regla:
+  //   1. Preferir sólo aquellos con `es_firmante === true`.
+  //   2. Fallback de seguridad: si NINGUNO quedó marcado (el abogado los
+  //      desmarcó todos por error), devolver el listado completo para no
+  //      dejar la minuta huérfana de antefirmas.
+  //   3. Si `tipo !== 'juridica'` o no hay array → undefined (la plantilla v3
+  //      resuelve el bloque como natural o pinta subrayados vía nullGetter).
+  const apoderadoRaw = ((pb as Record<string, unknown>).apoderado || {}) as Record<string, unknown>;
+  const repsIn = Array.isArray(apoderadoRaw.representantes)
+    ? (apoderadoRaw.representantes as Array<Record<string, unknown>>)
+    : [];
+  const repsFirmantes = repsIn.filter((r) => r?.es_firmante === true);
+  const apoderadoRepresentantes = apoderadoRaw.tipo === "juridica" && repsIn.length > 0
+    ? (repsFirmantes.length > 0 ? repsFirmantes : repsIn)
+    : undefined;
+
   const tokensDeudor = deudoresTokens(deudoresArr);
   const deudoresNombres = deudoresArr.map((d) => d.nombre).filter(Boolean).join(" Y ");
   const deudoresCedulas = deudoresArr.map((d) => d.identificacion_formateada).filter(Boolean).join(" Y ");
