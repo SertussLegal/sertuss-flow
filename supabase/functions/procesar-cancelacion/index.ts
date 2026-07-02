@@ -39,7 +39,31 @@ const BUCKET_PLANTILLAS = "cancelaciones-plantillas";
 const BUCKET_OUTPUT = "expediente-files";
 const PREFIX_DAVIVIENDA = "davivienda/";
 const TEMPLATE_MINUTA = "formato cancelacion hipoteca blanqueado v2.docx";
+const TEMPLATE_MINUTA_V3 = "formato cancelacion hipoteca v3.docx";
 const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
+
+/**
+ * Selector de plantilla de minuta (Fase B3 del plan v5).
+ *
+ * Reglas:
+ *   - v3 SOLO cuando el flag global `POWER_V5_ENABLED` está encendido Y
+ *     el trámite trae la estructura v5 extraída (`poder_banco.apoderado.tipo`
+ *     poblado con 'natural' o 'juridica'). Esa forma solo aparece cuando el
+ *     schema de OCR v5 corrió sobre el Poder General.
+ *   - v2 en cualquier otro caso: flag apagado, trámite legacy, o Poder
+ *     ausente. Mantiene compatibilidad retro sin sorpresas para tenants.
+ *
+ * NO lanza: si el bucket no tiene la plantilla v3 aún, el error se
+ * materializa en `fillTemplate` con mensaje claro por nombre de archivo.
+ */
+function selectMinutaTemplate(data: CancelacionData): string {
+  if (!POWER_V5_ENABLED) return TEMPLATE_MINUTA;
+  const pb = (data.poder_banco || {}) as Record<string, unknown>;
+  const apo = (pb.apoderado || {}) as Record<string, unknown>;
+  const tipo = typeof apo.tipo === "string" ? apo.tipo : "";
+  if (tipo === "natural" || tipo === "juridica") return TEMPLATE_MINUTA_V3;
+  return TEMPLATE_MINUTA;
+}
 
 // NO hay apoderado hardcodeado. Si no se carga el Poder General, los campos
 // quedan undefined → nullGetter pinta "___________" en la antefirma.
@@ -774,6 +798,25 @@ export function buildDocxVars(data: CancelacionData) {
   // Prioridad: campo manual del frontend > inferencia por nombre > combinado notarial.
   // ── DEUDORES (plural N) — fuente única para nombres, cédulas, tokens, prosa ──
   const deudoresArr = normalizeDeudores(data.partes);
+
+  // ── V5/B3: filtro de firmantes para el loop {#apoderado_representantes} ──
+  // Solo aplica cuando el schema v5 (`apoderado.tipo === 'juridica'`) trae
+  // el array de RLs designados. Regla:
+  //   1. Preferir sólo aquellos con `es_firmante === true`.
+  //   2. Fallback de seguridad: si NINGUNO quedó marcado (el abogado los
+  //      desmarcó todos por error), devolver el listado completo para no
+  //      dejar la minuta huérfana de antefirmas.
+  //   3. Si `tipo !== 'juridica'` o no hay array → undefined (la plantilla v3
+  //      resuelve el bloque como natural o pinta subrayados vía nullGetter).
+  const apoderadoRaw = ((pb as Record<string, unknown>).apoderado || {}) as Record<string, unknown>;
+  const repsIn = Array.isArray(apoderadoRaw.representantes)
+    ? (apoderadoRaw.representantes as Array<Record<string, unknown>>)
+    : [];
+  const repsFirmantes = repsIn.filter((r) => r?.es_firmante === true);
+  const apoderadoRepresentantes = apoderadoRaw.tipo === "juridica" && repsIn.length > 0
+    ? (repsFirmantes.length > 0 ? repsFirmantes : repsIn)
+    : undefined;
+
   const tokensDeudor = deudoresTokens(deudoresArr);
   const deudoresNombres = deudoresArr.map((d) => d.nombre).filter(Boolean).join(" Y ");
   const deudoresCedulas = deudoresArr.map((d) => d.identificacion_formateada).filter(Boolean).join(" Y ");
@@ -1023,6 +1066,9 @@ export function buildDocxVars(data: CancelacionData) {
     // schema/builder) ← edición manual (ya inyectada en `data.*` desde data_final).
     // ts-ignore: el override intencional dispara TS2783/2785 sobre claves repetidas.
     ...(_v2Overrides as Record<string, unknown>),
+    // V5/B3 — array filtrado para el loop {#apoderado_representantes} de la
+    // plantilla v3. `undefined` en flujo legacy: docxtemplater omite el loop.
+    apoderado_representantes: apoderadoRepresentantes,
   };
 }
 
@@ -1789,7 +1835,8 @@ if (import.meta.main) serve(async (req) => {
         });
       }
       const vars = buildDocxVars(data);
-      const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
+      const minutaTemplate = selectMinutaTemplate(data);
+      const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
       const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
 
       const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
@@ -2088,8 +2135,8 @@ if (import.meta.main) serve(async (req) => {
 
         const vars = buildDocxVars(extracted);
 
-
-        const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
+        const minutaTemplate = selectMinutaTemplate(extracted);
+        const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
         const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
 
         const minutaOutputPath = `cancelaciones/${cancelacionId}/minuta.docx`;
