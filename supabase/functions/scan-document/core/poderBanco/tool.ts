@@ -91,6 +91,7 @@ export const poderBancoTool = {
                   cedula: { type: "string", description: "Cédula. Solo dígitos." },
                   cargo: { type: "string", description: "Ej: 'REPRESENTANTE LEGAL', 'PRIMER SUPLENTE', 'GERENTE'." },
                   email: { type: "string", description: "Email si aparece. null si no." },
+                  es_firmante: { type: "boolean", description: "true por defecto. El abogado puede desmarcar en la UI a los RLs que no firmarán la cancelación; el backend filtra el loop {#apoderado_representantes} para renderizar solo firmantes." },
                 },
                 additionalProperties: false,
               },
