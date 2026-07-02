@@ -1066,6 +1066,9 @@ export function buildDocxVars(data: CancelacionData) {
     // schema/builder) ← edición manual (ya inyectada en `data.*` desde data_final).
     // ts-ignore: el override intencional dispara TS2783/2785 sobre claves repetidas.
     ...(_v2Overrides as Record<string, unknown>),
+    // V5/B3 — array filtrado para el loop {#apoderado_representantes} de la
+    // plantilla v3. `undefined` en flujo legacy: docxtemplater omite el loop.
+    apoderado_representantes: apoderadoRepresentantes,
   };
 }
 
