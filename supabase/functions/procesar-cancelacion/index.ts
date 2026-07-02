@@ -39,7 +39,31 @@ const BUCKET_PLANTILLAS = "cancelaciones-plantillas";
 const BUCKET_OUTPUT = "expediente-files";
 const PREFIX_DAVIVIENDA = "davivienda/";
 const TEMPLATE_MINUTA = "formato cancelacion hipoteca blanqueado v2.docx";
+const TEMPLATE_MINUTA_V3 = "formato cancelacion hipoteca v3.docx";
 const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
+
+/**
+ * Selector de plantilla de minuta (Fase B3 del plan v5).
+ *
+ * Reglas:
+ *   - v3 SOLO cuando el flag global `POWER_V5_ENABLED` está encendido Y
+ *     el trámite trae la estructura v5 extraída (`poder_banco.apoderado.tipo`
+ *     poblado con 'natural' o 'juridica'). Esa forma solo aparece cuando el
+ *     schema de OCR v5 corrió sobre el Poder General.
+ *   - v2 en cualquier otro caso: flag apagado, trámite legacy, o Poder
+ *     ausente. Mantiene compatibilidad retro sin sorpresas para tenants.
+ *
+ * NO lanza: si el bucket no tiene la plantilla v3 aún, el error se
+ * materializa en `fillTemplate` con mensaje claro por nombre de archivo.
+ */
+function selectMinutaTemplate(data: CancelacionData): string {
+  if (!POWER_V5_ENABLED) return TEMPLATE_MINUTA;
+  const pb = (data.poder_banco || {}) as Record<string, unknown>;
+  const apo = (pb.apoderado || {}) as Record<string, unknown>;
+  const tipo = typeof apo.tipo === "string" ? apo.tipo : "";
+  if (tipo === "natural" || tipo === "juridica") return TEMPLATE_MINUTA_V3;
+  return TEMPLATE_MINUTA;
+}
 
 // NO hay apoderado hardcodeado. Si no se carga el Poder General, los campos
 // quedan undefined → nullGetter pinta "___________" en la antefirma.
