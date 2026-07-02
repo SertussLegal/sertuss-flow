@@ -1835,7 +1835,8 @@ if (import.meta.main) serve(async (req) => {
         });
       }
       const vars = buildDocxVars(data);
-      const minuta = await fillTemplate(supabaseService, TEMPLATE_MINUTA, vars);
+      const minutaTemplate = selectMinutaTemplate(data);
+      const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
       const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
 
       const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
