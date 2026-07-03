@@ -80,7 +80,25 @@ export const poderBancoTool = {
             // Caso jurídica
             sociedad_razon_social: { type: "string", description: "Si tipo='juridica': razón social en MAYÚSCULAS. Ej: 'CONECTIVA GLOBAL S.A.S.'" },
             sociedad_nit: { type: "string", description: "Si tipo='juridica': NIT con DV. Ej: '900666582-8'." },
-            sociedad_constitucion: { type: "string", description: "Si tipo='juridica': documento de constitución. Ej: 'Doc privado, CCB 21/10/2013 #01775236'. null si no aparece." },
+            sociedad_constitucion: {
+              type: "object",
+              description: "Si tipo='juridica': datos de constitución de la sociedad apoderada. Requerido para probar el tracto sucesivo ante la ORIP.",
+              properties: {
+                tipo_documento: { type: "string", enum: ["documento_privado", "escritura_publica"], description: "Naturaleza del acto de constitución." },
+                numero: { type: "string", description: "Número del documento/escritura de constitución. Solo dígitos si es escritura. null si no aparece." },
+                fecha: { type: "string", description: "Fecha de constitución en YYYY-MM-DD. null si solo hay letras no deducibles." },
+                fecha_texto: { type: "string", description: "Fecha literal como aparece en el documento. Ej: 'DIECIOCHO (18) DE OCTUBRE DE DOS MIL TRECE (2013)'." },
+                camara_comercio_ciudad: { type: "string", description: "Ciudad de la Cámara de Comercio donde se inscribió. MAYÚSCULAS. Ej: 'BOGOTA'." },
+                camara_comercio_fecha: { type: "string", description: "Fecha de inscripción en la Cámara en YYYY-MM-DD. null si no aparece." },
+                camara_comercio_numero: { type: "string", description: "Número de inscripción en la Cámara. Ej: '01775236'." },
+                libro: { type: "string", description: "Libro del registro mercantil. Ej: 'IX'." },
+                razon_social_anterior: { type: "string", description: "Razón social previa si hubo cambio (ej: 'PROYECTOS LEGALES S.A.S.'). null si no aplica." },
+                reforma_acta_numero: { type: "string", description: "Número del acta de reforma que cambió la razón social. null si no aplica." },
+                reforma_acta_fecha_texto: { type: "string", description: "Fecha literal del acta de reforma. null si no aplica." },
+                reforma_camara_fecha_texto: { type: "string", description: "Fecha literal de inscripción en Cámara del acta de reforma. null si no aplica." },
+              },
+              additionalProperties: false,
+            },
             sociedad_reformas: { type: "string", description: "Si tipo='juridica': reformas relevantes (ej: razón social). Ej: 'Acta 3/2023 cambio de razón social'. null si no aplica." },
             representantes: {
               type: "array",
