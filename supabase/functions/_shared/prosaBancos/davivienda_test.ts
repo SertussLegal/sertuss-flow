@@ -39,7 +39,7 @@ Deno.test("davivienda: prosa NATURAL cumple marcadores canónicos", () => {
   assertStringIncludes(comparecencia, "41939243");
   assertStringIncludes(comparecencia, "siete mil trescientos sesenta y cuatro (7364)");
   assertStringIncludes(comparecencia, "veintiséis (26) de mayo de dos mil veintitrés (2023)");
-  assertStringIncludes(comparecencia, "notaría vigésima novena (29)");
+  assertStringIncludes(comparecencia, "notaría veintinueve (29)");
 
   const antefirma = daviviendaTemplate.renderAntefirma(ctx);
   assertStringIncludes(antefirma, "ANA MARIA MONTOYA ECHEVERRY");
