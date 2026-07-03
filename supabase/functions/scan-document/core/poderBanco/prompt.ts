@@ -1,8 +1,10 @@
-// System prompt for poder bancario OCR — Plan v5.
+// System prompt for poder bancario OCR — Plan v6 (fase B — prosa condicional).
 //
-// Incluye el árbol de decisión K (ternario has_apoderado_banco_v3) y la
-// instrucción explícita de extraer la cadena profunda de representación
-// cuando exista una sociedad apoderada (banco → sociedad → RL firmante).
+// Añade instrucciones para poblar los nuevos sub-campos de
+// poderdante.representante_legal_cargo/_cedula_expedida_en y del objeto
+// apoderado.sociedad_constitucion (número, fecha, cámara de comercio,
+// libro, reforma de razón social). Requerido para renderizar la prosa
+// jurídica canónica de Davivienda sin invenciones.
 export const poderBancoPrompt = `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el Poder General otorgado por una entidad bancaria.
 
 ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula que designa al apoderado, sus facultades y los anexos suelen aparecer en orden: encabezado/comparecencia (primeras páginas) → cláusulas (centro) → firma y anexos (finales). REVISA TODAS las páginas antes de concluir.
