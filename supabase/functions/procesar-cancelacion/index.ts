@@ -1022,7 +1022,7 @@ export function buildDocxVars(data: CancelacionData) {
     apoderado_tipo_efectivo: classifierResult.tipoEfectivo || undefined,
     apoderado_ambiguo: classifierResult.tipoEfectivo === null || undefined,
   };
-  Object.assign(_v2Overrides, prosaOverrides);
+  Object.assign(_v2Overrides as Record<string, unknown>, prosaOverrides);
 
   return {
     // Hipoteca anterior
