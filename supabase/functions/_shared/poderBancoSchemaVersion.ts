@@ -3,8 +3,8 @@
 // forzando una nueva extracción con la versión actualizada.
 //
 // Convención: bump major cuando se rompe compatibilidad de campos.
-export const POWER_PROMPT_VERSION = "v5-2026-06-30";
-export const POWER_SCHEMA_VERSION = "poder_banco_v5";
+export const POWER_PROMPT_VERSION = "v6-2026-07-03";
+export const POWER_SCHEMA_VERSION = "poder_banco_v6";
 export const POWER_GEMINI_MODEL = "google/gemini-2.5-flash";
 
 // Feature flag para rollout progresivo del pipeline v5 (lectura profunda +
