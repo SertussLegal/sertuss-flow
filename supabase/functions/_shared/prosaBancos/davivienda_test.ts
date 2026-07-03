@@ -96,7 +96,7 @@ Deno.test("davivienda: prosa JURIDICA cumple marcadores canónicos con tracto 3 
   assertStringIncludes(comparecencia, "como consta en el poder general conferido por el doctor FELIX ROZO CAGUA");
   assertStringIncludes(comparecencia, "obrando en su condición de suplente del presidente");
   assertStringIncludes(comparecencia, "escritura pública número dieciséis mil trescientos noventa (16390)");
-  assertStringIncludes(comparecencia, "Notaría vigésima novena (29) del Círculo de Bogotá D.C.");
+  assertStringIncludes(comparecencia, "Notaría veintinueve (29) del Círculo de Bogotá D.C.");
   assertStringIncludes(comparecencia, "PROYECTOS LEGALES S.A.S.");
 
   const antefirma = daviviendaTemplate.renderAntefirma(ctx);
