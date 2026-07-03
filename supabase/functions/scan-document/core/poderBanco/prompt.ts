@@ -1,8 +1,10 @@
-// System prompt for poder bancario OCR — Plan v5.
+// System prompt for poder bancario OCR — Plan v6 (fase B — prosa condicional).
 //
-// Incluye el árbol de decisión K (ternario has_apoderado_banco_v3) y la
-// instrucción explícita de extraer la cadena profunda de representación
-// cuando exista una sociedad apoderada (banco → sociedad → RL firmante).
+// Añade instrucciones para poblar los nuevos sub-campos de
+// poderdante.representante_legal_cargo/_cedula_expedida_en y del objeto
+// apoderado.sociedad_constitucion (número, fecha, cámara de comercio,
+// libro, reforma de razón social). Requerido para renderizar la prosa
+// jurídica canónica de Davivienda sin invenciones.
 export const poderBancoPrompt = `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el Poder General otorgado por una entidad bancaria.
 
 ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula que designa al apoderado, sus facultades y los anexos suelen aparecer en orden: encabezado/comparecencia (primeras páginas) → cláusulas (centro) → firma y anexos (finales). REVISA TODAS las páginas antes de concluir.
@@ -42,14 +44,33 @@ EXTRACCIÓN DE CADENA PROFUNDA (cuando has_apoderado_banco_v3 = "true")
 ═══════════════════════════════════════════════════════════════════════════════
 
   - poderdante: la entidad bancaria que OTORGA el poder + datos del RL del
-    banco que firma EN NOMBRE del banco al constituir el poder.
+    banco que firma EN NOMBRE del banco al constituir el poder. Extrae SIEMPRE
+    representante_legal_cargo (ej: "SUPLENTE DEL PRESIDENTE") y
+    representante_legal_cedula_expedida_en cuando aparezcan.
   - apoderado: a quién se le confiere el poder.
-      * apoderado.tipo = "natural" si es persona física.
-      * apoderado.tipo = "juridica" si es una SOCIEDAD apoderada
-        (ej: Conectiva Global S.A.S.) — en este caso DEBES llenar:
-            - sociedad_razon_social, sociedad_nit, sociedad_constitucion
+      * apoderado.tipo = "natural" si es persona física directa (NO hay
+        sociedad intermedia). Marcador: "confiere poder ... al señor/a NN".
+      * apoderado.tipo = "juridica" si es una SOCIEDAD apoderada (S.A.S.,
+        S.A., Ltda., etc). En este caso DEBES llenar TODOS estos campos —
+        son OBLIGATORIOS para el tracto sucesivo ORIP:
+            - sociedad_razon_social (razón social ACTUAL)
+            - sociedad_nit (con DV)
+            - sociedad_constitucion.tipo_documento
+              ("documento_privado" | "escritura_publica")
+            - sociedad_constitucion.numero
+            - sociedad_constitucion.fecha (YYYY-MM-DD) y fecha_texto
+            - sociedad_constitucion.camara_comercio_ciudad
+            - sociedad_constitucion.camara_comercio_fecha (YYYY-MM-DD)
+            - sociedad_constitucion.camara_comercio_numero
+            - sociedad_constitucion.libro
+            - sociedad_constitucion.razon_social_anterior + reforma_acta_*
+              SOLO si hubo cambio de razón social documentado.
             - representantes[] con CADA persona designada para firmar
-              cancelaciones (RL principal + suplentes).
+              cancelaciones (RL principal + suplentes), incluyendo es_firmante.
+        Si falta CUALQUIERA de sociedad_razon_social, sociedad_nit o
+        al menos un dato de constitución → devuelve tipo = "juridica" pero
+        marca los faltantes como null con confianza "baja" (el validador
+        determinista del backend degradará automáticamente).
   - instrumento_poder: datos de la escritura pública del poder mismo
     (número, notaría, notario titular vs encargado, resolución de encargo).
   - facultades: marca booleanos SOLO si el texto literal lo dice. Captura

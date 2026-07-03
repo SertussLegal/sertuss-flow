@@ -16,6 +16,8 @@ import { deudorTokens, deudoresTokens, apoderadoTokens, bancoTokens, inferGenero
 import { assertOwnPaths } from "../_shared/storagePaths.ts";
 import { POWER_V5_ENABLED } from "../_shared/poderBancoSchemaVersion.ts";
 import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
+import { classifyApoderado, type ApoderadoPayload } from "../_shared/apoderadoClassifier.ts";
+import { getProsaBanco, type ProsaContext } from "../_shared/prosaBancos/index.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -979,6 +981,48 @@ export function buildDocxVars(data: CancelacionData) {
     // V2 — fallback de cuantía indeterminada (consumido por la plantilla v2)
     valor_hipoteca_letras_o_indeterminado: valorLetrasOIndeterminado,
   };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Plan v7 / Fase B4 — Prosa condicional Natural vs Jurídica por banco.
+  //
+  // Se corre SIEMPRE (independiente de POWER_V5_ENABLED) para poblar tags
+  // v3 sin costo cuando la plantilla no los referencia. La plantilla v2
+  // legacy ignora los tags nuevos por completo → cero riesgo.
+  //
+  // El validador determinista (`classifyApoderado`) gobierna sobre la IA:
+  // si degrada a null, los tags de prosa quedan vacíos y la UI muestra
+  // el banner de ambigüedad. Sin ese banner el usuario no podrá regenerar.
+  // ═══════════════════════════════════════════════════════════════════════
+  const apoderadoPayload = ((pb as Record<string, unknown>).apoderado || {}) as ApoderadoPayload;
+  const poderdantePayload = ((pb as Record<string, unknown>).poderdante || {}) as Record<string, string | null | undefined>;
+  const instrumentoPayload = ((pb as Record<string, unknown>).instrumento_poder || {}) as Record<string, string | null | undefined>;
+  const classifierResult = classifyApoderado(apoderadoPayload);
+  const bancoNit = (data.partes.banco_nit || "").toString();
+  const bancoTemplate = getProsaBanco(bancoNit);
+  let comparecenciaProsa: string | undefined;
+  let antefirmaProsa: string | undefined;
+  let notaAutorizacionProsa: string | undefined;
+  if (bancoTemplate && classifierResult.tipoEfectivo) {
+    const ctx: ProsaContext = {
+      apoderado: { ...apoderadoPayload, tipo: classifierResult.tipoEfectivo },
+      poderdante: poderdantePayload as ProsaContext["poderdante"],
+      instrumento: instrumentoPayload as ProsaContext["instrumento"],
+      ciudad_firma: ne.notaria_emisora_ciudad || null,
+    };
+    comparecenciaProsa = bancoTemplate.renderComparecencia(ctx);
+    antefirmaProsa = bancoTemplate.renderAntefirma(ctx);
+    notaAutorizacionProsa = bancoTemplate.renderNotaAutorizacion(ctx);
+  }
+  const prosaOverrides = {
+    comparecencia_prosa: comparecenciaProsa,
+    antefirma_prosa: antefirmaProsa,
+    nota_autorizacion_prosa: notaAutorizacionProsa,
+    apoderado_es_juridica: classifierResult.tipoEfectivo === "juridica" || undefined,
+    apoderado_es_natural: classifierResult.tipoEfectivo === "natural" || undefined,
+    apoderado_tipo_efectivo: classifierResult.tipoEfectivo || undefined,
+    apoderado_ambiguo: classifierResult.tipoEfectivo === null || undefined,
+  };
+  Object.assign(_v2Overrides as Record<string, unknown>, prosaOverrides);
 
   return {
     // Hipoteca anterior

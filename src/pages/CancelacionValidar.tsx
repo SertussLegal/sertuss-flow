@@ -1093,14 +1093,22 @@ export const CancelacionValidar = () => {
                 const poderAdjuntado = (row as { poder_adjuntado?: boolean })?.poder_adjuntado === true;
                 return (
                   <Section title="Apoderado del Banco (Poder General)">
-                    {/* Plan v5/B4 — Banners K3 (ambigüedad) + L3 (vigencia). */}
+                    {/* Plan v5/B4 — Banners K3 (ambigüedad) + L3 (vigencia) + v7/C1 (tipo). */}
                     <PoderBannersV5
                       hasApoderadoBanco={pb.has_apoderado_banco}
                       vigencia={pb.vigencia}
                       fechaOtorgamientoNueva={ne.fecha_otorgamiento_nueva}
                       poderAdjuntado={poderAdjuntado}
                       onResolveAmbiguity={(value) => setPB({ has_apoderado_banco: value })}
+                      apoderado={(pb as unknown as { apoderado?: unknown }).apoderado as never}
+                      onSetTipoOverride={(value) => {
+                        const currApo = ((pb as unknown as { apoderado?: Record<string, unknown> }).apoderado) || {};
+                        setPB({
+                          apoderado: { ...currApo, tipo_override: value ?? undefined },
+                        } as never);
+                      }}
                     />
+
                     {empty && !poderAdjuntado && (
                       <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-500">
                         No se adjuntó Poder General. Los campos quedarán en blanco en el documento.

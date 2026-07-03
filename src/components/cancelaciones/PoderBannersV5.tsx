@@ -1,31 +1,43 @@
 // ============================================================================
-// PoderBannersV5 — Banners K3 (ambigüedad de firma) y L3 (vigencia).
-// Plan v5/B4.
+// PoderBannersV5 — Banners K3 (ambigüedad de firma), L3 (vigencia) y
+// C1 (clasificación defensiva Natural vs Jurídica — Plan v7 / Enmienda 1).
 //
 // K3: cuando `has_apoderado_banco === null` la IA no pudo decidir si el banco
-// firma directo o mediante apoderado. El banner es INTERACTIVO: dos botones
-// resuelven el ternario en caliente (true → mediante apoderado / false → firma
-// directo). Al resolver, el bloqueo de campos críticos cae.
+// firma directo o mediante apoderado. Botones resuelven el ternario en caliente.
 //
 // L3: vigencia evaluada contra la fecha de otorgamiento real; si el usuario
-// no la ha fijado, se usa hoy + 30 días como estimación conservadora. Se
-// re-evalúa en cada render cuando cambia la fecha — sin efectos secundarios.
+// no la ha fijado, se usa hoy + 30 días como estimación conservadora.
+//
+// C1: si `classifyApoderado` degrada el tipo a null (contaminación corporativa,
+// falta de datos de constitución, etc.), banner ámbar con `SegmentedChoice`
+// para override manual. El override viaja como `apoderado.tipo_override` y
+// gobierna sobre las reglas defensivas.
 // ============================================================================
 
-import { AlertTriangle, CheckCircle2, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ShieldQuestion, UserRoundCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import {
   evaluarVigenciaCliente,
   type VigenciaInput,
 } from "@/lib/poderVigenciaCliente";
+import {
+  classifyApoderado,
+  MOTIVO_LABELS,
+  type ApoderadoPayload,
+  type TipoApoderado,
+} from "@/lib/apoderadoClassifier";
 
 export interface PoderBannersV5Props {
   hasApoderadoBanco: boolean | null | undefined;
   vigencia?: VigenciaInput | null;
-  /** Fecha planeada para firmar (string ISO o "YYYY-MM-DD"). Vacío → estimada. */
   fechaOtorgamientoNueva?: string;
   onResolveAmbiguity: (value: boolean) => void;
   poderAdjuntado: boolean;
+  /** Payload del apoderado — habilita banner C1 y override manual. */
+  apoderado?: ApoderadoPayload | null;
+  /** Callback para persistir apoderado.tipo_override. */
+  onSetTipoOverride?: (value: TipoApoderado) => void;
 }
 
 export function PoderBannersV5({
@@ -34,11 +46,24 @@ export function PoderBannersV5({
   fechaOtorgamientoNueva,
   onResolveAmbiguity,
   poderAdjuntado,
+  apoderado,
+  onSetTipoOverride,
 }: PoderBannersV5Props) {
   if (!poderAdjuntado) return null;
 
   const showK3 = hasApoderadoBanco === null || hasApoderadoBanco === undefined;
   const vig = evaluarVigenciaCliente(vigencia, fechaOtorgamientoNueva || null);
+
+  // C1 — Clasificación defensiva. Solo aplica cuando K3 ya está resuelto
+  // (hay que saber si HAY apoderado antes de discutir su tipo).
+  const classifier = apoderado ? classifyApoderado(apoderado) : null;
+  const showC1 =
+    !showK3 &&
+    hasApoderadoBanco === true &&
+    !!apoderado &&
+    !!classifier &&
+    classifier.tipoEfectivo === null &&
+    !!onSetTipoOverride;
 
   return (
     <div className="space-y-2">
@@ -75,6 +100,41 @@ export function PoderBannersV5({
                 >
                   Actúa mediante apoderado
                 </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showC1 && classifier && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-[12px] leading-snug"
+        >
+          <div className="flex items-start gap-2">
+            <UserRoundCog className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-2 flex-1">
+              <p className="font-semibold text-amber-600 dark:text-amber-400">
+                Confirma el tipo de apoderado
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5 text-foreground/85">
+                {classifier.motivos.map((m) => (
+                  <li key={m}>{MOTIVO_LABELS[m] ?? m}</li>
+                ))}
+              </ul>
+              <div className="pt-1">
+                <SegmentedChoice
+                  value={
+                    apoderado?.tipo_override === "natural" || apoderado?.tipo_override === "juridica"
+                      ? apoderado.tipo_override
+                      : ""
+                  }
+                  onChange={(v) => onSetTipoOverride?.((v as TipoApoderado) || null)}
+                  options={[
+                    { value: "natural", label: "Persona natural" },
+                    { value: "juridica", label: "Persona jurídica" },
+                  ]}
+                />
               </div>
             </div>
           </div>
