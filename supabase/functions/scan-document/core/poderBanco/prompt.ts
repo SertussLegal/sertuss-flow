@@ -44,14 +44,33 @@ EXTRACCIÓN DE CADENA PROFUNDA (cuando has_apoderado_banco_v3 = "true")
 ═══════════════════════════════════════════════════════════════════════════════
 
   - poderdante: la entidad bancaria que OTORGA el poder + datos del RL del
-    banco que firma EN NOMBRE del banco al constituir el poder.
+    banco que firma EN NOMBRE del banco al constituir el poder. Extrae SIEMPRE
+    representante_legal_cargo (ej: "SUPLENTE DEL PRESIDENTE") y
+    representante_legal_cedula_expedida_en cuando aparezcan.
   - apoderado: a quién se le confiere el poder.
-      * apoderado.tipo = "natural" si es persona física.
-      * apoderado.tipo = "juridica" si es una SOCIEDAD apoderada
-        (ej: Conectiva Global S.A.S.) — en este caso DEBES llenar:
-            - sociedad_razon_social, sociedad_nit, sociedad_constitucion
+      * apoderado.tipo = "natural" si es persona física directa (NO hay
+        sociedad intermedia). Marcador: "confiere poder ... al señor/a NN".
+      * apoderado.tipo = "juridica" si es una SOCIEDAD apoderada (S.A.S.,
+        S.A., Ltda., etc). En este caso DEBES llenar TODOS estos campos —
+        son OBLIGATORIOS para el tracto sucesivo ORIP:
+            - sociedad_razon_social (razón social ACTUAL)
+            - sociedad_nit (con DV)
+            - sociedad_constitucion.tipo_documento
+              ("documento_privado" | "escritura_publica")
+            - sociedad_constitucion.numero
+            - sociedad_constitucion.fecha (YYYY-MM-DD) y fecha_texto
+            - sociedad_constitucion.camara_comercio_ciudad
+            - sociedad_constitucion.camara_comercio_fecha (YYYY-MM-DD)
+            - sociedad_constitucion.camara_comercio_numero
+            - sociedad_constitucion.libro
+            - sociedad_constitucion.razon_social_anterior + reforma_acta_*
+              SOLO si hubo cambio de razón social documentado.
             - representantes[] con CADA persona designada para firmar
-              cancelaciones (RL principal + suplentes).
+              cancelaciones (RL principal + suplentes), incluyendo es_firmante.
+        Si falta CUALQUIERA de sociedad_razon_social, sociedad_nit o
+        al menos un dato de constitución → devuelve tipo = "juridica" pero
+        marca los faltantes como null con confianza "baja" (el validador
+        determinista del backend degradará automáticamente).
   - instrumento_poder: datos de la escritura pública del poder mismo
     (número, notaría, notario titular vs encargado, resolución de encargo).
   - facultades: marca booleanos SOLO si el texto literal lo dice. Captura
