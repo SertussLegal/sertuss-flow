@@ -56,6 +56,7 @@ export const poderBancoTool = {
             representante_legal_nombre: { type: "string", description: "Nombre completo del RL que firma EN NOMBRE del banco al otorgar este poder (NO confundir con el apoderado destinatario). null si no aparece." },
             representante_legal_cedula: { type: "string", description: "Cédula del RL del banco. Solo dígitos. null si no es legible." },
             representante_legal_cargo: { type: "string", description: "Cargo del firmante en el banco. Ej: 'SUPLENTE DEL PRESIDENTE'. null si no aparece." },
+            representante_legal_cedula_expedida_en: { type: "string", description: "Ciudad de expedición de la cédula del RL del banco. Ej: 'BOGOTA D.C.'. null si no aparece." },
           },
           additionalProperties: false,
         },
