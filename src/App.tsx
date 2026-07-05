@@ -125,6 +125,7 @@ const App = () => (
                 <Route path="/admin/entidad/:id" element={<AdminOrgEdit />} />
                 <Route path="/notaria" element={<NotariaSettings />} />
                 <Route path="/equipo" element={<Team />} />
+                <Route path="/connect" element={<Connect />} />
               </Route>
 
               {/* Redirects de compatibilidad (URLs antiguas) */}
