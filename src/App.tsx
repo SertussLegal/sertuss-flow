@@ -25,6 +25,7 @@ import CreditsBlockedModal from "./components/CreditsBlockedModal";
 import Cancelaciones from "./pages/Cancelaciones";
 import CancelacionNueva from "./pages/CancelacionNueva";
 import CancelacionValidar from "./pages/CancelacionValidar";
+import OAuthConsent from "./pages/OAuthConsent";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<Login />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
 
               {/* App protegida con layout global */}
               <Route
