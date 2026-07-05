@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://cmcikwbszokxeepchqib.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "sertuss-mcp",
+      "version": "0.1.0",
+      "title": "Sertuss"
+    },
+    "tools": [
+      {
+        "name": "whoami",
+        "title": "Quién soy",
+        "description": "Devuelve la identidad del usuario autenticado que llama al servidor MCP (ID y email).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_escrituras",
+        "title": "Listar escrituras",
+        "description": "Lista los trámites de escrituras (compraventa, hipoteca, poder) del usuario autenticado en su organización activa, ordenados por fecha de actualización.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Máximo de resultados"
+            },
+            "status": {
+              "type": "string",
+              "description": "Filtro opcional por estado"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_cancelaciones",
+        "title": "Listar cancelaciones",
+        "description": "Lista las cancelaciones de hipoteca del usuario autenticado en su organización activa, ordenadas por fecha de actualización.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Máximo de resultados"
+            },
+            "status": {
+              "type": "string",
+              "description": "Filtro opcional por estado"
+            },
+            "banco": {
+              "type": "string",
+              "description": "Filtro opcional por nombre del banco acreedor"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_cancelacion",
+        "title": "Obtener cancelación",
+        "description": "Recupera el detalle completo (data_final incluido) de una cancelación de hipoteca por su ID. RLS garantiza que sólo devuelve cancelaciones de la organización activa del usuario.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID de la cancelación"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
