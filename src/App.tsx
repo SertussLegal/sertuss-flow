@@ -26,6 +26,7 @@ import Cancelaciones from "./pages/Cancelaciones";
 import CancelacionNueva from "./pages/CancelacionNueva";
 import CancelacionValidar from "./pages/CancelacionValidar";
 import OAuthConsent from "./pages/OAuthConsent";
+import Connect from "./pages/Connect";
 
 const queryClient = new QueryClient();
 
