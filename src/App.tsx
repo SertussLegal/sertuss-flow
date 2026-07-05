@@ -26,7 +26,7 @@ import Cancelaciones from "./pages/Cancelaciones";
 import CancelacionNueva from "./pages/CancelacionNueva";
 import CancelacionValidar from "./pages/CancelacionValidar";
 import OAuthConsent from "./pages/OAuthConsent";
-import Connect from "./pages/Connect";
+
 
 const queryClient = new QueryClient();
 
@@ -125,7 +125,7 @@ const App = () => (
                 <Route path="/admin/entidad/:id" element={<AdminOrgEdit />} />
                 <Route path="/notaria" element={<NotariaSettings />} />
                 <Route path="/equipo" element={<Team />} />
-                <Route path="/connect" element={<Connect />} />
+                
               </Route>
 
               {/* Redirects de compatibilidad (URLs antiguas) */}

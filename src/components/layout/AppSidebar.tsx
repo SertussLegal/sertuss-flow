@@ -10,7 +10,6 @@ import {
   ChevronsUpDown,
   Check,
   ShieldCheck,
-  Plug,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
