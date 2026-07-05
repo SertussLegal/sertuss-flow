@@ -1,26 +1,18 @@
 // ============================================================================
 // validate-plantilla-v3 — Edge function EFÍMERA (Plan v7)
-// Valida la plantilla `davivienda/formato cancelacion hipoteca v3.docx`:
-//   - ?mode=inspect          → OOXML + tags canónicos + huérfanos
-//   - ?mode=render-natural   → Render Docxtemplater con prosa Natural
-//   - ?mode=render-juridica  → Render Docxtemplater con prosa Jurídica
-//
-// DESTRUIR tras entregar el reporte. No forma parte del runtime productivo.
+// DESTRUIR tras entregar el reporte.
+// Independiente de _shared/prosaBancos para evitar acoplamiento con el
+// pipeline productivo — usa las prosas canónicas de los snapshots inmutables.
 // ============================================================================
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import PizZip from "npm:pizzip@3.1.7";
 import Docxtemplater from "npm:docxtemplater@3.50.0";
 
-import { getProsaBanco } from "../_shared/prosaBancos/index.ts";
-import type { ProsaContext } from "../_shared/prosaBancos/types.ts";
-
 const BUCKET = "cancelaciones-plantillas";
 const TEMPLATE_PATH = "davivienda/formato cancelacion hipoteca v3.docx";
-const DAVIVIENDA_NIT = "860.034.313-7";
 
-// Catálogo de tags conocidos — copia literal del subset de DOCX_FIELD_MAP
-// (edge functions no importan desde src/). Solo se usa para detectar huérfanos.
+// Catálogo copiado literal de src/lib/docxFieldMap.ts para detectar huérfanos.
 const KNOWN_TAGS = new Set<string>([
   "notaria_numero","notaria_numero_letras","notaria_numero_letras_lower","notaria_numero_letras_femenino",
   "notaria_ordinal","notaria_circulo","notaria_circulo_proper","notaria_departamento",
@@ -65,19 +57,17 @@ const KNOWN_TAGS = new Set<string>([
   "valor_compraventa_letras","valor_hipoteca_letras","entidad_bancaria","banco_nombre",
   "banco_nit","entidad_nit","entidad_domicilio","afectacion_vivienda",
   "ubicacion_inmueble","ubicacion_predio","inmueble_nombre",
-  // Loop scopes
   "vendedor","comprador","persona","representante","representantes",
 ]);
 
 // ── Normalización de runs Word (lógica embebida de docxRunNormalizer) ──
-// Word puede fragmentar `{comparecencia_prosa}` en múltiples <w:r>/<w:t> por
-// cambios de formato invisibles. Concatenamos texto plano ignorando runs.
 function extractPlainTextFromDocumentXml(xml: string): string {
-  // Extrae todos los <w:t ...>texto</w:t> en orden y los concatena.
-  // Preserva `xml:space="preserve"` implícitamente porque el contenido va tal cual.
-  const matches = xml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g);
   const parts: string[] = [];
-  for (const m of matches) {
+  // <w:tab/> → tab, <w:br/> → newline (para no romper detección de tags fragmentados)
+  const cleaned = xml.replace(/<w:tab\s*\/>/g, "\t").replace(/<w:br\s*\/>/g, "\n");
+  const re = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cleaned)) !== null) {
     parts.push(
       m[1]
         .replace(/&lt;/g, "<")
@@ -92,7 +82,6 @@ function extractPlainTextFromDocumentXml(xml: string): string {
 
 function extractDocxtemplaterTags(plainText: string): string[] {
   const set = new Set<string>();
-  // Ignoramos secciones/loops ({#tag}, {/tag}) para el reporte de huérfanos.
   const re = /\{([#/^]?)([^{}]+?)\}/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(plainText)) !== null) {
@@ -103,59 +92,24 @@ function extractDocxtemplaterTags(plainText: string): string[] {
   return [...set].sort();
 }
 
-function buildContextNatural(): ProsaContext {
-  return {
-    apoderado: {
-      tipo: "natural",
-      nombre: "ANA MARIA MONTOYA ECHEVERRY",
-      cedula: "41939243",
-      escritura_poder_num: "7364",
-      escritura_poder_fecha: "2023-05-26",
-      escritura_poder_notaria_num: "29",
-    },
-    poderdante: {},
-    instrumento: {},
-    ciudad_firma: "Bogotá",
-  };
-}
+// ── Prosas canónicas (Snapshot inmutable Davivienda — davivienda_test.ts) ──
+const PROSA_NATURAL = {
+  comparecencia:
+    "COMPARECIÓ: ANA MARIA MONTOYA ECHEVERRY, mayor de edad, identificada con la cédula de ciudadanía número 41939243, vecina de esta ciudad, quien obra en su condición de APODERADA GENERAL del BANCO DAVIVIENDA S.A., sociedad anónima con domicilio principal en Bogotá D.C., identificada con NIT: 860.034.313-7, como consta en la escritura pública número siete mil trescientos sesenta y cuatro (7364) de fecha veintiséis (26) de mayo de dos mil veintitrés (2023), otorgada en la notaría veintinueve (29) del círculo notarial de Bogotá D.C.",
+  antefirma:
+    "\n\n_______________________________________\nANA MARIA MONTOYA ECHEVERRY\nC.C. No.41939243 de Bogotá D.C.\nAPODERADO GENERAL DE BANCO DAVIVIENDA S.A.",
+  nota:
+    "El Notario deja constancia de que ANA MARIA MONTOYA ECHEVERRY, APODERADA GENERAL de BANCO DAVIVIENDA S.A., AUTORIZA que el presente instrumento sea suscrito por su apoderado.",
+};
 
-function buildContextJuridica(): ProsaContext {
-  return {
-    apoderado: {
-      tipo: "juridica",
-      nombre: "LINA MAGALY CAMPOS LOSADA",
-      cedula: "55069433",
-      sociedad_razon_social: "CONECTIVA GLOBAL S.A.S.",
-      sociedad_nit: "900.666.582-8",
-      sociedad_constitucion: {
-        tipo_documento: "documento_privado",
-        fecha: "2013-10-18",
-        fecha_texto: "dieciocho (18) de octubre de dos mil trece (2013)",
-        camara_comercio_ciudad: "BOGOTA",
-        camara_comercio_fecha: "2013-10-21",
-        camara_comercio_numero: "01775236",
-        libro: "IX",
-        razon_social_anterior: "PROYECTOS LEGALES S.A.S.",
-        reforma_acta_numero: "3",
-        reforma_acta_fecha_texto: "doce (12) de diciembre de dos mil veintitrés (2023)",
-        reforma_camara_fecha_texto: "veinticuatro (24) de julio de dos mil veinticinco (2025)",
-      },
-    },
-    poderdante: {
-      representante_legal_nombre: "FELIX ROZO CAGUA",
-      representante_legal_cedula: "79382406",
-      representante_legal_cargo: "SUPLENTE DEL PRESIDENTE",
-      representante_legal_cedula_expedida_en: "Bogotá D.C.",
-    },
-    instrumento: {
-      escritura_num: "16390",
-      fecha: "2025-09-18",
-      notaria_numero: "29",
-      notaria_ciudad: "Bogotá D.C.",
-    },
-    ciudad_firma: "Bogotá D.C.",
-  };
-}
+const PROSA_JURIDICA = {
+  comparecencia:
+    "COMPARECIÓ: LINA MAGALY CAMPOS LOSADA, mayor de edad, identificada con la cédula de ciudadanía número 55069433, en su calidad de representante legal de la sociedad CONECTIVA GLOBAL S.A.S., con NIT. 900.666.582-8, sociedad legalmente constituida mediante documento privado del dieciocho (18) de octubre de dos mil trece (2013), inscrita en la Cámara de Comercio de BOGOTA bajo el número 01775236 del libro IX, anteriormente denominada PROYECTOS LEGALES S.A.S., sociedad que actúa como apoderada general del BANCO DAVIVIENDA S.A., como consta en el poder general conferido por el doctor FELIX ROZO CAGUA, obrando en su condición de suplente del presidente, mediante escritura pública número dieciséis mil trescientos noventa (16390) otorgada en la Notaría veintinueve (29) del Círculo de Bogotá D.C.",
+  antefirma:
+    "\n\n_______________________________________\nLINA MAGALY CAMPOS LOSADA\nC.C. No.55069433\nEn calidad de representante legal de la sociedad CONECTIVA GLOBAL S.A.S., sociedad que a su vez obra en calidad de apoderada general de BANCO DAVIVIENDA S.A.",
+  nota:
+    "El Notario deja constancia de que LINA MAGALY CAMPOS LOSADA, en calidad de representante legal de la sociedad CONECTIVA GLOBAL S.A.S., apoderada general de BANCO DAVIVIENDA S.A., AUTORIZA la firma del presente instrumento.",
+};
 
 async function downloadTemplate(): Promise<Uint8Array> {
   const supabase = createClient(
@@ -168,96 +122,89 @@ async function downloadTemplate(): Promise<Uint8Array> {
 }
 
 function inspect(bytes: Uint8Array) {
-  let ooxml_ok = false;
-  let zip: PizZip | null = null;
   const errors: string[] = [];
+  let zip: PizZip;
   try {
     zip = new PizZip(bytes);
-    const doc = zip.file("word/document.xml");
-    const ctypes = zip.file("[Content_Types].xml");
-    ooxml_ok = !!doc && !!ctypes;
-    if (!doc) errors.push("Missing word/document.xml");
-    if (!ctypes) errors.push("Missing [Content_Types].xml");
   } catch (e) {
-    errors.push(`PizZip failure: ${(e as Error).message}`);
-    return { ooxml_ok: false, errors, tags: [], canonical: {}, orphans: [] };
+    return { ooxml_ok: false, errors: [`PizZip: ${(e as Error).message}`], tags: [], canonical: {}, orphans: [] };
   }
+  const doc = zip.file("word/document.xml");
+  const ctypes = zip.file("[Content_Types].xml");
+  const ooxml_ok = !!doc && !!ctypes;
+  if (!doc) errors.push("Missing word/document.xml");
+  if (!ctypes) errors.push("Missing [Content_Types].xml");
+  if (!ooxml_ok) return { ooxml_ok, errors, tags: [], canonical: {}, orphans: [] };
 
-  const xml = zip!.file("word/document.xml")!.asText();
+  const xml = doc!.asText();
   const plain = extractPlainTextFromDocumentXml(xml);
   const tags = extractDocxtemplaterTags(plain);
-
   const canonical = {
     comparecencia_prosa: tags.includes("comparecencia_prosa"),
     antefirma_prosa: tags.includes("antefirma_prosa"),
     nota_autorizacion_prosa: tags.includes("nota_autorizacion_prosa"),
   };
   const orphans = tags.filter((t) => !KNOWN_TAGS.has(t));
-  return { ooxml_ok, errors, tags, canonical, orphans, plain_snippet_len: plain.length };
+  return {
+    ooxml_ok,
+    errors,
+    xml_bytes: xml.length,
+    plain_bytes: plain.length,
+    tags_total: tags.length,
+    tags,
+    canonical,
+    orphans,
+  };
 }
 
-function render(bytes: Uint8Array, ctx: ProsaContext) {
-  const template = getProsaBanco(DAVIVIENDA_NIT);
-  if (!template) throw new Error("Davivienda template not found in registry");
-  const comparecencia = template.renderComparecencia(ctx);
-  const antefirma = template.renderAntefirma(ctx);
-  const nota = template.renderNotaAutorizacion(ctx);
-
+function render(bytes: Uint8Array, tipo: "natural" | "juridica") {
+  const prosa = tipo === "natural" ? PROSA_NATURAL : PROSA_JURIDICA;
   const zip = new PizZip(bytes);
   const docx = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
-    nullGetter: () => "", // NullGetter estricto: variables ausentes → vacío
+    nullGetter: () => "",
   });
   docx.render({
-    comparecencia_prosa: comparecencia,
-    antefirma_prosa: antefirma,
-    nota_autorizacion_prosa: nota,
+    comparecencia_prosa: prosa.comparecencia,
+    antefirma_prosa: prosa.antefirma,
+    nota_autorizacion_prosa: prosa.nota,
   });
   const outBytes = docx.getZip().generate({ type: "uint8array" });
   const outZip = new PizZip(outBytes);
   const outXml = outZip.file("word/document.xml")!.asText();
   const outPlain = extractPlainTextFromDocumentXml(outXml);
 
-  const residualTags = extractDocxtemplaterTags(outPlain).filter(
-    (t) => t === "comparecencia_prosa" || t === "antefirma_prosa" || t === "nota_autorizacion_prosa",
+  const residual = extractDocxtemplaterTags(outPlain).filter((t) =>
+    ["comparecencia_prosa", "antefirma_prosa", "nota_autorizacion_prosa"].includes(t),
   );
-
-  const requiredMarkers = ctx.apoderado.tipo === "juridica"
-    ? [
-        "BANCO DAVIVIENDA S.A.",
-        "NIT: 860.034.313-7",
-        "sociedad que actúa como apoderada general",
-        "CONECTIVA GLOBAL S.A.S.",
-        "FELIX ROZO CAGUA",
-      ]
-    : [
-        "BANCO DAVIVIENDA S.A.",
-        "NIT: 860.034.313-7",
-        "APODERADA GENERAL",
-        "ANA MARIA MONTOYA ECHEVERRY",
-        "notaría veintinueve (29)",
-      ];
+  const required = tipo === "juridica"
+    ? ["BANCO DAVIVIENDA S.A.","NIT: 860.034.313-7","sociedad que actúa como apoderada general","CONECTIVA GLOBAL S.A.S.","FELIX ROZO CAGUA","LINA MAGALY CAMPOS LOSADA"]
+    : ["BANCO DAVIVIENDA S.A.","NIT: 860.034.313-7","APODERADA GENERAL","ANA MARIA MONTOYA ECHEVERRY","notaría veintinueve (29)"];
   const markers: Record<string, boolean> = {};
-  for (const m of requiredMarkers) markers[m] = outPlain.includes(m);
+  for (const m of required) markers[m] = outPlain.includes(m);
 
-  const corruptEscapes =
-    /&amp;amp;|&lt;|&gt;/.test(outPlain);
+  const corrupt_escapes = /&amp;amp;|&lt;script|&gt;&gt;/.test(outPlain);
 
-  const idx = outPlain.indexOf("BANCO DAVIVIENDA");
-  const snippet = idx >= 0 ? outPlain.slice(Math.max(0, idx - 80), idx + 320) : outPlain.slice(0, 400);
+  const anchor = tipo === "juridica" ? "COMPARECIÓ: LINA" : "COMPARECIÓ: ANA";
+  const idx = outPlain.indexOf(anchor);
+  const compSnippet = idx >= 0 ? outPlain.slice(idx, idx + 500) : outPlain.slice(0, 500);
+  const antIdx = outPlain.indexOf(tipo === "juridica" ? "LINA MAGALY CAMPOS LOSADA\nC.C." : "ANA MARIA MONTOYA ECHEVERRY\nC.C.");
+  const antSnippet = antIdx >= 0 ? outPlain.slice(antIdx, antIdx + 300) : "(antefirma anchor not found)";
+  const notIdx = outPlain.indexOf("AUTORIZA");
+  const notSnippet = notIdx >= 0 ? outPlain.slice(Math.max(0, notIdx - 60), notIdx + 260) : "(nota anchor not found)";
 
   return {
-    render_ok: residualTags.length === 0 && Object.values(markers).every(Boolean) && !corruptEscapes,
-    residual_tags: residualTags,
+    tipo,
+    render_ok: residual.length === 0 && Object.values(markers).every(Boolean) && !corrupt_escapes,
+    residual_tags: residual,
     markers,
-    corrupt_escapes: corruptEscapes,
-    prosa_lengths: {
-      comparecencia: comparecencia.length,
-      antefirma: antefirma.length,
-      nota: nota.length,
+    corrupt_escapes,
+    snippets: {
+      comparecencia: compSnippet,
+      antefirma: antSnippet,
+      nota_autorizacion: notSnippet,
     },
-    snippet,
   };
 }
 
@@ -267,13 +214,11 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const mode = url.searchParams.get("mode") ?? "inspect";
     const bytes = await downloadTemplate();
-
     let result: unknown;
     if (mode === "inspect") result = inspect(bytes);
-    else if (mode === "render-natural") result = render(bytes, buildContextNatural());
-    else if (mode === "render-juridica") result = render(bytes, buildContextJuridica());
+    else if (mode === "render-natural") result = render(bytes, "natural");
+    else if (mode === "render-juridica") result = render(bytes, "juridica");
     else result = { error: `unknown mode: ${mode}` };
-
     return new Response(JSON.stringify({ mode, ...(result as object) }, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
