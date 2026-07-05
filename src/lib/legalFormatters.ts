@@ -10,7 +10,7 @@ function convertGroupLegal(n: number): string {
   if (n === 100) return "cien";
   if (n < 10) return UNITS[n];
   if (n < 20) return TEENS[n - 10];
-  if (n < 30) return n === 20 ? "veinte" : `veinti${UNITS[n % 10]}`;
+  if (n < 30) return n === 20 ? "veinte" : VEINTIS[n - 20];
   if (n < 100) {
     const t = Math.floor(n / 10), u = n % 10;
     return u === 0 ? TENS[t] : `${TENS[t]} y ${UNITS[u]}`;
