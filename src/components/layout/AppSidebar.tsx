@@ -10,6 +10,7 @@ import {
   ChevronsUpDown,
   Check,
   ShieldCheck,
+  Plug,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -57,6 +58,10 @@ const WORK_MODULES: NavItem[] = [
 
 const OFFICE_NAV: NavItem[] = [
   { label: "Mi Equipo", icon: Users, path: "/equipo" },
+];
+
+const INTEGRATIONS_NAV: NavItem[] = [
+  { label: "Conectar IA", icon: Plug, path: "/connect" },
 ];
 
 const PLATFORM_NAV: NavItem[] = [
@@ -233,6 +238,17 @@ export const AppSidebar = () => {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+
+        <SidebarGroup>
+          {!collapsed && (
+            <SidebarGroupLabel className={GROUP_LABEL_CLS}>
+              Integraciones
+            </SidebarGroupLabel>
+          )}
+          <SidebarGroupContent>
+            <SidebarMenu>{INTEGRATIONS_NAV.map(renderItem)}</SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-slate-100 p-2 gap-1">
