@@ -12,13 +12,15 @@ const UNITS = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "och
 const TEENS = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
 const TENS = ["", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
 const HUNDREDS = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+// Rango 21-29 con tildes ortográficas correctas.
+const VEINTIS = ["veinte", "veintiuno", "veintidós", "veintitrés", "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve"];
 
 function convertGroup(n: number): string {
   if (n === 0) return "";
   if (n === 100) return "cien";
   if (n < 10) return UNITS[n];
   if (n < 20) return TEENS[n - 10];
-  if (n < 30) return n === 20 ? "veinte" : `veinti${UNITS[n % 10]}`;
+  if (n < 30) return n === 20 ? "veinte" : VEINTIS[n - 20];
   if (n < 100) {
     const t = Math.floor(n / 10), u = n % 10;
     return u === 0 ? TENS[t] : `${TENS[t]} y ${UNITS[u]}`;
