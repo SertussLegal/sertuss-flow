@@ -4,6 +4,8 @@ const UNITS = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "och
 const TEENS = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
 const TENS = ["", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
 const HUNDREDS = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+// Rango 21-29 con tildes ortográficas correctas (palabras agudas terminadas en s/n).
+const VEINTIS = ["veinte", "veintiuno", "veintidós", "veintitrés", "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve"];
 
 function convertGroupLegal(n: number): string {
   if (n === 0) return "";
