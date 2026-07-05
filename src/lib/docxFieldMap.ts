@@ -193,6 +193,34 @@ export const DOCX_FIELD_MAP: ReadonlyArray<DocxFieldDescriptor> = [
   { tag: "apoderado_banco.notaria_poder_ciudad", aliases: [], group: "apoderado_banco" },
   { tag: "apoderado_banco.email", aliases: [], group: "apoderado_banco" },
 
+  // ── Prosa canónica v5/v6 (Plan v7 — cancelación de hipoteca) ──
+  // Inyectadas por `buildDocxVars` desde `prosaBancos/<banco>.ts`.
+  // critical: false para no contaminar la cobertura en plantillas legacy v2
+  // que aún no incluyen estas llaves.
+  {
+    tag: "comparecencia_prosa",
+    aliases: [],
+    group: "apoderado_banco",
+    critical: false,
+    description: "Cláusula PRIMERO de comparecencia canónica del apoderado del banco (v5/v6).",
+  },
+  {
+    tag: "antefirma_prosa",
+    aliases: [],
+    group: "apoderado_banco",
+    critical: false,
+    description: "Bloque de antefirma bajo la firma del compareciente (v5/v6).",
+  },
+  {
+    tag: "nota_autorizacion_prosa",
+    aliases: [],
+    group: "apoderado_banco",
+    critical: false,
+    description: "Nota notarial de autorización de firma fuera de despacho (v5/v6).",
+  },
+
+
+
   // ── Flags booleanos ────────────────────────────────────────────
   { tag: "tiene_hipoteca", aliases: ["has_hipoteca"], group: "flags" },
   { tag: "has_credito", aliases: [], group: "flags" },
