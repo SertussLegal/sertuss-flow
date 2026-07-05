@@ -218,7 +218,18 @@ Deno.serve(async (req) => {
     if (mode === "inspect") result = inspect(bytes);
     else if (mode === "render-natural") result = render(bytes, "natural");
     else if (mode === "render-juridica") result = render(bytes, "juridica");
+    else if (mode === "cleanup") {
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { data, error } = await supabase.storage.from(BUCKET).remove([
+        "davivienda/formato cancelacion hipoteca blanqueado.docx",
+      ]);
+      result = { removed: data, error: error?.message ?? null };
+    }
     else result = { error: `unknown mode: ${mode}` };
+
     return new Response(JSON.stringify({ mode, ...(result as object) }, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
