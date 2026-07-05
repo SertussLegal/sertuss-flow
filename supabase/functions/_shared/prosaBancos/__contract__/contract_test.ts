@@ -8,7 +8,7 @@
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import contract from "./referencia_davivienda.contract.json" with { type: "json" };
-import { poderBancoTool } from "../../../../scan-document/core/poderBanco/tool.ts";
+import { poderBancoTool } from "../../../scan-document/core/poderBanco/tool.ts";
 
 type Schema = {
   type?: string;
