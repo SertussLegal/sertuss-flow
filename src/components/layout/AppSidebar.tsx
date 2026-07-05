@@ -59,9 +59,6 @@ const OFFICE_NAV: NavItem[] = [
   { label: "Mi Equipo", icon: Users, path: "/equipo" },
 ];
 
-const INTEGRATIONS_NAV: NavItem[] = [
-  { label: "Conectar IA", icon: Plug, path: "/connect" },
-];
 
 const PLATFORM_NAV: NavItem[] = [
   { label: "Panel de Administración", icon: Shield, path: "/admin" },
