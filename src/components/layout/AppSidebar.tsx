@@ -238,6 +238,17 @@ export const AppSidebar = () => {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+
+        <SidebarGroup>
+          {!collapsed && (
+            <SidebarGroupLabel className={GROUP_LABEL_CLS}>
+              Integraciones
+            </SidebarGroupLabel>
+          )}
+          <SidebarGroupContent>
+            <SidebarMenu>{INTEGRATIONS_NAV.map(renderItem)}</SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-slate-100 p-2 gap-1">
