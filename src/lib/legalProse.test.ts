@@ -24,6 +24,24 @@ describe("legalProse — numeroConLetras", () => {
   });
 });
 
+describe("legalProse — ortografía rango 21-29 (regresión de tildes)", () => {
+  it("acentúa palabras agudas compuestas (22, 23, 26)", () => {
+    expect(numeroConLetras(22)).toBe("veintidós (22)");
+    expect(numeroConLetras(23)).toBe("veintitrés (23)");
+    expect(numeroConLetras(26)).toBe("veintiséis (26)");
+  });
+  it("no acentúa las graves del mismo rango", () => {
+    expect(numeroConLetras(24)).toBe("veinticuatro (24)");
+    expect(numeroConLetras(25)).toBe("veinticinco (25)");
+    expect(numeroConLetras(27)).toBe("veintisiete (27)");
+    expect(numeroConLetras(28)).toBe("veintiocho (28)");
+    expect(numeroConLetras(29)).toBe("veintinueve (29)");
+  });
+  it("nunca produce la forma sin tilde 'veintiseis'", () => {
+    expect(numeroConLetras(26)).not.toContain("veintiseis");
+  });
+});
+
 describe("legalProse — fechaProsa", () => {
   it("ISO YYYY-MM-DD", () => {
     expect(fechaProsa("1971-01-29")).toMatch(
