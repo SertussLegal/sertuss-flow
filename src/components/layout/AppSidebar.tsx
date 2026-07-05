@@ -58,6 +58,9 @@ const WORK_MODULES: NavItem[] = [
 
 const OFFICE_NAV: NavItem[] = [
   { label: "Mi Equipo", icon: Users, path: "/equipo" },
+];
+
+const INTEGRATIONS_NAV: NavItem[] = [
   { label: "Conectar IA", icon: Plug, path: "/connect" },
 ];
 
