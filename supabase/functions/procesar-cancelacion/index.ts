@@ -17,7 +17,7 @@ import { assertOwnPaths } from "../_shared/storagePaths.ts";
 import { POWER_V5_ENABLED } from "../_shared/poderBancoSchemaVersion.ts";
 import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
 import { classifyApoderado, type ApoderadoPayload } from "../_shared/apoderadoClassifier.ts";
-import { getProsaBanco, type ProsaContext } from "../_shared/prosaBancos/index.ts";
+import { getProsaBanco, type ProsaContext, mergeOverride, type ProsaApoderadoOverride } from "../_shared/prosaBancos/index.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
