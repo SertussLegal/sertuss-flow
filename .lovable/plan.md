@@ -1,142 +1,202 @@
-# Fase 1 — Diseño detallado (retiro del auditor Claude en vivo + tablas base)
+# Fase 1 · Validacion.tsx — diseño detallado (solo revisión, sin aplicar)
 
-Cambio delicado. Fase 1 solo hace 3 cosas: (a) crear las 2 tablas del job de descubrimiento, (b) retirar Claude del flujo del usuario en `Validacion.tsx` sustituyéndolo por un helper determinista `computeTopIssues`, (c) marcar `validacionClaude.ts` como deprecated (stub). Nada del tab Admin (100% Fase 2). El edge function `validar-con-claude` **NO se toca ni se redespliega** en Fase 1 (queda huérfano en backend, se retira en Fase 3).
+Objetivo: retirar quirúrgicamente las 2 llamadas en vivo a `validar-con-claude` y toda la UI derivada, reemplazándolas por un resumen determinista "top 3 a revisar" pre-preview. Cambios sólo en frontend; el edge function no se toca.
 
 ---
 
-## 1. Archivos que se tocan (lista exacta)
+## 0. Hallazgos que exceden el plan previo (leer primero)
 
-### 1.1 Migración SQL nueva (una sola migración)
+Al releer Validacion.tsx encontré 2 dependencias de Claude que el plan `Fase 1` original **no listó explícitamente** y que hay que resolver antes de borrar:
 
-```sql
--- ============================================================
--- Fase 1: tablas base del job de descubrimiento de reglas
--- ============================================================
+**H1 · `notariaSuggestions` (líneas 2577–2607 + banner 2790–2815 + botón "Aplicar todas")**
+Feature real de usuario: lee `validacionCampos.validaciones` filtrando por `auto_corregible === true` + `valor_sugerido` + campo `notaria.*`, y ofrece autollenar campos de Notaría desde datos detectados por Claude en los OCR. **Si se retira Claude en Fase 1, esta feature muere silenciosamente.** Recomendación: retirarla explícitamente en el mismo commit (el usuario todavía puede llenar los campos a mano; el panel "Datos de la Notaría" sigue funcional). Reintroducible en Fase 4 si se decide, alimentado por un extractor determinista de notaría desde los certificados.
 
--- Runs del job
-CREATE TABLE public.regla_propuesta_run (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  started_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  finished_at       TIMESTAMPTZ,
-  status            TEXT NOT NULL DEFAULT 'running'
-                    CHECK (status IN ('running','success','error')),
-  disparado_por     TEXT NOT NULL DEFAULT 'manual'
-                    CHECK (disparado_por IN ('manual','cron')),
-  triggered_by_user UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  tramites_analizados INT NOT NULL DEFAULT 0,
-  propuestas_generadas INT NOT NULL DEFAULT 0,
-  tokens_input      INT NOT NULL DEFAULT 0,
-  tokens_output     INT NOT NULL DEFAULT 0,
-  costo_estimado_usd NUMERIC(10,6) NOT NULL DEFAULT 0,
-  tiempo_ms         INT,
-  error_detalle     JSONB,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+**H2 · `inlineBadgeMap` se propaga como prop `inlineBadges` a 3 forms hijos**
+`PersonaForm`, `InmuebleForm`, `ActosForm` reciben `inlineBadges={inlineBadgeMap}` (líneas 3046, 3049, 3062, 3066). En Fase 1 les pasaremos `EMPTY_INLINE_BADGES = new Map()` (constante módulo-level, no un `new Map()` inline para no romper memoización). Los forms ya toleran un Map vacío (usan `.get()` que devuelve `undefined`). No requieren cambios internos.
 
-GRANT SELECT ON public.regla_propuesta_run TO authenticated;
-GRANT ALL    ON public.regla_propuesta_run TO service_role;
+**H3 · La premisa "las 35 reglas activas ya generadas"**
+Tu prompt asume que ya existe un motor determinista en frontend que evalúa las 35 reglas de `reglas_validacion` y produce un `Validacion[]`. **No existe** — hoy sólo el edge `validar-con-claude` lee esa tabla. Opciones:
 
-ALTER TABLE public.regla_propuesta_run ENABLE ROW LEVEL SECURITY;
+- **A (recomendada, alineada con el plan original)**: en Fase 1 implementamos `computeTopIssues` como helper puro TS con un **subset alto-ROI de 7 reglas** (las mismas del plan previo). No consulta BD, no hace red. Cubre los casos que en producción disparaban la mayoría de los hallazgos de Claude.
+- **B**: crear un evaluador cliente que lea `reglas_validacion` de BD y aplique cada regla determinística. Es Fase 5+ realista (motor de reglas serializable + expresiones seguras). No cabe en Fase 1.
 
-CREATE POLICY "platform_admin_reads_runs"
-  ON public.regla_propuesta_run FOR SELECT TO authenticated
-  USING (public.is_platform_admin());
+Este plan asume **opción A**. Si prefieres B, detente y coordinamos otro diseño.
 
--- (Sin INSERT/UPDATE policy: sólo service_role escribe desde la edge function.)
+---
 
--- Propuestas individuales
-CREATE TABLE public.regla_propuesta (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  run_id            UUID NOT NULL REFERENCES public.regla_propuesta_run(id) ON DELETE CASCADE,
-  tipo_acto         TEXT NOT NULL,
-  categoria         TEXT NOT NULL
-                    CHECK (categoria IN ('formato','coherencia','legal','negocio')),
-  nivel_severidad   TEXT NOT NULL
-                    CHECK (nivel_severidad IN ('error','advertencia','sugerencia')),
-  titulo            TEXT NOT NULL,
-  descripcion       TEXT NOT NULL,
-  regla_deterministica_sugerida JSONB NOT NULL,
-  campos_afectados  TEXT[] NOT NULL DEFAULT '{}',
-  evidencia         JSONB NOT NULL DEFAULT '[]'::jsonb,
-  frecuencia_estimada INT NOT NULL DEFAULT 1,
-  status            TEXT NOT NULL DEFAULT 'pendiente'
-                    CHECK (status IN ('pendiente','aprobada','rechazada','editada')),
-  revisado_por      UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  revisado_at       TIMESTAMPTZ,
-  nota_revision     TEXT,
-  regla_creada_id   UUID REFERENCES public.reglas_validacion(id) ON DELETE SET NULL,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+## 1. Diff exacto — `src/pages/Validacion.tsx`
 
-CREATE INDEX regla_propuesta_run_idx    ON public.regla_propuesta(run_id);
-CREATE INDEX regla_propuesta_status_idx ON public.regla_propuesta(status);
+### 1.1 Imports (línea 19–20)
 
-GRANT SELECT ON public.regla_propuesta TO authenticated;
-GRANT ALL    ON public.regla_propuesta TO service_role;
-
-ALTER TABLE public.regla_propuesta ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "platform_admin_reads_propuestas"
-  ON public.regla_propuesta FOR SELECT TO authenticated
-  USING (public.is_platform_admin());
-
--- updated_at trigger reutilizando public.set_updated_at()
-CREATE TRIGGER trg_regla_propuesta_updated_at
-  BEFORE UPDATE ON public.regla_propuesta
-  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+```diff
+- import { validarConClaude, tieneErroresCriticos, contarPorNivel, obtenerBloqueantes, obtenerSidePanel, obtenerInlineBadges, type Validacion as ClaudeValidacion } from "@/services/validacionClaude";
+- import { InlineBadgeDot } from "@/components/tramites/InlineBadgeDot";
++ import type { Validacion as ClaudeValidacion } from "@/services/validacionClaude";
++ import { computeTopIssues, type DeterministicIssue } from "@/lib/computeTopIssues";
 ```
 
-Notas:
-- **RLS lectura sólo para platform_admin.** No hay `organization_id`: es data global de producto.
-- Sin INSERT/UPDATE policies en Fase 1 (nadie escribe todavía; el job es Fase 2). Se agregan en Fase 2 junto con el RPC `admin_aprobar_regla_propuesta`.
+Se conserva el import de tipo `Validacion` porque `PersonaForm/InmuebleForm/ActosForm` lo consumen en su prop `inlineBadges: Map<string, Validacion>`. Se elimina `InlineBadgeDot` porque todos sus usos desaparecen con Claude.
+
+### 1.2 State (líneas 281–284)
+
+```diff
+- const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
+- const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
+- const [validacionCampos, setValidacionCampos] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
+- const [validandoCampos, setValidandoCampos] = useState(false);
++ const [topIssues, setTopIssues] = useState<DeterministicIssue[]>([]);
+```
+
+Se conserva `const [validando, setValidando] = useState(false);` (spinner del botón Generar; nada que ver con Claude).
+
+### 1.3 Constante módulo-level (arriba, junto a otras consts)
+
+```diff
++ const EMPTY_INLINE_BADGES: ReadonlyMap<string, ClaudeValidacion> = new Map();
+```
+
+### 1.4 `inlineBadgeMap` memo (líneas 873–898) → **eliminar bloque completo**
+
+Reemplazar por nada (los consumidores usan `EMPTY_INLINE_BADGES`).
+
+### 1.5 `validarDespuesDeCarga` (líneas 1345–1380) → **eliminar función completa**
+
+Es la primera llamada en vivo a Claude (tras cada OCR).
+
+### 1.6 Llamada en `handleSidebarUpload` (línea 1499)
+
+```diff
+-        // Disparar validación Claude en background (Momento 1: campos)
+-        const tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos" =
+-          scanType === "certificado_tradicion" || scanType === "predial" ? "inmueble"
+-          : tipo === "carta_credito" || tipo === "poder_notarial" ? "actos"
+-          : scanType === "escritura_antecedente" ? "vendedores"
+-          : tipo.startsWith("cedula_") ? "vendedores"
+-          : "vendedores";
+-        const tipoDocMapped: ... = ...;
+-        validarDespuesDeCarga(tipoDocMapped, d, tabOrigen);
++        // (Retirado en Fase 1: auditor Claude en vivo. El "top-3" determinista se
++        // calcula al pulsar "Generar y Analizar Word".)
+```
+
+Y en el `useCallback` deps (línea 1514) quitar `validarDespuesDeCarga`.
+
+### 1.7 `handlePrevisualizar` (líneas 1907–2005) — segunda llamada en vivo
+
+Reemplazar el bloque `try { ... await validarConClaude(...) ... }` por:
+
+```diff
+   setValidando(true);
+   try {
+-    const datosExtraidos = { ... vendedores/compradores/inmueble/actos ... };
+-    const validacionesApp: string[] = [...];
+-    const resultado = await validarConClaude({ modo: "documento", ... });
+-    if (resultado.estado === "error_sistema") { setPreviewOpen(true); return; }
+-    if (resultado.estado === "aprobado" && !tieneErroresCriticos(resultado)) { setPreviewOpen(true); return; }
+-    if (tieneErroresCriticos(resultado)) { setValidacionResultado(resultado); setValidacionDialogOpen(true); return; }
+-    const conteo = contarPorNivel(resultado);
+-    sonnerToast.info(`Validación: ${resultado.puntuacion ?? "—"}/100 — ...`, { ... });
+-    setPreviewOpen(true);
+-  } catch (err) {
+-    console.error("Error en validación pre-preview:", err);
+-    setPreviewOpen(true);
++    const issues = computeTopIssues({
++      tipoActo: actos.tipo_acto || "compraventa",
++      vendedores, compradores, inmueble, actos, notariaTramite,
++    });
++    setTopIssues(issues);
++    setPreviewOpen(true);
++  } catch (err) {
++    console.error("Error calculando top-issues:", err);
++    setTopIssues([]);
++    setPreviewOpen(true);
+   } finally {
+     setValidando(false);
+   }
+```
+
+### 1.8 Bloque `renderTabs` — limpieza (líneas 2501–2607, 2782–2795, 2955–2963)
+
+- **2501–2530** `getTabSeverity` y `hasTabInlineBadges` → eliminar ambas.
+- **2532–2556** `renderTabIcon` → reducir a `const renderTabIcon = (_tabKey: string) => null;` (mantener nombre para no tocar los 4 `TabsTrigger` de la línea 2974–2977).
+- **2558–2607** `conteo`, `totalHallazgos`, `notariaSuggestions`, `applyNotariaSuggestion`, `ignoreNotariaSuggestion`, `applyAllNotariaSuggestions` → **eliminar todo el bloque** (H1). También el import de `ignoredNotariaSuggestions`/setter en el useState correspondiente (buscar cerca de línea 280).
+- **2782–2795** en el header del panel "Datos de la Notaría": eliminar el IIFE del `InlineBadgeDot` (líneas 2781–2786) y el `Badge` de "N sugerencias de IA" (2790–2794).
+- **2804–2815** eliminar el bloque completo del banner "El asistente IA detectó…" + botón "Aplicar todas".
+- **2957–2963** eliminar el IIFE del `InlineBadgeDot` en la etiqueta de cada campo notaría (dejar sólo `{NOTARIA_LABELS[key]}`).
+
+### 1.9 Panel lateral post-carga (líneas 2980–3043) → **eliminar bloque completo**
+
+Es el "Validando coherencia…" + el resumen expandible con `sidePanelItems`. Sustituido conceptualmente por el nuevo banner top-3 (§1.10).
+
+### 1.10 Nuevo banner top-3 (insertar donde estaba §1.9, línea ~2980)
+
+```tsx
+{topIssues.length > 0 && (
+  <Card className="mb-4 border-border/60 bg-muted/30">
+    <div className="px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+        <Info className="h-3.5 w-3.5 text-primary" />
+        Top {topIssues.length} a revisar antes de generar
+      </div>
+      <ul className="space-y-1">
+        {topIssues.map((it) => {
+          const Icon = it.nivel === "error" ? AlertCircle
+                     : it.nivel === "advertencia" ? AlertTriangle : Info;
+          const cls = it.nivel === "error" ? "text-destructive"
+                    : it.nivel === "advertencia" ? "text-accent" : "text-primary";
+          return (
+            <li key={it.codigo_regla + it.campo} className="flex items-start gap-2 text-xs">
+              <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${cls}`} />
+              <span>
+                <span className="font-medium text-foreground">{it.campo}</span>
+                <span className="text-muted-foreground"> · {it.explicacion}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  </Card>
+)}
+```
+
+Comportamiento con 0 issues: no se renderiza (todo OK). Con 1–2: se renderiza con ese conteo real. Con ≥3: sólo los 3 primeros (el helper trunca).
+
+### 1.11 Props a los forms hijos (líneas 3046, 3049, 3062, 3066)
+
+```diff
+- inlineBadges={inlineBadgeMap}
++ inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>}
+```
+
+### 1.12 AlertDialog Claude (líneas 3510–3612) → **eliminar bloque completo**
 
 ---
 
-### 1.2 `src/pages/Validacion.tsx` — retiro de Claude
-
-**Se eliminan:**
-
-- Línea 19: import completo de `@/services/validacionClaude` (todos los símbolos).
-- Línea 20: import `InlineBadgeDot` en Validacion.tsx **se mantiene** (lo consume `computeTopIssues` para el resumen post-generación, y los forms hijos lo importan aparte).
-- Líneas 282–284: los 3 pieces of state Claude (`validacionResultado`, `validacionCampos`, `validandoCampos`) + `setValidacionResultado` en el flujo. Se conservan: `validando` (spinner del botón "Generar y Analizar Word") con nombre y comportamiento.
-- Líneas ~876–898: memo `inlineBadgesByField` (mapa de badges por campo derivado de Claude) → se elimina.
-- Líneas 1345–1382: función completa `validarDespuesDeCarga` (call-site #1 a Claude tras cada carga de doc). El sitio de invocación en línea 1499 se elimina también, y se depura la dependencia del `useCallback` en 1514.
-- Líneas ~1960–2000: bloque completo dentro de `handleSidebarUpload`/handler pre-preview (call-site #2). Se reemplaza por: llamada directa a `setPreviewOpen(true)` (sin AlertDialog de Claude).
-- Líneas 2504–2540: `hasTabInlineBadges` y su render (badges inline por tab).
-- Líneas 2558, 2578–2579: uso de `validacionCampos` en el resumen superior.
-- Líneas 2785, 2962: `InlineBadgeDot` cuyo `v` proviene de Claude (revisar caso por caso: si `v` es de origen determinista, se preserva).
-- Líneas 2980–3060: sección UI "Validando..." + panel lateral `sidePanelItems` (obtenerSidePanel).
-- Líneas 3520–3610 aprox: todo el `AlertDialog validacionDialogOpen` (dialog de errores críticos Claude) — reemplazado por nada (el flujo va directo a `PreviewModal`).
-- `validacionDialogOpen`, `setValidacionDialogOpen` (state) — eliminados.
-
-**Se agrega:**
-
-- Import: `import { computeTopIssues, type DeterministicIssue } from "@/lib/computeTopIssues";`
-- State nuevo: `const [topIssues, setTopIssues] = useState<DeterministicIssue[]>([]);`
-- En `handleSidebarUpload` (y en cualquier otro punto donde hoy se llamaba a Claude pre-preview): reemplazar el bloque Claude por:
-  ```ts
-  const issues = computeTopIssues({
-    tipoActo: actos.tipo_acto || "compraventa",
-    vendedores, compradores, inmueble, actos,
-  });
-  setTopIssues(issues);
-  setPreviewOpen(true);
-  ```
-- El resumen "top 3" se renderiza en `PreviewModal` (prop nueva `topIssues`) o como banner inline **sobre** el botón Generar; se elige lo segundo por ser menos intrusivo (una `Card` compacta con hasta 3 líneas: campo · nivel · explicación).
-
-**Se conserva sin cambios:** `PersonaForm.tsx`, `InmuebleForm.tsx`, `ActosForm.tsx` reciben la prop `validaciones: Validacion[]` desde Validacion.tsx. En Fase 1 se pasa `[]` (array vacío). El tipo `Validacion` sigue existiendo (viene del stub deprecated, ver 1.4). Cero cambios en los forms hijos.
-
----
-
-### 1.3 Nuevo archivo: `src/lib/computeTopIssues.ts`
-
-Helper determinista puro (sin red, sin IA). Reglas espejo de las que ya están activas en la BD `reglas_validacion` — pero implementadas en TS para el "top 3" pre-preview. Contrato:
+## 2. Nuevo archivo — `src/lib/computeTopIssues.ts` (contenido completo)
 
 ```ts
+/**
+ * Fase 1 (2026-07): reemplaza al auditor Claude en vivo.
+ * Helper determinista puro: sin red, sin IA, sin BD.
+ * Evalúa un subset alto-ROI de reglas y devuelve los N hallazgos más importantes
+ * priorizados por severidad (error > advertencia > sugerencia).
+ *
+ * Reglas cubiertas en esta fase (7):
+ *   R1 personas_sin_cedula                → error
+ *   R2 sin_vendedores_o_compradores       → error
+ *   R3 inmueble_sin_matricula             → error
+ *   R4 cuantia_faltante                   → error (compraventa, hipoteca)
+ *   R5 chip_o_catastro_faltante           → advertencia
+ *   R6 lugar_expedicion_faltante          → advertencia
+ *   R7 notaria_tramite_incompleta         → error
+ */
+
+export type Nivel = "error" | "advertencia" | "sugerencia";
+
 export interface DeterministicIssue {
-  nivel: "error" | "advertencia" | "sugerencia";
-  campo: string;
+  nivel: Nivel;
+  campo: string;         // etiqueta legible (no técnica)
   explicacion: string;
   codigo_regla: string;
 }
@@ -147,132 +207,181 @@ export interface ComputeInput {
   compradores: any[];
   inmueble: any;
   actos: any;
+  notariaTramite?: any;
 }
 
-export function computeTopIssues(input: ComputeInput, max = 3): DeterministicIssue[];
-```
+const SEV: Record<Nivel, number> = { error: 0, advertencia: 1, sugerencia: 2 };
 
-Reglas implementadas en Fase 1 (subset alto-ROI, no las 35):
-1. **Personas sin cédula** (campo `numero_cedula` vacío) → error.
-2. **Vendedores o compradores en 0** → error.
-3. **Inmueble sin matrícula inmobiliaria** → error.
-4. **Cuantía en 0 o vacía** cuando `tipo_acto` la requiere (compraventa, hipoteca) → error.
-5. **CHIP vacío en Bogotá** o **cédula catastral vacía en otros municipios** → advertencia.
-6. **Falta lugar_expedicion** en al menos una persona → advertencia.
-7. **Notaría de trámite incompleta** (numero_notaria, circulo o notario) → error.
+const isBogota = (municipio?: string) =>
+  !!municipio && /bogot[aá]/i.test(municipio);
 
-Devuelve máximo `max` items, priorizando error > advertencia > sugerencia. Testeable con vitest en aislamiento; se agrega `src/lib/computeTopIssues.test.ts` con al menos 1 caso por regla.
+const slotOcupado = (p: any) =>
+  !!(p?.nombre_completo || p?.numero_cedula || p?.razon_social || p?.nit);
 
----
+export function computeTopIssues(input: ComputeInput, max = 3): DeterministicIssue[] {
+  const out: DeterministicIssue[] = [];
+  const { tipoActo, vendedores, compradores, inmueble, actos, notariaTramite } = input;
 
-### 1.4 `src/services/validacionClaude.ts` — stub deprecated
+  // R2 — al menos un vendedor y un comprador
+  const vendReales = (vendedores || []).filter(slotOcupado);
+  const compReales = (compradores || []).filter(slotOcupado);
+  if (vendReales.length === 0)
+    out.push({ nivel: "error", campo: "Vendedores", codigo_regla: "R2_sin_vendedores",
+      explicacion: "No hay vendedores registrados." });
+  if (compReales.length === 0)
+    out.push({ nivel: "error", campo: "Compradores", codigo_regla: "R2_sin_compradores",
+      explicacion: "No hay compradores registrados." });
 
-Se **reduce a stub** (no se borra, para no romper imports de tipo `Validacion` en 3 forms):
+  // R1 — cada persona ocupada debe tener cédula (o NIT si es PJ)
+  const check = (label: string, list: any[]) =>
+    list.forEach((p, i) => {
+      if (!slotOcupado(p)) return;
+      const id = p.es_persona_juridica ? p.nit : p.numero_cedula;
+      if (!id || !String(id).trim())
+        out.push({
+          nivel: "error",
+          campo: `${label} ${i + 1}${p.nombre_completo ? ` (${p.nombre_completo})` : ""}`,
+          codigo_regla: "R1_persona_sin_id",
+          explicacion: p.es_persona_juridica
+            ? "Falta NIT de la persona jurídica."
+            : "Falta número de cédula.",
+        });
+    });
+  check("Vendedor", vendedores || []);
+  check("Comprador", compradores || []);
 
-```ts
-/**
- * @deprecated Fase 1 (2026-07): auditor Claude en vivo retirado.
- * Este módulo sólo mantiene el tipo `Validacion` para retrocompatibilidad
- * de PersonaForm/InmuebleForm/ActosForm. Toda la lógica de invocación fue removida.
- * La reconversión del edge function a "descubrimiento de reglas" ocurre en Fase 2.
- */
-export interface Validacion {
-  nivel: "error" | "advertencia" | "sugerencia";
-  codigo_regla: string;
-  campo: string;
-  campos_relacionados?: string[];
-  valor_actual?: string;
-  valor_sugerido?: string;
-  explicacion: string;
-  auto_corregible: boolean;
-  ui_target?: "modal_bloqueante" | "side_panel_audit" | "field_inline_badge";
-  priority?: "high" | "medium" | "low";
+  // R3 — inmueble sin matrícula
+  if (!inmueble?.matricula_inmobiliaria || !String(inmueble.matricula_inmobiliaria).trim())
+    out.push({ nivel: "error", campo: "Inmueble", codigo_regla: "R3_sin_matricula",
+      explicacion: "Falta matrícula inmobiliaria." });
+
+  // R4 — cuantía
+  const requiereCuantia = /compraventa|hipoteca/i.test(tipoActo || "");
+  if (requiereCuantia) {
+    const cv = Number(actos?.valor_compraventa || 0);
+    if (/compraventa/i.test(tipoActo) && (!cv || cv <= 0))
+      out.push({ nivel: "error", campo: "Actos · Valor de compraventa",
+        codigo_regla: "R4_cuantia_compraventa",
+        explicacion: "El valor de la compraventa está vacío o en cero." });
+    if (actos?.es_hipoteca || /hipoteca/i.test(tipoActo)) {
+      const vh = Number(actos?.valor_hipoteca || 0);
+      if (!vh || vh <= 0)
+        out.push({ nivel: "error", campo: "Actos · Valor de hipoteca",
+          codigo_regla: "R4_cuantia_hipoteca",
+          explicacion: "El valor de la hipoteca está vacío o en cero." });
+    }
+  }
+
+  // R5 — CHIP en Bogotá / catastral fuera de Bogotá
+  const idPredial = String(inmueble?.identificador_predial || "").trim();
+  if (!idPredial) {
+    if (isBogota(inmueble?.municipio))
+      out.push({ nivel: "advertencia", campo: "Inmueble · CHIP",
+        codigo_regla: "R5_chip_faltante",
+        explicacion: "En Bogotá el CHIP es obligatorio; está vacío." });
+    else
+      out.push({ nivel: "advertencia", campo: "Inmueble · Cédula catastral",
+        codigo_regla: "R5_catastral_faltante",
+        explicacion: "Falta cédula catastral del inmueble." });
+  }
+
+  // R6 — lugar de expedición
+  const sinLugar = [...(vendedores || []), ...(compradores || [])]
+    .filter(slotOcupado)
+    .filter((p) => !p.es_persona_juridica && !String(p.lugar_expedicion || "").trim());
+  if (sinLugar.length > 0)
+    out.push({ nivel: "advertencia", campo: "Personas · Lugar de expedición",
+      codigo_regla: "R6_lugar_expedicion",
+      explicacion: `Falta lugar de expedición en ${sinLugar.length} persona(s).` });
+
+  // R7 — notaría del trámite
+  if (notariaTramite) {
+    const faltan: string[] = [];
+    if (!String(notariaTramite.numero_notaria || "").trim()) faltan.push("número");
+    if (!String(notariaTramite.circulo || "").trim()) faltan.push("círculo");
+    if (!String(notariaTramite.nombre_notario || "").trim()) faltan.push("notario");
+    if (faltan.length)
+      out.push({ nivel: "error", campo: "Datos de la notaría",
+        codigo_regla: "R7_notaria_incompleta",
+        explicacion: `Falta ${faltan.join(", ")} en los datos de la notaría del trámite.` });
+  }
+
+  return out
+    .sort((a, b) => SEV[a.nivel] - SEV[b.nivel])
+    .slice(0, max);
 }
 ```
 
-Todas las funciones (`validarConClaude`, `contarPorNivel`, `obtenerBloqueantes`, etc.) se eliminan del archivo. Cualquier import roto se detectará al build; se limpia en Validacion.tsx en el mismo commit.
+Tests unitarios: nuevo archivo `src/lib/computeTopIssues.test.ts` con 1 caso por regla + 1 caso "sin issues" + 1 caso "trunca a 3 con overflow".
 
 ---
 
-### 1.5 `src/pages/Admin.tsx` — NO se toca en Fase 1
+## 3. `src/services/validacionClaude.ts` — recomendación
 
-El botón de test manual de Claude (línea 186) sigue existiendo apuntando al edge function actual. En Fase 2 se retira junto con la aparición del tab "Reglas propuestas". Decisión consciente: mantener herramienta de debug hasta reconvertir el edge.
+**Recomendación: dejarlo como stub deprecated en Fase 1, no borrarlo.**
 
----
+Razones:
+- `PersonaForm`, `InmuebleForm`, `ActosForm` importan **el tipo** `Validacion` para su prop `inlineBadges`. Borrar el archivo obliga a tocar 3 forms en el mismo commit — más superficie de riesgo para una fase cuyo objetivo es "cambio quirúrgico".
+- El tipo se sigue usando aunque la implementación desaparezca (contrato UI-agnóstico para la Fase 3 futura si se decide reintroducir badges deterministas).
+- Costo del stub: ~15 líneas, cero llamadas de red.
 
-### 1.6 Edge functions — NO se tocan en Fase 1
+Contenido propuesto (idéntico al del plan previo, §1.4): dejar sólo `export interface Validacion { ... }` y borrar todas las funciones (`validarConClaude`, `contarPorNivel`, `obtenerBloqueantes`, `obtenerSidePanel`, `obtenerInlineBadges`, `tieneErroresCriticos`, `obtenerAutoCorregibles`, `obtenerValidacionesCampo`). Header con `@deprecated` + fecha + puntero a Fase 2/3.
 
-- `supabase/functions/validar-con-claude/index.ts`: sin cambios. Queda desplegado pero sin cliente que lo llame (excepto botón de test en Admin).
-- `supabase/config.toml`: sin cambios.
-- Cero riesgo de imports cross-src, cero redeploy.
-
----
-
-## 2. Reversibilidad
-
-| Cambio | Reversible por | Riesgo |
-|---|---|---|
-| Migración SQL | `DROP TABLE regla_propuesta, regla_propuesta_run CASCADE;` (aditivo, no toca tablas existentes) | Muy bajo |
-| Retiro Claude en Validacion.tsx | Revert del commit vía historial de Lovable | Bajo (código previo intacto en git) |
-| Stub validacionClaude.ts | Revert del commit | Bajo |
-| computeTopIssues.ts nuevo | `rm` del archivo | Ninguno |
-
-Punto de rollback único: revert al commit anterior a Fase 1. Las tablas nuevas quedan huérfanas pero inactivas (sin escritores).
+Borrado real en Fase 5 (junto con reintroducción — o no — de un motor determinista de badges y refactor de los 3 forms para no depender del tipo).
 
 ---
 
-## 3. Plan de verificación
+## 4. Confirmación de dependencias externas (evidencia, no suposición)
 
-**Automatizado (obligatorio antes de merge):**
-- `computeTopIssues.test.ts`: ≥7 casos (uno por regla).
-- Build TypeScript sin errores (`tsgo`) — detecta imports rotos.
-- Vitest de contract existentes deben pasar sin cambios (no dependen de Claude).
+`rg` sobre `src` excluyendo `Validacion.tsx` y `validacionClaude.ts`:
 
-**Manual (checklist QA):**
-1. Login → nuevo trámite compraventa → cargar cédula → **NO** aparece spinner "Validando…", **NO** aparece panel lateral Claude, **NO** dot inline en tabs.
-2. Completar mínimo (vendedor, comprador, inmueble, actos) → click "Generar y Analizar Word" → **NO** aparece `AlertDialog` de "Revisión de validación" → abre `PreviewModal` directamente.
-3. Sobre el botón Generar, aparece Card compacto con **hasta 3 hallazgos** deterministas (o vacío si todo OK).
-4. Con datos incompletos (ej: sin matrícula) → top issues muestra el error correspondiente en rojo.
-5. Cancelaciones y otros flujos: sin cambios (Claude nunca los tocó, verificar por regresión).
-6. Admin → botón "Test Claude" sigue funcionando (fase 2 lo retira).
-7. Consola sin warnings/errores nuevos relacionados a `validacionClaude`.
-8. Network tab: cero llamadas a `/functions/v1/validar-con-claude` durante flujo normal de usuario.
+```
+src/components/tramites/PersonaForm.tsx:34:  import type { Validacion } from "@/services/validacionClaude";
+src/components/tramites/InmuebleForm.tsx:18: import type { Validacion } from "@/services/validacionClaude";
+src/components/tramites/ActosForm.tsx:11:    import type { Validacion } from "@/services/validacionClaude";
+```
 
-**BD (post-migración):**
-- `\d public.regla_propuesta` y `\d public.regla_propuesta_run` muestran estructura correcta.
-- `SELECT count(*) FROM regla_propuesta;` = 0 (sin escritores aún).
-- Como usuario no-admin: `SELECT * FROM regla_propuesta;` → 0 filas (RLS bloquea).
+- ✅ **Sólo imports de tipo**. Ningún componente lee `validacionResultado`/`validacionCampos` fuera de Validacion.tsx.
+- ✅ Los 3 forms consumen `inlineBadges: Map<string, Validacion>` → seguros con `EMPTY_INLINE_BADGES` (Map vacío).
+- ⚠️ **H1 (§0)**: `notariaSuggestions` está **dentro** de Validacion.tsx pero el plan previo no lo mencionó — es dependencia interna, se retira en el mismo commit.
+- ✅ `creditsBus.ts` mantiene `"validar-con-claude"` como `CreditAction`. No se toca (el edge sigue desplegado; el botón de Admin lo usa).
+- ✅ Ningún hook/contexto/localStorage persiste resultado de Claude.
+
+**Veredicto**: seguro proceder con el borrado descrito, siempre que aceptemos retirar `notariaSuggestions` en el mismo commit.
 
 ---
 
-## 4. Riesgo específico: dependencias ocultas de `validacionResultado`
+## 5. Plan de verificación
 
-**Verificado por grep completo (`rg validacionResultado|validacionCampos|validarConClaude`):**
+### Automatizado (obligatorio antes de merge)
 
-- ✅ `validacionResultado`: solo se lee dentro del `AlertDialog` (líneas 3520–3610) que se elimina en el mismo commit.
-- ✅ `validacionCampos`: solo alimenta memos internos (`inlineBadgesByField`, `hasTabInlineBadges`, resumen 2558/2578) que también se eliminan.
-- ✅ `PersonaForm`/`InmuebleForm`/`ActosForm` reciben `validaciones` como prop desde Validacion.tsx; en Fase 1 se pasa `[]` — los componentes renderizan sin badges, cero crashes (ya soportan array vacío por lógica de `filter()`).
-- ✅ `InlineBadgeDot` en sí es agnóstico al origen; se conserva por si otros contextos lo usan.
-- ✅ Ningún hook, contexto, o storage persiste el resultado de Claude → no hay estado zombie en localStorage/sessionStorage.
-- ✅ `creditsBus.ts` sí referencia `"validar-con-claude"` como una `CreditAction`. Se conserva (no cuesta nada, y el edge sigue vivo para el botón de Admin).
+- `bunx vitest run src/lib/computeTopIssues.test.ts` — ≥9 casos (7 reglas + sin-issues + overflow).
+- `bunx vitest run` — suite completa en verde (baseline 84/84).
+- `tsgo` — sin errores de tipo. Detecta imports rotos si algún consumidor externo no visto lee el estado eliminado.
 
-**Conclusión:** el borrado es seguro. Ningún consumidor externo al bloque UI que se elimina lee `validacionResultado`/`validacionCampos`.
+### Manual (checklist en preview)
 
----
-
-## 5. Redeploy de edge functions
-
-**Ninguno.** Fase 1 es puramente:
-- 1 migración SQL (aditiva).
-- Cambios frontend (React/TS).
-- Sin `deno.json`, sin imports cross-src, sin riesgo del bug de shim que ya resolvimos hoy.
-
-`validar-con-claude` queda deployado y funcional pero silenciado desde el cliente. Su reconversión (nuevo endpoint `descubrir-reglas` o mutación del actual) es Fase 2.
+1. **Trámite nuevo compraventa vacío** → click "Generar y Analizar Word" → banner top-3 muestra: `Vendedores · sin registro`, `Compradores · sin registro`, `Inmueble · falta matrícula`. No aparece AlertDialog Claude. No spinner "Validando coherencia…".
+2. **Carga cédula vendedor** → NO aparece spinner ni panel lateral Claude. Sidebar dice "Documento procesado". Consola limpia. Network tab: cero llamadas a `/functions/v1/validar-con-claude`.
+3. **Trámite completo con todo llenado correctamente** → click "Generar" → NO se renderiza el banner (topIssues vacío). Abre PreviewModal directamente.
+4. **Bogotá sin CHIP** (identificador_predial vacío + municipio = "Bogotá") → banner incluye advertencia CHIP.
+5. **Persona con nombre pero sin cédula** → banner muestra error `Vendedor 1 (Juan Pérez) · Falta número de cédula`.
+6. **Notaría del trámite incompleta** (dejar `numero_notaria` vacío) → banner incluye error R7 con lista `número, círculo, notario`.
+7. **Regresión Cancelaciones** — abrir `/cancelaciones/nueva`, cargar poder, generar. Sin cambios (Claude nunca tocó ese flujo).
+8. **Admin → botón "Test Claude"** sigue funcional (Fase 2 lo retira).
+9. **Consola** — cero warnings/errores nuevos que mencionen `validacionClaude`, `validacionCampos`, `validacionResultado`.
+10. **Tabs superiores** (Vendedores/Compradores/Inmueble/Actos) — sin dots inline, sin iconos de severidad. Solo el texto de la pestaña.
 
 ---
 
-## Resumen ejecutivo
+## Resumen
 
-Fase 1 = migración + retiro quirúrgico del auditor en vivo + helper determinista + stub. Sin tocar backend deployado. Reversible en un revert. Tests unitarios cubren el helper nuevo; checklist QA cubre regresiones UI. Cero riesgo de imports cross-src.
+- **1 archivo nuevo**: `src/lib/computeTopIssues.ts` (+ test).
+- **2 archivos editados**: `src/pages/Validacion.tsx` (retiro Claude + banner top-3 + retiro `notariaSuggestions`), `src/services/validacionClaude.ts` (reducido a stub del tipo).
+- **0 edge functions tocadas**. Cero redeploy.
+- **0 tablas tocadas** (Fase 1 SQL ya está aplicada).
+- **Reversible** con revert del commit.
 
-**Espero aprobación línea por línea antes de pasar a build mode.**
+**Punto de atención principal**: `notariaSuggestions` (H1). Confirma explícitamente que aceptas retirarla en el mismo commit; si prefieres preservarla con otra fuente (extractor determinista de notaría desde certificados), es un mini-scope adicional que hay que decidir antes de que yo escriba una sola línea.
+
+Espero tu aprobación línea por línea (o rechazo/ajustes) antes de pasar a build mode.
