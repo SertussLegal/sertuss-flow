@@ -17,7 +17,7 @@ import { assertOwnPaths } from "../_shared/storagePaths.ts";
 import { POWER_V5_ENABLED } from "../_shared/poderBancoSchemaVersion.ts";
 import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
 import { classifyApoderado, type ApoderadoPayload } from "../_shared/apoderadoClassifier.ts";
-import { getProsaBanco, type ProsaContext } from "../_shared/prosaBancos/index.ts";
+import { getProsaBanco, type ProsaContext, mergeOverride, type ProsaApoderadoOverride } from "../_shared/prosaBancos/index.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -777,7 +777,7 @@ function normalizeDeudores(partes: CancelacionData["partes"]) {
 }
 
 // Build the variable map sent to Docxtemplater
-export function buildDocxVars(data: CancelacionData) {
+export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoderadoOverride | null) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
   const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
   // Tolerancia retro: si una versión vieja inyectó el literal en el campo de monto, lo normalizamos al flag.
@@ -1003,12 +1003,15 @@ export function buildDocxVars(data: CancelacionData) {
   let antefirmaProsa: string | undefined;
   let notaAutorizacionProsa: string | undefined;
   if (bancoTemplate && classifierResult.tipoEfectivo) {
-    const ctx: ProsaContext = {
+    const baseCtx: ProsaContext = {
       apoderado: { ...apoderadoPayload, tipo: classifierResult.tipoEfectivo },
       poderdante: poderdantePayload as ProsaContext["poderdante"],
       instrumento: instrumentoPayload as ProsaContext["instrumento"],
       ciudad_firma: ne.notaria_emisora_ciudad || null,
+      notas_adicionales: null,
     };
+    // Plan v5/Fase 2 — aplica override por trámite (Modal Híbrido). Manual > OCR > BD.
+    const ctx = mergeOverride(baseCtx, prosaOverride ?? null);
     comparecenciaProsa = bancoTemplate.renderComparecencia(ctx);
     antefirmaProsa = bancoTemplate.renderAntefirma(ctx);
     notaAutorizacionProsa = bancoTemplate.renderNotaAutorizacion(ctx);
@@ -1878,7 +1881,7 @@ if (import.meta.main) serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const vars = buildDocxVars(data);
+      const vars = buildDocxVars(data, (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null);
       const minutaTemplate = selectMinutaTemplate(data);
       const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
       const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
@@ -2177,7 +2180,7 @@ if (import.meta.main) serve(async (req) => {
           console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
         }
 
-        const vars = buildDocxVars(extracted);
+        const vars = buildDocxVars(extracted, (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null);
 
         const minutaTemplate = selectMinutaTemplate(extracted);
         const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
