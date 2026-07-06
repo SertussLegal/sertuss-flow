@@ -1,205 +1,94 @@
+# Diagnóstico — Estimación de costo IA por trámite
 
-# Diagnóstico — Modelo de consumo de créditos
-
-Solo lectura. Ninguna modificación propuesta en esta respuesta.
-
----
-
-## 1. SQL completo de las funciones
-
-### `consume_credit` (LEGACY — wrapper delgado)
-
-```sql
-CREATE OR REPLACE FUNCTION public.consume_credit(org_id uuid)
-RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
-AS $$
-BEGIN
-  RETURN public.consume_credit_v2(org_id, auth.uid(), 'LEGACY', NULL, NULL, 1);
-END;
-$$;
-```
-
-Solo delega en v2 con `action='LEGACY'` y 1 crédito. **No la llama nadie en el código actual** (grep no encuentra call-sites). Se mantiene por compatibilidad histórica.
-
-### `consume_credit_v2` (LA QUE SE USA)
-
-```sql
-CREATE OR REPLACE FUNCTION public.consume_credit_v2(
-  p_org_id uuid, p_user_id uuid, p_action text,
-  p_tramite_id uuid DEFAULT NULL, p_tipo_acto text DEFAULT NULL,
-  p_credits integer DEFAULT 1
-) RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE current_balance integer;
-BEGIN
-  IF p_user_id IS DISTINCT FROM auth.uid() THEN
-    RAISE EXCEPTION 'Unauthorized: user mismatch';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.memberships
-                 WHERE user_id = auth.uid() AND organization_id = p_org_id) THEN
-    RAISE EXCEPTION 'Unauthorized: not a member of organization';
-  END IF;
-
-  SELECT credit_balance INTO current_balance
-  FROM public.organizations WHERE id = p_org_id FOR UPDATE;
-
-  IF current_balance IS NULL OR current_balance < p_credits THEN
-    RETURN false;
-  END IF;
-
-  UPDATE public.organizations
-  SET credit_balance = credit_balance - p_credits
-  WHERE id = p_org_id;
-
-  INSERT INTO public.credit_consumption
-    (organization_id, user_id, tramite_id, action, credits, tipo_acto)
-  VALUES (p_org_id, p_user_id, p_tramite_id, p_action, p_credits, p_tipo_acto);
-
-  RETURN true;
-END;
-$$;
-```
-
-Atómica (`FOR UPDATE` + `UPDATE` + `INSERT` en misma tx). Valida membership y coincidencia de user.
-
-Extra: `unlock_expediente(org, tramite, user)` — función paralela, hardcodea `credits = 2`, `action = 'APERTURA_EXPEDIENTE'`, resta y registra en `credit_consumption` + `activity_logs` en la misma transacción.
+**Aviso:** no hay telemetría de tokens en el sistema. Los números son **estimaciones** basadas en tamaño de prompts en el código (÷4 caracteres = 1 token) y supuestos de un trámite típico. Precios de referencia (nov-2025): Gemini 2.5 Flash ≈ $0.30/1M in, $2.50/1M out; Gemini 2.5 Pro ≈ $1.25/1M in (≤200k), $10/1M out; Claude Sonnet 4 ≈ $3/1M in, $15/1M out. Imágenes en Gemini: ~258 tokens/tile de 768px; con `maxDimension=1600` en `pdfToImages` → ~4 tiles ≈ **1.000 tokens/imagen**.
 
 ---
 
-## 2. `src/services/credits.ts`
+## 1) Flujo ESCRITURA (compraventa + hipoteca)
 
-```ts
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
+### 1a. `scan-document` — Gemini 2.5 Flash (una llamada por documento subido)
 
-export type CreditAction =
-  | "VALIDACION_CLAUDE" | "OCR_DOCUMENTO" | "GENERACION_DOCX"
-  | "APERTURA_EXPEDIENTE" | "OTRO";
+Un trámite típico envía 6 documentos:
 
-export interface ConsumeCreditOpts {
-  organizationId: string; userId: string; action: CreditAction | string;
-  tramiteId?: string | null; tipoActo?: string | null;
-  credits?: number; silent?: boolean;
-}
+| Documento | Prompt (chars → tokens) | Imgs típicas | Img tokens | Tool schema aprox. | Out (JSON) |
+|---|---|---|---|---|---|
+| Cédula comprador (front+back) | 615 → 154 | 2 | 2.000 | ~400 | ~300 |
+| Cédula vendedor (front+back) | 615 → 154 | 2 | 2.000 | ~400 | ~300 |
+| Certificado tradición | 13.865 → 3.466 | 5 | 5.000 | ~1.500 | ~1.500 |
+| Predial | 2.439 → 610 | 2 | 2.000 | ~600 | ~500 |
+| Escritura antecedente | 3.323 → 830 | 10 | 10.000 | ~800 | ~2.000 |
+| Poder banco (hipoteca) | 9.063 → 2.266 | 3 | 3.000 | ~1.200 | ~1.000 |
+| Carta crédito (hipoteca) | 413 → 103 | 2 | 2.000 | ~300 | ~200 |
 
-export async function consumeCredit(opts: ConsumeCreditOpts): Promise<boolean> {
-  const { data, error } = await supabase.rpc("consume_credit_v2", {
-    p_org_id: opts.organizationId, p_user_id: opts.userId,
-    p_action: opts.action, p_tramite_id: opts.tramiteId ?? undefined,
-    p_tipo_acto: opts.tipoActo ?? undefined,
-    p_credits: opts.credits ?? 1,       // ← default 1, no constante central
-  });
-  if (error) { /* toast + return false */ }
-  if (!data) { /* toast "sin créditos" + return false */ }
-  return true;
-}
+**Subtotal scan-document (7 llamadas):**
+- Input ≈ **41.800 tokens** (7.600 texto + 26.000 imágenes + 5.200 schemas + STRICT_OUTPUT_RULES ~3.000)
+- Output ≈ **5.800 tokens**
 
-export function notifyHttpQuotaError(status: number, fallback?: string): boolean { … }
-```
+### 1b. `process-expediente` — Gemini 2.5 Pro (1 llamada)
 
-Puntos clave:
-- El wrapper acepta `credits` como parámetro opcional; por defecto **1**.
-- **No hay constante/enum de precios** — cada call-site decide su propio número.
+- systemPrompt (`buildEditorProPrompt`) ≈ 2.500 chars → **~625 tokens**
+- userPrompt = `JSON.stringify(superJson) + prosaHelpers + notariaBlock`. superJson trae todos los datos extraídos + campos formulario. Estimado **8.000–12.000 tokens** para un trámite completo con 2 personas + inmueble + hipoteca.
+- Tool schema `redactar_escritura` ≈ **~400 tokens**
+- **Input ≈ 11.000 tokens**
+- Output: escritura HTML completa + sugerencias_ia. Escrituras típicas 8–15 páginas → **~7.000 tokens output**
 
----
+### 1c. `validar-con-claude` — Claude Sonnet 4 (1 llamada)
 
-## 3. Call-sites y tabla acción → costo
+- systemPrompt dinámico (reglas + configNotaria + plantilla) ≈ **~4.000 tokens**
+- Datos extraídos + texto_preview ≈ **~5.000 tokens**
+- `max_tokens: 4096` → output real ~1.500–3.000 tokens
 
-Grep exhaustivo sobre todo el repo (`src/` + `supabase/functions/`):
-
-| Acción del usuario | Créditos HOY | `p_action` | `p_tipo_acto` | Dónde está el número |
-|---|---|---|---|---|
-| Subir documento OCR (escrituras: sidebar en Validación) | **1** (default del wrapper) | `OCR_DOCUMENTO` | `actos.tipo_acto` | `src/pages/Validacion.tsx:1386` — omite `credits`, cae al default `?? 1` de `credits.ts:33` |
-| Abrir/desbloquear expediente de escritura (compraventa+hipoteca) | **2** | `APERTURA_EXPEDIENTE` | derivado en SQL | `src/pages/Validacion.tsx:1854` → `rpc("unlock_expediente")`; el **`2` está hardcodeado dentro del SQL** de `unlock_expediente` (migración `20260310023133`, línea `credit_balance - 2`) |
-| Generar docx de cancelación de hipoteca | **2** | `GENERACION_DOCX` | `cancelacion_hipoteca` | `supabase/functions/procesar-cancelacion/index.ts:1934` — literal `p_credits: 2` en el body del rpc |
-| Validación con Claude (`VALIDACION_CLAUDE`) | — declarado como tipo pero **no se cobra en ningún call-site** | — | — | Solo aparece como etiqueta en `src/pages/Team.tsx:252, 486` (filtro del reporte) y en el enum de `credits.ts`. No hay rpc que la cargue. |
-| Generación de docx de escritura (compraventa/hipoteca) | **0 adicional** | — | — | Cubierto por `APERTURA_EXPEDIENTE` (2 créditos ya cobrados). Comentarios explícitos en `Validacion.tsx` y `CancelacionValidar.tsx:513`. |
-
-Evidencia adicional en producción (query a `credit_consumption`, todos los cobros históricos):
-
-```
-     action        | credits | count
--------------------+---------+-------
- GENERACION_DOCX   |    2    |   19    ← siempre cancelaciones
- APERTURA_EXPEDIENTE|   2    |   10    ← siempre escrituras
-```
-
-Nunca se ha registrado un cobro de `OCR_DOCUMENTO` ni `VALIDACION_CLAUDE` en producción — aunque el código de `Validacion.tsx:1386` sí lo intenta al subir un doc lateral en el flujo de escrituras. (Posible causa: los cobros solo ocurren después de `unlock_expediente`; antes el flujo de escritura ni siquiera llega a llamar OCR desde el sidebar en el volumen actual.)
-
-### Dónde vive cada número (resumen)
-
-| Costo | Ubicación | Cambiar requiere |
-|---|---|---|
-| `OCR_DOCUMENTO = 1` | Default `?? 1` en `src/services/credits.ts:33` (implícito, no explícito) | Editar JS y redeploy front |
-| `APERTURA_EXPEDIENTE = 2` | Hardcodeado en SQL de `unlock_expediente` (línea `credit_balance - 2` y `VALUES (…, 2, …)`) | **Migración de BD** |
-| `GENERACION_DOCX = 2` (cancelación) | Literal `p_credits: 2` en edge function `procesar-cancelacion/index.ts:1934` | Editar TS y redeploy edge function |
-
-**No existe un catálogo/constante centralizada.** Los 3 números viven en 3 capas diferentes (front, edge, SQL).
+**Subtotal Claude:** ~9.000 in / ~2.500 out
 
 ---
 
-## 4. ¿Tabla de "planes" o "precios" en BD?
+## 2) Flujo CANCELACIÓN DE HIPOTECA (Davivienda)
 
-**NO EXISTE.** Verificado con `\dt public.*`. Tablas presentes: `activity_logs, actos, cancelaciones, config_tramites, configuracion_notaria, credit_consumption, historial_validaciones, inmuebles, invitations, logs_extraccion, memberships, modules, notaria_styles, ocr_raw_cache, organization_modules, organizations, personas, plantillas_validacion, profiles, radicado_counters, reglas_validacion, system_events, tramites, user_active_context`.
+`procesar-cancelacion` hace **3 llamadas en paralelo**:
 
-- Ni `plans`, ni `pricing`, ni `packages`, ni `credit_prices`, ni `action_costs`.
-- `organizations.credit_balance` es un `integer` plano — no distingue tipos de crédito ni tiene "plan_id".
-- `credit_consumption` es **solo bitácora** (audit trail), no configuración.
+| # | Modelo | Prompt (chars → tokens) | Imgs | Img tokens | Out |
+|---|---|---|---|---|---|
+| 1 | gemini-2.5-**pro** (monolítico: cert + escritura + poder) | 32.737 → **~8.200** | ~12 (5 cert + 5 escritura + 2 poder) | 12.000 | ~2.500 |
+| 2 | gemini-2.5-flash (poder dedicado) | 8.107 → **~2.030** | 3 | 3.000 | ~500 |
+| 3 | gemini-2.5-flash (cuantía dedicada) | 4.887 → **~1.220** | 3–5 (escritura hipoteca) | 4.000 | ~300 |
 
-**Consecuencia:** hoy no se puede cambiar cuánto cuesta una acción sin tocar código (front, edge function o migración SQL, dependiendo de la acción). Cada capa requiere un canal de deploy distinto.
-
----
-
-## 5. Planes y precios en COP (Wompi u otro)
-
-**Ninguna evidencia de integración de pagos.** Grep `wompi|stripe|mercadopago|pricing|checkout|pago|paquete` sobre todo el repo (excluyendo docs de plantillas) → 0 resultados en `src/` y `supabase/functions/`.
-
-- No hay tabla de planes en BD.
-- No hay edge function de checkout/webhook.
-- No hay secreto `WOMPI_*` registrado (solo aparecen: `SUPABASE_*`, `LOVABLE_API_KEY`, `CLAUDE_API_KEY`, `GOOGLE_API_KEY`).
-- La única forma de "recargar" créditos hoy es manual: SuperAdmin (info@sertuss.com) usa `admin_update_credits(org, new_balance, reason)` en `/admin`. Queda en `activity_logs` con acción `CREDIT_UPDATE`.
-- El botón "Ver planes" del modal `CreditsBlockedModal` redirige a `/equipo` (`src/pages/Team.tsx`), pero esa página **no tiene checkout** — solo muestra el consumo histórico y los miembros.
-
-Onboarding: `handle_new_user` regala **5 créditos iniciales** al crear la organización personal (evidencia: función SQL en `<db-functions>`).
-
-Estado actual en producción (query real):
-```
- ALEJANDRA ARCINIEGAS ABOGADA │ 48 créditos
- Sertuss Notaría Central       │ 68 créditos
-```
-Ambas cargas son ajustes manuales del SuperAdmin.
+Nota: `scan-document` **no se invoca** en cancelaciones — el pipeline es dedicado.
 
 ---
 
-## 6. Costo real para Sertuss por consulta
+## 3) `validar-con-claude`
 
-**No hay ninguna instrumentación de costos en el código.** No se registran tokens consumidos, ni USD facturados, ni modelo usado por request en tablas de auditoría.
-
-Lo que sí se sabe leyendo el código de las edge functions:
-
-| Consulta | Proveedor | Modelo | Tokens/costo estimable |
-|---|---|---|---|
-| `scan-document` (OCR) | Google (Gemini directo con `GOOGLE_API_KEY`) | `gemini-2.5-flash` con tool calling + imágenes JPEG del expediente | Depende del nº de páginas subidas; **no se loguea `usage`** de Gemini |
-| `process-expediente` (redacción) | Google Gemini | `gemini-2.5-pro` con prompt largo + salida HTML completa | 1 llamada por escritura; **sin registro de tokens** |
-| `procesar-cancelacion` | Google Gemini + lógica determinista | Gemini + docx template desde bucket | **sin registro de tokens** |
-| `validar-con-claude` | Anthropic (`CLAUDE_API_KEY` directa) | Claude Sonnet 4 | **sin registro de tokens** |
-
-- Ninguna función guarda `response.usage.total_tokens`, `input_tokens`, `output_tokens`, ni un campo `cost_usd` en `credit_consumption`, `activity_logs` o `system_events`.
-- No hay tabla `ai_gateway_requests` propia (Lovable AI Gateway sí registra internamente, pero eso está fuera del código del proyecto y solo lo ve el workspace vía `ai_gateway_logs--*`).
-- Para obtener un costo real por trámite hoy toca cruzar manualmente: (a) facturas de Google AI Studio, (b) facturas de Anthropic, (c) uso del AI Gateway de Lovable — ninguno reconciliado con `credit_consumption.tramite_id`.
-
-**Recomendación NO ejecutada** (fuera de alcance de este diagnóstico): antes de rediseñar precios, instrumentar cada edge function para guardar `input_tokens`, `output_tokens` y modelo usado en `credit_consumption.metadata` (columna aún no existe, requiere migración).
+Se invoca desde `Validacion.tsx` (flujo escritura). En cancelaciones **no aparece** invocado desde `CancelacionValidar.tsx` — verificado en el diagnóstico anterior de créditos (Claude declarado como acción pero nunca cobrado). Típicamente 1 vez por trámite escritura al pulsar validar.
 
 ---
 
-## Resumen ejecutivo
+## 4) Tabla resumen
 
-- **3 acciones cobran hoy**, con precios en 3 capas distintas (SQL, edge TS, default de wrapper JS).
-- **1 acción declarada (`VALIDACION_CLAUDE`) no cobra en ningún flujo real.**
-- **Cero infraestructura de planes/precios en BD.**
-- **Cero integración de pagos (Wompi/otros).** Recargas 100% manuales por SuperAdmin.
-- **Cero telemetría de costos IA.** Rentabilidad por trámite es hoy un cálculo externo, no consultable desde la app.
+### Trámite ESCRITURA compraventa+hipoteca
 
-Cambiar precios en el futuro requerirá, en el mejor caso, tocar 3 sitios; en el peor (si se quiere flexibilidad por org/plan) una migración que introduzca una tabla `credit_prices(action, tipo_acto, credits)` consultada dentro de `consume_credit_v2` / `unlock_expediente`.
+| Etapa | Modelo | # llamadas | In tokens | Out tokens | Costo USD |
+|---|---|---:|---:|---:|---:|
+| scan-document | Gemini 2.5 Flash | 7 | 41.800 | 5.800 | $0.027 |
+| process-expediente | Gemini 2.5 Pro | 1 | 11.000 | 7.000 | $0.084 |
+| validar-con-claude | Claude Sonnet 4 | 1 | 9.000 | 2.500 | $0.065 |
+| **TOTAL** | | **9** | **~61.800** | **~15.300** | **~$0.18** |
+
+### Trámite CANCELACIÓN Davivienda
+
+| Etapa | Modelo | # llamadas | In tokens | Out tokens | Costo USD |
+|---|---|---:|---:|---:|---:|
+| Monolítico | Gemini 2.5 Pro | 1 | 20.200 | 2.500 | $0.050 |
+| Poder dedicado | Gemini 2.5 Flash | 1 | 5.030 | 500 | $0.003 |
+| Cuantía dedicada | Gemini 2.5 Flash | 1 | 5.220 | 300 | $0.002 |
+| **TOTAL** | | **3** | **~30.450** | **~3.300** | **~$0.055** |
+
+---
+
+## Observaciones
+
+- **Escritura ≈ 3× más cara que cancelación** por: (a) muchas llamadas scan-document individuales, (b) llamada Pro con contexto grande + salida larga, (c) Claude Sonnet 4 (el modelo más caro por token de esta lista).
+- **Precio actual (2 créditos = generación docx, 1 crédito = OCR):** si 1 crédito ≈ $X COP, con estos costos crudos Sertuss puede fijar el crédito con margen holgado. Un trámite escritura completo (7 OCR × 1 + 2 apertura = 9 créditos) cuesta ~$0.18 USD ≈ $750 COP en costo IA.
+- **Sensibilidad:** el número real varía ±40% según nº de páginas del certificado de tradición y de la escritura antecedente (los dos "gordos" del pipeline).
+- **Sin telemetría real** no hay forma de auditar deriva de costos cuando cambien prompts o modelos. Vale la pena considerar loggear `usage.prompt_tokens`/`completion_tokens` que ya devuelve el gateway.
+
+**No se ejecutó ninguna llamada real a IA. No se modificó ningún archivo.**
