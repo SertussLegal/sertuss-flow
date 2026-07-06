@@ -364,6 +364,42 @@ export type Database = {
           },
         ]
       }
+      credit_prices: {
+        Row: {
+          action: string
+          active: boolean
+          created_at: string
+          credits: number
+          id: string
+          notes: string | null
+          tipo_acto: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          action: string
+          active?: boolean
+          created_at?: string
+          credits: number
+          id?: string
+          notes?: string | null
+          tipo_acto: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          action?: string
+          active?: boolean
+          created_at?: string
+          credits?: number
+          id?: string
+          notes?: string | null
+          tipo_acto?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       historial_validaciones: {
         Row: {
           correcciones_aplicadas: Json | null
