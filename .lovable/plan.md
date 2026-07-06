@@ -1,56 +1,47 @@
-## Hallazgos (solo lectura, sin modificaciones)
+## Hallazgos (investigación, solo lectura)
 
-### 1. Estado real del código en disco (ahora mismo)
+### 1. Qué hace exactamente "Try to fix" — según docs oficiales de Lovable
 
-**`supabase/functions/procesar-cancelacion/index.ts`** — imports compartidos (líneas 14-20):
-- `../_shared/aiFetch.ts` ✅
-- `../_shared/genero.ts` ✅
-- `../_shared/storagePaths.ts` ✅
-- `../_shared/poderBancoSchemaVersion.ts` ✅
-- `../_shared/poderBancoCache.ts` ✅
-- `../_shared/isomorphic/apoderadoClassifier.ts` ✅
-- `../_shared/isomorphic/prosaBancos/index.ts` ✅
+> "Clicking this triggers Lovable to automatically attempt a remediation for the finding."
+> "It does not generate a plan for review; instead, it attempts to apply the fix directly."
 
-**`supabase/functions/adaptar-estilo-prosa/index.ts`** (línea 12):
-- `../_shared/isomorphic/prosaBancos/index.ts` ✅
+**Traducción práctica:** dispara al agente de Lovable a intentar un fix **directamente**, sin pantalla intermedia de aprobación. En la práctica esto normalmente se materializa como una nueva conversación/turno del agente que edita archivos. **No es 100% "silencioso" en el sentido de saltarse toda revisión** — los cambios quedan en el historial de la sesión y son reversibles — pero **no hay un paso de "aprobar plan" antes de que empiece a tocar código**.
 
-**Estructura de archivos:**
-```text
-supabase/functions/_shared/isomorphic/
-├── apoderadoClassifier.ts
-└── prosaBancos/
-    ├── davivienda.ts
-    ├── index.ts
-    ├── legalProse.ts
-    ├── mergeOverride.ts
-    ├── overrideSchema.ts
-    └── types.ts
-```
+Coste: **gratis, no consume créditos**.
 
-`supabase/shared/` **no existe** (eliminado limpiamente). Cero imports huérfanos hacia rutas viejas.
+### 2. Timestamp de la alerta
 
-**Conclusión:** el código está 100% alineado con la ubicación deployable. No hay import roto que justifique la alerta.
+> "The monitoring run history is available in your project settings, where you can view past checks, results, and credit usage."
 
-### 2. Naturaleza de la alerta del monitor
+Existe historial de corridas en **Project Settings → Monitoring** (UI del usuario). No hay tool desde el agente para leer ese timestamp directamente. Para saber si la alerta es anterior o posterior al deploy, el camino confiable es revisar esa vista de historial manualmente.
 
-La alerta "Cancelation document generation fails to start — depends on a shared module whose imports the server can't resolve" **describe con precisión el estado anterior** (cuando los imports apuntaban a `supabase/shared/` o `../../shared/`). Ese texto exacto se generó antes del fix.
+### 3. Re-evaluación automática
 
-No tengo herramienta directa para leer el timestamp de generación de esa alerta ni para forzar su re-evaluación desde acá (los tools disponibles `seo_chat--*` son para SEO, `security--*` para seguridad; ninguno cubre el monitor de "runtime alerts" que muestra esa tarjeta). La reevaluación la dispara el propio monitor de Lovable cuando detecta nuevos deploys/cambios, o el usuario con "Ignore"/"Try to fix" — que expresamente no vamos a tocar.
+> "Finding status updates only when you fix, ignore, or chat about a specific finding. Changes made before then can make a finding outdated."
+> "It runs on a schedule you configure (daily or weekly) in Project Settings."
 
-**Hipótesis con mayor evidencia:** alerta cacheada del estado previo al fix. El código actual no tiene ningún import irresoluble.
+**Conclusión clara:** el monitor **no reevalúa automáticamente** una alerta existente cada vez que hay un deploy. Solo cambia de estado por acción explícita (fix / ignore / chat) o cuando corre el siguiente ciclo programado (diario o semanal, según config). Por eso la alerta sigue visible pese al deploy exitoso.
 
-### 3. Deploy fresco de confirmación (requiere aprobación)
+### 4. Nivel de certeza
 
-Para cumplir el punto 4 del pedido necesito ejecutar `supabase--deploy_edge_functions` sobre `procesar-cancelacion` y `adaptar-estilo-prosa`. Es una acción con efectos (redeploy), por eso la incluyo en el plan en lugar de ejecutarla directamente en modo plan.
+- Comportamiento de "Try to fix": **alta certeza** (docs lo dicen literalmente).
+- No auto-reevaluación en deploy: **alta certeza** (docs lo dicen literalmente).
+- Detalle exacto de si "Try to fix" abre un turno visible en el chat o corre en background: **certeza media** — la doc dice "attempts to apply the fix directly" pero no describe la UX exacta. Por experiencia típica de Lovable, se materializa como un turno del agente en la conversación actual, pero no lo puedo garantizar al 100%.
 
-### 4. Sobre "Try to fix" del monitor
+## Recomendación (para tu decisión, no la ejecuto)
 
-No hay documentación en este contexto que explique qué hace exactamente ese botón. Prudente no tocarlo hasta confirmar (podría reintentar el análisis, podría intentar auto-parchar código). La ruta segura es: hacer un redeploy fresco → esperar que el monitor reevalúe en su próximo ciclo → si a las 24-48h la alerta persiste con timestamp posterior al redeploy, entonces sí investigar el botón.
+Dado que:
+- El código en disco ya está correcto (verificado hace un momento).
+- El deploy fresco fue exitoso.
+- El monitor **no** va a reevaluar sola la alerta.
+- "Ignore" es reversible ("remain visible and can be restored").
 
-## Plan propuesto (una sola acción)
+**Opción más segura y limpia: "Ignore"**. La alerta describía un estado real del pasado que ya está resuelto; marcarla como ignorada refleja la realidad sin arriesgar que "Try to fix" toque código que ya está bien.
 
-1. Ejecutar `supabase--deploy_edge_functions(["procesar-cancelacion", "adaptar-estilo-prosa"])` — deploy fresco de confirmación.
-2. Reportar el resultado exacto (éxito/error, mensaje).
-3. Dejar la alerta del monitor sin tocar y esperar reevaluación natural.
+**"Try to fix" tiene riesgo bajo pero no nulo:** podría intentar "arreglar" imports que ya están correctos y generar ruido (o incluso un cambio innecesario). Como es gratis y reversible, tampoco es catastrófico, pero es trabajo evitable.
 
-Sin cambios de código. Sin tocar los botones del monitor.
+## Plan propuesto
+
+**Ninguna acción de código o deploy.** Este plan es solo el reporte anterior. La decisión sobre qué botón usar (Ignore vs Try to fix vs esperar el próximo ciclo del monitor) queda en tus manos, con la información ya sobre la mesa.
+
+Si apruebas el plan, simplemente cierro con la recomendación registrada. Si prefieres que ejecute alguna acción concreta (p. ej. redeploy adicional, o revisar algún archivo específico), dilo y ajusto el plan.
