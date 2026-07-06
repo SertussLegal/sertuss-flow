@@ -1,112 +1,85 @@
-# Investigación: bundling error al redesplegar `procesar-cancelacion`
+# Verificación previa al fix de re-exports cross-src
 
-Evidencia observada, no suposiciones. Cero cambios.
-
----
-
-## 1. Versión actualmente en producción de `procesar-cancelacion`
-
-**No pude determinar el commit exacto ni el timestamp de deploy** — los logs analíticos de edge functions tienen una ventana efectiva vacía (solo 3 filas retenidas, todas de `mcp` en un rango de ~4ms, sin registros de `procesar-cancelacion` ni deployment history consultable). El endpoint `edge_function_logs` para esta función devuelve "No logs found".
-
-**Evidencia indirecta de que la versión desplegada SÍ funciona hoy**: consulté `cancelaciones` y hay una cancelación `status=completed` con `updated_at=2026-07-06 11:41:11 UTC` (creada hoy 00:20, completada hoy 11:41). Eso solo puede ocurrir si `procesar-cancelacion` respondió 200 en producción hoy mismo. Otras 3 cancelaciones completadas en junio (2026-06-08, 2026-06-21, 2026-06-24) confirman flujo estable.
-
-**Conclusión firme**: La versión en producción funciona. La versión "vigente" es la última que se autodeplegó exitosamente antes de que el pipeline de deploy manual empezara a rechazar el bundle. No puedo poner un commit exacto sin acceso a la historia de deploys.
+Solo lectura. Ningún archivo modificado.
 
 ---
 
-## 2. ¿Cuándo empezó a romperse el deploy?
+## VERIFICACIÓN 1 — Inventario completo de imports que salen de `supabase/functions/`
 
-**No verificable con la telemetría disponible.** Sin historial de deploys ni git accesible, no puedo probar si hubo deploys exitosos de `procesar-cancelacion` posteriores a la consolidación del clasificador.
+**Metodología**: `rg` sobre `supabase/functions/` buscando (a) imports/exports con 3+ niveles de `../` y (b) cualquier referencia a `/src/`.
 
-**Hipótesis con soporte, no certeza**: el re-export `export * from "../../../src/shared/apoderadoClassifier.ts"` **sale de la raíz `supabase/functions/`**. Es plausible que el pipeline auto-deploy de Lovable (que corre en cada mensaje del agente) monte TODO el repo en el sandbox y por eso resuelva el path, mientras que la herramienta explícita `deploy_edge_functions` solo monta `supabase/functions/`. Si eso es cierto, los auto-deploys posteriores a la consolidación pudieron subir la función sin problemas, y solo hoy — al invocar deploy explícito — se destapó la incompatibilidad.
+### Resultado: solo los 4 archivos ya conocidos. Cero adicionales.
 
-**Lo que sí es certeza**: el bundler falla porque busca `file:///tmp/.../source/src/shared/apoderadoClassifier.ts` y ese archivo no está en el sandbox. La ruta que se le pide bucear existe en el repo (`src/shared/apoderadoClassifier.ts` está ahí, la verifiqué).
+| # | Archivo | Import cross-src | Función que lo consume | ¿Bloquea redeploy? |
+|---|---|---|---|---|
+| 1 | `supabase/functions/_shared/apoderadoClassifier.ts:5` | `export * from "../../../src/shared/apoderadoClassifier.ts"` | `procesar-cancelacion` (import directo) | ✅ Sí |
+| 2 | `supabase/functions/_shared/prosaBancos/index.ts:5` | `export * from "../../../../src/shared/prosaBancos/index.ts"` | `procesar-cancelacion`, `adaptar-estilo-prosa` | ✅ Sí |
+| 3 | `supabase/functions/_shared/prosaBancos/davivienda.ts:5` | `export * from "../../../../src/shared/prosaBancos/davivienda.ts"` | Transitivo vía `prosaBancos/index.ts` | ✅ Sí (transitivo) |
+| 4 | `supabase/functions/_shared/prosaBancos/types.ts:5` | `export * from "../../../../src/shared/prosaBancos/types.ts"` | Transitivo vía `prosaBancos/index.ts` | ✅ Sí (transitivo) |
 
----
+### Único otro hit con `../../../` que NO cruza a `src/`
 
-## 3. Radio de impacto — funciones que dependen de re-exports cross-src
+- `supabase/functions/_shared/prosaBancos/__contract__/contract_test.ts:11` → `import { poderBancoTool } from "../../../scan-document/core/poderBanco/tool.ts"`
+  - **No es riesgo**: el destino sigue dentro de `supabase/functions/` (llega a `scan-document/core/poderBanco/tool.ts`, no a `src/`).
+  - Además es un archivo `_test.ts` — Deno test, nunca se despliega como runtime de edge function.
 
-**Grep de imports concretos:**
+### Confirmación firme
 
-- **`procesar-cancelacion/index.ts`** — importa dos módulos afectados:
-  - `../_shared/apoderadoClassifier.ts` → re-exporta de `../../../src/shared/apoderadoClassifier.ts`
-  - `../_shared/prosaBancos/index.ts` → re-exporta de `../../../../src/shared/prosaBancos/index.ts`
-- **`adaptar-estilo-prosa/index.ts`** — importa uno:
-  - `../_shared/prosaBancos/index.ts` → mismo re-export cross-src
-
-**Re-exports cross-src existentes** (4 archivos, todos vulnerables):
-
-```text
-supabase/functions/_shared/apoderadoClassifier.ts        → src/shared/apoderadoClassifier.ts
-supabase/functions/_shared/prosaBancos/index.ts          → src/shared/prosaBancos/index.ts
-supabase/functions/_shared/prosaBancos/davivienda.ts     → src/shared/prosaBancos/davivienda.ts
-supabase/functions/_shared/prosaBancos/types.ts          → src/shared/prosaBancos/types.ts
-```
-
-**Funciones NO afectadas** (no importan nada que re-exporte de `src/`): `process-expediente`, `scan-document`, `validar-con-claude`, `mcp`, `audit-refs-davivienda`, y todas las demás.
-
-**Conclusión firme**: solo **2 funciones** están bloqueadas para redeploy manual — `procesar-cancelacion` y `adaptar-estilo-prosa`. `process-expediente`, `scan-document`, `validar-con-claude` NO se ven afectadas.
+**No existe ningún quinto archivo con re-export/import cross-src.** El radio de impacto real del fix (invertir dirección de re-exports) son exactamente esos 4 archivos en `supabase/functions/_shared/` + sus 4 contrapartes fuente en `src/shared/`.
 
 ---
 
-## 4. ¿Por qué técnicamente falla?
+## VERIFICACIÓN 2 — ¿Vite puede resolver imports que "suben" fuera de `src/`?
 
-El bundler de la herramienta `deploy_edge_functions` monta un sandbox `/tmp/user_fn_.../source/` y coloca solo el árbol `supabase/functions/` dentro. Cuando Deno resuelve el import relativo `../../../src/shared/apoderadoClassifier.ts` desde `supabase/functions/_shared/apoderadoClassifier.ts`, la ruta calculada apunta a `/tmp/.../source/src/shared/apoderadoClassifier.ts` — que no existe en el sandbox porque `src/` no fue copiado.
+### Evidencia de configuración actual
 
-**Naturaleza del problema**: **restricción del sandbox del deploy tool**, no restricción intrínseca de Deno ni de edge functions. Deno puede importar rutas relativas sin problema; lo que falta es que `src/shared/` sea visible durante el bundle. Alternativas conceptuales para el fix (no ejecutar ahora):
-- **A**: mover la fuente de vuelta a `supabase/functions/_shared/` y hacer que `src/shared/` re-exporte de allí (invertir la dirección del re-export). Frontend seguiría importando `src/shared/…` con la misma API. Es transparente para el cliente Vite (Vite sí puede subir un nivel fuera de `src/`).
-- **B**: usar un `import_map.json` por función que remapee a una copia interna, con un paso de sincronización.
-- **C**: duplicar el código (rechazado explícitamente en la consolidación anterior por drift).
+- `vite.config.ts`: `resolve.alias` define solo `@ → ./src`. No hay `fs.allow` restringido, no hay `fs.strict: true`. El `root` implícito es la raíz del repo (donde vive `vite.config.ts`), no `src/`.
+- `tsconfig.app.json`: `"include": ["src"]` y `paths: { "@/*": ["./src/*"] }`. Los tests corren con Vitest usando el mismo alias.
+- `tsconfig.json` (raíz): `allowJs: true`, sin restricciones adicionales.
 
-No hay evidencia de que `deno.json` o `import_map.json` actuales cambien este comportamiento — no existen archivos de config específicos que expandan el sandbox.
+### Respuesta técnica
 
----
+**Sí, Vite puede resolver rutas relativas que salen de `src/` sin problema.** Por defecto:
 
-## 5. ¿La versión en producción sirve a clientes reales AHORA?
+1. **`server.fs.allow` de Vite** solo restringe qué archivos puede *servir* el dev server (por seguridad SSRF), y por defecto permite todo el workspace root — es decir, la raíz del repo. Un import desde `src/shared/foo.ts` hacia `../../supabase/functions/_shared/foo.ts` cae dentro del workspace y **se resuelve limpio**.
+2. **El bundler de producción** (`vite build`) no tiene ningún límite de "no salir de `src/`". Sigue los imports estáticos allá donde apunten.
+3. **Vitest** hereda esa misma resolución.
 
-**Sí, con alta confianza.** Evidencia:
+### Pero hay una consideración práctica NO trivial
 
-- Cancelación completada hoy 2026-07-06 a las 11:41 UTC (ID `290fd66a…`, `status=completed`).
-- Cancelaciones anteriores completadas en junio (3 casos entre 2026-06-08 y 2026-06-24).
-- Ninguna telemetría de errores 5xx recientes accesible (retención analítica vacía), pero el hecho de que las cancelaciones progresen a `completed` implica respuestas 200 de la edge function.
+**El TypeScript project `tsconfig.app.json` tiene `"include": ["src"]`.** Consecuencias reales si se invierte la dirección (fuente viviendo en `supabase/functions/_shared/`, re-export desde `src/shared/`):
 
-**Limitación**: no puedo enumerar todas las invocaciones fallidas recientes porque los logs no están retenidos.
+- **Vite/Vitest en runtime**: funcionan correctamente — resuelven el import.
+- **`tsgo` / editor TS**: los archivos bajo `supabase/functions/` NO están en el `include` del proyecto app. Al importarlos desde `src/`, TypeScript los tratará como *dependencia externa sin tipos del proyecto*: hará type-check "best-effort" leyendo el archivo referenciado, pero:
+  - No se aplicarán las mismas reglas de compilación del proyecto app.
+  - Los tipos usados por esos archivos (por ejemplo, si `src/shared/prosaBancos/index.ts` re-exporta un tipo cuya definición vive en `supabase/functions/...`) pueden verse como `any` en el editor bajo ciertas configuraciones, o generar ruido en el diagnóstico.
+  - Además: los archivos Deno en `supabase/functions/` usan **imports con extensión `.ts` explícita** (`../foo.ts`). Vite/TSX en modo bundler tolera esto con `allowImportingTsExtensions: true` (ya está activo), pero mezclar convenciones puede generar fricción.
+- **No es un bloqueo, es una molestia de DX/tipado.**
 
----
+### ¿Vite lo "desaconseja"?
 
-## 6. Cronología reconstruida (con lo que hay)
-
-```text
-[fecha desconocida]  Consolidación del clasificador: nace `src/shared/apoderadoClassifier.ts`
-                     como fuente única; `supabase/functions/_shared/apoderadoClassifier.ts`
-                     pasa a re-exportar de esa fuente. Idem prosaBancos (3 archivos).
-                     A partir de aquí, el bundle depende de que el pipeline suba `src/`.
-
-[fecha desconocida]  Último auto-deploy exitoso de `procesar-cancelacion`. Este binario
-                     es el que hoy sirve producción. Hipótesis: el auto-deploy de Lovable
-                     incluye todo el repo, por eso pasó.
-
-2026-06-08           Cancelación completada en prod → función respondiendo 200.
-2026-06-21           Cancelación completada en prod → función respondiendo 200.
-2026-06-24           Cancelación completada en prod → función respondiendo 200.
-2026-07-06 00:20     Cancelación creada en prod.
-2026-07-06 11:41     Esa misma cancelación completada → función respondiendo 200 hoy.
-
-2026-07-06 16:08     Cambio de comentarios aplicado en repo (esta sesión).
-2026-07-06 16:08     Intento de redeploy manual vía `deploy_edge_functions` →
-                     FALLA con "Module not found src/shared/apoderadoClassifier.ts".
-                     Esta es la primera evidencia observable de la incompatibilidad
-                     entre el re-export cross-src y el sandbox de deploy manual.
-```
+No hay una recomendación oficial explícita en contra, pero la convención de Vite/React es: **todo el código de aplicación vive bajo `src/`**. Salir de `src/` para importar código de otro subproyecto es una señal de que el monorepo debería resolverse con workspaces o con una capa `shared/` en la raíz. Funciona, pero rompe la mental model.
 
 ---
 
-## Resumen ejecutivo
+## Recomendación (para tu decisión, no aplicada)
 
-- ✅ Producción está sana; clientes reales cerraron cancelaciones hoy.
-- ⚠️ Solo `procesar-cancelacion` y `adaptar-estilo-prosa` quedan bloqueadas para redeploy manual mientras exista el patrón re-export cross-src.
-- ✅ `process-expediente`, `scan-document`, `validar-con-claude` NO están afectadas.
-- ❓ No pude datar cuándo se rompió el deploy manual, pero es certeza que existió desde que se creó el re-export; los deploys posteriores probablemente pasaron por el auto-deploy que monta el repo completo.
-- 🎯 El problema NO es de Deno: es del sandbox del tool. Se resuelve invirtiendo la dirección de los re-exports (fuente en `supabase/functions/_shared/`, re-export desde `src/shared/`) o via import maps — sin duplicar código.
+Con estos dos datos confirmados, las opciones se ordenan así:
 
-**No aplicar ningún fix todavía**: esta plan es solo el diagnóstico solicitado. La priorización del fix (opciones A/B) queda para tu decisión.
+### Opción A — Invertir dirección de re-exports (fuente en `supabase/functions/_shared/`, re-export desde `src/shared/`)
+- ✅ Corrige el bundle de edge functions (sandbox limitation resuelta).
+- ✅ Solo 8 archivos afectados (4 fuente + 4 re-export).
+- ⚠️ Fricción de tipado/DX en el frontend porque el código pasa a vivir fuera del `include` del `tsconfig.app.json`.
+- 🔧 **Mitigación**: extender `tsconfig.app.json` para incluir `"../supabase/functions/_shared/**/*.ts"` — pero eso mete Deno-flavored code en el mismo project TS del frontend, mezclando runtimes (browser vs Deno globals).
+
+### Opción B — Mover la fuente a una carpeta neutra fuera de ambos (`packages/shared/` o `shared/` en raíz)
+- ✅ Cero fricción conceptual: ninguna de las dos capas "sale de su casa".
+- ✅ Vite y Deno pueden apuntar a la misma fuente.
+- ⚠️ Requiere mover 4 archivos + actualizar 8 rutas de import + posible ajuste de `tsconfig`.
+- Es la solución "monorepo-clean" real.
+
+### Opción C — `import_map.json` por función (Deno-only)
+- ✅ Cero cambios en `src/`.
+- ⚠️ Requiere infra por-función y sincronización manual; agrega ceremonia.
+
+**Sin acción todavía.** Esperando tu priorización para decidir A/B/C y ejecutar en un turno posterior.
