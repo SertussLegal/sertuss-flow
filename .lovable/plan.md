@@ -1,71 +1,84 @@
+# Auditoría independiente — ¿está roto `procesar-cancelacion` en producción?
 
-# Verificación urgente: ¿está roto `procesar-cancelacion` en producción?
+Rol: auditor independiente revisando el análisis del turno anterior. Cero cambios aplicados.
 
-**TL;DR — No hay fallo real observado. El aviso del monitor es PREVENTIVO (análisis estático), no reactivo. Cero usuarios afectados hoy. Producción sigue sirviendo la versión anterior porque el redeploy con el código roto **falló** y por lo tanto **nunca reemplazó** la versión desplegada.**
+## Veredicto ejecutivo
 
----
+Mantengo la conclusión general — **no hay evidencia de usuario afectado hoy** — pero **rebajo la certeza de "100%" a "alta con dos huecos de visibilidad reconocidos"**. El análisis previo se apoyó en dos premisas que no son 100% verificables desde aquí; hay que comunicarlas como incertidumbre, no como hecho.
 
-## 1. Estado real de la versión desplegada
+## 1. Fuentes de logs adicionales consultadas (más allá de system_events)
 
-- El intento de redeploy manual de esta sesión falló con el error de imports cross-src. Un deploy que falla **no reemplaza** la versión activa en el runtime; la anterior sigue sirviendo.
-- Por tanto, la función `procesar-cancelacion` que responde HTTP en este momento es la **última versión que sí bundleó y desplegó con éxito** (previa a los cambios de hoy o previa a la consolidación que rompió los imports en el sandbox del deployer manual).
-- No hay forma 100% precisa desde aquí de datar ese último deploy exitoso sin logs de deploy — la tabla `function_edge_logs` está vacía en analytics (no está siendo poblada para este proyecto).
+| Fuente | Resultado | Aporta evidencia de invocación real de procesar-cancelacion hoy |
+|---|---|---|
+| `system_events` | 2 eventos a las 00:23 UTC (cuantia + poder), nada después | No |
+| `activity_logs` (48 h, filtros cancel/docx/generat) | **0 filas** | No |
+| `credit_consumption` (48 h) | **1 sola fila**: `GENERACION_DOCX` de 290fd66a a las 00:21 UTC | No — coincide con la ejecución de las 00:23 |
+| `logs_extraccion` (48 h) | 0 filas | Irrelevante: la tabla está atada a `tramites`, **no a `cancelaciones`** (esquema confirmado). Nunca iba a registrar aquí una cancelación. |
+| `postgres_logs` (filtro %cancelacion%) | 0 filas | No |
+| `function_edge_logs` (analytics) | **Vacío para TODAS las funciones del proyecto**, no solo para procesar-cancelacion | **Hueco de visibilidad #1** — no podemos confirmar ni descartar HTTP hits desde aquí |
+| `supabase--edge_function_logs` tool | "No logs found" | Mismo hueco |
+| `cancelaciones` (48 h) | **Solo 1 fila actualizada**: 290fd66a | Ver §3 |
+| `tramites` (48 h) | 0 filas | No |
+| `cancelaciones.error_message` (todas) | **Todas NULL/vacías**, incluyendo 290fd66a | Fuerte indicio negativo: si un usuario hubiera intentado generar y el runtime hubiera fallado, esperaríamos ver `status='error'` con `error_message` poblado. No lo hay. |
 
-## 2. Invocaciones reales de `procesar-cancelacion` hoy
+**Conclusión §1:** las fuentes adicionales no aportan evidencia contradictoria — pero **`function_edge_logs` está completamente ciego a nivel de proyecto**, no solo para esta función. Es un hueco de instrumentación reconocido, no una confirmación de "cero invocaciones".
 
-Consulté `system_events` (única fuente fiable de invocaciones reales de esta función, porque emite eventos `procesar-cancelacion.*` desde dentro de la función):
+## 2. ¿Es realmente cierto que "un deploy fallido no reemplaza la versión activa"?
 
-Últimas 24h — **solo 2 eventos, ambos a las 00:23 UTC del 2026-07-06**, y ambos exitosos/esperados:
+**Confirmado para Supabase Edge Functions**, con un matiz importante:
 
-| timestamp (UTC)      | evento                          | resultado        |
-|----------------------|---------------------------------|------------------|
-| 2026-07-06 00:23:42  | procesar-cancelacion.cuantia    | fallo_ambiguo *  |
-| 2026-07-06 00:23:38  | procesar-cancelacion.poder      | exito            |
+- Pipeline oficial de `supabase functions deploy`: (a) bundle local con Deno/esbuild, (b) upload del bundle, (c) swap atómico en el runtime. Si (a) falla, no hay (b) ni (c) → versión activa intacta. **La falla que vimos ("cannot find src/...") ocurre en la etapa (a)**, antes del upload. Por tanto, la premisa es correcta.
+- **Matiz que el análisis previo omitió**: el bundler en el sandbox del tool `deploy_edge_functions` NO es idéntico al del pipeline oficial de Supabase — el sandbox monta solo `supabase/functions/`, mientras que el pipeline oficial (invocado desde CI o desde el auto-deploy de Lovable) puede tener otra vista del filesystem. **Un deploy que falla en el sandbox del tool no implica automáticamente que fallaría en el pipeline oficial de Lovable**, ni al revés. Este matiz no cambia la conclusión de "producción sigue con la versión vieja", pero sí debilita la extrapolación "el próximo deploy fallará seguro".
 
-\* `fallo_ambiguo` es un resultado de negocio esperado (no encontró monto en el certificado), no una excepción de runtime.
+## 3. Auto-deploys no solicitados — **hueco de visibilidad #2**
 
-Desde las 00:23 UTC — **cero invocaciones**. Toda la actividad de código de esta sesión (consolidación del clasificador, cambios de comentarios, migración, etc.) ocurrió DESPUÉS de las 00:23. Ningún usuario ha hecho clic en "Generar documento" para cancelación en las horas en que el código quedó con imports cross-src.
+Sí existe la posibilidad, y no puedo descartarla desde aquí:
 
-## 3. Reconciliación con la cancelación "completed" de las 11:41 UTC
+- La plataforma Lovable dispara auto-deploys de edge functions cuando el agente commitea cambios a `supabase/functions/**`. En esta sesión hicimos exactamente eso al editar el comentario de `procesar-cancelacion/index.ts`.
+- **No tengo una tabla de "deploy history" accesible** para confirmar si ese auto-deploy corrió, ni con qué resultado. `function_edge_logs` está vacío, no hay tabla `deployments` en `public`, y los tools disponibles no exponen historial de deploys.
+- **Escenario que no puedo descartar**: el auto-deploy corrió tras nuestro commit del comentario, encontró los mismos imports cross-src rotos, y falló silenciosamente (comportamiento benigno) — o bien uno anterior (previo a la consolidación) sí pasó y estamos sirviendo esa versión sana. **Ambas hipótesis dan el mismo estado observable: runtime funcionando y monitor alertando**. No puedo distinguirlas desde aquí.
 
-La cancelación `290fd66a-…` figura con `status=completed` y `updated_at=2026-07-06 11:41:11 UTC`, pero:
-- No hay ningún `system_event` de `procesar-cancelacion.*` entre 00:23 y ahora.
-- No hay `activity_log` asociado a ese id.
+## 4. Otros trámites de cancelación con actividad sospechosa
 
-Interpretación: el `updated_at` de las 11:41 corresponde a una escritura sobre la fila (probablemente un autosave/edición desde el cliente o un cambio de status manual), **no a una nueva ejecución de la función**. La ejecución real que dejó el trámite en `completed` fue la de las 00:23 UTC.
+Revisadas **las 15 cancelaciones más recientes** del proyecto:
 
-## 4. Naturaleza del aviso del monitor: PREVENTIVO
+- **Ninguna con `status='error'`**, ninguna con `error_message` poblado.
+- La única con actividad en 48 h es `290fd66a` (la ya conocida).
+- Los borradores antiguos (mayo/junio) siguen en `draft` sin cambios — comportamiento esperado.
+- Ninguna cancelación en estado `processing` colgada (que sería la firma clásica de un runtime que arrancó y no terminó).
 
-Evidencia de que es análisis estático, no reacción a fallo real:
-- Cero errores 5xx / cero excepciones de esta función en las últimas 24h en `system_events`.
-- Cero invocaciones reales tras el cambio de código problemático.
-- El mensaje del monitor describe la **causa estructural** ("depende de un módulo compartido cuyos imports el server no puede resolver") en presente/condicional ("users … may see a hard error"), no un evento concreto ("failed at HH:MM with error X"). Es lenguaje típico de linter/análisis, no de log-alert.
+Sin señales de fallos silenciosos en el histórico.
 
-Conclusión: el monitor leyó el código actual del repo, detectó el import cross-src que rompe el bundler del edge runtime y emitió alerta preventiva anticipando que **el próximo deploy** dejaría la función caída. No hay fallo materializado.
+## 5. El bump de `updated_at` a las 11:41 UTC en 290fd66a — reinterpretación
 
-## 5. ¿Fallaría un usuario que intente generar AHORA MISMO?
+El análisis previo lo despachó como "probable edición del cliente". **Auditoría más estricta:**
 
-Con la evidencia disponible, **NO** — la versión desplegada activa es la anterior a los cambios rotos, y esa versión funcionaba (última prueba: 00:23 UTC exitosa). Los cambios que rompen el bundler viven en el repo pero **no en el runtime**.
+- La fila ya tenía `url_minuta_generada` y `url_certificado_generado` poblados desde las 00:23. Un `regen` (el modo barato sin cobrar créditos) sí sobreescribiría esas URLs, y explicaría el bump SIN dejar system_event ni credit_consumption nuevo (el path `regen: true` puede saltarse ambos).
+- Que `error_message` siga NULL descarta que ese hipotético regen haya fallado en el runtime — habría escrito el error.
+- **Interpretación honesta**: el bump es consistente tanto con "autosave del cliente" como con "regen silencioso exitoso contra el runtime". Ambas hipótesis son compatibles con "producción sana". La conclusión no cambia, pero el "no fue una ejecución de función" del análisis previo es más fuerte de lo que la evidencia soporta.
 
-Riesgo residual: si algún proceso (auto-deploy de Lovable, redeploy automático tras cambios de otra función, o un intento manual futuro) intenta redesplegar `procesar-cancelacion` desde el estado actual del repo, **fallará el deploy** y — dependiendo del comportamiento del sistema de deploys — podría dejar la función servida por la versión vieja (escenario benigno actual) o marcarla como caída si el proceso hace un swap destructivo antes de validar. No tengo forma de saber cuál de los dos comportamientos aplica sin probar.
+## 6. ¿Apostaría mi reputación por "cero usuarios afectados"?
 
-Certeza 100% solo se obtiene invocando la función. **No lo hago sin tu autorización explícita**, como pediste. Si quieres, puedo hacer una llamada de bajo riesgo (por ejemplo con `regen: true` sobre la cancelación `290fd66a-…` ya completada — este modo no cobra créditos ni llama a Gemini, solo re-mapea plantillas) para confirmar que el runtime responde 200. Espero tu OK.
+**Sí, pero comunicando explícitamente los dos huecos:**
 
-## Cronología consolidada de hoy
+- ✅ **Alta confianza (>90 %)** en que ningún usuario ha tenido un fallo hoy: no hay filas `status='error'`, no hay `error_message`, no hay cancelaciones colgadas en `processing`, no hay consumos de crédito sin resolver, no hay entradas nuevas en `activity_logs` de errores.
+- ⚠️ **Reconocer explícitamente**: (a) `function_edge_logs` está ciego a nivel de proyecto, así que "0 invocaciones reales" es una inferencia por ausencia en tablas de negocio, no una lectura directa del gateway; (b) no tengo historial de deploys automáticos, así que no puedo afirmar categóricamente qué versión está sirviendo el runtime en este segundo — solo que las señales de negocio son consistentes con "una versión que funciona".
+- ❌ **Rechazaría** afirmar "100 % cero riesgo" sin poder verificar (a) o (b). La única forma de resolver esa duda con certeza es una invocación real de bajo riesgo (el `regen: true` sobre 290fd66a ya propuesto en el turno anterior), que sigue sin ejecutarse porque no ha habido autorización explícita.
 
-```text
-00:23 UTC  Última ejecución real exitosa de procesar-cancelacion (usuario real).
-~después   Consolidación del clasificador y prosaBancos → imports cross-src en supabase/functions/_shared/.
-~mañana    Cambios de comentarios legacy + migración COMMENT ON TABLE credit_prices (aplicada OK).
-~mañana    Intento de redeploy manual de procesar-cancelacion → FALLA (bundler no encuentra src/*).
-           Runtime sigue con la versión previa (deploy fallido = no swap).
-11:41 UTC  Update sobre cancelacion 290fd66a (no es ejecución de función; probable edición/autosave).
-ahora      Monitor emite alerta preventiva por análisis estático del repo.
-0 invocaciones reales de procesar-cancelacion desde 00:23 UTC → 0 usuarios afectados.
-```
+## Diferencias con el análisis previo — resumen
 
-## Recomendación de siguiente paso (no ejecuto nada sin tu OK)
+| Punto | Análisis previo | Auditoría |
+|---|---|---|
+| "0 invocaciones desde 00:23" | Afirmado como hecho | Reformulado: "sin evidencia en tablas de negocio; edge_logs ciego" |
+| "Deploy fallido no reemplaza versión activa" | Correcto | Correcto, con matiz: sandbox del tool ≠ pipeline oficial de Lovable |
+| "11:41 fue solo edición cliente" | Afirmado | Reformulado: compatible también con regen silencioso exitoso |
+| Auto-deploys no solicitados | No mencionado | Riesgo abierto — no puedo confirmar ni descartar que corrieran |
+| Certeza final | "100 % cero afectados" | ">90 % cero afectados, con 2 huecos de visibilidad" |
 
-Pendiente tu decisión previa entre A/B/C para arreglar los imports cross-src. La alerta del monitor **no eleva la urgencia real** — nadie está fallando hoy — pero sí confirma que hasta arreglar los imports el próximo redeploy dejará la función caída.
+## Recomendación (sin ejecutar nada)
 
-Si quieres máxima tranquilidad ahora mismo antes de decidir A/B/C, autoriza el `regen` de prueba sobre `290fd66a-…` y confirmo en vivo que el runtime responde 200.
+1. **Comunicar la certeza como alta pero no absoluta**, con los dos huecos nombrados. Es lo honesto.
+2. **La prueba `regen: true` sobre 290fd66a sigue siendo la única forma de convertir esa alta confianza en certeza operativa** sin gastar créditos ni tocar datos nuevos. Sigue pendiente tu autorización.
+3. **La decisión A/B/C sobre invertir imports cross-src no gana urgencia con esta auditoría** — nada se ha roto para el usuario final — pero tampoco la pierde: hasta arreglarlo, cualquier auto-deploy futuro sigue en riesgo.
+
+Nota: este documento es solo la propuesta de auditoría para tu revisión — no he modificado código, ni desplegado, ni ejecutado el `regen` de prueba. Espero tu decisión.
