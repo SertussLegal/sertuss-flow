@@ -1,84 +1,112 @@
-# Cambio combinado: comentarios legacy de créditos + COMMENT ON TABLE credit_prices
+# Investigación: bundling error al redesplegar `procesar-cancelacion`
 
-Solo documentación. Cero cambios de lógica, cero cambios en `p_credits`, cero cambios en llamadas a funciones ni en estructura de la tabla.
-
----
-
-## Parte 1 — Comentarios TypeScript
-
-### 1.1. `supabase/functions/procesar-cancelacion/index.ts` — línea 1640
-
-```diff
-     // ─────────────────────────────────────────────────────────────
-     // MODO REPROCESS_PODER: re-extrae solo el Poder con OCR dedicado.
-     // Idempotente: limpia data_ia.poder_banco antes de re-inyectar.
--    // No cobra créditos (unlock_expediente ya consumió los 2).
-+    // No cobra créditos adicionales: el costo de generación ya fue cubierto
-+    // por unlock_expediente al abrir el expediente. El número de créditos
-+    // lo determina credit_prices, no un valor fijo aquí.
-     // ─────────────────────────────────────────────────────────────
-```
-
-### 1.2. `supabase/functions/procesar-cancelacion/index.ts` — línea 1927
-
-```diff
--    // 1) Cobro de 2 créditos (con auditoría obligatoria → p_tramite_id requerido)
-+    // 1) Cobro de créditos (auditoría obligatoria → p_tramite_id requerido).
-+    // Fallback defensivo: el precio real lo resuelve credit_prices en el servidor
-+    // (consume_credit_v2). El valor p_credits: 2 solo aplica si la tabla no
-+    // tuviera una fila activa para GENERACION_DOCX / cancelacion_hipoteca.
-     const { data: charge, error: chargeErr } = await supabaseUser.rpc("consume_credit_v2", {
-       p_org_id: orgId,
-       p_user_id: userId,
-       p_action: "GENERACION_DOCX",
-       p_tramite_id: cancelacionId,
-       p_tipo_acto: "cancelacion_hipoteca",
-       p_credits: 2,
-     });
-```
-
-La línea `p_credits: 2` se mantiene intacta como fallback defensivo.
-
-### 1.3. `src/pages/CancelacionValidar.tsx` — línea 513
-
-```diff
-     // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
-     // (la edge function limpia data_ia.poder_banco antes de re-inyectar).
--    // No cobra créditos (unlock_expediente ya consumió los 2).
-+    // No cobra créditos adicionales: el costo de generación ya fue cubierto
-+    // por unlock_expediente al abrir el expediente. El número de créditos
-+    // lo determina credit_prices, no un valor fijo aquí.
-     const handleReprocessPoder = async () => {
-```
+Evidencia observada, no suposiciones. Cero cambios.
 
 ---
 
-## Parte 2 — SQL: `COMMENT ON TABLE public.credit_prices`
+## 1. Versión actualmente en producción de `procesar-cancelacion`
 
-Migración de metadatos (no toca datos ni estructura):
+**No pude determinar el commit exacto ni el timestamp de deploy** — los logs analíticos de edge functions tienen una ventana efectiva vacía (solo 3 filas retenidas, todas de `mcp` en un rango de ~4ms, sin registros de `procesar-cancelacion` ni deployment history consultable). El endpoint `edge_function_logs` para esta función devuelve "No logs found".
 
-```sql
-COMMENT ON TABLE public.credit_prices IS
-'Catálogo autoritativo de precios en créditos por acción y tipo_acto. Resuelto server-side por consume_credit_v2 y unlock_expediente (prioridad: match exacto tipo_acto > comodín "*" > p_credits del cliente > fallback 1). Escritura restringida a is_platform_admin() vía RLS. IMPORTANTE: para reactivar un precio desactivado, usar UPDATE ... SET active = true sobre la fila existente — NUNCA insertar una fila nueva con la misma combinación (action, tipo_acto), ya que violará el constraint UNIQUE credit_prices_action_tipo_unique.';
-```
+**Evidencia indirecta de que la versión desplegada SÍ funciona hoy**: consulté `cancelaciones` y hay una cancelación `status=completed` con `updated_at=2026-07-06 11:41:11 UTC` (creada hoy 00:20, completada hoy 11:41). Eso solo puede ocurrir si `procesar-cancelacion` respondió 200 en producción hoy mismo. Otras 3 cancelaciones completadas en junio (2026-06-08, 2026-06-21, 2026-06-24) confirman flujo estable.
 
-Se ejecutará vía la herramienta de migración (única forma soportada para cambios de esquema/metadatos). No modifica filas, columnas, constraints, políticas ni funciones.
+**Conclusión firme**: La versión en producción funciona. La versión "vigente" es la última que se autodeplegó exitosamente antes de que el pipeline de deploy manual empezara a rechazar el bundle. No puedo poner un commit exacto sin acceso a la historia de deploys.
 
 ---
 
-## Impacto operacional (dejarlo documentado, no asumido)
+## 2. ¿Cuándo empezó a romperse el deploy?
 
-- **`procesar-cancelacion/index.ts` requerirá redeploy** de la edge function tras aplicar los cambios de comentarios, aunque no cambie lógica. Deno bundlea el archivo completo; cualquier cambio textual dispara redespliegue en el próximo push.
-- **`src/pages/CancelacionValidar.tsx`**: rebuild normal del frontend (Vite), sin impacto en producción hasta el próximo deploy.
-- **`COMMENT ON TABLE`**: se aplica inmediatamente al ejecutarse la migración. Sin efecto en runtime ni en clientes conectados.
+**No verificable con la telemetría disponible.** Sin historial de deploys ni git accesible, no puedo probar si hubo deploys exitosos de `procesar-cancelacion` posteriores a la consolidación del clasificador.
 
-## Verificación post-cambio (a ejecutar en build mode tras aprobación)
+**Hipótesis con soporte, no certeza**: el re-export `export * from "../../../src/shared/apoderadoClassifier.ts"` **sale de la raíz `supabase/functions/`**. Es plausible que el pipeline auto-deploy de Lovable (que corre en cada mensaje del agente) monte TODO el repo en el sandbox y por eso resuelva el path, mientras que la herramienta explícita `deploy_edge_functions` solo monta `supabase/functions/`. Si eso es cierto, los auto-deploys posteriores a la consolidación pudieron subir la función sin problemas, y solo hoy — al invocar deploy explícito — se destapó la incompatibilidad.
 
-- `bunx vitest run` — suite frontend completa, para confirmar verde a pesar de que el cambio es solo textual.
-- No se requiere `deno check` adicional (los comentarios no afectan tipos; los 5 errores TS preexistentes de `procesar-cancelacion` siguen sin relación).
+**Lo que sí es certeza**: el bundler falla porque busca `file:///tmp/.../source/src/shared/apoderadoClassifier.ts` y ese archivo no está en el sandbox. La ruta que se le pide bucear existe en el repo (`src/shared/apoderadoClassifier.ts` está ahí, la verifiqué).
 
-## Riesgos
+---
 
-Ninguno funcional. Único riesgo: typo al aplicar el diff — mitigado porque el texto propuesto está literal arriba y se aplicará con reemplazo exacto.
+## 3. Radio de impacto — funciones que dependen de re-exports cross-src
 
-¿Apruebas aplicar este cambio combinado (3 comentarios + 1 COMMENT ON TABLE)?
+**Grep de imports concretos:**
+
+- **`procesar-cancelacion/index.ts`** — importa dos módulos afectados:
+  - `../_shared/apoderadoClassifier.ts` → re-exporta de `../../../src/shared/apoderadoClassifier.ts`
+  - `../_shared/prosaBancos/index.ts` → re-exporta de `../../../../src/shared/prosaBancos/index.ts`
+- **`adaptar-estilo-prosa/index.ts`** — importa uno:
+  - `../_shared/prosaBancos/index.ts` → mismo re-export cross-src
+
+**Re-exports cross-src existentes** (4 archivos, todos vulnerables):
+
+```text
+supabase/functions/_shared/apoderadoClassifier.ts        → src/shared/apoderadoClassifier.ts
+supabase/functions/_shared/prosaBancos/index.ts          → src/shared/prosaBancos/index.ts
+supabase/functions/_shared/prosaBancos/davivienda.ts     → src/shared/prosaBancos/davivienda.ts
+supabase/functions/_shared/prosaBancos/types.ts          → src/shared/prosaBancos/types.ts
+```
+
+**Funciones NO afectadas** (no importan nada que re-exporte de `src/`): `process-expediente`, `scan-document`, `validar-con-claude`, `mcp`, `audit-refs-davivienda`, y todas las demás.
+
+**Conclusión firme**: solo **2 funciones** están bloqueadas para redeploy manual — `procesar-cancelacion` y `adaptar-estilo-prosa`. `process-expediente`, `scan-document`, `validar-con-claude` NO se ven afectadas.
+
+---
+
+## 4. ¿Por qué técnicamente falla?
+
+El bundler de la herramienta `deploy_edge_functions` monta un sandbox `/tmp/user_fn_.../source/` y coloca solo el árbol `supabase/functions/` dentro. Cuando Deno resuelve el import relativo `../../../src/shared/apoderadoClassifier.ts` desde `supabase/functions/_shared/apoderadoClassifier.ts`, la ruta calculada apunta a `/tmp/.../source/src/shared/apoderadoClassifier.ts` — que no existe en el sandbox porque `src/` no fue copiado.
+
+**Naturaleza del problema**: **restricción del sandbox del deploy tool**, no restricción intrínseca de Deno ni de edge functions. Deno puede importar rutas relativas sin problema; lo que falta es que `src/shared/` sea visible durante el bundle. Alternativas conceptuales para el fix (no ejecutar ahora):
+- **A**: mover la fuente de vuelta a `supabase/functions/_shared/` y hacer que `src/shared/` re-exporte de allí (invertir la dirección del re-export). Frontend seguiría importando `src/shared/…` con la misma API. Es transparente para el cliente Vite (Vite sí puede subir un nivel fuera de `src/`).
+- **B**: usar un `import_map.json` por función que remapee a una copia interna, con un paso de sincronización.
+- **C**: duplicar el código (rechazado explícitamente en la consolidación anterior por drift).
+
+No hay evidencia de que `deno.json` o `import_map.json` actuales cambien este comportamiento — no existen archivos de config específicos que expandan el sandbox.
+
+---
+
+## 5. ¿La versión en producción sirve a clientes reales AHORA?
+
+**Sí, con alta confianza.** Evidencia:
+
+- Cancelación completada hoy 2026-07-06 a las 11:41 UTC (ID `290fd66a…`, `status=completed`).
+- Cancelaciones anteriores completadas en junio (3 casos entre 2026-06-08 y 2026-06-24).
+- Ninguna telemetría de errores 5xx recientes accesible (retención analítica vacía), pero el hecho de que las cancelaciones progresen a `completed` implica respuestas 200 de la edge function.
+
+**Limitación**: no puedo enumerar todas las invocaciones fallidas recientes porque los logs no están retenidos.
+
+---
+
+## 6. Cronología reconstruida (con lo que hay)
+
+```text
+[fecha desconocida]  Consolidación del clasificador: nace `src/shared/apoderadoClassifier.ts`
+                     como fuente única; `supabase/functions/_shared/apoderadoClassifier.ts`
+                     pasa a re-exportar de esa fuente. Idem prosaBancos (3 archivos).
+                     A partir de aquí, el bundle depende de que el pipeline suba `src/`.
+
+[fecha desconocida]  Último auto-deploy exitoso de `procesar-cancelacion`. Este binario
+                     es el que hoy sirve producción. Hipótesis: el auto-deploy de Lovable
+                     incluye todo el repo, por eso pasó.
+
+2026-06-08           Cancelación completada en prod → función respondiendo 200.
+2026-06-21           Cancelación completada en prod → función respondiendo 200.
+2026-06-24           Cancelación completada en prod → función respondiendo 200.
+2026-07-06 00:20     Cancelación creada en prod.
+2026-07-06 11:41     Esa misma cancelación completada → función respondiendo 200 hoy.
+
+2026-07-06 16:08     Cambio de comentarios aplicado en repo (esta sesión).
+2026-07-06 16:08     Intento de redeploy manual vía `deploy_edge_functions` →
+                     FALLA con "Module not found src/shared/apoderadoClassifier.ts".
+                     Esta es la primera evidencia observable de la incompatibilidad
+                     entre el re-export cross-src y el sandbox de deploy manual.
+```
+
+---
+
+## Resumen ejecutivo
+
+- ✅ Producción está sana; clientes reales cerraron cancelaciones hoy.
+- ⚠️ Solo `procesar-cancelacion` y `adaptar-estilo-prosa` quedan bloqueadas para redeploy manual mientras exista el patrón re-export cross-src.
+- ✅ `process-expediente`, `scan-document`, `validar-con-claude` NO están afectadas.
+- ❓ No pude datar cuándo se rompió el deploy manual, pero es certeza que existió desde que se creó el re-export; los deploys posteriores probablemente pasaron por el auto-deploy que monta el repo completo.
+- 🎯 El problema NO es de Deno: es del sandbox del tool. Se resuelve invirtiendo la dirección de los re-exports (fuente en `supabase/functions/_shared/`, re-export desde `src/shared/`) o via import maps — sin duplicar código.
+
+**No aplicar ningún fix todavía**: esta plan es solo el diagnóstico solicitado. La priorización del fix (opciones A/B) queda para tu decisión.
