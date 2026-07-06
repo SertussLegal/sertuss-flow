@@ -1056,6 +1056,135 @@ export type Database = {
         }
         Relationships: []
       }
+      regla_propuesta: {
+        Row: {
+          campos_afectados: string[]
+          categoria: string
+          created_at: string
+          descripcion: string
+          evidencia: Json
+          frecuencia_estimada: number
+          id: string
+          nivel_severidad: string
+          nota_revision: string | null
+          regla_creada_id: string | null
+          regla_deterministica_sugerida: Json
+          revisado_at: string | null
+          revisado_por: string | null
+          run_id: string
+          status: string
+          tipo_acto: string
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          campos_afectados?: string[]
+          categoria: string
+          created_at?: string
+          descripcion: string
+          evidencia?: Json
+          frecuencia_estimada?: number
+          id?: string
+          nivel_severidad: string
+          nota_revision?: string | null
+          regla_creada_id?: string | null
+          regla_deterministica_sugerida: Json
+          revisado_at?: string | null
+          revisado_por?: string | null
+          run_id: string
+          status?: string
+          tipo_acto: string
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          campos_afectados?: string[]
+          categoria?: string
+          created_at?: string
+          descripcion?: string
+          evidencia?: Json
+          frecuencia_estimada?: number
+          id?: string
+          nivel_severidad?: string
+          nota_revision?: string | null
+          regla_creada_id?: string | null
+          regla_deterministica_sugerida?: Json
+          revisado_at?: string | null
+          revisado_por?: string | null
+          run_id?: string
+          status?: string
+          tipo_acto?: string
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regla_propuesta_regla_creada_id_fkey"
+            columns: ["regla_creada_id"]
+            isOneToOne: false
+            referencedRelation: "reglas_validacion"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regla_propuesta_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "regla_propuesta_run"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regla_propuesta_run: {
+        Row: {
+          costo_estimado_usd: number
+          created_at: string
+          disparado_por: string
+          error_detalle: Json | null
+          finished_at: string | null
+          id: string
+          propuestas_generadas: number
+          started_at: string
+          status: string
+          tiempo_ms: number | null
+          tokens_input: number
+          tokens_output: number
+          tramites_analizados: number
+          triggered_by_user: string | null
+        }
+        Insert: {
+          costo_estimado_usd?: number
+          created_at?: string
+          disparado_por?: string
+          error_detalle?: Json | null
+          finished_at?: string | null
+          id?: string
+          propuestas_generadas?: number
+          started_at?: string
+          status?: string
+          tiempo_ms?: number | null
+          tokens_input?: number
+          tokens_output?: number
+          tramites_analizados?: number
+          triggered_by_user?: string | null
+        }
+        Update: {
+          costo_estimado_usd?: number
+          created_at?: string
+          disparado_por?: string
+          error_detalle?: Json | null
+          finished_at?: string | null
+          id?: string
+          propuestas_generadas?: number
+          started_at?: string
+          status?: string
+          tiempo_ms?: number | null
+          tokens_input?: number
+          tokens_output?: number
+          tramites_analizados?: number
+          triggered_by_user?: string | null
+        }
+        Relationships: []
+      }
       reglas_validacion: {
         Row: {
           activa: boolean | null
