@@ -22,9 +22,6 @@
       ],
       "@shared/*": [
         "./supabase/functions/_shared/*"
-      ],
-      "npm:zod@3.25.76": [
-        "./node_modules/zod"
       ]
     },
     "skipLibCheck": true,
