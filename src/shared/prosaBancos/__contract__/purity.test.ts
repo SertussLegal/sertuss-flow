@@ -56,7 +56,7 @@ describe("prosaBancos: pureza isomórfica", () => {
 
   for (const file of files) {
     it(`${file.replace(process.cwd() + "/", "")} está libre de imports prohibidos`, () => {
-      const src = readFileSync(file, "utf8");
+      const src = stripComments(readFileSync(file, "utf8"));
       for (const { label, re } of FORBIDDEN_PATTERNS) {
         expect(re.test(src), `${label} encontrado en ${file}`).toBe(false);
       }
