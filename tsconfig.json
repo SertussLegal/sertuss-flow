@@ -9,7 +9,7 @@
         "./src/*"
       ],
       "@shared/*": [
-        "./supabase/shared/*"
+        "./supabase/functions/_shared/*"
       ]
     },
     "skipLibCheck": true,

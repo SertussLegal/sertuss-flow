@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => {
       dedupe: ["react", "react-dom"],
       alias: {
         "@": path.resolve(__dirname, "./src"),
-        "@shared": path.resolve(__dirname, "./supabase/shared"),
+        "@shared": path.resolve(__dirname, "./supabase/functions/_shared"),
       },
     },
     build: {

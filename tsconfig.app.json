@@ -21,7 +21,7 @@
         "./src/*"
       ],
       "@shared/*": [
-        "./supabase/shared/*"
+        "./supabase/functions/_shared/*"
       ]
     },
     "skipLibCheck": true,
@@ -34,6 +34,6 @@
   },
   "include": [
     "src",
-    "supabase/shared"
+    "supabase/functions/_shared"
   ]
 }
