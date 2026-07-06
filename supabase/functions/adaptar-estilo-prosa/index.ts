@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { OverrideSchema } from "../../shared/prosaBancos/index.ts";
+import { OverrideSchema } from "../_shared/prosaBancos/index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
