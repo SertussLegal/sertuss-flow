@@ -1208,6 +1208,23 @@ export const CancelacionValidar = () => {
                         <span className="font-mono"> DD DE MES DE AAAA</span>. Refínalo con la doble expresión notarial si lo deseas.
                       </p>
                     </details>
+
+                    {POWER_V5_ENABLED && row && getProsaBanco(data.partes.banco_nit) && (() => {
+                      const baseContext = buildProsaContext(pb as never, ne);
+                      const override = ((row as { prosa_apoderado_override?: ProsaApoderadoOverride | null })
+                        .prosa_apoderado_override) ?? null;
+                      return (
+                        <ProsaApoderadoPreviewCard
+                          cancelacionId={row.id as string}
+                          baseContext={baseContext}
+                          override={override}
+                          onOverrideChange={() => {
+                            queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+                            setPreviewStale(true);
+                          }}
+                        />
+                      );
+                    })()}
                   </Section>
                 );
               })()}
