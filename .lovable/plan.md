@@ -1,73 +1,169 @@
+# Diseño — Tabla `credit_prices` como fuente única de precios
 
-# Diagnóstico (solo lectura) — Modal de confianza + rol viable para `validar-con-claude`
-
-## PARTE A — El "modal / indicador de confianza" hoy
-
-### 1. ¿De dónde sale el porcentaje?
-No existe un porcentaje único global. Coexisten **dos fuentes distintas** que el dueño del producto probablemente agrupa mentalmente como "confianza":
-
-**(a) Confianza por-campo del OCR (Gemini `scan-document`)** — LA PRINCIPAL, siempre activa.
-- Cada campo del schema viene envuelto en `{ valor, confianza: "alta"|"media"|"baja" }` (ver `supabase/functions/scan-document/shared/confFields.ts`).
-- Se desempaqueta en `DocumentUploadStep.tsx` (líneas 314–445) construyendo `confianzaMap: Record<string, "alta"|"media"|"baja">`, se persiste en `tramites.metadata.confianza_map` y se rehidrata en `Validacion.tsx:414`.
-- Se muestra como **borde ámbar + tooltip "Verificación requerida — la IA tiene baja confianza en este dato"** en `PersonaForm.tsx:148` e `InmuebleForm.tsx:358`. También como contador agregado ("N campo(s) con baja confianza" en `DocumentUploadStep.tsx:804` y `lowConfCount` en `Validacion.tsx:317`).
-- **No hay un "%" numérico**: son 3 niveles categóricos por campo.
-
-**(b) Puntuación 0-100 de Claude** — el que probablemente el dueño llama "modal de %".
-- `validacionResultado.puntuacion` viene de `validar-con-claude` (regla: 100 − 15 por error − 5 por advertencia − 1 por sugerencia).
-- Se muestra únicamente dentro del `AlertDialog` en `Validacion.tsx:3511–3611` ("Revisión de validación → Puntuación: 66/100"), y como toast si no hay errores críticos (`Validacion.tsx:1994`). El diálogo se abre solo cuando `tieneErroresCriticos === true` justo antes de generar el .docx.
-
-### 2. "Anotaciones proactivas" — qué son y ejemplos
-Son las entradas de `validacionResultado.validaciones[]` que Claude devuelve, renderizadas en 3 bloques del mismo AlertDialog: **Errores** (rojo, `AlertCircle`), **Advertencias** (amarillo), **Sugerencias** (azul, `Info`). Cada una muestra `campo`, `explicacion`, y opcionalmente `valor_sugerido`.
-
-Ejemplos reales según reglas activas en el prompt (`validar-con-claude/index.ts`) e `historial_validaciones`:
-- **Error (FMT_CEDULA_DIGITOS):** *"vendedor[0].numero_cedula: contiene puntos o letras. Sugerido: 52123456"*.
-- **Advertencia (COH_NOTARIA_ORIGEN):** *"notaria_tramite.numero_notaria: el certificado de tradición muestra Notaría 25, pero el trámite está configurado como Notaría 32"*.
-- **Sugerencia (CUSTOM / datos de notaría detectados):** *"notaria_tramite.nombre_notario: detectado 'Juan Pérez' en escritura previa; considera aceptarlo"* (con `auto_corregible:true` para acepto de 1 clic).
-
-Los **badges inline dot** (rojo/amarillo/azul junto al input) usan `inlineBadgeMap` generado por `obtenerInlineBadges(validaciones)` — también proceden de Claude, no de reglas locales.
-
-Nota: los **borde ámbar por-campo** son de OCR (Gemini), NO de Claude. Son "anotaciones proactivas" en un sentido más amplio, pero de otro origen.
-
-### 3. ¿Por qué no existe en cancelaciones?
-Se revisó `CancelacionValidar.tsx`: **cero referencias** a `puntuacion`, `validar-con-claude`, `confianzaFields`, `NivelConfianza` o `confianza_map`. Concurrentemente:
-
-- **Falta la llamada al modelo auditor**: `procesar-cancelacion` extrae con Gemini pero no invoca `validar-con-claude` ni guarda `confianza_map` equivalente.
-- **Falta el pipeline de metadata**: `DocumentUploadStep.tsx` es exclusivo del flujo escrituras. En cancelaciones el OCR se hace por `scan-document` con tool `poderBanco` que sí devuelve `{valor, confianza}`, pero el resultado no se enruta a un mapa persistente.
-- **Sí existe una lógica sustituta parcial**: `cancelacionCriticalFields.ts` + banners rojos `AlertCircle` para campos obligatorios faltantes (Davivienda). Es determinista, no probabilística.
-
-Conclusión: no es limitación de modelo, es que **el pipeline de "extraer confianza → persistir → pintar ámbar → auditar con Claude" nunca se cableó en el flujo de cancelaciones**. No se priorizó porque el flujo es más corto (menos campos, menos documentos cruzados) y el riesgo percibido menor.
+**Alcance**: propuesta de diseño. NO se ejecuta nada hasta aprobación explícita.
 
 ---
 
-## PARTE B — Roles viables para `validar-con-claude`
+## 1. DDL propuesto de `credit_prices`
 
-### Idea 1 — "Modo descubrimiento" batch semanal
-**Viabilidad: ALTA. Esfuerzo: BAJO-MEDIO (2-3 días).**
-- Los datos ya están: `historial_validaciones` guarda `datos_enviados` + `respuesta_claude` completos; `tramites.metadata` guarda estado final; `credit_consumption` marca APERTURA_EXPEDIENTE (=trámite realmente cerrado). Se puede filtrar "trámites completados en los últimos 7 días" y re-someterlos a un prompt distinto: *"dado este set, sugiere reglas deterministas nuevas que hubieran detectado errores no capturados por las 35 reglas actuales"*.
-- No requiere UI en el flujo de usuario final; solo una edge function cron + una tabla `regla_propuesta` que el admin revisa/aprueba/rechaza. Encaja con el patrón "extensibilidad por datos" del proyecto.
-- Ventaja estratégica clara: **convierte a Claude de auditor pasivo a generador de reglas** — cada regla aprobada elimina llamadas futuras. Es el único modo donde Claude no es redundante con Gemini y produce un ROI compuesto.
-- Riesgo: propuestas de reglas de baja calidad si el prompt no está afinado. Requiere loop humano obligatorio.
+```sql
+CREATE TABLE public.credit_prices (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  action       text NOT NULL,              -- 'OCR_DOCUMENTO' | 'APERTURA_EXPEDIENTE' | 'GENERACION_DOCX' | ...
+  tipo_acto    text NOT NULL,              -- 'compraventa_hipoteca' | 'cancelacion_hipoteca' | '*'
+  credits      integer NOT NULL CHECK (credits >= 0 AND credits <= 100),
+  active       boolean NOT NULL DEFAULT true,
+  notes        text,
+  updated_by   uuid REFERENCES auth.users(id),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT credit_prices_action_tipo_unique UNIQUE (action, tipo_acto)
+);
 
-### Idea 2 — "Síntesis de plan de acción"
-**Viabilidad: ALTA. Esfuerzo: MUY BAJO (medio día).**
-- No necesita Claude en absoluto para el 80% del caso. Los datos ya tienen `priority` (high/medium/low) y `nivel`; una función `top3(validaciones)` que ordene por `priority + nivel + campos_relacionados.length` cubre la síntesis sin llamada nueva.
-- Si se quiere prosa humana ("Antes de enviar revisa: 1... 2... 3..."), se puede pedir a Claude en la MISMA llamada actual, agregando un campo `plan_accion: string[3]` al schema JSON. Cero costo marginal.
-- **Sin embargo**: es cosmético. No resuelve la crítica del diagnóstico previo (Claude no aporta señales nuevas). Bueno como mejora UX, malo como justificación para mantener el gasto.
+GRANT SELECT ON public.credit_prices TO authenticated;   -- lectura para toda la app
+GRANT ALL    ON public.credit_prices TO service_role;    -- edge functions y admin
+ALTER TABLE public.credit_prices ENABLE ROW LEVEL SECURITY;
 
-### Idea 3 — Extender indicador de confianza + anotaciones a cancelaciones
-**Viabilidad: ALTA. Esfuerzo: MEDIO (3-5 días).**
-- **Parte OCR/ámbar (~1-2 días)**: el `scan-document` de `poderBanco` ya devuelve `{valor, confianza}`. Falta: (a) construir `confianzaMap` análogo en el handler de subida de cancelación, (b) persistirlo en `cancelaciones.metadata.confianza_map`, (c) agregar prop `confianzaFields` a los inputs del `CancelacionValidar.tsx` copiando el patrón de `PersonaForm`. Trabajo casi mecánico.
-- **Parte Claude (~2-3 días)**: registrar plantilla `cancelacion_hipoteca` + reglas específicas en `plantillas_validacion` y `reglas_validacion` (hoy solo hay reglas de compraventa/hipoteca); agregar llamada a `validarConClaude({modo:"campos", tipo_acto:"cancelacion_hipoteca"})` en el botón "Generar". El edge function ya es multi-tipo (`.or(...tipo_acto...)`), no hay que tocarlo.
-- **Complejidad ya cubierta parcialmente**: `cancelacionCriticalFields.ts` cubre campos obligatorios (rojo/AlertCircle) — es más fuerte que "confianza ámbar" porque bloquea visualmente. Lo que **falta genuinamente** es: cruces multi-documento (poder banco vs certificado de tradición vs escritura hipoteca), detección de notaría origen, coherencia de valor del crédito. Ahí sí aporta.
+-- Lectura: cualquier authenticated. Es un catálogo público de precios, sin org.
+CREATE POLICY "credit_prices readable by authenticated"
+  ON public.credit_prices FOR SELECT TO authenticated USING (true);
+
+-- Escritura: SOLO super-admin de plataforma (info@sertuss.com vía is_platform_admin()).
+CREATE POLICY "credit_prices writable by platform admin"
+  ON public.credit_prices FOR ALL TO authenticated
+  USING (public.is_platform_admin())
+  WITH CHECK (public.is_platform_admin());
+
+-- Trigger updated_at reutilizando public.set_updated_at()
+CREATE TRIGGER trg_credit_prices_updated_at
+  BEFORE UPDATE ON public.credit_prices
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+```
+
+**Decisiones clave**
+- **Global sin `organization_id`**: los precios son de plataforma, no por notaría. Simplifica RLS y cache. Si a futuro se quiere pricing por org, se agrega columna nullable `organization_id` y se cambia el UNIQUE.
+- **`tipo_acto = '*'`** como comodín para acciones globales (ej. `OCR_DOCUMENTO` que aplica a cualquier trámite).
+- **`active`** para deprecar sin borrar (auditoría histórica).
+- **UNIQUE (action, tipo_acto)** garantiza un único precio vigente por combinación.
 
 ---
 
-## Recomendación técnica
+## 2. Migración de los 3 lugares actuales
 
-1. **Idea 1 (modo descubrimiento) es la única que justifica formalmente mantener Claude activo** — le da un rol único, no redundante, y con ROI decreciente (cada regla generada reduce el gasto futuro). El costo es <$5/mes (26 trámites, 1 corrida/semana).
-2. **Idea 2** implementarla como mejora UX del actual `AlertDialog` **sin llamada extra** (top-3 determinista sobre `validaciones[]`). No amerita mantener Claude por sí sola.
-3. **Idea 3 (extender a cancelaciones)** solo tiene sentido *después* de decidir sobre Claude. Si Claude se retira, se puede extender únicamente el pipeline OCR/ámbar (más útil, más barato, sin dependencia de Claude). Si Claude se queda con rol batch (Idea 1), agregar cancelaciones al corpus del batch cuesta cero.
+### 2a. `consume_credit_v2` — **recomendación: resolver server-side, ignorar `p_credits` del cliente**
 
-**Camino más limpio**: Idea 1 + Idea 2 (versión determinista) + Idea 3 sub-parte OCR/ámbar. Retirar la llamada en-vivo de `validar-con-claude` de `Validacion.tsx` (2 call-sites) pero conservar la edge function reconvertida a job semanal.
+Riesgo actual: `p_credits` viaja desde el navegador. Un atacante con la anon key puede llamar el RPC con `p_credits: 0` y consumir gratis, o con valor negativo si no hubiese CHECK. Hoy no hay validación cruzada.
 
-Sin cambios de código aplicados. Esperando decisión.
+**Propuesta**: mantener la firma con `p_credits` **por compatibilidad**, pero **ignorarlo si existe un precio en `credit_prices`**. Nueva lógica interna:
+
+```sql
+-- pseudo, dentro de consume_credit_v2, antes del UPDATE
+v_resolved_credits int;
+SELECT credits INTO v_resolved_credits
+  FROM public.credit_prices
+ WHERE active = true
+   AND action = p_action
+   AND (tipo_acto = p_tipo_acto OR tipo_acto = '*')
+ ORDER BY (tipo_acto = p_tipo_acto) DESC   -- prioriza match exacto
+ LIMIT 1;
+
+-- fallback: si no hay fila, usa p_credits (evita romper acciones legacy no catalogadas)
+v_final := COALESCE(v_resolved_credits, p_credits, 1);
+```
+
+Además, registrar en `credit_consumption.credits` el valor **efectivamente cobrado** (v_final), no el que envió el cliente. Esto blinda contra manipulación y mantiene compatibilidad con call-sites existentes.
+
+### 2b. `unlock_expediente` — reemplazar `2` hardcoded
+
+Cambio quirúrgico dentro de la misma función:
+
+```sql
+-- reemplazar: IF ... < 2 THEN y credit_balance - 2 y credits => 2
+SELECT credits INTO v_price
+  FROM public.credit_prices
+ WHERE active = true
+   AND action = 'APERTURA_EXPEDIENTE'
+   AND (tipo_acto = COALESCE((SELECT tipo FROM public.tramites WHERE id = p_tramite_id), '*')
+        OR tipo_acto = '*')
+ ORDER BY (tipo_acto <> '*') DESC LIMIT 1;
+
+v_price := COALESCE(v_price, 2);  -- safety net
+```
+
+Y usar `v_price` en el chequeo de balance, en el UPDATE y en el INSERT a `credit_consumption` y `activity_logs`.
+
+### 2c. `procesar-cancelacion` — sin llamada extra
+
+**No** hacer un `SELECT` adicional desde la edge function. La resolución ocurre **dentro** de `consume_credit_v2` (punto 2a). La edge function sigue llamando:
+
+```ts
+await supabaseUser.rpc("consume_credit_v2", {
+  p_org_id, p_user_id,
+  p_action: "GENERACION_DOCX",
+  p_tramite_id: cancelacionId,
+  p_tipo_acto: "cancelacion_hipoteca",
+  p_credits: 2,   // fallback/hint; el server resuelve el real desde credit_prices
+});
+```
+
+Cero llamadas extra, cero cambios de arquitectura en la edge function. El `2` deja de ser autoridad y pasa a ser un fallback defensivo.
+
+---
+
+## 3. Población inicial (sin downtime)
+
+Todo dentro de la **misma migración**, en este orden atómico:
+
+```sql
+BEGIN;
+  CREATE TABLE ...;                    -- (bloque del punto 1)
+  GRANT / RLS / POLICY ...;
+  INSERT INTO public.credit_prices (action, tipo_acto, credits, notes) VALUES
+    ('OCR_DOCUMENTO',       '*',                     1, 'OCR unitario por documento'),
+    ('APERTURA_EXPEDIENTE', 'compraventa_hipoteca',  3, 'Escritura compraventa+hipoteca'),
+    ('GENERACION_DOCX',     'cancelacion_hipoteca',  2, 'Cancelación de hipoteca');
+  -- Actualización de consume_credit_v2 y unlock_expediente en la MISMA migración
+  CREATE OR REPLACE FUNCTION public.consume_credit_v2 ...;
+  CREATE OR REPLACE FUNCTION public.unlock_expediente ...;
+COMMIT;
+```
+
+Como todo va en una sola transacción, no existe momento en que las funciones nuevas lean una tabla vacía. La edge function `procesar-cancelacion` no requiere redeploy (sigue mandando `p_credits: 2` como fallback, y el server ya resuelve desde la tabla).
+
+---
+
+## 4. Trámites en curso al momento del cambio
+
+**No se afectan retroactivamente.** El cobro sucede en dos momentos discretos:
+
+- **Apertura de expediente (escritura)**: se cobra una única vez cuando el usuario pulsa "Abrir expediente" → `unlock_expediente`. Trámites ya abiertos con `is_unlocked=true` **no vuelven a cobrar**. El cambio de 2 → 3 aplica solo a aperturas nuevas posteriores al deploy.
+- **Generación de cancelación**: se cobra cada vez que se llama `procesar-cancelacion`. Si un usuario regenera el docx después del deploy, pagará el precio nuevo (2 se mantiene, así que no hay impacto en este caso).
+- **OCR**: cobro por documento subido. Los ya subidos no se recobran.
+
+**Consecuencia práctica**: cero clientes afectados por trámites "a medias". El único cambio real de precio es escritura 2 → 3, y solo pega en aperturas nuevas.
+
+---
+
+## 5. Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| Fila borrada / `active=false` accidentalmente → cobro cae a 0 o falla | `COALESCE(v_resolved, p_credits, 1)` como safety net + policy que restringe UPDATE/DELETE a `is_platform_admin()`. |
+| Cliente sigue mandando `p_credits` manipulado | Server siempre gana: la fila en `credit_prices` es la fuente de verdad. El `p_credits` solo se usa si no hay fila. |
+| Race condition al leer `credit_prices` durante un cambio de precio | La lectura ocurre dentro de la misma transacción del cobro (`FOR UPDATE` sobre `organizations`). No hay ventana de inconsistencia por trámite. |
+| Cache stale en frontend mostrando precios viejos | El frontend NO debería tomar decisiones de cobro; solo mostrar. Agregar un `SELECT` liviano cacheado 5 min en un hook `useCreditPrices()` para el UI. La autoridad sigue siendo el server. |
+| Falta de auditoría de cambios de precio | La tabla ya lleva `updated_by` + `updated_at`. Complementar con `activity_logs` action `CREDIT_PRICE_CHANGE` desde un trigger AFTER UPDATE (opcional, recomendado). |
+| Deploy parcial (migración corre, edge function no) | La edge function sigue funcionando con `p_credits: 2` como fallback si `credit_prices` estuviera vacía. Con inserts en la misma migración, este riesgo desaparece. |
+| Divergencia futura entre `credit_prices` y `p_credits` que envía el cliente | Loguear un `RAISE NOTICE` o insertar en `system_events` cuando `v_resolved <> p_credits` para detectar call-sites desactualizados. |
+
+---
+
+## Checklist pre-ejecución (para tu aprobación)
+
+- [ ] ¿Confirmas los 3 valores iniciales (OCR=1, escritura=3, cancelación=2)?
+- [ ] ¿Confirmas que precios son **globales sin org**?
+- [ ] ¿Confirmas que server-side gana sobre `p_credits` del cliente (recomendación de seguridad)?
+- [ ] ¿Quieres el trigger opcional de auditoría en `activity_logs` para cambios de precio?
+- [ ] ¿Quieres además un UI mínimo en el panel de super-admin para editar la tabla, o por ahora se edita solo vía migraciones?
+
+Al confirmar estos 5 puntos, procedo a implementar en una sola migración + un redeploy opcional de `procesar-cancelacion` (solo si decidimos remover el `p_credits: 2` explícito).
