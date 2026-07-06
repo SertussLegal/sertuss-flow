@@ -1,10 +1,12 @@
-# Diff propuesto — actualización de 3 comentarios legacy sobre créditos
+# Cambio combinado: comentarios legacy de créditos + COMMENT ON TABLE credit_prices
 
-Solo cambio de texto en comentarios. Cero cambios de lógica, cero cambios en `p_credits`, cero cambios en llamadas a funciones.
+Solo documentación. Cero cambios de lógica, cero cambios en `p_credits`, cero cambios en llamadas a funciones ni en estructura de la tabla.
 
 ---
 
-## 1. `supabase/functions/procesar-cancelacion/index.ts` — línea 1640
+## Parte 1 — Comentarios TypeScript
+
+### 1.1. `supabase/functions/procesar-cancelacion/index.ts` — línea 1640
 
 ```diff
      // ─────────────────────────────────────────────────────────────
@@ -17,7 +19,7 @@ Solo cambio de texto en comentarios. Cero cambios de lógica, cero cambios en `p
      // ─────────────────────────────────────────────────────────────
 ```
 
-## 2. `supabase/functions/procesar-cancelacion/index.ts` — línea 1927 (comentario sobre la llamada de línea 1928-1935)
+### 1.2. `supabase/functions/procesar-cancelacion/index.ts` — línea 1927
 
 ```diff
 -    // 1) Cobro de 2 créditos (con auditoría obligatoria → p_tramite_id requerido)
@@ -35,9 +37,9 @@ Solo cambio de texto en comentarios. Cero cambios de lógica, cero cambios en `p
      });
 ```
 
-Nota: la línea `p_credits: 2` se mantiene intacta como fallback defensivo. Solo cambia el comentario de la línea 1927.
+La línea `p_credits: 2` se mantiene intacta como fallback defensivo.
 
-## 3. `src/pages/CancelacionValidar.tsx` — línea 513
+### 1.3. `src/pages/CancelacionValidar.tsx` — línea 513
 
 ```diff
      // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
@@ -51,13 +53,32 @@ Nota: la línea `p_credits: 2` se mantiene intacta como fallback defensivo. Solo
 
 ---
 
-## Verificación post-cambio
+## Parte 2 — SQL: `COMMENT ON TABLE public.credit_prices`
 
-- Sin ejecución de tests requerida (cambios son puramente en comentarios; no afectan compilación ni runtime).
-- Opcional: `bunx vitest run` y `deno check` para confirmar que nada se rompió por accidente en el editor.
+Migración de metadatos (no toca datos ni estructura):
+
+```sql
+COMMENT ON TABLE public.credit_prices IS
+'Catálogo autoritativo de precios en créditos por acción y tipo_acto. Resuelto server-side por consume_credit_v2 y unlock_expediente (prioridad: match exacto tipo_acto > comodín "*" > p_credits del cliente > fallback 1). Escritura restringida a is_platform_admin() vía RLS. IMPORTANTE: para reactivar un precio desactivado, usar UPDATE ... SET active = true sobre la fila existente — NUNCA insertar una fila nueva con la misma combinación (action, tipo_acto), ya que violará el constraint UNIQUE credit_prices_action_tipo_unique.';
+```
+
+Se ejecutará vía la herramienta de migración (única forma soportada para cambios de esquema/metadatos). No modifica filas, columnas, constraints, políticas ni funciones.
+
+---
+
+## Impacto operacional (dejarlo documentado, no asumido)
+
+- **`procesar-cancelacion/index.ts` requerirá redeploy** de la edge function tras aplicar los cambios de comentarios, aunque no cambie lógica. Deno bundlea el archivo completo; cualquier cambio textual dispara redespliegue en el próximo push.
+- **`src/pages/CancelacionValidar.tsx`**: rebuild normal del frontend (Vite), sin impacto en producción hasta el próximo deploy.
+- **`COMMENT ON TABLE`**: se aplica inmediatamente al ejecutarse la migración. Sin efecto en runtime ni en clientes conectados.
+
+## Verificación post-cambio (a ejecutar en build mode tras aprobación)
+
+- `bunx vitest run` — suite frontend completa, para confirmar verde a pesar de que el cambio es solo textual.
+- No se requiere `deno check` adicional (los comentarios no afectan tipos; los 5 errores TS preexistentes de `procesar-cancelacion` siguen sin relación).
 
 ## Riesgos
 
-Ninguno. Los comentarios no afectan ejecución. El único riesgo sería un typo introducido al editar; el diff mostrado arriba es literal.
+Ninguno funcional. Único riesgo: typo al aplicar el diff — mitigado porque el texto propuesto está literal arriba y se aplicará con reemplazo exacto.
 
-¿Apruebas aplicar exactamente este diff?
+¿Apruebas aplicar este cambio combinado (3 comentarios + 1 COMMENT ON TABLE)?
