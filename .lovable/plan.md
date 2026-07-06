@@ -1,85 +1,71 @@
-# Verificación previa al fix de re-exports cross-src
 
-Solo lectura. Ningún archivo modificado.
+# Verificación urgente: ¿está roto `procesar-cancelacion` en producción?
 
----
-
-## VERIFICACIÓN 1 — Inventario completo de imports que salen de `supabase/functions/`
-
-**Metodología**: `rg` sobre `supabase/functions/` buscando (a) imports/exports con 3+ niveles de `../` y (b) cualquier referencia a `/src/`.
-
-### Resultado: solo los 4 archivos ya conocidos. Cero adicionales.
-
-| # | Archivo | Import cross-src | Función que lo consume | ¿Bloquea redeploy? |
-|---|---|---|---|---|
-| 1 | `supabase/functions/_shared/apoderadoClassifier.ts:5` | `export * from "../../../src/shared/apoderadoClassifier.ts"` | `procesar-cancelacion` (import directo) | ✅ Sí |
-| 2 | `supabase/functions/_shared/prosaBancos/index.ts:5` | `export * from "../../../../src/shared/prosaBancos/index.ts"` | `procesar-cancelacion`, `adaptar-estilo-prosa` | ✅ Sí |
-| 3 | `supabase/functions/_shared/prosaBancos/davivienda.ts:5` | `export * from "../../../../src/shared/prosaBancos/davivienda.ts"` | Transitivo vía `prosaBancos/index.ts` | ✅ Sí (transitivo) |
-| 4 | `supabase/functions/_shared/prosaBancos/types.ts:5` | `export * from "../../../../src/shared/prosaBancos/types.ts"` | Transitivo vía `prosaBancos/index.ts` | ✅ Sí (transitivo) |
-
-### Único otro hit con `../../../` que NO cruza a `src/`
-
-- `supabase/functions/_shared/prosaBancos/__contract__/contract_test.ts:11` → `import { poderBancoTool } from "../../../scan-document/core/poderBanco/tool.ts"`
-  - **No es riesgo**: el destino sigue dentro de `supabase/functions/` (llega a `scan-document/core/poderBanco/tool.ts`, no a `src/`).
-  - Además es un archivo `_test.ts` — Deno test, nunca se despliega como runtime de edge function.
-
-### Confirmación firme
-
-**No existe ningún quinto archivo con re-export/import cross-src.** El radio de impacto real del fix (invertir dirección de re-exports) son exactamente esos 4 archivos en `supabase/functions/_shared/` + sus 4 contrapartes fuente en `src/shared/`.
+**TL;DR — No hay fallo real observado. El aviso del monitor es PREVENTIVO (análisis estático), no reactivo. Cero usuarios afectados hoy. Producción sigue sirviendo la versión anterior porque el redeploy con el código roto **falló** y por lo tanto **nunca reemplazó** la versión desplegada.**
 
 ---
 
-## VERIFICACIÓN 2 — ¿Vite puede resolver imports que "suben" fuera de `src/`?
+## 1. Estado real de la versión desplegada
 
-### Evidencia de configuración actual
+- El intento de redeploy manual de esta sesión falló con el error de imports cross-src. Un deploy que falla **no reemplaza** la versión activa en el runtime; la anterior sigue sirviendo.
+- Por tanto, la función `procesar-cancelacion` que responde HTTP en este momento es la **última versión que sí bundleó y desplegó con éxito** (previa a los cambios de hoy o previa a la consolidación que rompió los imports en el sandbox del deployer manual).
+- No hay forma 100% precisa desde aquí de datar ese último deploy exitoso sin logs de deploy — la tabla `function_edge_logs` está vacía en analytics (no está siendo poblada para este proyecto).
 
-- `vite.config.ts`: `resolve.alias` define solo `@ → ./src`. No hay `fs.allow` restringido, no hay `fs.strict: true`. El `root` implícito es la raíz del repo (donde vive `vite.config.ts`), no `src/`.
-- `tsconfig.app.json`: `"include": ["src"]` y `paths: { "@/*": ["./src/*"] }`. Los tests corren con Vitest usando el mismo alias.
-- `tsconfig.json` (raíz): `allowJs: true`, sin restricciones adicionales.
+## 2. Invocaciones reales de `procesar-cancelacion` hoy
 
-### Respuesta técnica
+Consulté `system_events` (única fuente fiable de invocaciones reales de esta función, porque emite eventos `procesar-cancelacion.*` desde dentro de la función):
 
-**Sí, Vite puede resolver rutas relativas que salen de `src/` sin problema.** Por defecto:
+Últimas 24h — **solo 2 eventos, ambos a las 00:23 UTC del 2026-07-06**, y ambos exitosos/esperados:
 
-1. **`server.fs.allow` de Vite** solo restringe qué archivos puede *servir* el dev server (por seguridad SSRF), y por defecto permite todo el workspace root — es decir, la raíz del repo. Un import desde `src/shared/foo.ts` hacia `../../supabase/functions/_shared/foo.ts` cae dentro del workspace y **se resuelve limpio**.
-2. **El bundler de producción** (`vite build`) no tiene ningún límite de "no salir de `src/`". Sigue los imports estáticos allá donde apunten.
-3. **Vitest** hereda esa misma resolución.
+| timestamp (UTC)      | evento                          | resultado        |
+|----------------------|---------------------------------|------------------|
+| 2026-07-06 00:23:42  | procesar-cancelacion.cuantia    | fallo_ambiguo *  |
+| 2026-07-06 00:23:38  | procesar-cancelacion.poder      | exito            |
 
-### Pero hay una consideración práctica NO trivial
+\* `fallo_ambiguo` es un resultado de negocio esperado (no encontró monto en el certificado), no una excepción de runtime.
 
-**El TypeScript project `tsconfig.app.json` tiene `"include": ["src"]`.** Consecuencias reales si se invierte la dirección (fuente viviendo en `supabase/functions/_shared/`, re-export desde `src/shared/`):
+Desde las 00:23 UTC — **cero invocaciones**. Toda la actividad de código de esta sesión (consolidación del clasificador, cambios de comentarios, migración, etc.) ocurrió DESPUÉS de las 00:23. Ningún usuario ha hecho clic en "Generar documento" para cancelación en las horas en que el código quedó con imports cross-src.
 
-- **Vite/Vitest en runtime**: funcionan correctamente — resuelven el import.
-- **`tsgo` / editor TS**: los archivos bajo `supabase/functions/` NO están en el `include` del proyecto app. Al importarlos desde `src/`, TypeScript los tratará como *dependencia externa sin tipos del proyecto*: hará type-check "best-effort" leyendo el archivo referenciado, pero:
-  - No se aplicarán las mismas reglas de compilación del proyecto app.
-  - Los tipos usados por esos archivos (por ejemplo, si `src/shared/prosaBancos/index.ts` re-exporta un tipo cuya definición vive en `supabase/functions/...`) pueden verse como `any` en el editor bajo ciertas configuraciones, o generar ruido en el diagnóstico.
-  - Además: los archivos Deno en `supabase/functions/` usan **imports con extensión `.ts` explícita** (`../foo.ts`). Vite/TSX en modo bundler tolera esto con `allowImportingTsExtensions: true` (ya está activo), pero mezclar convenciones puede generar fricción.
-- **No es un bloqueo, es una molestia de DX/tipado.**
+## 3. Reconciliación con la cancelación "completed" de las 11:41 UTC
 
-### ¿Vite lo "desaconseja"?
+La cancelación `290fd66a-…` figura con `status=completed` y `updated_at=2026-07-06 11:41:11 UTC`, pero:
+- No hay ningún `system_event` de `procesar-cancelacion.*` entre 00:23 y ahora.
+- No hay `activity_log` asociado a ese id.
 
-No hay una recomendación oficial explícita en contra, pero la convención de Vite/React es: **todo el código de aplicación vive bajo `src/`**. Salir de `src/` para importar código de otro subproyecto es una señal de que el monorepo debería resolverse con workspaces o con una capa `shared/` en la raíz. Funciona, pero rompe la mental model.
+Interpretación: el `updated_at` de las 11:41 corresponde a una escritura sobre la fila (probablemente un autosave/edición desde el cliente o un cambio de status manual), **no a una nueva ejecución de la función**. La ejecución real que dejó el trámite en `completed` fue la de las 00:23 UTC.
 
----
+## 4. Naturaleza del aviso del monitor: PREVENTIVO
 
-## Recomendación (para tu decisión, no aplicada)
+Evidencia de que es análisis estático, no reacción a fallo real:
+- Cero errores 5xx / cero excepciones de esta función en las últimas 24h en `system_events`.
+- Cero invocaciones reales tras el cambio de código problemático.
+- El mensaje del monitor describe la **causa estructural** ("depende de un módulo compartido cuyos imports el server no puede resolver") en presente/condicional ("users … may see a hard error"), no un evento concreto ("failed at HH:MM with error X"). Es lenguaje típico de linter/análisis, no de log-alert.
 
-Con estos dos datos confirmados, las opciones se ordenan así:
+Conclusión: el monitor leyó el código actual del repo, detectó el import cross-src que rompe el bundler del edge runtime y emitió alerta preventiva anticipando que **el próximo deploy** dejaría la función caída. No hay fallo materializado.
 
-### Opción A — Invertir dirección de re-exports (fuente en `supabase/functions/_shared/`, re-export desde `src/shared/`)
-- ✅ Corrige el bundle de edge functions (sandbox limitation resuelta).
-- ✅ Solo 8 archivos afectados (4 fuente + 4 re-export).
-- ⚠️ Fricción de tipado/DX en el frontend porque el código pasa a vivir fuera del `include` del `tsconfig.app.json`.
-- 🔧 **Mitigación**: extender `tsconfig.app.json` para incluir `"../supabase/functions/_shared/**/*.ts"` — pero eso mete Deno-flavored code en el mismo project TS del frontend, mezclando runtimes (browser vs Deno globals).
+## 5. ¿Fallaría un usuario que intente generar AHORA MISMO?
 
-### Opción B — Mover la fuente a una carpeta neutra fuera de ambos (`packages/shared/` o `shared/` en raíz)
-- ✅ Cero fricción conceptual: ninguna de las dos capas "sale de su casa".
-- ✅ Vite y Deno pueden apuntar a la misma fuente.
-- ⚠️ Requiere mover 4 archivos + actualizar 8 rutas de import + posible ajuste de `tsconfig`.
-- Es la solución "monorepo-clean" real.
+Con la evidencia disponible, **NO** — la versión desplegada activa es la anterior a los cambios rotos, y esa versión funcionaba (última prueba: 00:23 UTC exitosa). Los cambios que rompen el bundler viven en el repo pero **no en el runtime**.
 
-### Opción C — `import_map.json` por función (Deno-only)
-- ✅ Cero cambios en `src/`.
-- ⚠️ Requiere infra por-función y sincronización manual; agrega ceremonia.
+Riesgo residual: si algún proceso (auto-deploy de Lovable, redeploy automático tras cambios de otra función, o un intento manual futuro) intenta redesplegar `procesar-cancelacion` desde el estado actual del repo, **fallará el deploy** y — dependiendo del comportamiento del sistema de deploys — podría dejar la función servida por la versión vieja (escenario benigno actual) o marcarla como caída si el proceso hace un swap destructivo antes de validar. No tengo forma de saber cuál de los dos comportamientos aplica sin probar.
 
-**Sin acción todavía.** Esperando tu priorización para decidir A/B/C y ejecutar en un turno posterior.
+Certeza 100% solo se obtiene invocando la función. **No lo hago sin tu autorización explícita**, como pediste. Si quieres, puedo hacer una llamada de bajo riesgo (por ejemplo con `regen: true` sobre la cancelación `290fd66a-…` ya completada — este modo no cobra créditos ni llama a Gemini, solo re-mapea plantillas) para confirmar que el runtime responde 200. Espero tu OK.
+
+## Cronología consolidada de hoy
+
+```text
+00:23 UTC  Última ejecución real exitosa de procesar-cancelacion (usuario real).
+~después   Consolidación del clasificador y prosaBancos → imports cross-src en supabase/functions/_shared/.
+~mañana    Cambios de comentarios legacy + migración COMMENT ON TABLE credit_prices (aplicada OK).
+~mañana    Intento de redeploy manual de procesar-cancelacion → FALLA (bundler no encuentra src/*).
+           Runtime sigue con la versión previa (deploy fallido = no swap).
+11:41 UTC  Update sobre cancelacion 290fd66a (no es ejecución de función; probable edición/autosave).
+ahora      Monitor emite alerta preventiva por análisis estático del repo.
+0 invocaciones reales de procesar-cancelacion desde 00:23 UTC → 0 usuarios afectados.
+```
+
+## Recomendación de siguiente paso (no ejecuto nada sin tu OK)
+
+Pendiente tu decisión previa entre A/B/C para arreglar los imports cross-src. La alerta del monitor **no eleva la urgencia real** — nadie está fallando hoy — pero sí confirma que hasta arreglar los imports el próximo redeploy dejará la función caída.
+
+Si quieres máxima tranquilidad ahora mismo antes de decidir A/B/C, autoriza el `regen` de prueba sobre `290fd66a-…` y confirmo en vivo que el runtime responde 200.
