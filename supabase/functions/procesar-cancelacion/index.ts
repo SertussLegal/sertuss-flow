@@ -1881,7 +1881,7 @@ if (import.meta.main) serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const vars = buildDocxVars(data);
+      const vars = buildDocxVars(data, (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null);
       const minutaTemplate = selectMinutaTemplate(data);
       const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
       const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
