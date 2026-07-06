@@ -10,8 +10,10 @@ import { join } from "node:path";
 
 const SHARED_DIR = join(process.cwd(), "src/shared/prosaBancos");
 
+// Los patrones se evalúan sobre CÓDIGO REAL (sin comentarios) para no falsear
+// positivos con la propia documentación de reglas.
 const FORBIDDEN_PATTERNS: Array<{ label: string; re: RegExp }> = [
-  { label: "Supabase Database types", re: /@\/integrations\/supabase\/(client|types)/ },
+  { label: "Supabase Database types", re: /from\s+["']@\/integrations\/supabase\/(client|types)["']/ },
   { label: "Deno API", re: /\bDeno\.\w+/ },
   { label: "window global", re: /\bwindow\./ },
   { label: "document global", re: /\bdocument\./ },
@@ -22,6 +24,14 @@ const FORBIDDEN_PATTERNS: Array<{ label: string; re: RegExp }> = [
   { label: "Node fs module", re: /from\s+["']node:fs["']/ },
   { label: "Node path module", re: /from\s+["']node:path["']/ },
 ];
+
+/** Elimina comentarios de bloque y de línea para que las reglas no se
+ * matcheen contra el copy educativo dentro del propio archivo. */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
 
 function walk(dir: string, files: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
