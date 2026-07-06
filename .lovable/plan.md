@@ -1,167 +1,64 @@
-# Skill propuesto: `pricing-creditos-sertuss`
 
-Solo diseño. No se crea el archivo hasta aprobación.
+# Verificación de la alerta "Cancelation document generation fails to start"
 
-## 1. Ubicación y formato
+## Evidencia recogida ahora (read-only)
 
-- **Ruta al crear (draft):** `.agents/skills/pricing-creditos-sertuss/SKILL.md`
-- **Ruta activa (tras `skills--apply_draft`):** `.workspace/skills/pricing-creditos-sertuss/SKILL.md`
-- **Formato:** idéntico a los 14 skills existentes — frontmatter YAML (`name`, `description`, `type`) + cuerpo Markdown con secciones numeradas, tablas, ejemplos y anti-ejemplos.
-- **Tipo:** `preference` (regla de proceso interno del equipo, no una feature del producto).
-- Un solo archivo — no requiere `references/`, `scripts/`, ni `assets/`.
-
-## 2. Verificación de solapamiento con skills existentes
-
-Revisados los 14 skills activos en `.workspace/skills/`. Ninguno cubre pricing/créditos: todos son de dominio notarial (formato texto-número, concordancia género, cuantías, direcciones, poderes, validaciones, componente UI, limpieza de código). **Sin conflicto**. Este skill ocupa un nicho nuevo: proceso de producto/monetización.
-
-## 3. Mecanismo de activación (recomendación)
-
-**Recomiendo activación por descripción semántica** (el mecanismo estándar de skills — se inyecta cuando el prompt del usuario o los archivos que el agente va a tocar coinciden con la `description`). Motivos:
-
-- No existe hook nativo "activar cuando se toque el archivo X" — todos los skills se resuelven por matching de la `description` contra el contexto de la tarea.
-- Alternativa considerada y descartada: añadir una regla Core en `mem://index.md`. La descarté porque contamina TODA respuesta del agente con un checklist que solo aplica en <2% de los turnos. Un skill bien-descrito con keywords fuertes es más limpio.
-- **Mitigación de falsos negativos:** añadir una línea Core corta en `mem://index.md` — *"Al crear/modificar edge functions con IA o tocar `credit_prices`/`consume_credit_v2`, aplicar skill `pricing-creditos-sertuss` antes de definir cualquier precio."* — así el agente sabe que existe aunque el matching semántico falle.
-
-La `description` debe incluir tokens fuertes: *"créditos, pricing, cobro, consume_credit_v2, credit_prices, nueva funcionalidad IA, nueva edge function con Gemini/Claude, modificar consumo de tokens"*.
-
-## 4. Contenido propuesto del SKILL.md
-
-````markdown
----
-name: pricing-creditos-sertuss
-description: Framework obligatorio para asignar el precio en créditos de cualquier acción nueva que consuma IA (Gemini/Claude/Lovable AI Gateway) o modificación que aumente el consumo de una existente. Se activa al crear edge functions nuevas con IA, al tocar `credit_prices` o `consume_credit_v2`, al añadir un nuevo `CreditAction`, o cuando el usuario menciona "nuevo trámite", "nueva funcionalidad IA", "cuánto cobrar", "cuántos créditos", "pricing". NUNCA copiar el precio de otra acción sin justificar.
-type: preference
----
-
-# Pricing de créditos — proceso obligatorio Sertuss
-
-Este skill propone precios; **nunca los activa por sí solo**. El dueño de producto aprueba antes de escribir en `credit_prices`.
-
-## 1. Cuándo se dispara este skill
-
-Aplicar SIEMPRE que se cumpla al menos una:
-
-- Se crea una edge function que llama a Gemini, Claude o el Lovable AI Gateway.
-- Se modifica una edge function existente y el cambio aumenta llamadas IA, tokens, o pasos del pipeline.
-- Se añade un valor nuevo al enum `CreditAction` en `src/services/credits.ts`.
-- Se inserta o actualiza una fila en `credit_prices`.
-- El usuario pregunta "¿cuánto cobrar por X?" / "¿cuántos créditos vale?".
-
-## 2. Principios inviolables
-
-1. **Costo real como piso.** `costo_real = Σ (llamadas_ia × tokens_promedio × precio_modelo)`. El precio en créditos NUNCA puede quedar por debajo de este piso (margen ≥ 0).
-2. **Valor evitado como techo.** El precio máximo razonable es **10–30% del valor de reproceso manual evitado** (tiempo del abogado/notario × su tarifa horaria). Por encima de eso, el usuario percibe abuso.
-3. **Prohibido copiar precios entre acciones.** Cada acción tiene perfil de tokens y valor distinto. Si el número final coincide con otra acción, hay que justificar *por qué* coincide, no asumirlo.
-4. **Cobrar solo al completar/validar.** Nunca durante iteración, corrección, autosave, o preview. El evento monetizable es el "hito de valor entregado" (ej. `unlock_expediente`, generación final del docx).
-5. **Instrumentar tokens desde el día uno.** Toda función IA nueva DEBE loguear en `logs_extraccion` o `system_events`: `{ modelo, tokens_input, tokens_output, latencia_ms, tramite_id }`. Sin telemetría no hay pricing defendible.
-6. **Precio final vive en el servidor.** Cliente NUNCA hardcodea. Se lee desde `credit_prices` vía RPC. El campo `credits` en `consumeCredit()` es un default de emergencia, no la fuente de verdad.
-7. **El skill propone, humano aprueba.** El agente presenta la hoja de cálculo (§4) y espera confirmación explícita del dueño de producto antes de:
-   - Insertar/actualizar fila en `credit_prices`.
-   - Añadir el nuevo valor al enum `CreditAction`.
-
-## 3. Checklist paso a paso
-
-Cuando se dispare el skill, ejecutar EN ORDEN y no saltarse pasos:
-
-- [ ] **P1. Identificar la acción.** Nombre exacto (`GENERACION_DOCX_SUCESION`, etc.), edge function que la ejecuta, hito monetizable (¿cuándo se cobra?).
-- [ ] **P2. Mapear el pipeline IA.** Enumerar todas las llamadas: función → modelo → prompt approx tokens input → tokens output esperados. Si el pipeline tiene retries, incluirlos en el promedio (p95).
-- [ ] **P3. Medir costo real.** Con precios oficiales vigentes de cada modelo (Gemini 2.5 Flash/Pro, Claude Sonnet, Gateway Lovable). Fórmula:
-  `costo_usd = Σ (input_tokens × precio_input + output_tokens × precio_output)`
-  Convertir a créditos usando el tipo de cambio interno vigente (1 crédito = X USD según el plan de precios Sertuss actual).
-- [ ] **P4. Estimar valor evitado.** ¿Cuánto tiempo le ahorra al usuario? (minutos de abogado × tarifa/hora). Sacar el rango 10–30%.
-- [ ] **P5. Proponer número.** Debe estar entre `max(piso_costo_real × margen_min)` y `techo_valor_evitado`. Redondear a entero razonable (1, 2, 3, 5, 10 — no fracciones).
-- [ ] **P6. Justificar en la hoja (§4).** Rellenar TODOS los campos. Sin campos vacíos.
-- [ ] **P7. Verificar telemetría.** Confirmar que la edge function loguea tokens reales; si no, bloquear pricing hasta que lo haga.
-- [ ] **P8. Presentar al dueño de producto.** Mensaje con la hoja completa + 2-3 alternativas de precio (conservador, recomendado, agresivo). **Esperar `sí` explícito.**
-- [ ] **P9. Aplicar.** Solo tras aprobación: migración a `credit_prices` + añadir a enum + actualizar `consumeCredit()` call-sites + PR con la hoja pegada en la descripción.
-- [ ] **P10. Post-launch (30 días).** Revisar `logs_extraccion` reales vs. estimados. Si el costo real supera al estimado en >20%, replantear precio.
-
-## 4. Hoja de cálculo obligatoria (llenar SIEMPRE)
-
-Formato Markdown que el agente presenta al dueño de producto:
-
-```markdown
-### Pricing propuesto: <NOMBRE_ACCION>
-
-**Hito monetizable:** <cuándo se cobra exactamente>
-**Edge function(s):** <lista>
-**Fecha propuesta:** <YYYY-MM-DD>
-
-#### A. Pipeline IA
-| Paso | Modelo | Tokens input (p50/p95) | Tokens output (p50/p95) | Precio USD / 1M tok (in/out) | Costo USD (p95) |
-|------|--------|------------------------|--------------------------|------------------------------|-----------------|
-| 1    |        |                        |                          |                              |                 |
-| 2    |        |                        |                          |                              |                 |
-| **Total** | | | | | **$X.XXXX** |
-
-#### B. Piso (costo real)
-- Costo p95 en USD: `$X.XXXX`
-- Conversión a créditos (1 crédito = $Y): `Z.ZZ créditos`
-- **Piso mínimo:** `⌈Z.ZZ × margen⌉ = N créditos`
-
-#### C. Techo (valor evitado)
-- Tarea manual equivalente: <descripción>
-- Tiempo evitado: `M minutos`
-- Tarifa horaria abogado/notario: `$H`
-- Valor evitado: `$V`
-- Rango 10–30%: `V × 0.10 = $A` … `V × 0.30 = $B` → `C₁ … C₂ créditos`
-
-#### D. Propuesta
-| Escenario     | Créditos | Margen sobre piso | % del valor evitado |
-|---------------|----------|-------------------|---------------------|
-| Conservador   |          |                   |                     |
-| **Recomendado** |        |                   |                     |
-| Agresivo      |          |                   |                     |
-
-#### E. Justificación (por qué NO copiar de otra acción)
-<párrafo corto que explique el perfil único de esta acción vs. las existentes>
-
-#### F. Telemetría instrumentada
-- [ ] Loguea `tokens_input`, `tokens_output`, `modelo`, `latencia_ms` en `logs_extraccion`
-- [ ] Registra `tramite_id` para trazabilidad
-- [ ] Alerta si costo real > estimado en 20%
-
-#### G. Aprobación
-- Dueño de producto: __________
-- Fecha: __________
-- Firma (sí/no explícito): __________
+### 1. `src/shared/prosaBancos/index.ts` — NO EXISTE como fuente
 ```
+src/shared/prosaBancos/
+└── __contract__/          ← solo tests
+    ├── overrideSchema.test.ts
+    ├── parity.test.ts
+    ├── prosaContract.test.ts
+    ├── purity.test.ts
+    └── referencia_davivienda.contract.json
+```
+No hay `index.ts` ni shim de re-exportación. Solo suite de contract tests.
 
-## 5. Anti-patrones a rechazar
+### 2. `overrideSchema.ts` real vive en el paquete isomórfico
+- Ruta única: `supabase/functions/_shared/isomorphic/prosaBancos/overrideSchema.ts`
+- Alias configurado en `tsconfig.app.json`: `@shared/* → supabase/functions/_shared/isomorphic/*` (el frontend importa por alias, no por shim).
 
-- ❌ *"Cobremos 2 créditos, igual que apertura de expediente."* → sin análisis del pipeline propio.
-- ❌ Hardcodear `credits: 3` en el cliente sin fila en `credit_prices`.
-- ❌ Cobrar al primer clic de "generar preview" (aún no hay valor entregado).
-- ❌ Desplegar edge function IA sin logging de tokens.
-- ❌ Aumentar consumo (agregar una llamada Claude extra) sin re-correr el checklist.
-- ❌ El agente crea la fila `credit_prices` sin esperar `sí` explícito del humano.
+### 3. `deno.json` sí existen — la alerta miente
+```
+supabase/functions/procesar-cancelacion/deno.json  →  { "imports": { "zod": "npm:zod@3.25.76" } }
+supabase/functions/adaptar-estilo-prosa/deno.json  →  { "imports": { "zod": "npm:zod@3.25.76" } }
+```
+Confirmado: **no** existe `supabase/functions/deno.json` global ni `import_map.json`, pero **cada función** tiene su `deno.json` local que resuelve el bare specifier `"zod"` a `npm:zod@3.25.76`. En Supabase Edge Functions, el `deno.json` por función es el patrón soportado.
 
-## 6. Referencias cruzadas
+### 4. Imports actuales de los edge functions
+- `procesar-cancelacion/index.ts` línea 20: importa desde `../_shared/isomorphic/prosaBancos/index.ts` (ruta real, no shim).
+- `adaptar-estilo-prosa/index.ts` línea 12: idem.
+- `overrideSchema.ts` en Deno resuelve `"zod"` vía el `deno.json` local ✔.
 
-- `src/services/credits.ts` — enum `CreditAction`, `consumeCredit()`.
-- Tabla `credit_prices` — fuente de verdad servidor.
-- Función SQL `consume_credit_v2` — atomicidad del cobro.
-- Skill `limpieza-segura-codigo` — cuando el cambio implique eliminar código IA legacy.
-- `mem://features/monetizacion-apertura-expediente` — precedente de referencia (2 créditos por `unlock_expediente`).
-````
+## Diagnóstico
 
-## 5. Adición sugerida a memoria Core
+**La alerta describe un estado anterior del código.** Antes de la migración a `_shared/isomorphic/prosaBancos/` existió un shim en `src/shared/prosaBancos/index.ts` que re-exportaba módulos, y en algún punto el `overrideSchema` usaba `import "zod"` sin `deno.json`. Hoy:
 
-Una línea en `mem://index.md` sección Core:
+| Afirmación de la alerta | Estado real hoy |
+|---|---|
+| Shim `src/shared/prosaBancos/index.ts` re-exporta | ❌ No existe |
+| `overrideSchema.ts` con bare `"zod"` sin resolver | ❌ Resuelto por `deno.json` local de cada función |
+| No hay `supabase/functions/deno.json` global | ✅ Cierto, pero irrelevante — cada función tiene el suyo |
 
-> `Pricing IA: cualquier acción nueva o modificación que consuma IA debe pasar por skill pricing-creditos-sertuss (hoja completa + aprobación humana) antes de tocar credit_prices o CreditAction.`
+Ninguno de los tres síntomas listados aplica al código actual. Los edge functions arrancan correctamente (los tests de contract del paquete isomórfico corren en verde en el frontend, y Deno resuelve `zod` en runtime).
 
-Esto garantiza discovery aunque la búsqueda semántica del skill falle.
+## Hipótesis de por qué reapareció tras "Ignore"
 
-## 6. Pasos si se aprueba
+Sin acceso a documentación interna del monitor de Lovable, doy 3 hipótesis en orden de probabilidad (con incertidumbre real):
 
-1. Crear `.agents/skills/pricing-creditos-sertuss/SKILL.md` con el contenido de §4.
-2. `skills--apply_draft .agents/skills/pricing-creditos-sertuss`.
-3. Actualizar `mem://index.md` con la línea Core de §5.
-4. (Opcional) Ejecutar el skill contra una acción existente (ej. `GENERACION_DOCX` de cancelación) como validación en caliente del framework.
+1. **Ciclo nuevo tras deploy** — el monitor re-ejecuta su análisis estático en cada deploy exitoso y, si detecta la misma "clase" de patrón (edge function que importa de un paquete compartido con bare specifier), vuelve a emitir el hallazgo. "Ignore" probablemente silencia una **instancia** identificada por hash de código, no la regla; al cambiar el código, el hash cambia y reaparece. **Más probable.**
+2. **Falso positivo del analizador estático** — el analizador de la alerta no lee `deno.json` por función y asume que `"zod"` es un import roto. "Ignore" se guardó, pero el próximo ciclo lo detectó como hallazgo nuevo porque escaneó otro archivo (`adaptar-estilo-prosa` vs `procesar-cancelacion`).
+3. **"Ignore" no persistió** — menos probable, pero posible si el estado del monitor es por-sesión o si hubo un reset.
 
-## Supuestos / preguntas abiertas
+**No tengo forma de confirmar con certeza cuál de las tres es** — no hay documentación pública de cómo funciona el matching de "Ignore" en el monitor de issues de Lovable.
 
-- Asumo que el "tipo de cambio interno" 1 crédito ↔ USD ya existe internamente; si no, el skill lo pide como precondición.
-- Asumo que `logs_extraccion` es la tabla adecuada para telemetría de tokens; si el equipo prefiere `system_events`, se ajusta en §3 P7 y §4 F.
-- El skill es **proceso**, no automatización — el agente ejecuta el checklist manualmente en cada disparo. Si se quisiera automatizar (ej. script que calcule el piso), sería un `scripts/` adicional en una segunda iteración.
+## Recomendación
+
+- **No usar "Try to fix"**: aplicaría un cambio para arreglar un problema que no existe (probablemente re-crearía el shim o cambiaría los imports de `zod` a URL absoluta, rompiendo la arquitectura isomórfica actual respaldada por tests de paridad).
+- **Usar "Ignore" de nuevo** con conciencia de que puede reaparecer en el próximo deploy — es ruido, no una regresión.
+- **Opcional (siguiente iteración)**: si el ruido persiste, valorar mover el `deno.json` a `supabase/functions/deno.json` global o añadir un comentario `// deno-lint-ignore` cerca del import para que el analizador entienda que el bare specifier es intencional. **No se hace ahora** — esto es solo verificación.
+
+## Restricción respetada
+
+Solo lectura. No se tocó el monitor, no se desplegó nada, no se modificó código.
