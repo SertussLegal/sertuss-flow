@@ -1,94 +1,95 @@
 
-# Verificación funcional: `src/shared/prosaBancos/legalProse.ts` vs `src/lib/legalProse.ts`
+# Diagnóstico — `template_venta_hipoteca.docx` (raíz vs `public/`)
 
-## 1. Archivos analizados
+## 1. Archivos comparados
 
-Los 3 archivos ya están leídos en su totalidad (ver contexto). Resumen de exports:
+| Ubicación | Tamaño | Modify (fs) |
+|---|---|---|
+| `template_venta_hipoteca.docx` (raíz) | 251.880 B | 2026-07-06 11:39 (checkout) |
+| `public/template_venta_hipoteca.docx` | 252.360 B | 2026-07-06 11:39 (checkout) |
 
-| Archivo | Exports |
+Las fechas de filesystem son iguales (timestamp de checkout del sandbox), no aportan señal. El historial de git no es consultable desde esta sesión (git está bloqueado por harness), así que la datación es por **contenido**, no por commits.
+
+## 2. Comparación de partes internas del `.docx`
+
+Ambos ZIP tienen la misma estructura. Hash MD5 por parte:
+
+| Parte | Resultado |
 |---|---|
-| `src/shared/prosaBancos/legalProse.ts` (isomórfico, 97 líneas) | `numeroConLetras`, `fechaProsa` |
-| `src/lib/legalProse.ts` (Vite, 177 líneas) | `numeroConLetras`, `fechaProsa`, `escrituraProsa`, `montoProsa`, `EscrituraInput` |
-| `supabase/functions/process-expediente/legalProse.ts` (Deno, 153 líneas) | `numeroConLetras`, `fechaProsa`, `escrituraProsa`, `montoProsa`, `EscrituraInput` |
+| `word/styles.xml` | **SAME** |
+| `word/header1.xml` | **SAME** |
+| `word/header2.xml` | **SAME** |
+| `word/numbering.xml` | **SAME** |
+| `word/settings.xml` | **SAME** |
+| `word/document.xml` | **DIFF** (320.497 vs 320.744 bytes) |
 
-## 2. Paridad función por función (shared vs lib)
+**Formato, estilos, fuentes, márgenes, encabezados: idénticos.** La única diferencia real está en el cuerpo del documento (`document.xml`).
 
-### `numeroConLetras(n, gender)`
-- **Mismas firmas y defaults** (`gender = "masculine"`).
-- Misma tabla `FEMENINOS_ORDINALES_1_10` (idéntica, con tildes).
-- Misma `masculinoAFemenino` (3 regex idénticos, en el mismo orden).
-- Misma `ALREADY_FORMATTED_RE` para idempotencia.
-- Misma guardia `!Number.isFinite(num) || num <= 0 → ""`.
-- Misma rama femenino 1..10 → tabla ordinal.
-- Diferencia estructural, NO de comportamiento: `src/lib` importa `numberToWords` desde `@/lib/legalFormatters`; `src/shared` incluye una copia inline de `numberToWordsLegal` + `UNITS/TEENS/TENS/HUNDREDS/VEINTIS/convertGroup`. Comparando byte a byte esos arrays y funciones con los de `legalFormatters.ts`: son **idénticos** (mismos strings con tildes, misma lógica `convertGroup`, mismos `groups` con `mil millones/millón/mil`, mismo `q === 1 → " mil"` sin duplicar `un`).
-- **Veredicto**: 100% equivalente en salida para todo input.
+## 3. Comparación de tags `{...}` de Docxtemplater
 
-### `fechaProsa(fecha)`
-- Misma detección `ymd`/`dmy` con `/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/` y el DMY.
-- Misma guardia `mes<1||mes>12||dia<1||dia>31 → ""`.
-- Mismo arreglo `MESES` (12 meses, minúsculas, sin tildes).
-- Misma composición final.
-- **Veredicto**: 100% equivalente. Nota: `src/lib` no valida `isNaN`, pero como `parseInt` sobre `\d+` matchado nunca produce NaN, es equivalente.
+- Root: 101 tags únicos
+- Public: 109 tags únicos
 
-### Funciones no presentes en `src/shared`
-`escrituraProsa` y `montoProsa` **no existen** en el archivo isomórfico. Irrelevante para el consumidor real (`davivienda.ts` no las llama).
-
-## 3. Call-sites reales en `davivienda.ts`
-
-Únicos usos (grep confirmado):
-```
-numeroConLetras(c.numero!, "masculine")
-numeroConLetras(ctx.apoderado.escritura_poder_num!, "masculine")
-numeroConLetras(ctx.apoderado.escritura_poder_notaria_num!, "feminine")
-numeroConLetras(ctx.instrumento.escritura_num!, "masculine")
-numeroConLetras(ctx.instrumento.notaria_numero!, "feminine")
-numeroConLetras(c.reforma_acta_numero!, "masculine")
-fechaProsa(fecha!)   // dentro de fechaOTexto()
-```
-Inputs reales: strings de OCR con dígitos (números de escritura, actas, notarías, fechas ISO/DMY). Todos caen dentro del comportamiento cubierto y equivalente entre ambas versiones. No hay casos extremos (negativos, ceros, no-numéricos, ya-formateados) presentes en el flujo real.
-
-## 4. ⚠️ Bloqueador arquitectónico: no se puede eliminar
-
-`davivienda.ts` es **re-exportado** desde el edge function Deno:
+**Tags que existen SOLO en `public/` (la versión en producción):**
 
 ```
-supabase/functions/_shared/prosaBancos/davivienda.ts:
-  export * from "../../../../src/shared/prosaBancos/davivienda.ts";
+{notaria_circulo}
+{notaria_circulo_proper}
+{notaria_departamento}
+{notaria_numero}
+{notaria_numero_letras}
+{notaria_numero_letras_femenino}
+{notaria_numero_letras_lower}
+{notaria_ordinal}
+{notario_tipo}
 ```
 
-Ese archivo Deno consume `davivienda.ts` → que a su vez importa `./legalProse.ts`. Si cambiamos el import a `@/lib/legalProse`:
+**Tags que existen SOLO en la raíz:**
 
-1. `@/...` es un **alias de Vite**, no resuelve en Deno.
-2. Incluso con path relativo `../../lib/legalProse`, `src/lib/legalProse.ts` internamente hace `import { formatMonedaLegal, numberToWords } from "@/lib/legalFormatters"` — otro alias no resoluble en Deno.
-
-El propósito **explícito** de `src/shared/prosaBancos/legalProse.ts` está documentado en su cabecera: *"ISOMÓRFICO (Deno + Vite). Este archivo NO importa nada externo — es 100 % TS puro."* Existe precisamente para romper la cadena de alias `@/`.
-
-Eliminarlo (o repuntar davivienda.ts a `src/lib/legalProse`) **rompería el edge function `procesar-cancelacion`** al desplegarse en Deno — mismo síntoma que ocurrió en el intento anterior en preview local.
-
-## 5. Recomendación final
-
-**NO eliminar** `src/shared/prosaBancos/legalProse.ts`.
-
-Aunque las dos versiones son 100% equivalentes en comportamiento para todos los inputs reales y sintéticos que pueda producir el flujo, el duplicado **no es accidental**: es el mecanismo que hace `davivienda.ts` isomórfico (Vite + Deno). Reclasificar como código intencional, no como duda de limpieza.
-
-Ambas versiones son correctas — ninguna necesita corregirse.
-
-## 6. Salvaguarda propuesta: test de paridad (a implementar en paso separado si se aprueba)
-
-Ubicación: `src/shared/prosaBancos/__contract__/legalProse.parity.test.ts`
-
-Objetivo: garantizar que si alguien modifica una copia, la otra falla el CI.
-
-Casos:
 ```
-numeroConLetras — inputs: 0, -1, 1, 5, 10, 11, 20, 21, 22, 30, 99, 100, 101,
-  199, 200, 999, 1000, 1001, 1971, 3892, 1_000_000, 999_999_999,
-  "0035", "  ", "abc", "treinta y cinco (35)" (idempotencia),
-  cada uno con gender="masculine" y "feminine"
-fechaProsa — inputs: "", "2024-01-01", "1971-10-16", "29-01-1971",
-  "29/01/1971", "1971/10/16", "31-02-2024" (día inválido? no, 31 pasa el guard),
-  "00-01-2024", "01-13-2024", "abc", "2024-1-1", "1-1-2024"
+{# }
 ```
-Assert: `sharedFn(input) === libFn(input)` para cada caso. Falla del test = drift entre copias.
 
-Sin cambios de código en esta respuesta.
+`{# }` es ruido: un `{#tiene_hipoteca}` partido por un run boundary de Word en la versión antigua. No es un tag real.
+
+## 4. Comparación del texto legal/notarial
+
+La versión de la raíz tiene datos **hardcodeados** para la Notaría 5 de Bogotá:
+
+- Encabezado: `"OTORGADA ANTE EL NOTARIO QUINTO (5o) DEL CÍRCULO DE BOGOTÁ, D.C."` (literal)
+- Entidad acreedora: `"BANCO DE BOGOTA S.A. NIT: 860.002.964-4"` (literal)
+- Comparecencia: `"En la ciudad de Bogotá Distrito Capital, Departamento de Cundinamarca..."` (literal)
+- Constancia: `"El Notario quinto (5o) del Círculo de Bogotá, D.C., de conformidad con..."` (literal)
+- Pie: `"OTORGADA EN LA NOTARÍA QUINTA (5) DEL CÍRCULO DE BOGOTÁ, D.C."` (literal)
+
+La versión de `public/` reemplazó **todos** esos literales por tags de Docxtemplater multi-tenant:
+
+- `NOTARIO {notaria_numero_letras} ({notaria_ordinal}) DEL CÍRCULO DE {notaria_circulo}`
+- `{actos.entidad_bancaria} NIT: {actos.entidad_nit}`
+- `En la ciudad de {notaria_circulo_proper}, Departamento de {notaria_departamento}`
+- `El Notario {notaria_numero_letras_lower} ({notaria_ordinal}) del Círculo de {notaria_circulo_proper}`
+
+El resto del articulado (cláusulas primera–última, constancias notariales 1–4, SARLAFT, biométrica, REDAM, comprobantes fiscales) es **idéntico palabra por palabra**. No hay una sola cláusula legal diferente. No hay redacción distinta. Solo cambia el reemplazo de literales por variables.
+
+## 5. Cuál es más reciente
+
+La versión de `public/` es inequívocamente **posterior**: encaja con el pilar de arquitectura del proyecto declarado en project-knowledge ("Multi-tenant estricto") y en `mem://tech/arquitectura-multi-tenant` ("Terminología agnóstica para generación de docx"). La versión de la raíz corresponde a una etapa anterior mono-notaría (Notaría 5 de Bogotá) que fue superada cuando se introdujo el directorio de notarías y el enriquecimiento de bancos.
+
+## 6. ¿Cambio sustancial o cosmético?
+
+Es **sustancial en cuanto a arquitectura**, pero **cero riesgo funcional** para lo que hoy hay en `public/`:
+
+- No hay cláusula legal, párrafo, constancia ni bloque en la raíz que **no exista** en `public/`. La versión de `public/` es un superconjunto estricto en términos de contenido semántico: mismo texto + variables donde antes había literales.
+- Todos los tags de la raíz también están en `public/`, excepto el ruido `{# }`.
+- Los 9 tags adicionales de `public/` (`notaria_*`, `notario_tipo`) son parte del pipeline vivo hoy — usarlos es lo que permite operar con cualquier notaría, no solo la 5 de Bogotá.
+- Ninguna referencia en código apunta a la de la raíz: producción lee `public/template_venta_hipoteca.docx` vía fetch (confirmado en el audit previo en `Validacion.tsx` y `DocxPreview.tsx`).
+
+## 7. Recomendación
+
+**Es seguro eliminar `template_venta_hipoteca.docx` de la raíz del proyecto.**
+
+- No aporta ningún contenido legal que no esté ya (mejor formulado) en `public/`.
+- Mantenerla es riesgo: si alguien la referencia por error, generaría escrituras hardcodeadas a la Notaría 5 de Bogotá y Banco de Bogotá para clientes que no son ninguno de los dos.
+- El código de producción ya la ignora.
+
+Sugerencia de siguiente paso (con tu confirmación explícita, en build mode): borrar solo `template_venta_hipoteca.docx` de la raíz, correr tests para confirmar verde, y dejar `public/template_venta_hipoteca.docx` intacta.
