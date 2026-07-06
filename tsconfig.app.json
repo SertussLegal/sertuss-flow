@@ -21,7 +21,7 @@
         "./src/*"
       ],
       "@shared/*": [
-        "./supabase/shared/*"
+        "./supabase/functions/_shared/isomorphic/*"
       ]
     },
     "skipLibCheck": true,
@@ -32,14 +32,14 @@
     ],
     "useDefineForClassFields": true
   },
-  "include": [
+    "include": [
     "src",
-    "supabase/shared/apoderadoClassifier.ts",
-    "supabase/shared/prosaBancos/davivienda.ts",
-    "supabase/shared/prosaBancos/index.ts",
-    "supabase/shared/prosaBancos/types.ts",
-    "supabase/shared/prosaBancos/overrideSchema.ts",
-    "supabase/shared/prosaBancos/mergeOverride.ts",
-    "supabase/shared/prosaBancos/legalProse.ts"
+    "supabase/functions/_shared/isomorphic/apoderadoClassifier.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/index.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/types.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/overrideSchema.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/mergeOverride.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/legalProse.ts"
   ]
 }
