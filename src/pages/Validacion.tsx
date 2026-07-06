@@ -54,6 +54,7 @@ import {
 import { normalizeDocxRuns } from "@/lib/docxRunNormalizer";
 import { generateFinalData } from "@/lib/docxPipeline";
 import { resolveCartaCredito } from "@/lib/docxConsolidation";
+import { isSuperAdmin } from "@/lib/superAdmin";
 
 // Maps template field names back to the form state they control
 const FIELD_TO_INMUEBLE: Record<string, keyof Inmueble> = {
@@ -2256,21 +2257,33 @@ const Validacion = () => {
             crossParagraph: _normalizeResult.crossParagraph,
           });
         }
-        // Forzar modal de auditoría aunque debug esté OFF, para diagnóstico inmediato
-        if (_auditPayload) {
+        // Diagnóstico inmediato SOLO para super-admin de plataforma (Sertuss).
+        // Para el resto de usuarios: toast neutro; el evento queda registrado
+        // vía monitored.log en el bloque finally (revisable en SystemMonitor).
+        const _isSuperAdmin = isSuperAdmin(profile?.email);
+        if (_auditPayload && _isSuperAdmin) {
           logDocxAuditToConsole(_auditPayload);
           setDebugAuditPayload(_auditPayload);
           setDebugModalOpen(true);
         }
-        const summary = tagErrors.length
-          ? `Tags problemáticos: ${tagErrors.slice(0, 3).join(", ")}${tagErrors.length > 3 ? "…" : ""}`
-          : err?.message || "Error desconocido al armar el documento.";
-        toast({
-          title: "No se pudo armar el .docx",
-          description: `${summary}. Se abrió el panel de auditoría para revisarlo.`,
-          variant: "destructive",
-          duration: 12000,
-        });
+        if (_isSuperAdmin) {
+          const summary = tagErrors.length
+            ? `Tags problemáticos: ${tagErrors.slice(0, 3).join(", ")}${tagErrors.length > 3 ? "…" : ""}`
+            : err?.message || "Error desconocido al armar el documento.";
+          toast({
+            title: "No se pudo armar el .docx",
+            description: `${summary}. Se abrió el panel de auditoría para revisarlo.`,
+            variant: "destructive",
+            duration: 12000,
+          });
+        } else {
+          toast({
+            title: "No pudimos generar el documento",
+            description: "Ocurrió un error inesperado. Por favor contacta a soporte de Sertuss.",
+            variant: "destructive",
+            duration: 10000,
+          });
+        }
         throw err;
       } finally {
         const _renderMs = Math.round(performance.now() - _renderStart);
@@ -2309,7 +2322,10 @@ const Validacion = () => {
             error_message: _renderError instanceof Error ? _renderError.message : null,
           },
         );
-        if (_debugOn && _auditPayload && !_renderError) {
+        // Auto-apertura tras render exitoso SOLO para super-admin de plataforma.
+        // El flag local sertuss.debugDocx ya no basta por sí solo para exponer
+        // el payload (contiene cédulas, direcciones y valores de expediente).
+        if (isSuperAdmin(profile?.email) && _auditPayload && !_renderError) {
           logDocxAuditToConsole(_auditPayload);
           setDebugAuditPayload(_auditPayload);
           setDebugModalOpen(true);
@@ -3199,8 +3215,11 @@ const Validacion = () => {
                 </Tooltip>
               )}
 
-              {/* Herramienta interna Sertuss — solo visible para owner cuando Sertuss activa el flag por organización */}
-              {profile?.role === "owner" && organization?.debug_tools_enabled && (
+              {/* Herramienta interna Sertuss — SOLO visible para el super-administrador
+                  de plataforma (info@sertuss.com). Ni siquiera owners de organizaciones
+                  cliente pueden abrirla, porque expone datos personales del expediente
+                  (cédulas, direcciones, valores) en el payload de auditoría. */}
+              {isSuperAdmin(profile?.email) && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
