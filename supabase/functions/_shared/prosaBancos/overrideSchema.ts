@@ -4,7 +4,7 @@
 // ISOMÓRFICO: usa exclusivamente `zod`, disponible en Vite y Deno (npm:zod).
 // ============================================================================
 
-import { z } from "zod";
+import { z } from "npm:zod@3.25.76";
 import type { ProsaApoderadoOverride } from "./types.ts";
 
 /** Tokens sucios que no deben persistirse dentro de notas del usuario. */
