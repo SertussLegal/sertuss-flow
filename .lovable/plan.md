@@ -1,47 +1,167 @@
-## Hallazgos (investigación, solo lectura)
+# Skill propuesto: `pricing-creditos-sertuss`
 
-### 1. Qué hace exactamente "Try to fix" — según docs oficiales de Lovable
+Solo diseño. No se crea el archivo hasta aprobación.
 
-> "Clicking this triggers Lovable to automatically attempt a remediation for the finding."
-> "It does not generate a plan for review; instead, it attempts to apply the fix directly."
+## 1. Ubicación y formato
 
-**Traducción práctica:** dispara al agente de Lovable a intentar un fix **directamente**, sin pantalla intermedia de aprobación. En la práctica esto normalmente se materializa como una nueva conversación/turno del agente que edita archivos. **No es 100% "silencioso" en el sentido de saltarse toda revisión** — los cambios quedan en el historial de la sesión y son reversibles — pero **no hay un paso de "aprobar plan" antes de que empiece a tocar código**.
+- **Ruta al crear (draft):** `.agents/skills/pricing-creditos-sertuss/SKILL.md`
+- **Ruta activa (tras `skills--apply_draft`):** `.workspace/skills/pricing-creditos-sertuss/SKILL.md`
+- **Formato:** idéntico a los 14 skills existentes — frontmatter YAML (`name`, `description`, `type`) + cuerpo Markdown con secciones numeradas, tablas, ejemplos y anti-ejemplos.
+- **Tipo:** `preference` (regla de proceso interno del equipo, no una feature del producto).
+- Un solo archivo — no requiere `references/`, `scripts/`, ni `assets/`.
 
-Coste: **gratis, no consume créditos**.
+## 2. Verificación de solapamiento con skills existentes
 
-### 2. Timestamp de la alerta
+Revisados los 14 skills activos en `.workspace/skills/`. Ninguno cubre pricing/créditos: todos son de dominio notarial (formato texto-número, concordancia género, cuantías, direcciones, poderes, validaciones, componente UI, limpieza de código). **Sin conflicto**. Este skill ocupa un nicho nuevo: proceso de producto/monetización.
 
-> "The monitoring run history is available in your project settings, where you can view past checks, results, and credit usage."
+## 3. Mecanismo de activación (recomendación)
 
-Existe historial de corridas en **Project Settings → Monitoring** (UI del usuario). No hay tool desde el agente para leer ese timestamp directamente. Para saber si la alerta es anterior o posterior al deploy, el camino confiable es revisar esa vista de historial manualmente.
+**Recomiendo activación por descripción semántica** (el mecanismo estándar de skills — se inyecta cuando el prompt del usuario o los archivos que el agente va a tocar coinciden con la `description`). Motivos:
 
-### 3. Re-evaluación automática
+- No existe hook nativo "activar cuando se toque el archivo X" — todos los skills se resuelven por matching de la `description` contra el contexto de la tarea.
+- Alternativa considerada y descartada: añadir una regla Core en `mem://index.md`. La descarté porque contamina TODA respuesta del agente con un checklist que solo aplica en <2% de los turnos. Un skill bien-descrito con keywords fuertes es más limpio.
+- **Mitigación de falsos negativos:** añadir una línea Core corta en `mem://index.md` — *"Al crear/modificar edge functions con IA o tocar `credit_prices`/`consume_credit_v2`, aplicar skill `pricing-creditos-sertuss` antes de definir cualquier precio."* — así el agente sabe que existe aunque el matching semántico falle.
 
-> "Finding status updates only when you fix, ignore, or chat about a specific finding. Changes made before then can make a finding outdated."
-> "It runs on a schedule you configure (daily or weekly) in Project Settings."
+La `description` debe incluir tokens fuertes: *"créditos, pricing, cobro, consume_credit_v2, credit_prices, nueva funcionalidad IA, nueva edge function con Gemini/Claude, modificar consumo de tokens"*.
 
-**Conclusión clara:** el monitor **no reevalúa automáticamente** una alerta existente cada vez que hay un deploy. Solo cambia de estado por acción explícita (fix / ignore / chat) o cuando corre el siguiente ciclo programado (diario o semanal, según config). Por eso la alerta sigue visible pese al deploy exitoso.
+## 4. Contenido propuesto del SKILL.md
 
-### 4. Nivel de certeza
+````markdown
+---
+name: pricing-creditos-sertuss
+description: Framework obligatorio para asignar el precio en créditos de cualquier acción nueva que consuma IA (Gemini/Claude/Lovable AI Gateway) o modificación que aumente el consumo de una existente. Se activa al crear edge functions nuevas con IA, al tocar `credit_prices` o `consume_credit_v2`, al añadir un nuevo `CreditAction`, o cuando el usuario menciona "nuevo trámite", "nueva funcionalidad IA", "cuánto cobrar", "cuántos créditos", "pricing". NUNCA copiar el precio de otra acción sin justificar.
+type: preference
+---
 
-- Comportamiento de "Try to fix": **alta certeza** (docs lo dicen literalmente).
-- No auto-reevaluación en deploy: **alta certeza** (docs lo dicen literalmente).
-- Detalle exacto de si "Try to fix" abre un turno visible en el chat o corre en background: **certeza media** — la doc dice "attempts to apply the fix directly" pero no describe la UX exacta. Por experiencia típica de Lovable, se materializa como un turno del agente en la conversación actual, pero no lo puedo garantizar al 100%.
+# Pricing de créditos — proceso obligatorio Sertuss
 
-## Recomendación (para tu decisión, no la ejecuto)
+Este skill propone precios; **nunca los activa por sí solo**. El dueño de producto aprueba antes de escribir en `credit_prices`.
 
-Dado que:
-- El código en disco ya está correcto (verificado hace un momento).
-- El deploy fresco fue exitoso.
-- El monitor **no** va a reevaluar sola la alerta.
-- "Ignore" es reversible ("remain visible and can be restored").
+## 1. Cuándo se dispara este skill
 
-**Opción más segura y limpia: "Ignore"**. La alerta describía un estado real del pasado que ya está resuelto; marcarla como ignorada refleja la realidad sin arriesgar que "Try to fix" toque código que ya está bien.
+Aplicar SIEMPRE que se cumpla al menos una:
 
-**"Try to fix" tiene riesgo bajo pero no nulo:** podría intentar "arreglar" imports que ya están correctos y generar ruido (o incluso un cambio innecesario). Como es gratis y reversible, tampoco es catastrófico, pero es trabajo evitable.
+- Se crea una edge function que llama a Gemini, Claude o el Lovable AI Gateway.
+- Se modifica una edge function existente y el cambio aumenta llamadas IA, tokens, o pasos del pipeline.
+- Se añade un valor nuevo al enum `CreditAction` en `src/services/credits.ts`.
+- Se inserta o actualiza una fila en `credit_prices`.
+- El usuario pregunta "¿cuánto cobrar por X?" / "¿cuántos créditos vale?".
 
-## Plan propuesto
+## 2. Principios inviolables
 
-**Ninguna acción de código o deploy.** Este plan es solo el reporte anterior. La decisión sobre qué botón usar (Ignore vs Try to fix vs esperar el próximo ciclo del monitor) queda en tus manos, con la información ya sobre la mesa.
+1. **Costo real como piso.** `costo_real = Σ (llamadas_ia × tokens_promedio × precio_modelo)`. El precio en créditos NUNCA puede quedar por debajo de este piso (margen ≥ 0).
+2. **Valor evitado como techo.** El precio máximo razonable es **10–30% del valor de reproceso manual evitado** (tiempo del abogado/notario × su tarifa horaria). Por encima de eso, el usuario percibe abuso.
+3. **Prohibido copiar precios entre acciones.** Cada acción tiene perfil de tokens y valor distinto. Si el número final coincide con otra acción, hay que justificar *por qué* coincide, no asumirlo.
+4. **Cobrar solo al completar/validar.** Nunca durante iteración, corrección, autosave, o preview. El evento monetizable es el "hito de valor entregado" (ej. `unlock_expediente`, generación final del docx).
+5. **Instrumentar tokens desde el día uno.** Toda función IA nueva DEBE loguear en `logs_extraccion` o `system_events`: `{ modelo, tokens_input, tokens_output, latencia_ms, tramite_id }`. Sin telemetría no hay pricing defendible.
+6. **Precio final vive en el servidor.** Cliente NUNCA hardcodea. Se lee desde `credit_prices` vía RPC. El campo `credits` en `consumeCredit()` es un default de emergencia, no la fuente de verdad.
+7. **El skill propone, humano aprueba.** El agente presenta la hoja de cálculo (§4) y espera confirmación explícita del dueño de producto antes de:
+   - Insertar/actualizar fila en `credit_prices`.
+   - Añadir el nuevo valor al enum `CreditAction`.
 
-Si apruebas el plan, simplemente cierro con la recomendación registrada. Si prefieres que ejecute alguna acción concreta (p. ej. redeploy adicional, o revisar algún archivo específico), dilo y ajusto el plan.
+## 3. Checklist paso a paso
+
+Cuando se dispare el skill, ejecutar EN ORDEN y no saltarse pasos:
+
+- [ ] **P1. Identificar la acción.** Nombre exacto (`GENERACION_DOCX_SUCESION`, etc.), edge function que la ejecuta, hito monetizable (¿cuándo se cobra?).
+- [ ] **P2. Mapear el pipeline IA.** Enumerar todas las llamadas: función → modelo → prompt approx tokens input → tokens output esperados. Si el pipeline tiene retries, incluirlos en el promedio (p95).
+- [ ] **P3. Medir costo real.** Con precios oficiales vigentes de cada modelo (Gemini 2.5 Flash/Pro, Claude Sonnet, Gateway Lovable). Fórmula:
+  `costo_usd = Σ (input_tokens × precio_input + output_tokens × precio_output)`
+  Convertir a créditos usando el tipo de cambio interno vigente (1 crédito = X USD según el plan de precios Sertuss actual).
+- [ ] **P4. Estimar valor evitado.** ¿Cuánto tiempo le ahorra al usuario? (minutos de abogado × tarifa/hora). Sacar el rango 10–30%.
+- [ ] **P5. Proponer número.** Debe estar entre `max(piso_costo_real × margen_min)` y `techo_valor_evitado`. Redondear a entero razonable (1, 2, 3, 5, 10 — no fracciones).
+- [ ] **P6. Justificar en la hoja (§4).** Rellenar TODOS los campos. Sin campos vacíos.
+- [ ] **P7. Verificar telemetría.** Confirmar que la edge function loguea tokens reales; si no, bloquear pricing hasta que lo haga.
+- [ ] **P8. Presentar al dueño de producto.** Mensaje con la hoja completa + 2-3 alternativas de precio (conservador, recomendado, agresivo). **Esperar `sí` explícito.**
+- [ ] **P9. Aplicar.** Solo tras aprobación: migración a `credit_prices` + añadir a enum + actualizar `consumeCredit()` call-sites + PR con la hoja pegada en la descripción.
+- [ ] **P10. Post-launch (30 días).** Revisar `logs_extraccion` reales vs. estimados. Si el costo real supera al estimado en >20%, replantear precio.
+
+## 4. Hoja de cálculo obligatoria (llenar SIEMPRE)
+
+Formato Markdown que el agente presenta al dueño de producto:
+
+```markdown
+### Pricing propuesto: <NOMBRE_ACCION>
+
+**Hito monetizable:** <cuándo se cobra exactamente>
+**Edge function(s):** <lista>
+**Fecha propuesta:** <YYYY-MM-DD>
+
+#### A. Pipeline IA
+| Paso | Modelo | Tokens input (p50/p95) | Tokens output (p50/p95) | Precio USD / 1M tok (in/out) | Costo USD (p95) |
+|------|--------|------------------------|--------------------------|------------------------------|-----------------|
+| 1    |        |                        |                          |                              |                 |
+| 2    |        |                        |                          |                              |                 |
+| **Total** | | | | | **$X.XXXX** |
+
+#### B. Piso (costo real)
+- Costo p95 en USD: `$X.XXXX`
+- Conversión a créditos (1 crédito = $Y): `Z.ZZ créditos`
+- **Piso mínimo:** `⌈Z.ZZ × margen⌉ = N créditos`
+
+#### C. Techo (valor evitado)
+- Tarea manual equivalente: <descripción>
+- Tiempo evitado: `M minutos`
+- Tarifa horaria abogado/notario: `$H`
+- Valor evitado: `$V`
+- Rango 10–30%: `V × 0.10 = $A` … `V × 0.30 = $B` → `C₁ … C₂ créditos`
+
+#### D. Propuesta
+| Escenario     | Créditos | Margen sobre piso | % del valor evitado |
+|---------------|----------|-------------------|---------------------|
+| Conservador   |          |                   |                     |
+| **Recomendado** |        |                   |                     |
+| Agresivo      |          |                   |                     |
+
+#### E. Justificación (por qué NO copiar de otra acción)
+<párrafo corto que explique el perfil único de esta acción vs. las existentes>
+
+#### F. Telemetría instrumentada
+- [ ] Loguea `tokens_input`, `tokens_output`, `modelo`, `latencia_ms` en `logs_extraccion`
+- [ ] Registra `tramite_id` para trazabilidad
+- [ ] Alerta si costo real > estimado en 20%
+
+#### G. Aprobación
+- Dueño de producto: __________
+- Fecha: __________
+- Firma (sí/no explícito): __________
+```
+
+## 5. Anti-patrones a rechazar
+
+- ❌ *"Cobremos 2 créditos, igual que apertura de expediente."* → sin análisis del pipeline propio.
+- ❌ Hardcodear `credits: 3` en el cliente sin fila en `credit_prices`.
+- ❌ Cobrar al primer clic de "generar preview" (aún no hay valor entregado).
+- ❌ Desplegar edge function IA sin logging de tokens.
+- ❌ Aumentar consumo (agregar una llamada Claude extra) sin re-correr el checklist.
+- ❌ El agente crea la fila `credit_prices` sin esperar `sí` explícito del humano.
+
+## 6. Referencias cruzadas
+
+- `src/services/credits.ts` — enum `CreditAction`, `consumeCredit()`.
+- Tabla `credit_prices` — fuente de verdad servidor.
+- Función SQL `consume_credit_v2` — atomicidad del cobro.
+- Skill `limpieza-segura-codigo` — cuando el cambio implique eliminar código IA legacy.
+- `mem://features/monetizacion-apertura-expediente` — precedente de referencia (2 créditos por `unlock_expediente`).
+````
+
+## 5. Adición sugerida a memoria Core
+
+Una línea en `mem://index.md` sección Core:
+
+> `Pricing IA: cualquier acción nueva o modificación que consuma IA debe pasar por skill pricing-creditos-sertuss (hoja completa + aprobación humana) antes de tocar credit_prices o CreditAction.`
+
+Esto garantiza discovery aunque la búsqueda semántica del skill falle.
+
+## 6. Pasos si se aprueba
+
+1. Crear `.agents/skills/pricing-creditos-sertuss/SKILL.md` con el contenido de §4.
+2. `skills--apply_draft .agents/skills/pricing-creditos-sertuss`.
+3. Actualizar `mem://index.md` con la línea Core de §5.
+4. (Opcional) Ejecutar el skill contra una acción existente (ej. `GENERACION_DOCX` de cancelación) como validación en caliente del framework.
+
+## Supuestos / preguntas abiertas
+
+- Asumo que el "tipo de cambio interno" 1 crédito ↔ USD ya existe internamente; si no, el skill lo pide como precondición.
+- Asumo que `logs_extraccion` es la tabla adecuada para telemetría de tokens; si el equipo prefiere `system_events`, se ajusta en §3 P7 y §4 F.
+- El skill es **proceso**, no automatización — el agente ejecuta el checklist manualmente en cada disparo. Si se quisiera automatizar (ej. script que calcule el piso), sería un `scripts/` adicional en una segunda iteración.
