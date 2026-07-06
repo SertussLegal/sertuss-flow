@@ -1,132 +1,94 @@
-# Diagnóstico — Limpieza cosmética (solo lectura, sin ejecución)
 
-## 1. Carpeta `.tmp-templates/`
+# Verificación funcional: `src/shared/prosaBancos/legalProse.ts` vs `src/lib/legalProse.ts`
 
-**Hallazgo:** 3 archivos residuales, ninguno referenciado por código de producción.
+## 1. Archivos analizados
 
-**Evidencia:**
+Los 3 archivos ya están leídos en su totalidad (ver contexto). Resumen de exports:
+
+| Archivo | Exports |
+|---|---|
+| `src/shared/prosaBancos/legalProse.ts` (isomórfico, 97 líneas) | `numeroConLetras`, `fechaProsa` |
+| `src/lib/legalProse.ts` (Vite, 177 líneas) | `numeroConLetras`, `fechaProsa`, `escrituraProsa`, `montoProsa`, `EscrituraInput` |
+| `supabase/functions/process-expediente/legalProse.ts` (Deno, 153 líneas) | `numeroConLetras`, `fechaProsa`, `escrituraProsa`, `montoProsa`, `EscrituraInput` |
+
+## 2. Paridad función por función (shared vs lib)
+
+### `numeroConLetras(n, gender)`
+- **Mismas firmas y defaults** (`gender = "masculine"`).
+- Misma tabla `FEMENINOS_ORDINALES_1_10` (idéntica, con tildes).
+- Misma `masculinoAFemenino` (3 regex idénticos, en el mismo orden).
+- Misma `ALREADY_FORMATTED_RE` para idempotencia.
+- Misma guardia `!Number.isFinite(num) || num <= 0 → ""`.
+- Misma rama femenino 1..10 → tabla ordinal.
+- Diferencia estructural, NO de comportamiento: `src/lib` importa `numberToWords` desde `@/lib/legalFormatters`; `src/shared` incluye una copia inline de `numberToWordsLegal` + `UNITS/TEENS/TENS/HUNDREDS/VEINTIS/convertGroup`. Comparando byte a byte esos arrays y funciones con los de `legalFormatters.ts`: son **idénticos** (mismos strings con tildes, misma lógica `convertGroup`, mismos `groups` con `mil millones/millón/mil`, mismo `q === 1 → " mil"` sin duplicar `un`).
+- **Veredicto**: 100% equivalente en salida para todo input.
+
+### `fechaProsa(fecha)`
+- Misma detección `ymd`/`dmy` con `/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})$/` y el DMY.
+- Misma guardia `mes<1||mes>12||dia<1||dia>31 → ""`.
+- Mismo arreglo `MESES` (12 meses, minúsculas, sin tildes).
+- Misma composición final.
+- **Veredicto**: 100% equivalente. Nota: `src/lib` no valida `isNaN`, pero como `parseInt` sobre `\d+` matchado nunca produce NaN, es equivalente.
+
+### Funciones no presentes en `src/shared`
+`escrituraProsa` y `montoProsa` **no existen** en el archivo isomórfico. Irrelevante para el consumidor real (`davivienda.ts` no las llama).
+
+## 3. Call-sites reales en `davivienda.ts`
+
+Únicos usos (grep confirmado):
 ```
-9121   .tmp-templates/CERTIFICADO can hipo blanqueado.docx        (2026-07-06)
-28753  .tmp-templates/cancelacion_clean.docx                       (2026-07-06)
-28753  .tmp-templates/formato cancelacion hipoteca blanqueado.docx (2026-07-06)
+numeroConLetras(c.numero!, "masculine")
+numeroConLetras(ctx.apoderado.escritura_poder_num!, "masculine")
+numeroConLetras(ctx.apoderado.escritura_poder_notaria_num!, "feminine")
+numeroConLetras(ctx.instrumento.escritura_num!, "masculine")
+numeroConLetras(ctx.instrumento.notaria_numero!, "feminine")
+numeroConLetras(c.reforma_acta_numero!, "masculine")
+fechaProsa(fecha!)   // dentro de fechaOTexto()
 ```
-- `md5` de `cancelacion_clean.docx` y `formato cancelacion hipoteca blanqueado.docx` = idéntico (`f54cd383…`). Uno es copia del otro.
-- `rg "tmp-templates"` en todo el repo → **0 resultados**. No hay ningún import, `fetch`, `readFile` o referencia en frontend, edge functions, tests ni migraciones.
-- **No está en `.gitignore`** (revisado `.gitignore` completo). Están committeados como archivos normales — son residuo de subidas manuales de plantillas durante desarrollo.
-- Las plantillas reales de cancelación viven en el bucket privado `cancelaciones-plantillas` (Lovable Cloud), no aquí.
+Inputs reales: strings de OCR con dígitos (números de escritura, actas, notarías, fechas ISO/DMY). Todos caen dentro del comportamiento cubierto y equivalente entre ambas versiones. No hay casos extremos (negativos, ceros, no-numéricos, ya-formateados) presentes en el flujo real.
 
-**Recomendación:** ELIMINAR carpeta completa (residual, cero uso en runtime).
+## 4. ⚠️ Bloqueador arquitectónico: no se puede eliminar
 
----
+`davivienda.ts` es **re-exportado** desde el edge function Deno:
 
-## 2. Lockfiles duplicados (`bun.lockb`, `bun.lock`, `package-lock.json`)
-
-**Hallazgo:** Tres lockfiles committeados. Lovable/Vite usa `bun` como package manager.
-
-**Evidencia:**
 ```
-194663  bun.lock            (texto, formato bun >=1.1)
-245395  bun.lockb           (binario, formato bun <1.1)
-372722  package-lock.json   (npm)
+supabase/functions/_shared/prosaBancos/davivienda.ts:
+  export * from "../../../../src/shared/prosaBancos/davivienda.ts";
 ```
-- `package.json` no declara `packageManager` ni `engines`. No hay CI visible en el repo (Lovable Cloud maneja build internamente).
-- Lovable estándar usa **bun** (documentado en instrucciones: `bun add`, `bun remove`). El formato vigente de bun es `bun.lock` (texto) — `bun.lockb` es el binario legacy previo a bun 1.1 y bun lo regenera/ignora si `bun.lock` existe.
-- `package-lock.json` sólo se usaría si alguien corriera `npm install` fuera de Lovable.
 
-**Riesgo real:**
-- Desincronización silenciosa: un dev local corriendo `npm install` puede resolver versiones distintas a las que bun instala en Lovable → "funciona en mi máquina, falla en prod".
-- Un `bun install` toca `bun.lock` pero deja `bun.lockb` obsoleto → diff ruidoso y falsas alarmas de auditoría de dependencias.
-- Herramientas de seguridad (Dependabot, Snyk) auditan el lockfile "equivocado" y reportan CVEs stale.
+Ese archivo Deno consume `davivienda.ts` → que a su vez importa `./legalProse.ts`. Si cambiamos el import a `@/lib/legalProse`:
 
-**Recomendación:** MANTENER `bun.lock`, ELIMINAR `bun.lockb` y `package-lock.json`. Requiere confirmación humana antes de tocar lockfiles.
+1. `@/...` es un **alias de Vite**, no resuelve en Deno.
+2. Incluso con path relativo `../../lib/legalProse`, `src/lib/legalProse.ts` internamente hace `import { formatMonedaLegal, numberToWords } from "@/lib/legalFormatters"` — otro alias no resoluble en Deno.
 
----
+El propósito **explícito** de `src/shared/prosaBancos/legalProse.ts` está documentado en su cabecera: *"ISOMÓRFICO (Deno + Vite). Este archivo NO importa nada externo — es 100 % TS puro."* Existe precisamente para romper la cadena de alias `@/`.
 
-## 3. `src/shared/prosaBancos/legalProse.ts` (huérfano)
+Eliminarlo (o repuntar davivienda.ts a `src/lib/legalProse`) **rompería el edge function `procesar-cancelacion`** al desplegarse en Deno — mismo síntoma que ocurrió en el intento anterior en preview local.
 
-**Hallazgo:** Archivo de 97 líneas, **cero imports en todo el repo**.
+## 5. Recomendación final
 
-**Evidencia:**
-- `rg "prosaBancos/legalProse"` en todo el repo (incluyendo tests, edge functions, componentes) → **0 resultados**.
-- El propio archivo se autodocumenta como *"Copia consolidada de `supabase/functions/process-expediente/legalProse.ts` para eliminar el path relativo cruzado"* — es un intento de consolidación que quedó a medias: se creó la copia isomórfica pero nadie migró los imports.
-- Su contenido (`numeroConLetras`, `fechaProsa`, `numberToWordsLegal`) es un **subconjunto** de `src/lib/legalProse.ts` (que además exporta `escrituraProsa`, `montoProsa` y reusa `formatMonedaLegal`). Frontend usa `@/lib/legalProse`; edge functions usan `supabase/functions/process-expediente/legalProse.ts`. Ambas versiones ya funcionan sin este archivo.
-- No hay lógica única aquí — todo lo que hace ya existe en las otras 2 copias.
+**NO eliminar** `src/shared/prosaBancos/legalProse.ts`.
 
-**Recomendación:** ELIMINAR (código muerto real, experimento abandonado de consolidación isomórfica).
+Aunque las dos versiones son 100% equivalentes en comportamiento para todos los inputs reales y sintéticos que pueda producir el flujo, el duplicado **no es accidental**: es el mecanismo que hace `davivienda.ts` isomórfico (Vite + Deno). Reclasificar como código intencional, no como duda de limpieza.
 
----
+Ambas versiones son correctas — ninguna necesita corregirse.
 
-## 4. Plantilla `.docx` duplicada (raíz vs `public/`)
+## 6. Salvaguarda propuesta: test de paridad (a implementar en paso separado si se aprueba)
 
-**Hallazgo:** NO son idénticas byte a byte; solo `public/` se usa en producción.
+Ubicación: `src/shared/prosaBancos/__contract__/legalProse.parity.test.ts`
 
-**Evidencia:**
+Objetivo: garantizar que si alguien modifica una copia, la otra falla el CI.
+
+Casos:
 ```
-md5  496e64bb4e612511d8b78ea39c46daf6   template_venta_hipoteca.docx        (251.880 bytes)
-md5  cba11eb33974467ccd1f5208b462490d   public/template_venta_hipoteca.docx (252.360 bytes)
+numeroConLetras — inputs: 0, -1, 1, 5, 10, 11, 20, 21, 22, 30, 99, 100, 101,
+  199, 200, 999, 1000, 1001, 1971, 3892, 1_000_000, 999_999_999,
+  "0035", "  ", "abc", "treinta y cinco (35)" (idempotencia),
+  cada uno con gender="masculine" y "feminine"
+fechaProsa — inputs: "", "2024-01-01", "1971-10-16", "29-01-1971",
+  "29/01/1971", "1971/10/16", "31-02-2024" (día inválido? no, 31 pasa el guard),
+  "00-01-2024", "01-13-2024", "abc", "2024-1-1", "1-1-2024"
 ```
-- Hashes y tamaños distintos → **son versiones diferentes**.
-- Todos los `fetch` en el código apuntan a la ruta pública servida por Vite:
-  - `src/pages/Validacion.tsx:2082` → `fetch("/template_venta_hipoteca.docx")`
-  - `src/components/tramites/DocxPreview.tsx:290` → `fetch("/template_venta_hipoteca.docx")`
-- Vite sirve `/…` desde `public/`. La copia en raíz **nunca se lee en runtime** — es residuo.
-- El riesgo: futuros edits pueden modificar la copia equivocada creyendo que impacta producción.
+Assert: `sharedFn(input) === libFn(input)` para cada caso. Falla del test = drift entre copias.
 
-**Recomendación:** ELIMINAR `template_venta_hipoteca.docx` (raíz). Requiere revisión humana rápida por si la versión de raíz tiene cambios más nuevos aún no promovidos a `public/`.
-
----
-
-## 5. RPC `consume_credit` (sin `_v2`)
-
-**Hallazgo:** Definido en migraciones y expuesto en `types.ts`, pero **cero llamadas activas** en frontend o edge functions.
-
-**Evidencia:**
-```
-supabase/migrations/20260305193343_…sql:142   CREATE OR REPLACE FUNCTION public.consume_credit(org_id uuid)   ← creación original (marzo 2026)
-supabase/migrations/20260424164804_…sql:181   CREATE OR REPLACE FUNCTION public.consume_credit(org_id uuid)   ← redefinición (abril 2026)
-src/integrations/supabase/types.ts:1245       consume_credit: { Args: { org_id: string }; Returns: boolean }   ← autogenerado
-```
-- `rg "consume_credit"` (excluyendo `_v2`) en `src/`, `supabase/functions/`: **0 llamadas**. Todo el frontend usa `src/services/credits.ts` → `supabase.rpc("consume_credit_v2", …)`.
-- Reemplazo: `consume_credit_v2` (con firma extendida: `p_org_id, p_user_id, p_action, p_tramite_id, p_tipo_acto, p_credits`) que además inserta audit trail atómico (documentado en el header de `services/credits.ts`).
-- La versión `_v2` es la fuente única activa desde que se centralizó el cobro con metadata; `consume_credit` quedó como wrapper legacy sin consumidores.
-
-**Recomendación:** REQUIERE REVISIÓN HUMANA antes de `DROP FUNCTION`. Aunque no hay llamadas en el código, conviene verificar que ningún trigger, vista, edge function externa o script administrativo la invoque. Si nada la usa → deprecar con `COMMENT` en migración nueva y eliminar en una siguiente.
-
----
-
-## 6. Skills en `.workspace/skills/` no indexados
-
-**Corrección al audit original:** Hay **14 skills** en `.workspace/skills/`, no 6. De ellos, **4 no aparecen referenciados** en el índice de memoria del proyecto (`mem://index.md`) ni en `project-knowledge`.
-
-**Skills activos referenciados en memoria/project-knowledge (10):**
-`sanitizar-direccion`, `convertir-numero-a-letras` (marcado `type: deprecated` — remite a `formato-texto-numero-notarial`), `formato-texto-numero-notarial`, `concordancia-genero-minutas`, `extraccion-cuantia-semantica`, `componente-segmented-choice`, `direccion-completa-saneada-cancelacion`, `cuantia-indeterminada-cancelacion`, `payload-crudo-tabla-snr`, `limitaciones-concurrentes-cancelacion`.
-
-**Skills NO indexados en memoria (4):**
-
-| Skill | Tema | Estado aparente |
-|---|---|---|
-| `gestionar-reglas-inmueble-por-modulo` | Diferenciar lógica de Inmuebles entre módulo Cancelaciones y Escrituras | Activo pero sin entrada en `mem://index.md` |
-| `limpieza-segura-codigo` | Playbook de limpieza / refactor sin romper lógica (el que gobierna esta misma tarea) | Activo, meta-skill de proceso |
-| `validar-poder-general-banco` | Procesamiento de poderes bancarios multi-página y antefirmas | Activo, tema cubierto parcialmente por otros features |
-| `verificar-consistencia-notarial` | Cruce CTL vs escrituras anteriores para auditar gravámenes | Activo pero sin entrada en memoria |
-
-Adicionalmente, `convertir-numero-a-letras` está marcado explícitamente `type: deprecated` y solo apunta a `formato-texto-numero-notarial` — es un puntero de compatibilidad.
-
-**No son borradores** (los borradores viven en `.agents/skills/` o `.claude/skills/`, esta carpeta es de skills activos). Simplemente no se agregaron sus referencias al índice de memoria — omisión, no duplicación.
-
-**Recomendación:** REQUIERE REVISIÓN HUMANA. No borrar (son skills activos válidos); decidir para cada uno: (a) añadir referencia a `mem://index.md` si sigue siendo relevante, o (b) desactivar desde Settings → Skills si el tema ya está cubierto por otro skill. `convertir-numero-a-letras` puede desactivarse formalmente ahora que su reemplazo está consolidado.
-
----
-
-## Resumen de recomendaciones
-
-| # | Item | Acción sugerida | Riesgo |
-|---|---|---|---|
-| 1 | `.tmp-templates/` | Eliminar | Ninguno |
-| 2 | `bun.lockb` + `package-lock.json` | Eliminar (mantener `bun.lock`) | Bajo, requiere confirmar |
-| 3 | `src/shared/prosaBancos/legalProse.ts` | Eliminar | Ninguno |
-| 4 | `template_venta_hipoteca.docx` (raíz) | Eliminar (mantener `public/`) | Bajo, verificar que raíz no tenga cambios nuevos |
-| 5 | RPC `consume_credit` (legacy) | Requiere revisión humana antes de DROP | Medio (base de datos) |
-| 6 | 4 skills no indexados | Revisión humana caso por caso | Ninguno operativo |
-
-**Nada se modificó en esta respuesta.** La ejecución de cualquiera de estas limpiezas requiere tu confirmación explícita por item (recomendado agruparlos: 1+3+4 en un lote, 2 en otro, 5+6 individualmente).
+Sin cambios de código en esta respuesta.
