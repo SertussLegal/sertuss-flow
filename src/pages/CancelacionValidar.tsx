@@ -510,7 +510,9 @@ export const CancelacionValidar = () => {
 
   // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
   // (la edge function limpia data_ia.poder_banco antes de re-inyectar).
-  // No cobra créditos (unlock_expediente ya consumió los 2).
+  // No cobra créditos adicionales: el costo de generación ya fue cubierto
+  // por unlock_expediente al abrir el expediente. El número de créditos
+  // lo determina credit_prices, no un valor fijo aquí.
   const handleReprocessPoder = async () => {
     if (!id) return;
     if (isReprocessingRef.current) return;

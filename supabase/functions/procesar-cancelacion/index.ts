@@ -1637,7 +1637,9 @@ if (import.meta.main) serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     // MODO REPROCESS_PODER: re-extrae solo el Poder con OCR dedicado.
     // Idempotente: limpia data_ia.poder_banco antes de re-inyectar.
-    // No cobra créditos (unlock_expediente ya consumió los 2).
+    // No cobra créditos adicionales: el costo de generación ya fue cubierto
+    // por unlock_expediente al abrir el expediente. El número de créditos
+    // lo determina credit_prices, no un valor fijo aquí.
     // ─────────────────────────────────────────────────────────────
     if (action === "reprocess_poder") {
       const LOVABLE_API_KEY_RP = Deno.env.get("LOVABLE_API_KEY");
@@ -1924,7 +1926,10 @@ if (import.meta.main) serve(async (req) => {
       });
     }
 
-    // 1) Cobro de 2 créditos (con auditoría obligatoria → p_tramite_id requerido)
+    // 1) Cobro de créditos (auditoría obligatoria → p_tramite_id requerido).
+    // Fallback defensivo: el precio real lo resuelve credit_prices en el servidor
+    // (consume_credit_v2). El valor p_credits: 2 solo aplica si la tabla no
+    // tuviera una fila activa para GENERACION_DOCX / cancelacion_hipoteca.
     const { data: charge, error: chargeErr } = await supabaseUser.rpc("consume_credit_v2", {
       p_org_id: orgId,
       p_user_id: userId,
