@@ -1,106 +1,132 @@
-# Diagnóstico — `DocxDebugModal` (solo lectura)
+# Diagnóstico — Limpieza cosmética (solo lectura, sin ejecución)
 
-## 1. Código del componente
-Archivo: `src/components/tramites/DocxDebugModal.tsx` (828 líneas). Ya visualizado íntegro en las líneas 1–451 (encabezado, lógica de gating interno, tabs, export). Piezas relevantes al gate de acceso:
+## 1. Carpeta `.tmp-templates/`
 
-```tsx
-const { profile } = useAuth();
-const isAdvanced = profile?.role === "owner" || profile?.role === "admin";
-const canExport = isAdvanced;
+**Hallazgo:** 3 archivos residuales, ninguno referenciado por código de producción.
+
+**Evidencia:**
 ```
-
-- El modal, por sí mismo, **no verifica ningún permiso para abrirse**: recibe `open` como prop y se muestra si el padre lo activa.
-- Internamente `isAdvanced` sólo decide **qué tabs y stats se muestran**: si `role !== owner|admin`, el usuario ve únicamente la pestaña "Guía" (tags + copiar) sin diff/flat/missing/unused/JSON export.
-- `canExport` (Copiar/Descargar JSON) también sólo se muestra a owner/admin.
-- El toggle "Diagnóstico visual" y su callback `onDebugVisualChange` sólo aparecen para owner/admin y escriben en `localStorage["sertuss.debugDocx"]`. Al cerrar, notifica al padre para sincronizar el flag global en memoria.
-
-## 2. Cómo se monta en `Validacion.tsx`
-Estado (líneas 292–294):
-```tsx
-const [debugDocxOn, setDebugDocxOn] = useState<boolean>(() => isDebugDocxEnabled());
-const [debugModalOpen, setDebugModalOpen] = useState(false);
-const [debugAuditPayload, setDebugAuditPayload] = useState<DocxAuditPayload | null>(null);
+9121   .tmp-templates/CERTIFICADO can hipo blanqueado.docx        (2026-07-06)
+28753  .tmp-templates/cancelacion_clean.docx                       (2026-07-06)
+28753  .tmp-templates/formato cancelacion hipoteca blanqueado.docx (2026-07-06)
 ```
+- `md5` de `cancelacion_clean.docx` y `formato cancelacion hipoteca blanqueado.docx` = idéntico (`f54cd383…`). Uno es copia del otro.
+- `rg "tmp-templates"` en todo el repo → **0 resultados**. No hay ningún import, `fetch`, `readFile` o referencia en frontend, edge functions, tests ni migraciones.
+- **No está en `.gitignore`** (revisado `.gitignore` completo). Están committeados como archivos normales — son residuo de subidas manuales de plantillas durante desarrollo.
+- Las plantillas reales de cancelación viven en el bucket privado `cancelaciones-plantillas` (Lovable Cloud), no aquí.
 
-Montaje del modal (líneas 3482–3488): siempre renderizado, controlado por `debugModalOpen`.
+**Recomendación:** ELIMINAR carpeta completa (residual, cero uso en runtime).
 
-**Tres puntos que llaman `setDebugModalOpen(true)`:**
+---
 
-1. **Botón Bug de la barra superior** (líneas 3202–3224) — gate estricto:
-   ```tsx
-   {profile?.role === "owner" && organization?.debug_tools_enabled && (
-     <Tooltip>… onClick={() => { setDebugInitialTab("all"); setDebugModalOpen(true); }} …</Tooltip>
-   )}
-   ```
-   Requiere ambas condiciones: rol `owner` **y** `organization.debug_tools_enabled = true`.
+## 2. Lockfiles duplicados (`bun.lockb`, `bun.lock`, `package-lock.json`)
 
-2. **Auto-apertura tras render fallido** (líneas 2259–2264): al fallar `doc.render()`, siempre se abre el modal ("Forzar modal de auditoría aunque debug esté OFF, para diagnóstico inmediato"). **Sin gate por rol ni por `debug_tools_enabled`** — se dispara para cualquier usuario autenticado que genere docx y el render falle.
+**Hallazgo:** Tres lockfiles committeados. Lovable/Vite usa `bun` como package manager.
 
-3. **Auto-apertura tras render exitoso** (líneas 2312–2316):
-   ```tsx
-   if (_debugOn && _auditPayload && !_renderError) {
-     setDebugAuditPayload(_auditPayload);
-     setDebugModalOpen(true);
-   }
-   ```
-   Gate: `_debugOn = isDebugDocxEnabled()` (localStorage o `?debug=docx` en URL). **Sin gate por rol ni org**: cualquiera puede activar el flag local desde consola/URL y ver el modal en éxito.
+**Evidencia:**
+```
+194663  bun.lock            (texto, formato bun >=1.1)
+245395  bun.lockb           (binario, formato bun <1.1)
+372722  package-lock.json   (npm)
+```
+- `package.json` no declara `packageManager` ni `engines`. No hay CI visible en el repo (Lovable Cloud maneja build internamente).
+- Lovable estándar usa **bun** (documentado en instrucciones: `bun add`, `bun remove`). El formato vigente de bun es `bun.lock` (texto) — `bun.lockb` es el binario legacy previo a bun 1.1 y bun lo regenera/ignora si `bun.lock` existe.
+- `package-lock.json` sólo se usaría si alguien corriera `npm install` fuera de Lovable.
 
-## 3. Respuestas explícitas
+**Riesgo real:**
+- Desincronización silenciosa: un dev local corriendo `npm install` puede resolver versiones distintas a las que bun instala en Lovable → "funciona en mi máquina, falla en prod".
+- Un `bun install` toca `bun.lock` pero deja `bun.lockb` obsoleto → diff ruidoso y falsas alarmas de auditoría de dependencias.
+- Herramientas de seguridad (Dependabot, Snyk) auditan el lockfile "equivocado" y reportan CVEs stale.
 
-- **¿Visible para cualquier usuario autenticado?**
-  El **botón Bug de la toolbar** está bien gateado (owner + `debug_tools_enabled`). Pero el modal **se abre automáticamente** en dos escenarios sin ese gate:
-  a) Falla de render de docx (para todos, sin importar rol ni org).
-  b) Render exitoso si `localStorage["sertuss.debugDocx"]="1"` o URL con `?debug=docx` (autoactivable por cualquiera desde DevTools o link manipulado).
-  Dentro del modal, un usuario `member` sólo vería la pestaña "Guía"; owner/admin de una org **sin** `debug_tools_enabled` verían todas las tabs y stats sensibles apenas se dispare la auto-apertura, sin que Sertuss haya autorizado a esa org.
+**Recomendación:** MANTENER `bun.lock`, ELIMINAR `bun.lockb` y `package-lock.json`. Requiere confirmación humana antes de tocar lockfiles.
 
-- **¿Depende de `organization.debug_tools_enabled`?**
-  Sólo el botón manual de la toolbar. Las dos rutas de auto-apertura **son independientes** de esa columna. `SystemMonitor` sí respeta esa columna, así que hay incoherencia de política entre ambas herramientas de diagnóstico.
+---
 
-- **Si es independiente, ¿por qué?**
-  No hay comentario en código que lo justifique. Hipótesis técnica razonable: la auto-apertura en fallo se diseñó como salvavidas de debugging inmediato para que Sertuss/desarrollo pudiera investigar sin que el usuario tuviera que reproducir; la ruta de éxito quedó pegada al mismo flag local (`sertuss.debugDocx`) que gobierna los indicadores visuales inline en el editor. Ambos son restos de una época en que el modal era exclusivamente developer-tool antes de que existiera `debug_tools_enabled` a nivel organización.
+## 3. `src/shared/prosaBancos/legalProse.ts` (huérfano)
 
-## 4. Información expuesta cuando se abre
+**Hallazgo:** Archivo de 97 líneas, **cero imports en todo el repo**.
 
-Payload `DocxAuditPayload` (definido en `src/lib/docxDebug.ts`, líneas 347–412) y renderizado:
+**Evidencia:**
+- `rg "prosaBancos/legalProse"` en todo el repo (incluyendo tests, edge functions, componentes) → **0 resultados**.
+- El propio archivo se autodocumenta como *"Copia consolidada de `supabase/functions/process-expediente/legalProse.ts` para eliminar el path relativo cruzado"* — es un intento de consolidación que quedó a medias: se creó la copia isomórfica pero nadie migró los imports.
+- Su contenido (`numeroConLetras`, `fechaProsa`, `numberToWordsLegal`) es un **subconjunto** de `src/lib/legalProse.ts` (que además exporta `escrituraProsa`, `montoProsa` y reusa `formatMonedaLegal`). Frontend usa `@/lib/legalProse`; edge functions usan `supabase/functions/process-expediente/legalProse.ts`. Ambas versiones ya funcionan sin este archivo.
+- No hay lógica única aquí — todo lo que hace ya existe en las otras 2 copias.
 
-- `tramiteId` (UUID del trámite del cliente).
-- `template` (nombre del archivo .docx) y `tipoActo`.
-- `renderMs`, `timestamp`.
-- `counts`: tags, flatKeys, mapped, missing, unused, aliased, ignored, empty, scoped, rescued, crossParagraph.
-- `tags`: lista completa de tags `{xxx}` de la plantilla notarial.
-- `flat`: **aplanado completo de `structuredData`** que entra al render — es decir, TODAS las claves y valores del expediente notarial que se están inyectando en la escritura:
-  - Nombres, apellidos, cédulas (número de documento), estado civil, direcciones, teléfonos, correos de vendedores/compradores/apoderados.
-  - Datos del inmueble: matrícula inmobiliaria, CHIP/cédula catastral, dirección, linderos si están mapeados, valor.
-  - Cuantías: precio de venta, valor de hipoteca, forma de pago.
-  - Datos de banco/apoderado: NIT, poder, escritura de constitución.
-  - Cualquier otro campo del acto (poder, hipoteca, cancelación).
-- `diff.mapped/empty/missing/unused/scoped/sectionsResolved`: nombres de campos técnicos y qué valores están vacíos/faltantes.
-- `rescued`: tags reparados por el normalizador con su hint textual.
-- `crossParagraph`: fragmentos de plantilla con tags rotos.
-- **Botones "Copiar JSON" y "Descargar JSON"** (owner/admin) exportan todo lo anterior a un archivo `docx-audit_<tramite>_<ts>.json`.
-- **`logDocxAuditToConsole`** además vuelca el payload a `console` en toda apertura automática — visible para cualquiera que abra DevTools durante un fallo de render, incluso sin ver el modal.
+**Recomendación:** ELIMINAR (código muerto real, experimento abandonado de consolidación isomórfica).
 
-**Nivel de sensibilidad:** alto. El payload contiene datos personales identificables (cédulas, direcciones, teléfonos), datos patrimoniales (precios, hipotecas) y datos comerciales (NITs bancarios). Bajo Ley 1581 califica como dato sensible que requiere control de acceso auditado.
+---
 
-## 5. ¿Está en producción?
+## 4. Plantilla `.docx` duplicada (raíz vs `public/`)
 
-Sí. `Validacion.tsx` es la página que sirve a los clientes reales para redactar y descargar la escritura; es parte del bundle publicado (URL productiva `sertuss-flow.lovable.app`). No hay `import.meta.env.DEV` ni feature flag envolviendo el montaje: el modal está desplegado. Lo único que evita que un cliente cualquiera lo vea hoy en operación normal es:
-- El botón Bug requiere owner + `debug_tools_enabled=true` (Sertuss controla el flag desde Admin).
-- La auto-apertura por éxito requiere activar manualmente el flag local.
-- La auto-apertura por fallo se activa **sin control** cuando un render revienta — pero también es cuando el diagnóstico es más útil.
+**Hallazgo:** NO son idénticas byte a byte; solo `public/` se usa en producción.
 
-Además, `logDocxAuditToConsole` vuelca a `console` en cualquier apertura, así que aunque el modal no se muestre visualmente, los datos quedan disponibles en DevTools.
+**Evidencia:**
+```
+md5  496e64bb4e612511d8b78ea39c46daf6   template_venta_hipoteca.docx        (251.880 bytes)
+md5  cba11eb33974467ccd1f5208b462490d   public/template_venta_hipoteca.docx (252.360 bytes)
+```
+- Hashes y tamaños distintos → **son versiones diferentes**.
+- Todos los `fetch` en el código apuntan a la ruta pública servida por Vite:
+  - `src/pages/Validacion.tsx:2082` → `fetch("/template_venta_hipoteca.docx")`
+  - `src/components/tramites/DocxPreview.tsx:290` → `fetch("/template_venta_hipoteca.docx")`
+- Vite sirve `/…` desde `public/`. La copia en raíz **nunca se lee en runtime** — es residuo.
+- El riesgo: futuros edits pueden modificar la copia equivocada creyendo que impacta producción.
 
-## 6. Recomendación de gate correcto (no implementar aún)
+**Recomendación:** ELIMINAR `template_venta_hipoteca.docx` (raíz). Requiere revisión humana rápida por si la versión de raíz tiene cambios más nuevos aún no promovidos a `public/`.
 
-Unificar la política con `SystemMonitor`: **todas** las rutas de apertura del `DocxDebugModal` y su volcado a consola deben requerir simultáneamente `profile?.role === "owner"` **y** `organization?.debug_tools_enabled === true`. Concretamente:
+---
 
-1. **Botón Bug** — ya cumple, dejar igual.
-2. **Auto-apertura por fallo de render** (líneas 2259–2264) — envolver en el mismo gate; si el usuario final no es owner con debug activo, no abrir el modal, no llamar `logDocxAuditToConsole`, y presentar un toast neutro ("No pudimos generar el .docx. Contacta soporte") con un `monitored.log` que Sertuss consulta desde `SystemMonitor`.
-3. **Auto-apertura por éxito** (líneas 2312–2316) — reemplazar `_debugOn` (localStorage/URL, autoactivable) por el gate compuesto rol+org, o al menos exigir ambas condiciones además de `_debugOn`. Aceptable mantener el flag local sólo para los indicadores visuales inline sin datos personales, pero desacoplado de la apertura del modal.
-4. **Toggle interno "Diagnóstico visual"** dentro del modal — está bien restringido por `isAdvanced`, pero como sólo debería llegarse al modal si org tiene `debug_tools_enabled`, queda coherente sin cambios adicionales.
-5. **`logDocxAuditToConsole`** — condicionar al mismo gate compuesto para no filtrar el payload a DevTools cuando el usuario no es Sertuss-autorizado.
+## 5. RPC `consume_credit` (sin `_v2`)
 
-Alternativa más estricta: si Sertuss quiere que ni siquiera owners de la organización vean el JSON crudo con cédulas, atar el gate a `is_platform_admin()` (correo `info@sertuss.com`) en lugar de a `owner + debug_tools_enabled`; hoy `SystemMonitor` usa el patrón org-flag, así que unificar contra ese patrón mantiene coherencia interna.
+**Hallazgo:** Definido en migraciones y expuesto en `types.ts`, pero **cero llamadas activas** en frontend o edge functions.
 
-Restricción respetada: sólo diagnóstico. Ningún archivo modificado.
+**Evidencia:**
+```
+supabase/migrations/20260305193343_…sql:142   CREATE OR REPLACE FUNCTION public.consume_credit(org_id uuid)   ← creación original (marzo 2026)
+supabase/migrations/20260424164804_…sql:181   CREATE OR REPLACE FUNCTION public.consume_credit(org_id uuid)   ← redefinición (abril 2026)
+src/integrations/supabase/types.ts:1245       consume_credit: { Args: { org_id: string }; Returns: boolean }   ← autogenerado
+```
+- `rg "consume_credit"` (excluyendo `_v2`) en `src/`, `supabase/functions/`: **0 llamadas**. Todo el frontend usa `src/services/credits.ts` → `supabase.rpc("consume_credit_v2", …)`.
+- Reemplazo: `consume_credit_v2` (con firma extendida: `p_org_id, p_user_id, p_action, p_tramite_id, p_tipo_acto, p_credits`) que además inserta audit trail atómico (documentado en el header de `services/credits.ts`).
+- La versión `_v2` es la fuente única activa desde que se centralizó el cobro con metadata; `consume_credit` quedó como wrapper legacy sin consumidores.
+
+**Recomendación:** REQUIERE REVISIÓN HUMANA antes de `DROP FUNCTION`. Aunque no hay llamadas en el código, conviene verificar que ningún trigger, vista, edge function externa o script administrativo la invoque. Si nada la usa → deprecar con `COMMENT` en migración nueva y eliminar en una siguiente.
+
+---
+
+## 6. Skills en `.workspace/skills/` no indexados
+
+**Corrección al audit original:** Hay **14 skills** en `.workspace/skills/`, no 6. De ellos, **4 no aparecen referenciados** en el índice de memoria del proyecto (`mem://index.md`) ni en `project-knowledge`.
+
+**Skills activos referenciados en memoria/project-knowledge (10):**
+`sanitizar-direccion`, `convertir-numero-a-letras` (marcado `type: deprecated` — remite a `formato-texto-numero-notarial`), `formato-texto-numero-notarial`, `concordancia-genero-minutas`, `extraccion-cuantia-semantica`, `componente-segmented-choice`, `direccion-completa-saneada-cancelacion`, `cuantia-indeterminada-cancelacion`, `payload-crudo-tabla-snr`, `limitaciones-concurrentes-cancelacion`.
+
+**Skills NO indexados en memoria (4):**
+
+| Skill | Tema | Estado aparente |
+|---|---|---|
+| `gestionar-reglas-inmueble-por-modulo` | Diferenciar lógica de Inmuebles entre módulo Cancelaciones y Escrituras | Activo pero sin entrada en `mem://index.md` |
+| `limpieza-segura-codigo` | Playbook de limpieza / refactor sin romper lógica (el que gobierna esta misma tarea) | Activo, meta-skill de proceso |
+| `validar-poder-general-banco` | Procesamiento de poderes bancarios multi-página y antefirmas | Activo, tema cubierto parcialmente por otros features |
+| `verificar-consistencia-notarial` | Cruce CTL vs escrituras anteriores para auditar gravámenes | Activo pero sin entrada en memoria |
+
+Adicionalmente, `convertir-numero-a-letras` está marcado explícitamente `type: deprecated` y solo apunta a `formato-texto-numero-notarial` — es un puntero de compatibilidad.
+
+**No son borradores** (los borradores viven en `.agents/skills/` o `.claude/skills/`, esta carpeta es de skills activos). Simplemente no se agregaron sus referencias al índice de memoria — omisión, no duplicación.
+
+**Recomendación:** REQUIERE REVISIÓN HUMANA. No borrar (son skills activos válidos); decidir para cada uno: (a) añadir referencia a `mem://index.md` si sigue siendo relevante, o (b) desactivar desde Settings → Skills si el tema ya está cubierto por otro skill. `convertir-numero-a-letras` puede desactivarse formalmente ahora que su reemplazo está consolidado.
+
+---
+
+## Resumen de recomendaciones
+
+| # | Item | Acción sugerida | Riesgo |
+|---|---|---|---|
+| 1 | `.tmp-templates/` | Eliminar | Ninguno |
+| 2 | `bun.lockb` + `package-lock.json` | Eliminar (mantener `bun.lock`) | Bajo, requiere confirmar |
+| 3 | `src/shared/prosaBancos/legalProse.ts` | Eliminar | Ninguno |
+| 4 | `template_venta_hipoteca.docx` (raíz) | Eliminar (mantener `public/`) | Bajo, verificar que raíz no tenga cambios nuevos |
+| 5 | RPC `consume_credit` (legacy) | Requiere revisión humana antes de DROP | Medio (base de datos) |
+| 6 | 4 skills no indexados | Revisión humana caso por caso | Ninguno operativo |
+
+**Nada se modificó en esta respuesta.** La ejecución de cualquiera de estas limpiezas requiere tu confirmación explícita por item (recomendado agruparlos: 1+3+4 en un lote, 2 en otro, 5+6 individualmente).
