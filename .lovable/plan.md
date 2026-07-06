@@ -1,61 +1,56 @@
-# Migración `supabase/shared/` → `supabase/functions/_shared/isomorphic/`
+## Hallazgos (solo lectura, sin modificaciones)
 
-## Diagnóstico verificado
+### 1. Estado real del código en disco (ahora mismo)
 
-Estado actual (auditoría fresca — sin residuos, tests 84/84 verdes):
-- Los 7 archivos productivos viven en `supabase/shared/` (única ubicación).
-- Frontend consume vía alias `@shared/*` → funciona en Vite/Vitest/tsgo.
-- **Bloqueo real:** las 2 edge functions importan `../../shared/...` que en filesystem existe pero queda fuera de `supabase/functions/`, y el bundler de deploy solo monta ese subárbol. Esto se confirmó empíricamente en el intento previo (Module not found al deployar).
+**`supabase/functions/procesar-cancelacion/index.ts`** — imports compartidos (líneas 14-20):
+- `../_shared/aiFetch.ts` ✅
+- `../_shared/genero.ts` ✅
+- `../_shared/storagePaths.ts` ✅
+- `../_shared/poderBancoSchemaVersion.ts` ✅
+- `../_shared/poderBancoCache.ts` ✅
+- `../_shared/isomorphic/apoderadoClassifier.ts` ✅
+- `../_shared/isomorphic/prosaBancos/index.ts` ✅
 
-Solución: mover la carpeta a `supabase/functions/_shared/isomorphic/` — el subnombre `isomorphic/` la diferencia claramente de los helpers Deno-only (`aiFetch.ts`, `pdfSha256.ts`, etc.) que conviven en `_shared/`, y facilita que `purity.test.ts` la escanee sin arrastrar a los helpers Deno.
+**`supabase/functions/adaptar-estilo-prosa/index.ts`** (línea 12):
+- `../_shared/isomorphic/prosaBancos/index.ts` ✅
 
-## Cambios (determinista, sin ambigüedad)
-
-### A. Mover 7 archivos (git mv, preserva historia)
+**Estructura de archivos:**
 ```text
-supabase/shared/apoderadoClassifier.ts        → supabase/functions/_shared/isomorphic/apoderadoClassifier.ts
-supabase/shared/prosaBancos/davivienda.ts     → supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts
-supabase/shared/prosaBancos/index.ts          → ídem
-supabase/shared/prosaBancos/legalProse.ts     → ídem
-supabase/shared/prosaBancos/mergeOverride.ts  → ídem
-supabase/shared/prosaBancos/overrideSchema.ts → ídem
-supabase/shared/prosaBancos/types.ts          → ídem
+supabase/functions/_shared/isomorphic/
+├── apoderadoClassifier.ts
+└── prosaBancos/
+    ├── davivienda.ts
+    ├── index.ts
+    ├── legalProse.ts
+    ├── mergeOverride.ts
+    ├── overrideSchema.ts
+    └── types.ts
 ```
-Al terminar, `supabase/shared/` queda vacía y se elimina.
 
-### B. Actualizar 4 configs (alias `@shared` sigue apuntando al mismo lugar lógico)
-- `vite.config.ts` línea 31: `"./supabase/shared"` → `"./supabase/functions/_shared/isomorphic"`
-- `vitest.config.ts`: idem
-- `tsconfig.json` `paths`: `"./supabase/shared/*"` → `"./supabase/functions/_shared/isomorphic/*"`
-- `tsconfig.app.json`: idem en `paths` **y** reescribir los 7 entries de `include`
+`supabase/shared/` **no existe** (eliminado limpiamente). Cero imports huérfanos hacia rutas viejas.
 
-### C. Actualizar 2 imports de edge (rutas relativas, se acortan)
-- `supabase/functions/procesar-cancelacion/index.ts:19-20`: `../../shared/...` → `../_shared/isomorphic/...`
-- `supabase/functions/adaptar-estilo-prosa/index.ts:12`: idem
+**Conclusión:** el código está 100% alineado con la ubicación deployable. No hay import roto que justifique la alerta.
 
-### D. Actualizar 1 test
-- `src/shared/prosaBancos/__contract__/purity.test.ts`: `SHARED_DIR = join(cwd, "supabase/functions/_shared/isomorphic")`
+### 2. Naturaleza de la alerta del monitor
 
-### E. Frontend: **sin cambios**
-Los 6 componentes siguen usando `@shared/apoderadoClassifier` y `@shared/prosaBancos/*` — el alias absorbe el rename.
+La alerta "Cancelation document generation fails to start — depends on a shared module whose imports the server can't resolve" **describe con precisión el estado anterior** (cuando los imports apuntaban a `supabase/shared/` o `../../shared/`). Ese texto exacto se generó antes del fix.
 
-## Verificación
+No tengo herramienta directa para leer el timestamp de generación de esa alerta ni para forzar su re-evaluación desde acá (los tools disponibles `seo_chat--*` son para SEO, `security--*` para seguridad; ninguno cubre el monitor de "runtime alerts" que muestra esa tarjeta). La reevaluación la dispara el propio monitor de Lovable cuando detecta nuevos deploys/cambios, o el usuario con "Ignore"/"Try to fix" — que expresamente no vamos a tocar.
 
-1. `bunx vitest run` → esperar 84/84 verdes (mismos tests, misma pureza).
-2. `bunx tsgo --noEmit` → 0 errores (paths tsconfig actualizados).
-3. **`deploy_edge_functions(["procesar-cancelacion", "adaptar-estilo-prosa"])`** → esta es la prueba definitiva; en el intento previo esta misma ruta ya deployó sin problema cuando los archivos eran shims, ahora debe deployar con el código real.
-4. `curl` `regen: true` sobre cancelación `290fd66a-…` → confirmar runtime OK.
+**Hipótesis con mayor evidencia:** alerta cacheada del estado previo al fix. El código actual no tiene ningún import irresoluble.
 
-Si el paso 3 falla, se detiene y se reporta el error crudo (no se improvisa).
+### 3. Deploy fresco de confirmación (requiere aprobación)
 
-## Riesgos y reversión
+Para cumplir el punto 4 del pedido necesito ejecutar `supabase--deploy_edge_functions` sobre `procesar-cancelacion` y `adaptar-estilo-prosa`. Es una acción con efectos (redeploy), por eso la incluyo en el plan en lugar de ejecutarla directamente en modo plan.
 
-- **Riesgo bajo.** Es un rename + 4 configs + 2 imports edge. El único vector de falla real (deploy) ya se probó exitosamente con esta misma ubicación en la iteración de esta mañana.
-- **Reversión:** `git` revierte el rename atómicamente. Sin migraciones, sin datos, sin schema.
+### 4. Sobre "Try to fix" del monitor
 
-## Fuera de alcance
+No hay documentación en este contexto que explique qué hace exactamente ese botón. Prudente no tocarlo hasta confirmar (podría reintentar el análisis, podría intentar auto-parchar código). La ruta segura es: hacer un redeploy fresco → esperar que el monitor reevalúe en su próximo ciclo → si a las 24-48h la alerta persiste con timestamp posterior al redeploy, entonces sí investigar el botón.
 
-- No se toca `_shared/aiFetch.ts` ni otros helpers Deno-only.
-- No se toca ningún componente frontend.
-- No se toca `deno.json` (ya tiene `zod` correcto).
-- No se crea ningún re-export ni shim.
+## Plan propuesto (una sola acción)
+
+1. Ejecutar `supabase--deploy_edge_functions(["procesar-cancelacion", "adaptar-estilo-prosa"])` — deploy fresco de confirmación.
+2. Reportar el resultado exacto (éxito/error, mensaje).
+3. Dejar la alerta del monitor sin tocar y esperar reevaluación natural.
+
+Sin cambios de código. Sin tocar los botones del monitor.
