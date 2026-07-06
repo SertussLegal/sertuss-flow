@@ -1,144 +1,180 @@
 
-# Opción B — Carpeta neutral `/shared/` en la raíz (solo diseño)
+# Opción A revisada — fuente en `supabase/functions/_shared/isomorphic/`
 
-## 1. Ubicación y estructura neutral
+Confirmado empíricamente que el bundler de edge SOLO monta `supabase/functions/`. Por tanto la fuente única DEBE vivir ahí. Se corrige la fricción de tipado que hundió el primer intento con una subcarpeta dedicada y un `include` quirúrgico.
 
-Carpeta nueva en la raíz del repo:
+## 1. Ubicación recomendada: subcarpeta `isomorphic/`
+
+Recomendación: **crear `supabase/functions/_shared/isomorphic/`** y meter allí los 7 archivos, en vez de mezclarlos con los helpers Deno-only que ya viven en `_shared/` (aiFetch.ts, pdfSha256.ts, poderBancoSchemaVersion.ts que usa `Deno.env`, etc.).
+
+Ventajas:
+
+- Deja claro por convención qué archivos son "seguros" para consumir desde el navegador (nada de `Deno.*`, `npm:`, `https://…`, ni tipos DB).
+- El `include` del tsconfig del navegador puede apuntar a la subcarpeta entera en vez de listar archivos uno por uno (mantenible cuando se añadan bancos).
+- El test `purity.test.ts` (que hoy escanea archivo por archivo) puede apuntar al directorio entero sin tocar su lógica.
+- El deploy edge sigue viendo la subcarpeta porque está debajo del árbol montado.
+
+Estructura final:
 
 ```text
-/shared/
-  apoderadoClassifier.ts
-  prosaBancos/
-    index.ts
-    davivienda.ts
-    types.ts
-    overrideSchema.ts
-    mergeOverride.ts
-    legalProse.ts
-    __contract__/                     ← tests se quedan como están (ver §3)
+supabase/functions/_shared/
+  aiFetch.ts                   ← Deno-only (queda igual)
+  pdfSha256.ts                 ← Deno-only (queda igual)
+  poderBancoSchemaVersion.ts   ← Deno-only (queda igual)
+  ...
+  isomorphic/
+    apoderadoClassifier.ts     ← fuente única
+    prosaBancos/
+      index.ts
+      davivienda.ts
+      types.ts
+      overrideSchema.ts
+      mergeOverride.ts
+      legalProse.ts
 ```
 
-Nota importante: aunque el mandato menciona "3 archivos de prosaBancos", la carpeta actual `src/shared/prosaBancos/` contiene **6 archivos productivos** (`index`, `davivienda`, `types`, `overrideSchema`, `mergeOverride`, `legalProse`). El shim edge solo tiene 3 (`index`, `davivienda`, `types`) porque `index.ts` re-exporta todo con `export *`, así que las edge functions ya consumen los otros 3 transitivamente. **Hay que mover los 6 juntos** — separarlos rompería el `export *` y dejaría exports rotos.
+## 2. Re-exports desde `src/shared/`
 
-## 2. Plan por archivo
+`src/shared/` se conserva como fachada del navegador para no romper el patrón mental de "código compartido vive en src/shared". Pero es solo un re-export delgado, no la fuente:
 
-Convención post-migración: la carpeta neutral `/shared/` es la **fuente única**. Ni `src/shared/…` ni `supabase/functions/_shared/…` conservan re-exports para estos archivos — se **eliminan** por completo. Los call-sites apuntan directo a la nueva ubicación (frontend con alias `@shared/*`, edge con ruta relativa `../../../shared/…`).
+```ts
+// src/shared/apoderadoClassifier.ts
+export * from "@shared/apoderadoClassifier";
+```
 
-| # | Archivo | Ruta actual `src/shared/` | Shim actual `_shared/` | Ruta nueva neutral | Estado post |
-|---|---|---|---|---|---|
-| 1 | apoderadoClassifier | `src/shared/apoderadoClassifier.ts` (fuente) | `supabase/functions/_shared/apoderadoClassifier.ts` (re-export) | `shared/apoderadoClassifier.ts` | Ambos shims **eliminados**. Fuente única en `/shared/`. |
-| 2 | prosaBancos/index | `src/shared/prosaBancos/index.ts` (fuente) | `supabase/functions/_shared/prosaBancos/index.ts` (re-export) | `shared/prosaBancos/index.ts` | Ambos shims **eliminados**. |
-| 3 | prosaBancos/davivienda | `src/shared/prosaBancos/davivienda.ts` (fuente) | `supabase/functions/_shared/prosaBancos/davivienda.ts` (re-export) | `shared/prosaBancos/davivienda.ts` | Ambos shims **eliminados**. |
-| 4 | prosaBancos/types | `src/shared/prosaBancos/types.ts` (fuente) | `supabase/functions/_shared/prosaBancos/types.ts` (re-export) | `shared/prosaBancos/types.ts` | Ambos shims **eliminados**. |
-| 5 | prosaBancos/overrideSchema | `src/shared/prosaBancos/overrideSchema.ts` (fuente) | — (consumido vía `export *`) | `shared/prosaBancos/overrideSchema.ts` | Movido. |
-| 6 | prosaBancos/mergeOverride | `src/shared/prosaBancos/mergeOverride.ts` (fuente) | — (idem) | `shared/prosaBancos/mergeOverride.ts` | Movido. |
-| 7 | prosaBancos/legalProse | `src/shared/prosaBancos/legalProse.ts` (fuente) | — (idem) | `shared/prosaBancos/legalProse.ts` | Movido. |
+```ts
+// src/shared/prosaBancos/index.ts
+export * from "@shared/prosaBancos";
+```
 
-Adicional (`src/lib/apoderadoClassifier.ts`): es otro re-export cliente hacia `@/shared/apoderadoClassifier`. Se **elimina** también; los 2 call-sites que lo usan pasan al import neutral.
+Igual para `davivienda.ts`, `types.ts`, `overrideSchema.ts`, `mergeOverride.ts`, `legalProse.ts` — cada uno un `export * from "@shared/prosaBancos/<file>"`.
 
-Sub-decisión sobre `__contract__/` (tests Vitest de paridad y snapshots): se mantienen en `src/shared/prosaBancos/__contract__/` porque `purity.test.ts` referencia `process.cwd() + src/shared/prosaBancos` y forma parte de la suite Vitest del frontend. Solo se actualizan sus imports para apuntar a `@shared/prosaBancos`. El test Deno paralelo `supabase/functions/_shared/prosaBancos/__contract__/` se conserva igual, cambiando su import a `../../../../shared/prosaBancos/…`.
+`src/lib/apoderadoClassifier.ts` **NO se restaura**. Los 2 call-sites que lo usaban ya se migraron al import canónico y no hay razón para reintroducir un shim doble. Si algún día aparece código legacy que lo importe, resolveremos ahí.
 
-Igualmente `davivienda_test.ts` (Deno) en `_shared/prosaBancos/` se conserva, con import ajustado.
+Alternativa considerada y descartada: exportar directo desde `@shared/…` en todos los call-sites y borrar `src/shared/` por completo. Descartada porque los tests `__contract__/` viven en `src/shared/prosaBancos/__contract__/` y varios imports frontend siguen escribiendo `@/shared/…` en código no listado. Mantener la fachada evita una migración masiva a cambio de 7 archivos de 1 línea.
 
-## 3. Call-sites — todos los imports a actualizar
+## 3. LA CORRECCIÓN CLAVE — `tsconfig.app.json` sin mezclar globals
 
-Frontend (React/Vitest) — cambia `@/shared/…` y `@/lib/apoderadoClassifier` → `@shared/…`:
+El problema histórico: al incluir `supabase/functions/_shared` completo, tsc levantaba errores por globals `Deno`, imports `https://deno.land/…` y `npm:` en archivos vecinos.
 
-| Archivo | Import actual | Import nuevo |
-|---|---|---|
-| `src/lib/buildProsaContext.ts` | `@/shared/prosaBancos/types` | `@shared/prosaBancos/types` |
-| `src/pages/CancelacionValidar.tsx` (L33-34) | `@/shared/prosaBancos`, `@/shared/prosaBancos/types` | `@shared/prosaBancos`, `@shared/prosaBancos/types` |
-| `src/components/cancelaciones/PoderBannersV5.tsx` (L29) | `@/lib/apoderadoClassifier` | `@shared/apoderadoClassifier` |
-| `src/components/cancelaciones/prosa/ProsaLiveRenderer.tsx` (L9-10) | `@/shared/prosaBancos`, `@/shared/prosaBancos/types` | `@shared/prosaBancos`, `@shared/prosaBancos/types` |
-| `src/components/cancelaciones/prosa/ProsaApoderadoPreviewCard.tsx` (L12-13) | idem | idem |
-| `src/components/cancelaciones/prosa/ProsaApoderadoModal.tsx` (L27-28) | `@/shared/prosaBancos/overrideSchema`, `@/shared/prosaBancos/types` | `@shared/prosaBancos/overrideSchema`, `@shared/prosaBancos/types` |
-| `src/shared/apoderadoClassifier.test.ts` (L6) | `./apoderadoClassifier` | `@shared/apoderadoClassifier` (y mover el test a `tests/` o dejarlo referenciando la nueva ruta) |
-| `src/shared/apoderadoClassifier.parity.test.ts` (L11-14) | `@/shared/…`, `@/lib/…`, `../../supabase/functions/_shared/apoderadoClassifier` | **Este test se elimina.** Ya no existen múltiples caminos que comparar — hay una sola fuente. |
-| `src/shared/prosaBancos/__contract__/parity.test.ts` | `../…` locales | `@shared/prosaBancos/…` |
-| `src/shared/prosaBancos/__contract__/prosaContract.test.ts` | idem | idem |
-| `src/shared/prosaBancos/__contract__/purity.test.ts` (L11) | `join(process.cwd(), "src/shared/prosaBancos")` | `join(process.cwd(), "shared/prosaBancos")` |
+Solución: **include quirúrgico por subcarpeta isomórfica**, sin tsconfig separado ni override de `types`. La subcarpeta `isomorphic/` está por definición limpia de todo lo Deno-only (el test `purity.test.ts` lo garantiza automáticamente), así que su include no contamina el proyecto del navegador.
 
-Edge functions (Deno) — cambia `../_shared/…` → `../../../shared/…`:
+`tsconfig.app.json` — sección relevante:
 
-| Archivo | Import actual | Import nuevo |
-|---|---|---|
-| `supabase/functions/procesar-cancelacion/index.ts` (L19) | `../_shared/apoderadoClassifier.ts` | `../../../shared/apoderadoClassifier.ts` |
-| `supabase/functions/procesar-cancelacion/index.ts` (L20) | `../_shared/prosaBancos/index.ts` | `../../../shared/prosaBancos/index.ts` |
-| `supabase/functions/adaptar-estilo-prosa/index.ts` (L12) | `../_shared/prosaBancos/index.ts` | `../../../shared/prosaBancos/index.ts` |
-| `supabase/functions/_shared/prosaBancos/__contract__/*.ts` (tests Deno) | `../…` locales al shim | `../../../../../shared/prosaBancos/…` |
-| `supabase/functions/_shared/prosaBancos/davivienda_test.ts` | idem | idem |
+```json
+{
+  "compilerOptions": {
+    ...
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["./supabase/functions/_shared/isomorphic/*"]
+    }
+    ...
+  },
+  "include": [
+    "src",
+    "supabase/functions/_shared/isomorphic"
+  ]
+}
+```
 
-Referencias documentales (comentarios y migraciones): actualizar strings en `src/lib/docxFieldMap.ts:197`, `src/shared/prosaBancos/davivienda.ts:2`, `src/shared/apoderadoClassifier.ts:5-6`, y el `COMMENT ON COLUMN` de la migración `20260706020305_*.sql` no se toca (migración histórica, ya aplicada — solo se documenta en una migración nueva si se quiere corregir el texto).
+`tsconfig.json` (root) — mismo `paths` para editor/tsserver:
 
-## 4. Alias frontend — sí requiere ajuste
+```json
+"paths": {
+  "@/*": ["./src/*"],
+  "@shared/*": ["./supabase/functions/_shared/isomorphic/*"]
+}
+```
 
-El alias actual `@/*` está resuelto a `./src/*` en **ambos** `vite.config.ts` y `tsconfig.app.json`/`tsconfig.json`. Un archivo real fuera de `src/` **no es alcanzable** vía `@/shared`. Cambios necesarios:
+`vite.config.ts` — alias:
 
-1. **`vite.config.ts`** — añadir un segundo alias:
-   ```ts
-   alias: {
-     "@": path.resolve(__dirname, "./src"),
-     "@shared": path.resolve(__dirname, "./shared"),
-   }
-   ```
-2. **`tsconfig.app.json`** — añadir el mismo `paths` y ampliar `include`:
-   ```json
-   "paths": {
-     "@/*": ["./src/*"],
-     "@shared/*": ["./shared/*"]
-   },
-   "include": ["src", "shared"]
-   ```
-3. **`tsconfig.json`** (root) — replicar el `paths` para que editores/tsserver lo resuelvan globalmente.
-4. **`vitest.config.ts`** — heredaría el alias de Vite si extiende del mismo config; si no, replicar `@shared`.
+```ts
+alias: {
+  "@": path.resolve(__dirname, "./src"),
+  "@shared": path.resolve(__dirname, "./supabase/functions/_shared/isomorphic"),
+}
+```
 
-Sin estos 3-4 ajustes: Vite sirve pero **TypeScript marca error rojo** en cada import `@shared/…` — misma fricción de tipado que vimos en Opción A, aquí sí se corrige del todo. Post-cambio, todos los imports pasan `tsgo` sin warnings.
+`vitest.config.ts` — mismo alias.
 
-## 5. Bundler edge — sí puede resolver la nueva ruta
+**No hace falta** tsconfig separado, ni `types` override, ni excluir archivos individuales. La disciplina la impone la carpeta + `purity.test.ts` (que ya escanea y bloquea `Deno.env`, `npm:`, `https:`, `react`, `node:fs`, tipos DB Supabase). Ningún archivo Deno-only vive dentro de `isomorphic/`, y el test falla al PR si alguien intenta meter uno.
 
-El sandbox del tool `deploy_edge_functions` monta solo `supabase/functions/`, por eso `../../../src/…` falla (sale del árbol montado). La duda razonable: ¿monta la raíz `/` o solo `supabase/functions/`?
+Advertencia sobre `zod`: `overrideSchema.ts` importa `zod` bare. En el navegador Vite lo resuelve al paquete npm (ya en `package.json`). En Deno edge se resuelve vía `deno.json` per-function con `"zod": "npm:zod@3.25.76"` — los archivos `supabase/functions/procesar-cancelacion/deno.json` y `supabase/functions/adaptar-estilo-prosa/deno.json` YA existen del turno pasado y se conservan intactos. No hay que recrearlos.
 
-**Confirmación por comportamiento observado**: el pipeline oficial de Supabase (`supabase functions deploy`) copia el proyecto entero al contenedor de build; el sandbox de Lovable replica ese contenedor incluyendo la raíz del repo — de otro modo `deno.json` en la raíz (si existiera) tampoco sería resoluble. El fallo actual "cannot find src/…" no es porque `src/` esté fuera del filesystem montado, sino porque el bundler edge **rechaza rutas que escapen del directorio funcional por convención de seguridad** (no por ausencia física).
+## 4. Call-sites finales
 
-**Riesgo real**: existe posibilidad no-cero de que `/shared/` en la raíz también sea rechazado por la misma regla. La única forma de confirmarlo con certeza absoluta es intentar el deploy después de mover — no hay tool de "dry-run" del bundler edge disponible desde aquí. Mitigación: si `/shared/` también es rechazado, la reversión es trivial (§8) y saltamos a la Opción C (`import_map.json`).
+**Frontend (13) — imports `@/shared/…` y `@/lib/apoderadoClassifier` → `@shared/…`:**
 
-Alternativa más conservadora si ese riesgo es inaceptable: colocar la carpeta neutral **dentro de `supabase/`** como `supabase/shared/` (aún fuera de `functions/`, pero dentro del árbol que el bundler sí monta con certeza). Mismos ajustes de alias frontend (`@shared` → `./supabase/shared`), pero elimina el riesgo del bundler. **Recomiendo esta variante** salvo que quieras estrictamente la raíz.
+| Archivo | Import final |
+|---|---|
+| `src/lib/buildProsaContext.ts` | `@shared/prosaBancos/types` |
+| `src/pages/CancelacionValidar.tsx` (L33-34) | `@shared/prosaBancos` + `@shared/prosaBancos/types` |
+| `src/components/cancelaciones/PoderBannersV5.tsx` (L29) | `@shared/apoderadoClassifier` |
+| `src/components/cancelaciones/prosa/ProsaLiveRenderer.tsx` (L9-10) | `@shared/prosaBancos` + `@shared/prosaBancos/types` |
+| `src/components/cancelaciones/prosa/ProsaApoderadoPreviewCard.tsx` (L12-13) | idem |
+| `src/components/cancelaciones/prosa/ProsaApoderadoModal.tsx` (L27-28) | `@shared/prosaBancos/overrideSchema` + `@shared/prosaBancos/types` |
 
-## 6. Orden de operaciones (sin downtime)
+Ya están así desde el turno anterior — solo cambia lo que apunta el alias, no los strings de import. Cero ediciones frontend.
 
-Producción hoy sirve una versión sana de `procesar-cancelacion` desde antes de introducir los cross-src imports; no habrá downtime porque no re-desplegamos hasta el paso 8.
+**Tests (5) — ya migrados a `@shared/…`, sin cambios:**
 
-1. `mkdir shared/prosaBancos` (o `supabase/shared/prosaBancos` si se adopta la variante conservadora).
-2. `git mv` de los 7 archivos productivos a `/shared/` con sus subrutas.
-3. Actualizar `vite.config.ts`, `tsconfig.app.json`, `tsconfig.json`, `vitest.config.ts` (alias `@shared`).
-4. Actualizar los 13 call-sites frontend (§3) — `@/shared/…` → `@shared/…`.
-5. Actualizar los 3 call-sites edge productivos + los tests Deno (§3) — `../_shared/…` → `../../../shared/…`.
-6. **Eliminar** los shims de re-export (`src/lib/apoderadoClassifier.ts`, `src/shared/apoderadoClassifier.ts` [ya movido en paso 2], `supabase/functions/_shared/apoderadoClassifier.ts`, `supabase/functions/_shared/prosaBancos/{index,davivienda,types}.ts`).
-7. Correr `bunx vitest run` + `tsgo` sin desplegar. Si falla, se corrige aquí sin tocar prod.
-8. Redeploy real de `procesar-cancelacion` y `adaptar-estilo-prosa` (paso irreversible en el sentido de que sí toca runtime — pero reversible desplegando la versión anterior).
+- `src/shared/apoderadoClassifier.test.ts` → `@shared/apoderadoClassifier`
+- `src/shared/prosaBancos/__contract__/parity.test.ts` → `@shared/prosaBancos/{davivienda,mergeOverride,types}`
+- `src/shared/prosaBancos/__contract__/prosaContract.test.ts` → `@shared/prosaBancos/{davivienda,types}`
+- `src/shared/prosaBancos/__contract__/overrideSchema.test.ts` → `@shared/prosaBancos/overrideSchema`
+- `src/shared/prosaBancos/__contract__/purity.test.ts` → `SHARED_DIR = join(process.cwd(), "supabase/functions/_shared/isomorphic/prosaBancos")` (**única línea nueva** que hay que cambiar respecto al estado actual)
 
-## 7. Verificación post-cambio
+**Edge functions (2) — imports actuales `../../shared/…` → `../_shared/isomorphic/…`:**
 
-- `bunx vitest run` completo (mantiene verde toda la suite: contratos Davivienda, paridad, apoderadoClassifier, docxPipeline).
-- `tsgo` sin errores rojos en `src/` ni en los tests que ahora referencian `@shared`.
-- `deploy_edge_functions(["procesar-cancelacion","adaptar-estilo-prosa"])` — **esta es la prueba definitiva**. Si ambos deploys reportan éxito, el problema quedó resuelto.
-- Post-deploy: `curl_edge_functions` con `regen:true` sobre `290fd66a-…` (misma prueba autorizada hoy, HTTP 200, sin cobro) para confirmar que el runtime ya está sirviendo la nueva versión sin regresión funcional.
-- Consultar `system_events` últimas 24 h para descartar nuevos errores en `adaptar-estilo-prosa`.
+| Archivo | Import final |
+|---|---|
+| `supabase/functions/procesar-cancelacion/index.ts` L19 | `../_shared/isomorphic/apoderadoClassifier.ts` |
+| `supabase/functions/procesar-cancelacion/index.ts` L20 | `../_shared/isomorphic/prosaBancos/index.ts` |
+| `supabase/functions/adaptar-estilo-prosa/index.ts` L12 | `../_shared/isomorphic/prosaBancos/index.ts` |
 
-## 8. Riesgos y reversión
+**Fachadas nuevas en `src/shared/` (7 archivos de 1 línea):**
 
-| Riesgo | Probabilidad | Mitigación / Reversión |
-|---|---|---|
-| Bundler edge rechaza `/shared/` igual que rechazó `src/…` | Baja-media | Adoptar variante `supabase/shared/` (§5). Reversión: `git revert` del commit de mover — no hay cambio de runtime hasta el paso 8. |
-| `tsgo` marca errores por alias mal configurado en un config no visitado (ej. `tsconfig.node.json`) | Media | Se ve inmediatamente en el paso 7 antes del deploy. Corregir en el mismo commit. |
-| Algún call-site oculto quedó apuntando al viejo `@/shared/…` (no capturado por `rg`) | Baja | `rg "@/shared|_shared/apoderado|_shared/prosaBancos" src supabase` post-cambio debe devolver 0 hits. |
-| Deploy de `procesar-cancelacion` en paso 8 falla por otra causa preexistente (deno.lock, etc.) | Baja | Runtime activo no se ve afectado hasta que un deploy exitoso ocurra. Documentado en `.lovable/plan.md`: el runtime activo permanece hasta swap atómico. |
-| Test de paridad `apoderadoClassifier.parity.test.ts` eliminado deja hueco de garantía | Nulo real | Ya no existen múltiples caminos que necesiten paridad; la fuente es única. La suite pierde 1 test conceptualmente redundante. |
+`src/shared/apoderadoClassifier.ts`, `src/shared/prosaBancos/{index,davivienda,types,overrideSchema,mergeOverride,legalProse}.ts` — cada uno con `export * from "@shared/…"` correspondiente.
 
-Reversión completa si algo sale mal antes del paso 8: `git revert` del commit único — cero impacto en producción. Después del paso 8: re-desplegar la versión previa de las 2 edge functions desde el historial de Supabase.
+## 5. Reversión del intento fallido (estado actual limpio)
 
-## Preguntas abiertas a resolver antes de ejecutar
+Estado actual del repo tras el turno anterior:
+- Archivos productivos viven en `supabase/shared/…` (ubicación no viable para deploy).
+- Alias `@shared` en 4 configs apunta a `./supabase/shared`.
+- Include en `tsconfig.app.json` lista 7 rutas `supabase/shared/…` archivo-por-archivo.
+- `src/shared/apoderadoClassifier.ts` y los 6 de `src/shared/prosaBancos/{index,davivienda,types,overrideSchema,mergeOverride,legalProse}.ts` **ya no existen** (fueron movidos al primer paso del turno anterior).
+- Tests `__contract__/` referencian `@shared/…` (bien) y `purity.test.ts` escanea `supabase/shared/prosaBancos` (hay que cambiarlo).
+- `deno.json` en las dos edge functions con `zod → npm:zod@3.25.76` (bien, se conserva).
 
-1. ¿`/shared/` en la raíz del repo, o la variante conservadora `supabase/shared/` (§5) para eliminar el riesgo del bundler?
-2. ¿Confirmas la eliminación del test de paridad `apoderadoClassifier.parity.test.ts` (ya no aporta)?
-3. ¿La carpeta `__contract__/` con snapshots se queda en `src/shared/prosaBancos/__contract__/` (con imports actualizados), o también se mueve? Recomiendo dejarla en `src/` — son tests Vitest, viven mejor dentro del scope frontend.
+Secuencia atómica (un solo commit) para revertir + aplicar el nuevo diseño:
+
+1. `mkdir -p supabase/functions/_shared/isomorphic/prosaBancos`
+2. `mv supabase/shared/apoderadoClassifier.ts supabase/functions/_shared/isomorphic/apoderadoClassifier.ts`
+3. `mv supabase/shared/prosaBancos/*.ts supabase/functions/_shared/isomorphic/prosaBancos/`
+4. `rmdir supabase/shared/prosaBancos supabase/shared` (verificar vacío antes)
+5. Crear las 7 fachadas en `src/shared/` con `export * from "@shared/…"`.
+6. Editar los 4 configs (alias `@shared` → `./supabase/functions/_shared/isomorphic`).
+7. Simplificar `tsconfig.app.json` include: reemplazar las 7 líneas archivo-por-archivo por `"supabase/functions/_shared/isomorphic"`.
+8. Actualizar 2 edge imports (`../../shared/` → `../_shared/isomorphic/`).
+9. Actualizar `purity.test.ts` (SHARED_DIR).
+
+Cero riesgo en runtime durante la reversión — la versión productiva desplegada en `_shared/` desde el turno anterior sigue sirviendo hasta que el paso 6 de verificación (deploy real) haga swap.
+
+## 6. Verificación
+
+Orden estricto, detenerse al primer fallo:
+
+1. `bunx vitest run` — esperado: 84/84 verdes. La `purity.test.ts` ahora escanea la nueva ruta, si algún archivo isomórfico se coló con imports prohibidos, se detecta aquí.
+2. `bunx tsgo --noEmit` — esperado: cero errores. Prueba que el include quirúrgico no arrastra globals Deno.
+3. `deploy_edge_functions(["procesar-cancelacion", "adaptar-estilo-prosa"])` — **prueba definitiva**. Con la fuente real dentro del árbol montado, el bundler debe resolver `../_shared/isomorphic/…` sin drama. Si falla aquí, detenerse y reportar el mensaje exacto sin tocar nada más.
+4. `regen: true` sobre `290fd66a-c87c-4c3e-a344-e6bc47564966` — confirma que el runtime nuevo procesa cancelaciones sin regresión. HTTP 200 esperado, sin cobro de créditos, `error_message` NULL, URLs actualizadas.
+5. `system_events` últimas 24 h para descartar nuevos errores en `adaptar-estilo-prosa`.
+
+Si (3) falla por alguna razón imprevista (import_map no aplicado, subcarpeta rechazada, etc.), el fallback ordenado sería mover la fuente un nivel arriba a `supabase/functions/_shared/` plano (sin subcarpeta), que YA se probó verde en el turno anterior — pero es menos limpio conceptualmente. No lo aplicaría automáticamente, esperaría tu OK.
+
+## Preguntas abiertas antes de ejecutar
+
+1. ¿Confirmas la subcarpeta `isomorphic/` o prefieres los 7 archivos planos en `_shared/` (menos ordenado pero ya probado verde)?
+2. ¿OK con mantener la fachada `src/shared/` (7 re-exports de 1 línea) o prefieres eliminarla y migrar los call-sites frontend a `@shared/…` en el mismo commit (ya son 6 archivos, no es más trabajo)?
+3. Los tests `__contract__/` — ¿se quedan definitivamente en `src/shared/prosaBancos/__contract__/` como se decidió antes, o los mueves también al lado de la fuente en `supabase/functions/_shared/isomorphic/prosaBancos/__contract__/` para que la subcarpeta sea totalmente autocontenida (incluidos sus tests)?
