@@ -777,7 +777,7 @@ function normalizeDeudores(partes: CancelacionData["partes"]) {
 }
 
 // Build the variable map sent to Docxtemplater
-export function buildDocxVars(data: CancelacionData) {
+export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoderadoOverride | null) {
   const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
   const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
   // Tolerancia retro: si una versión vieja inyectó el literal en el campo de monto, lo normalizamos al flag.
