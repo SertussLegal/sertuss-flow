@@ -4,9 +4,9 @@
 // ============================================================================
 
 import { describe, it, expect } from "vitest";
-import { daviviendaTemplate } from "../davivienda";
-import { mergeOverride } from "../mergeOverride";
-import type { ProsaContext, ProsaApoderadoOverride } from "../types";
+import { daviviendaTemplate } from "@shared/prosaBancos/davivienda";
+import { mergeOverride } from "@shared/prosaBancos/mergeOverride";
+import type { ProsaContext, ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
 const ctxNatural: ProsaContext = {
   apoderado: {

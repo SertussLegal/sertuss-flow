@@ -6,8 +6,8 @@
 // ============================================================================
 
 import { useMemo } from "react";
-import { daviviendaTemplate, mergeOverride } from "@/shared/prosaBancos";
-import type { ProsaContext, ProsaApoderadoOverride } from "@/shared/prosaBancos/types";
+import { daviviendaTemplate, mergeOverride } from "@shared/prosaBancos";
+import type { ProsaContext, ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
 interface Props {
   base: ProsaContext;

@@ -11,7 +11,7 @@ import type {
   ApoderadoPayload,
   PoderdantePayload,
   InstrumentoPoderPayload,
-} from "@/shared/prosaBancos/types";
+} from "@shared/prosaBancos/types";
 
 interface FlatPoderBanco {
   apoderado_nombre?: string;

@@ -9,8 +9,8 @@ import { Sparkles, Pencil, User, Building2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { daviviendaTemplate } from "@/shared/prosaBancos";
-import type { ProsaContext, ProsaApoderadoOverride } from "@/shared/prosaBancos/types";
+import { daviviendaTemplate } from "@shared/prosaBancos";
+import type { ProsaContext, ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 import { ProsaApoderadoModal } from "./ProsaApoderadoModal";
 
 interface Props {

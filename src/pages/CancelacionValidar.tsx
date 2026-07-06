@@ -30,8 +30,8 @@ import { useSaveStatus } from "@/contexts/SaveStatusContext";
 import { POWER_V5_ENABLED } from "@/lib/featureFlags";
 import { buildProsaContext } from "@/lib/buildProsaContext";
 import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/ProsaApoderadoPreviewCard";
-import { getProsaBanco } from "@/shared/prosaBancos";
-import type { ProsaApoderadoOverride } from "@/shared/prosaBancos/types";
+import { getProsaBanco } from "@shared/prosaBancos";
+import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
 type NotariaEmisora = {
   notario_nombre?: string;

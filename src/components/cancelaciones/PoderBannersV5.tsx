@@ -26,7 +26,7 @@ import {
   MOTIVO_LABELS,
   type ApoderadoPayload,
   type TipoApoderado,
-} from "@/lib/apoderadoClassifier";
+} from "@shared/apoderadoClassifier";
 
 export interface PoderBannersV5Props {
   hasApoderadoBanco: boolean | null | undefined;
