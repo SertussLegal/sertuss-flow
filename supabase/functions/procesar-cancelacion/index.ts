@@ -2180,7 +2180,7 @@ if (import.meta.main) serve(async (req) => {
           console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
         }
 
-        const vars = buildDocxVars(extracted);
+        const vars = buildDocxVars(extracted, (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null);
 
         const minutaTemplate = selectMinutaTemplate(extracted);
         const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
