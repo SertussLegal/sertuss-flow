@@ -166,6 +166,7 @@ export type Database = {
           numero_escritura_hipoteca: string | null
           organization_id: string
           poder_adjuntado: boolean
+          prosa_apoderado_override: Json | null
           status: string
           updated_at: string
           url_certificado_generado: string | null
@@ -196,6 +197,7 @@ export type Database = {
           numero_escritura_hipoteca?: string | null
           organization_id: string
           poder_adjuntado?: boolean
+          prosa_apoderado_override?: Json | null
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
@@ -226,6 +228,7 @@ export type Database = {
           numero_escritura_hipoteca?: string | null
           organization_id?: string
           poder_adjuntado?: boolean
+          prosa_apoderado_override?: Json | null
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
