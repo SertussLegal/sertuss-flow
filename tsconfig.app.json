@@ -34,6 +34,12 @@
   },
   "include": [
     "src",
-    "supabase/functions/_shared"
+    "supabase/functions/_shared/apoderadoClassifier.ts",
+    "supabase/functions/_shared/prosaBancos/davivienda.ts",
+    "supabase/functions/_shared/prosaBancos/index.ts",
+    "supabase/functions/_shared/prosaBancos/types.ts",
+    "supabase/functions/_shared/prosaBancos/overrideSchema.ts",
+    "supabase/functions/_shared/prosaBancos/mergeOverride.ts",
+    "supabase/functions/_shared/prosaBancos/legalProse.ts"
   ]
 }
