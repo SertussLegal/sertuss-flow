@@ -1003,12 +1003,15 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
   let antefirmaProsa: string | undefined;
   let notaAutorizacionProsa: string | undefined;
   if (bancoTemplate && classifierResult.tipoEfectivo) {
-    const ctx: ProsaContext = {
+    const baseCtx: ProsaContext = {
       apoderado: { ...apoderadoPayload, tipo: classifierResult.tipoEfectivo },
       poderdante: poderdantePayload as ProsaContext["poderdante"],
       instrumento: instrumentoPayload as ProsaContext["instrumento"],
       ciudad_firma: ne.notaria_emisora_ciudad || null,
+      notas_adicionales: null,
     };
+    // Plan v5/Fase 2 — aplica override por trámite (Modal Híbrido). Manual > OCR > BD.
+    const ctx = mergeOverride(baseCtx, prosaOverride ?? null);
     comparecenciaProsa = bancoTemplate.renderComparecencia(ctx);
     antefirmaProsa = bancoTemplate.renderAntefirma(ctx);
     notaAutorizacionProsa = bancoTemplate.renderNotaAutorizacion(ctx);
