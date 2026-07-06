@@ -6,8 +6,8 @@
 
 import { describe, it, expect } from "vitest";
 import contract from "./referencia_davivienda.contract.json";
-import { daviviendaTemplate } from "../davivienda";
-import type { ProsaContext } from "../types";
+import { daviviendaTemplate } from "@shared/prosaBancos/davivienda";
+import type { ProsaContext } from "@shared/prosaBancos/types";
 
 function renderAll(ctx: ProsaContext): string {
   return [

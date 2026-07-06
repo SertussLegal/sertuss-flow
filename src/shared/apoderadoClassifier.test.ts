@@ -3,7 +3,7 @@
 // Matriz cubre las 4 reglas de degradación + override manual + happy path.
 // ============================================================================
 import { describe, it, expect } from "vitest";
-import { classifyApoderado, type ApoderadoPayload } from "./apoderadoClassifier";
+import { classifyApoderado, type ApoderadoPayload } from "@shared/apoderadoClassifier";
 
 const baseNaturalOk: ApoderadoPayload = {
   tipo: "natural",

@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const SHARED_DIR = join(process.cwd(), "src/shared/prosaBancos");
+const SHARED_DIR = join(process.cwd(), "supabase/shared/prosaBancos");
 
 // Los patrones se evalúan sobre CÓDIGO REAL (sin comentarios) para no falsear
 // positivos con la propia documentación de reglas.

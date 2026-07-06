@@ -24,8 +24,8 @@ import {
   OverrideSchema,
   FORBIDDEN_NOTE_TOKENS,
   FORBIDDEN_CANONICAL_MARKERS,
-} from "@/shared/prosaBancos/overrideSchema";
-import type { ProsaContext, ProsaApoderadoOverride } from "@/shared/prosaBancos/types";
+} from "@shared/prosaBancos/overrideSchema";
+import type { ProsaContext, ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 import { ProsaLiveRenderer } from "./ProsaLiveRenderer";
 
 interface Props {

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from "vitest";
-import { OverrideSchema, sanitizeOverride, isOverrideForbidden } from "../overrideSchema";
+import { OverrideSchema, sanitizeOverride, isOverrideForbidden } from "@shared/prosaBancos/overrideSchema";
 
 describe("overrideSchema: sanitización dura", () => {
   it("acepta un override mínimo con notas limpias", () => {
