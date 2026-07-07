@@ -14,10 +14,15 @@ import Docxtemplater from "https://esm.sh/docxtemplater@3.50.0";
 import { fetchAiGateway, AiGatewayError, parseToolCallArguments } from "../_shared/aiFetch.ts";
 import { deudorTokens, deudoresTokens, apoderadoTokens, bancoTokens, inferGeneroFromNombre } from "../_shared/genero.ts";
 import { assertOwnPaths } from "../_shared/storagePaths.ts";
-import { POWER_V5_ENABLED } from "../_shared/poderBancoSchemaVersion.ts";
+import { POWER_V5_ENABLED, POWER_V6_EXTRACTOR_ENABLED } from "../_shared/poderBancoSchemaVersion.ts";
 import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
 import { classifyApoderado, type ApoderadoPayload } from "../_shared/isomorphic/apoderadoClassifier.ts";
 import { getProsaBanco, type ProsaContext, mergeOverride, type ProsaApoderadoOverride } from "../_shared/isomorphic/prosaBancos/index.ts";
+import {
+  buildPoderBancoRequest,
+  PODER_BANCO_TOOL_NAME,
+  type PoderBancoDeepPayload,
+} from "../_shared/isomorphic/poderBancoExtractor/index.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -58,7 +63,7 @@ const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
  * NO lanza: si el bucket no tiene la plantilla v3 aún, el error se
  * materializa en `fillTemplate` con mensaje claro por nombre de archivo.
  */
-function selectMinutaTemplate(data: CancelacionData): string {
+export function selectMinutaTemplate(data: CancelacionData): string {
   if (!POWER_V5_ENABLED) return TEMPLATE_MINUTA;
   const pb = (data.poder_banco || {}) as Record<string, unknown>;
   const apo = (pb.apoderado || {}) as Record<string, unknown>;
@@ -1284,6 +1289,55 @@ function mergePoderBanco(
   return hasAny ? merged : undefined;
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// EXTRACTOR V6 (schema profundo isomórfico) — opt-in vía POWER_V6_EXTRACTOR_ENABLED
+// ═════════════════════════════════════════════════════════════════════════
+
+// Merge v6 vive en el módulo isomórfico para poder testearse desde vitest
+// (el archivo actual tiene imports Deno + errores TS preexistentes que
+// bloquean el test-runner de Deno).
+import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
+
+/**
+ * Ejecuta el OCR v6 (schema profundo) usando el módulo isomórfico. Se llama
+ * SOLO cuando `POWER_V6_EXTRACTOR_ENABLED` está encendido. Devuelve el
+ * payload profundo tal como lo emitió Gemini (sin normalizar).
+ */
+async function extractPoderBancoV6(
+  poderUrls: string[],
+  apiKey: string,
+): Promise<PoderBancoDeepPayload | null> {
+  if (poderUrls.length === 0) return null;
+  const body = buildPoderBancoRequest({ imageUrls: poderUrls });
+  const aiResp = await fetchAiGateway({
+    apiKey,
+    body,
+    tag: "procesar-cancelacion.poder.v6",
+  });
+  return await parseToolCallArguments<PoderBancoDeepPayload>(aiResp, "procesar-cancelacion.poder.v6");
+}
+
+/**
+ * Wrapper local que preserva la firma legacy (`PoderBanco | undefined`)
+ * mientras delega el trabajo al merge isomórfico. Este re-tipo es seguro
+ * porque `PoderBanco` es un superset laxo de `PoderBancoFlat`.
+ */
+export function mergePoderBancoV6(
+  monolitico: PoderBanco | undefined,
+  dedicadoFlat: PoderDedicadoResult | null,
+  deepV6: PoderBancoDeepPayload | null,
+): PoderBanco | undefined {
+  const out = mergeV6Iso(
+    monolitico as unknown as import("../_shared/isomorphic/poderBancoExtractor/merge.ts").PoderBancoFlat | undefined,
+    dedicadoFlat as unknown as import("../_shared/isomorphic/poderBancoExtractor/merge.ts").DedicadoFlatResult | null,
+    deepV6,
+  );
+  return out as unknown as PoderBanco | undefined;
+}
+
+
+
+
 // Telemetría no bloqueante a system_events (Eje A v3).
 async function logPoderEvent(
   // deno-lint-ignore no-explicit-any
@@ -1679,6 +1733,7 @@ if (import.meta.main) serve(async (req) => {
       //    `ocr_raw_cache` indexada por SHA-256 de las páginas JPEG ordenadas.
       const tStart = Date.now();
       let dedicated: PoderDedicadoResult | null = null;
+      let deepV6: PoderBancoDeepPayload | null = null;
       let resultado: "exito" | "fallo" | "parcial" = "fallo";
       let cacheHitRP = false;
       let cacheReasonRP = "v5_disabled";
@@ -1698,6 +1753,15 @@ if (import.meta.main) serve(async (req) => {
         } else {
           dedicated = await extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY_RP);
         }
+        // Extractor v6 (schema profundo) — opt-in ortogonal. Cero regresión
+        // cuando el flag está apagado (default).
+        if (POWER_V6_EXTRACTOR_ENABLED) {
+          try {
+            deepV6 = await extractPoderBancoV6(poderUrls, LOVABLE_API_KEY_RP);
+          } catch (e) {
+            console.error("[procesar-cancelacion reprocess_poder] v6 extractor failed:", e);
+          }
+        }
         const fieldsFilled = dedicated
           ? Object.values(dedicated).filter((v) => v != null && String(v).trim() !== "").length
           : 0;
@@ -1708,13 +1772,18 @@ if (import.meta.main) serve(async (req) => {
 
 
       // 3) Merge en data_ia y data_final (humano > dedicado).
-      const finalPoder = mergePoderBanco(undefined, dedicated);
+      const finalPoder = POWER_V6_EXTRACTOR_ENABLED
+        ? mergePoderBancoV6(undefined, dedicated, deepV6)
+        : mergePoderBanco(undefined, dedicated);
       const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
       const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
       const existingFinalPoder = (prevDataFinal.poder_banco ?? {}) as PoderBanco;
-      // En data_final, humano gana: dedicado solo rellena huecos.
+      // En data_final, humano gana en los flat legacy: dedicado solo rellena huecos.
+      // Los bloques profundos v6 (apoderado, poderdante, instrumento_poder) se
+      // copian tal cual porque la UI aún no permite editarlos manualmente.
+      const finalPoderExt = (finalPoder ?? undefined) as (Record<string, unknown> | undefined);
       const mergedFinalPoder: PoderBanco | undefined = finalPoder
-        ? {
+        ? ({
             apoderado_nombre: existingFinalPoder.apoderado_nombre || finalPoder.apoderado_nombre,
             apoderado_cedula: existingFinalPoder.apoderado_cedula || finalPoder.apoderado_cedula,
             apoderado_escritura: existingFinalPoder.apoderado_escritura || finalPoder.apoderado_escritura,
@@ -1723,7 +1792,13 @@ if (import.meta.main) serve(async (req) => {
             apoderado_fecha_dia: existingFinalPoder.apoderado_fecha_dia,
             apoderado_fecha_mes: existingFinalPoder.apoderado_fecha_mes,
             apoderado_fecha_anio: existingFinalPoder.apoderado_fecha_anio,
-          }
+            // Bloques profundos v6 (opt-in): pasan tal cual si vienen.
+            ...(finalPoderExt?.apoderado ? { apoderado: finalPoderExt.apoderado } : {}),
+            ...(finalPoderExt?.poderdante ? { poderdante: finalPoderExt.poderdante } : {}),
+            ...(finalPoderExt?.instrumento_poder ? { instrumento_poder: finalPoderExt.instrumento_poder } : {}),
+            ...(finalPoderExt?.facultades ? { facultades: finalPoderExt.facultades } : {}),
+            ...(finalPoderExt?.vigencia ? { vigencia: finalPoderExt.vigencia } : {}),
+          } as unknown as PoderBanco)
         : existingFinalPoder;
       const newDataFinal = {
         ...prevDataFinal,
@@ -2056,12 +2131,25 @@ if (import.meta.main) serve(async (req) => {
           return r.payload;
         };
 
-        const [monoSettled, dedicatedSettled] = await Promise.allSettled([
+        // V6 extractor: opt-in ortogonal. Corre en paralelo cuando el flag
+        // está encendido; ignora fallo (best-effort) para no romper el flujo.
+        const v6Runner = async (): Promise<PoderBancoDeepPayload | null> => {
+          if (!POWER_V6_EXTRACTOR_ENABLED || poderUrls.length === 0) return null;
+          try {
+            return await extractPoderBancoV6(poderUrls, LOVABLE_API_KEY);
+          } catch (e) {
+            console.error("[procesar-cancelacion mono] v6 extractor failed:", e);
+            return null;
+          }
+        };
+
+        const [monoSettled, dedicatedSettled, v6Settled] = await Promise.allSettled([
           (async () => {
             const aiResp = await fetchAiGateway({ apiKey: LOVABLE_API_KEY, body: aiBody, tag: "procesar-cancelacion" });
             return await parseToolCallArguments<CancelacionData>(aiResp, "procesar-cancelacion");
           })(),
           dedicatedRunner(),
+          v6Runner(),
         ]);
 
         // El monolítico es obligatorio — si falla, levantamos el error.
@@ -2071,11 +2159,15 @@ if (import.meta.main) serve(async (req) => {
         const extracted = monoSettled.value;
         const dedicatedResult: PoderDedicadoResult | null =
           dedicatedSettled.status === "fulfilled" ? dedicatedSettled.value : null;
+        const v6Result: PoderBancoDeepPayload | null =
+          v6Settled.status === "fulfilled" ? v6Settled.value : null;
 
         // Read-then-Merge: el OCR dedicado rellena huecos del monolítico.
         // Plan v5: el cache_hit devuelve `raw_payload` PURO de Gemini —
         // jamás contaminado por ediciones humanas de otra cancelación.
-        const mergedPoder = mergePoderBanco(extracted.poder_banco, dedicatedResult);
+        const mergedPoder = POWER_V6_EXTRACTOR_ENABLED
+          ? mergePoderBancoV6(extracted.poder_banco, dedicatedResult, v6Result)
+          : mergePoderBanco(extracted.poder_banco, dedicatedResult);
         if (mergedPoder) {
           extracted.poder_banco = mergedPoder;
         } else if (poderUrls.length === 0) {

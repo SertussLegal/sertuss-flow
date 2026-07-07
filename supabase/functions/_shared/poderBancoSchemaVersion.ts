@@ -11,3 +11,12 @@ export const POWER_GEMINI_MODEL = "google/gemini-2.5-flash";
 // caché + validador determinista). Cuando esté en `false`, el flujo continúa
 // con el schema plano legacy. Cambiar a `true` cuando la UI esté lista.
 export const POWER_V5_ENABLED = (Deno.env.get("POWER_V5_ENABLED") ?? "false") === "true";
+
+// Feature flag ORTOGONAL: activa el extractor v6 (schema profundo) dentro de
+// `procesar-cancelacion`. Cuando está en `false` (default), el extractor
+// sigue siendo el plano legacy `extract_poder_banco_dedicado` — cero
+// regresión. Cuando está en `true`, se usa el schema completo del módulo
+// isomórfico `_shared/isomorphic/poderBancoExtractor` y se puebla
+// `data_ia.poder_banco.apoderado.tipo` para habilitar la plantilla v3.
+export const POWER_V6_EXTRACTOR_ENABLED =
+  (Deno.env.get("POWER_V6_EXTRACTOR_ENABLED") ?? "false") === "true";

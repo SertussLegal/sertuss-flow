@@ -40,6 +40,10 @@
     "supabase/functions/_shared/isomorphic/prosaBancos/types.ts",
     "supabase/functions/_shared/isomorphic/prosaBancos/overrideSchema.ts",
     "supabase/functions/_shared/isomorphic/prosaBancos/mergeOverride.ts",
-    "supabase/functions/_shared/isomorphic/prosaBancos/legalProse.ts"
+    "supabase/functions/_shared/isomorphic/prosaBancos/legalProse.ts",
+    "supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts",
+    "supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts",
+    "supabase/functions/_shared/isomorphic/poderBancoExtractor/index.ts",
+    "supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts"
   ]
 }
