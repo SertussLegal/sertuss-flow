@@ -141,7 +141,27 @@ describe("unwrapConf", () => {
     expect(unwrapConf(null)).toBeUndefined();
     expect(unwrapConf({ valor: "" })).toBeUndefined();
   });
+  it("sanea marcadores literales 'null'/'NULL'/'N/A'/'---'", () => {
+    expect(unwrapConf("null")).toBeUndefined();
+    expect(unwrapConf("NULL")).toBeUndefined();
+    expect(unwrapConf("N/A")).toBeUndefined();
+    expect(unwrapConf("---")).toBeUndefined();
+    expect(unwrapConf({ valor: "null" })).toBeUndefined();
+    expect(unwrapConf({ valor: "  n/a  " })).toBeUndefined();
+  });
 });
+
+describe("mergePoderBancoV6 saneo de 'null' literal", () => {
+  it("flat con 'null' literal se convierte a undefined", () => {
+    const merged = mergePoderBancoFlat(
+      { apoderado_nombre: "null", apoderado_cedula: "N/A" },
+      { apoderado_nombre: "ANA MARIA", apoderado_cedula: "52857443" },
+    );
+    expect(merged?.apoderado_nombre).toBe("ANA MARIA");
+    expect(merged?.apoderado_cedula).toBe("52857443");
+  });
+});
+
 
 describe("buildPoderBancoRequest", () => {
   it("construye el body OpenAI con schema v6 y tool_choice fijado", () => {

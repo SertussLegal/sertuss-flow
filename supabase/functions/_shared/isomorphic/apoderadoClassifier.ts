@@ -66,6 +66,23 @@ export interface ClassifierResult {
   fromOverride: boolean;
 }
 
+/**
+ * Contexto opcional del extractor v6. Permite validar que el "natural"
+ * tiene evidencia de un poder — ya sea el instrumento directo (poder general
+ * del banco a persona natural) o la escritura de sustitución (cadena).
+ */
+export interface ClassifyContext {
+  instrumento_poder?: {
+    escritura_num?: string | null;
+    fecha?: string | null;
+    fecha_texto?: string | null;
+    notaria_numero?: string | null;
+    notaria_ciudad?: string | null;
+  } | null;
+  has_apoderado_banco_v3?: "true" | "false" | "null" | boolean | null;
+}
+
+
 // Palabras clave corporativas que contaminan una clasificación "natural"
 // y disparan la degradación a null (Regla A).
 const CORPORATE_PATTERNS: RegExp[] = [
@@ -104,7 +121,10 @@ function isNonEmpty(v: unknown): boolean {
  *   2. Reglas de degradación defensiva → null si hay ambigüedad.
  *   3. Si no hay motivos de degradación, respeta el tipo propuesto por la IA.
  */
-export function classifyApoderado(apo: ApoderadoPayload | null | undefined): ClassifierResult {
+export function classifyApoderado(
+  apo: ApoderadoPayload | null | undefined,
+  ctx?: ClassifyContext,
+): ClassifierResult {
   if (!apo) {
     return { tipoEfectivo: null, motivos: ["no_apoderado_tipo_from_ocr"], fromOverride: false };
   }
@@ -134,15 +154,29 @@ export function classifyApoderado(apo: ApoderadoPayload | null | undefined): Cla
     if (hasCorporateContamination([apo.nombre, apo.cargo])) {
       motivos.push("corporate_keywords_in_natural_classification");
     }
-    // Regla C — "natural" sin datos mínimos del poder.
-    const faltaEscritura =
-      !isNonEmpty(apo.escritura_poder_num) ||
-      !isNonEmpty(apo.escritura_poder_fecha) ||
-      !isNonEmpty(apo.escritura_poder_notaria_num);
-    if (faltaEscritura) {
+
+    // Regla C rediseñada — "natural" requiere:
+    //   (i) identidad mínima: nombre + cédula
+    //   (ii) evidencia del poder: instrumento_poder directo (poder general
+    //        del banco a persona natural) O escritura_poder_* (sustitución).
+    const tieneIdentidad = isNonEmpty(apo.nombre) && isNonEmpty(apo.cedula);
+    const ip = ctx?.instrumento_poder || {};
+    const tieneInstrumentoDirecto =
+      isNonEmpty(ip.escritura_num) &&
+      (isNonEmpty(ip.fecha) || isNonEmpty(ip.fecha_texto)) &&
+      isNonEmpty(ip.notaria_numero);
+    const tieneSustitucion =
+      isNonEmpty(apo.escritura_poder_num) &&
+      isNonEmpty(apo.escritura_poder_fecha) &&
+      isNonEmpty(apo.escritura_poder_notaria_num);
+
+    if (!tieneIdentidad) {
+      motivos.push("natural_missing_poder_data");
+    } else if (!tieneInstrumentoDirecto && !tieneSustitucion) {
       motivos.push("natural_missing_poder_data");
     }
   }
+
 
   // (2d) Regla B — "juridica" sin esqueleto mínimo de constitución.
   if (tipoIA === "juridica") {

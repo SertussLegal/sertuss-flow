@@ -123,4 +123,66 @@ describe("classifyApoderado", () => {
     expect(r.tipoEfectivo).toBe("natural");
     expect(r.fromOverride).toBe(true);
   });
+
+  it("Regla C rediseñada: patrón directo (poder general banco→natural) con instrumento_poder es válido sin escritura_poder_*", () => {
+
+    const r = classifyApoderado(
+      {
+        tipo: "natural",
+        nombre: "ANA MARIA MONTOYA ECHEVERRY",
+        cedula: "52857443",
+        // Sin escritura_poder_num/fecha/notaria (no hay sustitución).
+      },
+      {
+        instrumento_poder: {
+          escritura_num: "7364",
+          fecha: "2023-05-26",
+          notaria_numero: "29",
+          notaria_ciudad: "BOGOTA D.C.",
+        },
+        has_apoderado_banco_v3: "true",
+      },
+    );
+    expect(r.tipoEfectivo).toBe("natural");
+    expect(r.motivos).toEqual([]);
+  });
+
+  it("Regla C rediseñada: sin ctx, mantiene retrocompatibilidad exigiendo escritura_poder_*", () => {
+    const r = classifyApoderado(baseNaturalOk);
+    expect(r.tipoEfectivo).toBe("natural");
+  });
+
+  it("Regla C rediseñada: natural por sustitución (escritura_poder_*) sin ctx sigue válido", () => {
+    const r = classifyApoderado({
+      tipo: "natural",
+      nombre: "PEDRO PEREZ",
+      cedula: "12345",
+      escritura_poder_num: "111",
+      escritura_poder_fecha: "2020-01-01",
+      escritura_poder_notaria_num: "5",
+    });
+    expect(r.tipoEfectivo).toBe("natural");
+  });
+
+  it("Regla C rediseñada: sin evidencia (ni ctx ni escritura) degrada", () => {
+    const r = classifyApoderado({
+      tipo: "natural",
+      nombre: "PEDRO PEREZ",
+      cedula: "12345",
+    });
+    expect(r.tipoEfectivo).toBeNull();
+    expect(r.motivos).toContain("natural_missing_poder_data");
+  });
+
+  it("Regla C rediseñada: sin identidad (falta cédula) degrada aunque haya ctx", () => {
+    const r = classifyApoderado(
+      { tipo: "natural", nombre: "ANA" },
+      {
+        instrumento_poder: { escritura_num: "1", fecha: "2020-01-01", notaria_numero: "1" },
+      },
+    );
+    expect(r.tipoEfectivo).toBeNull();
+    expect(r.motivos).toContain("natural_missing_poder_data");
+  });
 });
+
