@@ -128,7 +128,11 @@ export function mergePoderBancoV6(
   if (!deepV6) return flatMerged as (PoderBancoFlat & Record<string, unknown>) | undefined;
 
   const apoderadoIn = (deepV6.apoderado ?? undefined) as ApoderadoPayload | undefined;
-  const cls = classifyApoderado(apoderadoIn);
+  const cls = classifyApoderado(apoderadoIn, {
+    instrumento_poder: deepV6.instrumento_poder ?? null,
+    has_apoderado_banco_v3: deepV6.has_apoderado_banco_v3 ?? null,
+  });
+
   const apoderadoOut = apoderadoIn
     ? { ...apoderadoIn, tipo: cls.tipoEfectivo ?? null }
     : null;
