@@ -1,0 +1,2 @@
+ALTER TABLE public.regla_propuesta_run ADD COLUMN IF NOT EXISTS costo_estimado_cop numeric(12,2) GENERATED ALWAYS AS (ROUND(costo_estimado_usd * 3900, 2)) STORED;
+COMMENT ON COLUMN public.regla_propuesta_run.costo_estimado_cop IS 'Costo estimado en COP con TRM fija de referencia (3900 COP/USD). Informativo. Fuente de verdad: costo_estimado_usd.';
