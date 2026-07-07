@@ -279,14 +279,11 @@ const Validacion = () => {
   const [validando, setValidando] = useState(false);
   const [sidebarUploading, setSidebarUploading] = useState<string | null>(null);
   const [tramiteMetadata, setTramiteMetadata] = useState<Record<string, any> | null>(null);
-  const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
-  const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
-  const [validacionCampos, setValidacionCampos] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
-  const [validandoCampos, setValidandoCampos] = useState(false);
+  const [topIssues, setTopIssues] = useState<DeterministicIssue[]>([]);
   const [bannerExpanded, setBannerExpanded] = useState(false);
   const [notariaTramite, setNotariaTramite] = useState<NotariaTramite>(createEmptyNotariaTramite());
   const [notariaPanelOpen, setNotariaPanelOpen] = useState(false);
-  const [ignoredNotariaSuggestions, setIgnoredNotariaSuggestions] = useState<Set<string>>(new Set());
+
   // Campos del bloque notaría que el usuario tocó manualmente (no auto-derivar al cambiar el número)
   const [notariaManualOverrides, setNotariaManualOverrides] = useState<Set<keyof NotariaTramite>>(new Set());
   const [formatoOrdinalNotaria, setFormatoOrdinalNotaria] = useState<FormatoOrdinal>("volada");
