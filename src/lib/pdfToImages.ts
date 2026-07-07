@@ -60,33 +60,44 @@ export class EmptyCanvasError extends Error {
 }
 
 /** Umbral mínimo razonable para un JPEG con contenido real a 1600px lado mayor. */
-const MIN_JPEG_BYTES = 3000;
+const MIN_JPEG_BYTES = 1500;
 
 /**
- * Muestrea 5 puntos del canvas y devuelve `true` si todos los píxeles son
- * idénticos (canvas uniforme = placeholder sospechoso).
+ * Por encima de este tamaño consideramos que el render sí pintó contenido
+ * "sustancial", aunque el muestreo dé uniforme. El bug histórico producía
+ * ~12 KB en TODAS las páginas por igual; una página escueta legítima
+ * (encabezado, firma) queda por debajo. Ver detección de duplicados abajo.
+ */
+const HEALTHY_JPEG_BYTES = 8000;
+
+/**
+ * Muestrea una grilla de 5x5 (25 puntos). Devuelve `true` si ≥80% comparten
+ * el mismo color (canvas uniforme sospechoso). Antes usábamos 5 puntos con
+ * exigencia de idénticos entre sí, lo que daba falsos positivos en páginas
+ * con márgenes amplios o poco contenido: los 5 caían en blanco y abortábamos
+ * un render válido. La grilla amplia con umbral 80% tolera páginas escuetas.
  */
 function isCanvasUniform(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
-  const pts: Array<[number, number]> = [
-    [Math.floor(w / 2), Math.floor(h / 2)],
-    [Math.floor(w / 4), Math.floor(h / 4)],
-    [Math.floor((3 * w) / 4), Math.floor(h / 4)],
-    [Math.floor(w / 4), Math.floor((3 * h) / 4)],
-    [Math.floor((3 * w) / 4), Math.floor((3 * h) / 4)],
-  ];
-  let ref: string | null = null;
-  for (const [x, y] of pts) {
-    try {
-      const d = ctx.getImageData(x, y, 1, 1).data;
-      const key = `${d[0]},${d[1]},${d[2]}`;
-      if (ref === null) ref = key;
-      else if (key !== ref) return false;
-    } catch {
-      // Si no podemos leer, asumimos no-uniforme (no bloqueamos por eso).
-      return false;
+  const gridN = 5;
+  const counts = new Map<string, number>();
+  let sampled = 0;
+  for (let i = 1; i <= gridN; i++) {
+    for (let j = 1; j <= gridN; j++) {
+      const x = Math.floor((w * i) / (gridN + 1));
+      const y = Math.floor((h * j) / (gridN + 1));
+      try {
+        const d = ctx.getImageData(x, y, 1, 1).data;
+        const key = `${d[0]},${d[1]},${d[2]}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        sampled++;
+      } catch {
+        return false;
+      }
     }
   }
-  return true;
+  if (sampled === 0) return false;
+  const maxSame = Math.max(...counts.values());
+  return maxSame / sampled >= 0.8;
 }
 
 export async function pdfToImages(
