@@ -1482,21 +1482,9 @@ const Validacion = () => {
 
         toast({ title: "Documento procesado", description: `${file.name} escaneado y datos actualizados.` });
 
-        // Disparar validación Claude en background (Momento 1: campos)
-        const tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos" =
-          scanType === "certificado_tradicion" || scanType === "predial" ? "inmueble"
-          : tipo === "carta_credito" || tipo === "poder_notarial" ? "actos"
-          : scanType === "escritura_antecedente" ? "vendedores"
-          : tipo.startsWith("cedula_") ? "vendedores"
-          : "vendedores";
-        const tipoDocMapped: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial" =
-          scanType === "certificado_tradicion" ? "certificado"
-          : scanType === "predial" ? "predial"
-          : scanType === "escritura_antecedente" ? "escritura_previa"
-          : tipo === "carta_credito" ? "carta_credito"
-          : tipo === "poder_notarial" ? "poder_notarial"
-          : "cedula";
-        validarDespuesDeCarga(tipoDocMapped, d, tabOrigen);
+        // (Retirado en Fase 1: auditor Claude en vivo. El "top-3" determinista se
+        // calcula al pulsar "Generar y Analizar Word".)
+
       }
       await refreshCredits();
     } catch (err: any) {
