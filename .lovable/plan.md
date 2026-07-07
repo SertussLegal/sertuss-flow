@@ -1,7 +1,9 @@
 
 # Rediseño de CUANTIA_DEDICADA_SYSTEM — enfoque semántico type-safe
 
-Aplica a `supabase/functions/procesar-cancelacion/index.ts` (líneas 1389-1465 del prompt/tool, 2216-2244 y 1915-1935 de la telemetría) y al modo `reprocess_cuantia` existente (línea 1837+). Sin cambios de esquema de BD — solo `system_events.detalle` se enriquece (JSONB, ya soporta claves nuevas).
+Aplica a `supabase/functions/procesar-cancelacion/index.ts` (líneas 1389-1465 del prompt/tool, 2216-2244 y 1915-1935 de la telemetría) y al modo `reprocess_cuantia` existente. Sin cambios de esquema de BD — solo `system_events.detalle` se enriquece (JSONB, ya soporta claves nuevas).
+
+Nota: este diseño ya se aplicó al código en la sesión anterior de build mode; se re-presenta aquí sin cambios para tu revisión.
 
 ## Diagnóstico que ancla el diseño
 
@@ -11,7 +13,7 @@ Aplica a `supabase/functions/procesar-cancelacion/index.ts` (líneas 1389-1465 d
 
 ## 1) Nuevo prompt — enumerar → clasificar → desambiguar
 
-Reemplaza `CUANTIA_DEDICADA_SYSTEM` (líneas 1419-1450). El modelo pasa de "buscar patrón fijo" a razonar en tres pasos:
+Reemplaza `CUANTIA_DEDICADA_SYSTEM`. El modelo pasa de "buscar patrón fijo" a razonar en tres pasos:
 
 ```
 Eres un sistema OCR jurídico-notarial colombiano. Tu única tarea es determinar
@@ -57,23 +59,21 @@ PASO 3 — DESAMBIGUAR (elige UNA salida)
      → úsala. Confianza = "alta".
 
   b) VARIAS cifras "cuantia_credito" con el MISMO monto normalizado
-     (mismo entero en pesos, ignorando formato/decimales/UVR paralelo)
      → úsala. Confianza = "alta" (redundancia entre mutuo, pago y liquidación
      es lo esperado en escrituras bien redactadas).
 
   c) VARIAS cifras "cuantia_credito" con montos DISTINTOS que no puedes
-     conciliar → devuelve monto = null, motivo_null = "ambigua_multiple".
-     Confianza = "baja".
+     conciliar → monto = null, motivo_null = "ambigua_multiple". Confianza = "baja".
 
   d) CERO cifras "cuantia_credito" pero la escritura declara expresamente
-     "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA"
+     "HIPOTECA ABIERTA" / "SIN LÍMITE DE CUANTÍA" / "DE CUANTÍA INDETERMINADA"
      → monto = null, es_indeterminada = true, motivo_null = "escritura_declara_abierta".
      Confianza = "alta".
 
   e) CERO cifras "cuantia_credito" y sin declaración de apertura
      → monto = null, motivo_null = "sin_evidencia". Confianza = "baja".
 
-REGLAS DE FORMATO (solo aplican al caso a/b):
+REGLAS DE FORMATO (solo casos a/b):
 - valor_hipoteca_original = "<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)"
 - valor_hipoteca_es_indeterminada = false
 - motivo_null = null
@@ -81,52 +81,39 @@ REGLAS DE FORMATO (solo aplican al caso a/b):
 ANTI-ALUCINACIÓN (estricto):
 - NUNCA promuevas a "cuantia_credito" una cifra cuyo contexto la ubica en las
   categorías precio_venta / avaluo / subrogacion / abono_saldo / subsidio /
-  uvr_upac / otro. Estas cifras se enumeran y clasifican, pero se descartan.
+  uvr_upac / otro.
 - NUNCA inventes una cifra que no aparece literalmente en el documento.
 - NUNCA devuelvas "N/A", "ilegible", "?", "---" ni literales descriptivos en
-  el campo de monto. Si dudas, monto = null con motivo_null correcto.
+  el campo de monto.
 - Si el texto es ilegible en una cifra, no la incluyas en candidatos_vistos.
 
-DEVUELVE SIEMPRE candidatos_vistos con TODAS las cifras enumeradas en PASO 1
-(no solo la ganadora). Esto es auditoría — no lo omitas ni siquiera en caso a).
+DEVUELVE SIEMPRE candidatos_vistos con TODAS las cifras del PASO 1 (auditoría).
 
 EJEMPLOS:
 
 Ejemplo 1 — MUTUO clásico (verbo conjugado):
-  Fragmento: "…el BANCO POPULAR S.A. concede al deudor un mutuo por la suma
-  de VEINTICINCO MILLONES DE PESOS ($25.000.000) M/CTE, garantizado con
-  hipoteca…"
-  Salida: valor_hipoteca_original = "VEINTICINCO MILLONES DE PESOS ($25.000.000)",
-  es_indeterminada = false, motivo_null = null, confianza = "alta",
-  candidatos_vistos incluye {clasificacion:"cuantia_credito", monto:25000000}.
+  "…el BANCO POPULAR S.A. concede al deudor un mutuo por la suma de
+   VEINTICINCO MILLONES DE PESOS ($25.000.000) M/CTE, garantizado con hipoteca…"
+  → valor = "VEINTICINCO MILLONES DE PESOS ($25.000.000)", motivo_null = null.
 
 Ejemplo 2 — Construcción nominal de carátula (escrituras 90s–2000s):
-  Fragmentos: "PARA EFECTOS DE LIQUIDACIÓN, LA CUANTÍA DEL CRÉDITO OTORGADO
-  ES: $ 8.558.475.oo" + "precio de venta: $65.000.000" + "avalúo catastral:
-  $12.400.000".
-  Salida: valor_hipoteca_original = "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO
-  MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)", es_indeterminada = false,
-  motivo_null = null, confianza = "alta",
-  candidatos_vistos = [{..., "cuantia_credito", 8558475},
-                       {..., "precio_venta", 65000000},
-                       {..., "avaluo", 12400000}].
+  "PARA EFECTOS DE LIQUIDACIÓN, LA CUANTÍA DEL CRÉDITO OTORGADO ES:
+   $ 8.558.475.oo" + "precio de venta: $65.000.000" + "avalúo: $12.400.000".
+  → valor = "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA
+     Y CINCO PESOS ($8.558.475)", motivo_null = null.
+     candidatos_vistos incluye la cifra de crédito, la de venta y la de avalúo.
 
-Ejemplo 3 — Ambigüedad real (dos cifras irreconciliables → null):
-  Fragmentos: "cláusula sexta: el mutuo asciende a CINCUENTA MILLONES DE
-  PESOS ($50.000.000)" + "cláusula décima: reliquidado el crédito, el saldo
-  insoluto es SESENTA Y DOS MILLONES DE PESOS ($62.000.000) al momento del
-  otorgamiento".
-  Salida: valor_hipoteca_original = null, es_indeterminada = false,
-  motivo_null = "ambigua_multiple", confianza = "baja",
-  candidatos_vistos = [{..., "cuantia_credito", 50000000},
-                       {..., "cuantia_credito", 62000000}].
+Ejemplo 3 — Ambigüedad real (dos cifras de crédito irreconciliables → null):
+  "cláusula sexta: el mutuo asciende a $50.000.000" + "cláusula décima:
+   reliquidado el crédito, el saldo insoluto es $62.000.000".
+  → valor = null, motivo_null = "ambigua_multiple", candidatos_vistos con las dos.
 
 Llama SIEMPRE a la herramienta extract_cuantia_credito_dedicada.
 ```
 
-## 2) Nuevo schema del tool (parameters JSON Schema, línea 1395-1414)
+## 2) Nuevo schema del tool (JSON Schema estricto)
 
-Migra a schema estricto con enum. Mantiene compatibilidad con los dos campos actuales (siguen `required`), añade `motivo_null` y `candidatos_vistos` como `required` nuevos.
+Migra a schema con enums cerrados. Mantiene los dos campos actuales (siguen `required`), añade `motivo_null` y `candidatos_vistos` como `required` nuevos.
 
 ```json
 {
@@ -134,24 +121,21 @@ Migra a schema estricto con enum. Mantiene compatibilidad con los dos campos act
   "properties": {
     "valor_hipoteca_original": {
       "type": ["string", "null"],
-      "description": "Monto en formato notarial estricto '<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)'. JSON null (NUNCA cadena vacía) si la hipoteca es ABIERTA/INDETERMINADA, ambigüedad irreconciliable, o sin evidencia."
+      "description": "Monto en formato '<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS>)'. JSON null si abierta / ambigua / sin evidencia."
     },
     "valor_hipoteca_es_indeterminada": {
       "type": "boolean",
-      "description": "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA' / 'SIN LÍMITE DE CUANTÍA' / 'DE CUANTÍA INDETERMINADA'. En cualquier otro caso false."
+      "description": "true SOLO si la escritura declara expresamente cuantía abierta."
     },
-    "confianza": {
-      "type": "string",
-      "enum": ["alta", "media", "baja"]
-    },
+    "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
     "motivo_null": {
       "type": ["string", "null"],
       "enum": ["sin_evidencia", "ambigua_multiple", "escritura_declara_abierta", null],
-      "description": "OBLIGATORIO no-null cuando valor_hipoteca_original es null. null cuando la extracción fue exitosa."
+      "description": "Obligatorio no-null cuando valor_hipoteca_original es null."
     },
     "candidatos_vistos": {
       "type": "array",
-      "description": "TODAS las cifras enumeradas en PASO 1 con su clasificación. NO omitir aunque haya ganador claro — es auditoría.",
+      "description": "TODAS las cifras enumeradas en PASO 1 con su clasificación.",
       "items": {
         "type": "object",
         "properties": {
@@ -160,10 +144,7 @@ Migra a schema estricto con enum. Mantiene compatibilidad con los dos campos act
             "type": "string",
             "enum": ["cuantia_credito","precio_venta","avaluo","subrogacion","abono_saldo","subsidio","uvr_upac","otro"]
           },
-          "monto": {
-            "type": ["integer","null"],
-            "description": "Entero en pesos, sin decimales ni separadores. null si la cifra está expresada solo en UVR/UPAC."
-          },
+          "monto": { "type": ["integer","null"] },
           "pagina_aprox": { "type": ["integer","null"] }
         },
         "required": ["texto_fragmento","clasificacion","monto"],
@@ -176,7 +157,7 @@ Migra a schema estricto con enum. Mantiene compatibilidad con los dos campos act
 }
 ```
 
-Interfaces TS espejo (reemplazan las de la línea 1452):
+Interfaces TS espejo:
 
 ```ts
 type CuantiaMotivoNull = "sin_evidencia" | "ambigua_multiple" | "escritura_declara_abierta" | null;
@@ -196,87 +177,79 @@ interface CuantiaDedicadaResult {
 }
 ```
 
-Nota: el proyecto hoy usa JSON Schema en el tool-call (no Zod). Si prefieres Zod puro para runtime-validation extra antes del merge, se puede envolver con `z.object({...})` en el mismo archivo — decisión aparte al momento de implementar.
+Nota sobre "Zod": el proyecto usa JSON Schema en el tool-call, no Zod. Si prefieres runtime-validation extra con Zod antes del merge, se envuelve con `z.object({...})` en el mismo archivo — decisión aparte.
 
-## 3) Telemetría enriquecida (líneas 1915-1935 y 2222-2244)
+## 3) Telemetría enriquecida
 
-Nuevo helper `deriveCuantiaResultado(run)` que reemplaza el balde único `fallo_ambiguo` con etiquetas semánticamente accionables:
+Helper `deriveCuantiaResultado(run)` reemplaza el balde único `fallo_ambiguo`:
 
 ```
 - monto extraído ok                             → "exito"
 - motivo_null === "escritura_declara_abierta"   → "indeterminada_confirmada"
 - motivo_null === "ambigua_multiple"            → "fallo_ambiguo_multiple"
 - motivo_null === "sin_evidencia"               → "fallo_sin_evidencia"
-- error_status === 413                          → "fallo_413"     (sin cambio)
-- error_status === "network"                    → "fallo_red"     (sin cambio)
-- error_status === "parse"                      → "fallo_parse"   (sin cambio)
-- error_status numérico                         → `fallo_${n}`    (sin cambio)
-- motivo_null ausente pese al schema (defensivo)→ "fallo_ambiguo_desconocido"
+- error_status === 413 / "network" / "parse"    → fallo_413 / fallo_red / fallo_parse (sin cambio)
+- error_status numérico                         → `fallo_${n}` (sin cambio)
+- motivo_null ausente pese al schema            → "fallo_ambiguo_desconocido"
 ```
 
-Y en las dos llamadas a `logCuantiaEvent` (`extra` block):
+Helper `buildCuantiaExtra(run, trigger)` enriquece el `extra` de ambos call-sites:
 
 ```ts
-extra: {
-  trigger: "auto",              // o "reprocess_cuantia" en el modo manual
-  paginas_totales, truncado, error_status, error_msg,
-  motivo_null: cuantiaRun?.result?.motivo_null ?? null,
-  confianza: cuantiaRun?.result?.confianza ?? null,
-  candidatos_vistos: cuantiaRun?.result?.candidatos_vistos ?? [],   // ← nuevo
-  candidatos_cuantia_credito_count:
-    (cuantiaRun?.result?.candidatos_vistos ?? [])
-      .filter(c => c.clasificacion === "cuantia_credito").length,
+{
+  trigger, paginas_totales, truncado, error_status, error_msg,
+  motivo_null,
+  confianza,
+  candidatos_vistos,                         // ← nuevo
+  candidatos_cuantia_credito_count,          // ← nuevo (derivado)
 }
 ```
 
-El tipo de `resultado` en `logCuantiaEvent` se ensancha a `string` (o unión explícita con las nuevas etiquetas). Los históricos ya escritos no se reescriben.
+El tipo del campo `resultado` en `logCuantiaEvent` se ensancha (`string` o unión explícita). Los históricos no se reescriben.
 
 ## 4) Alcance NO tocado (defensa en profundidad intacta)
 
-- Lista negra semántica: conservada íntegra, ahora como enum de clasificación en vez de lista textual (más difícil de saltar).
-- Contrato de dos campos `valor_hipoteca_original` + `_es_indeterminada`: intacto. El skill `extraccion-cuantia-semantica` se cumple.
-- `mergeCuantiaIntoExtracted` (líneas 1542-1557): sin cambios — sigue leyendo `valor_hipoteca_original`.
+- Lista negra semántica: conservada íntegra, ahora como enum de clasificación (más difícil de saltar).
+- Contrato dos campos `valor_hipoteca_original` + `_es_indeterminada`: intacto. Skill `extraccion-cuantia-semantica` se cumple.
+- `mergeCuantiaIntoExtracted`: sin cambios.
 - Precedencia manual > IA > BD: intacta.
 - Trigger condicional (`certIndet && escUrls.length > 0`): sin cambios.
-- BD (`cancelaciones`): sin migración; los nuevos campos viven solo en el JSON del tool-call y en `system_events.detalle` (JSONB).
+- BD (`cancelaciones`): sin migración; nuevos campos solo en el JSON del tool-call y en `system_events.detalle` (JSONB).
 
 ## 5) Plan de re-validación regresiva (previo al deploy)
 
-Antes de desplegar, correr el prompt nuevo contra los tres trámites reales cuyas páginas de escritura siguen en storage bajo `<cancelacionId>/cancelaciones/soportes/escritura/*.jpg` (mismo prefijo que usa `reprocess_cuantia`).
+Correr el prompt nuevo contra los tres trámites cuyas páginas siguen en storage bajo `<cancelacionId>/cancelaciones/soportes/escritura/*.jpg`.
 
-| Caso | Fecha | Estado hoy | Resultado esperado con prompt nuevo |
+| Caso | Fecha | Estado hoy | Resultado esperado |
 |---|---|---|---|
-| `4b05d210` (2026-06-24) | éxito | monto $8.558.475 | debe seguir devolviendo el mismo monto — regresión-cero |
-| `290fd66a` (2026-07-06) | fallo_ambiguo | monto no encontrado | debe reclasificar: o bien monto real, o `motivo_null` accionable |
-| `2bef1db3` (2026-07-07, Sertuss) | fallo_ambiguo | monto no encontrado | ídem — es el caso que motiva el rediseño |
+| `4b05d210` | 2026-06-24 | éxito | debe devolver el mismo monto — regresión-cero |
+| `290fd66a` | 2026-07-06 | fallo_ambiguo | reclasificar: monto real o `motivo_null` accionable |
+| `2bef1db3` | 2026-07-07 (Sertuss) | fallo_ambiguo | ídem — caso que motiva el rediseño |
 
-Mecánica: script Deno one-shot `supabase/functions/procesar-cancelacion/_regression_cuantia.ts` (no invocable como edge function; solo `deno run` manual desde el equipo con `LOVABLE_API_KEY` y credenciales de service_role). Para cada ID:
+Mecánica: script Deno standalone `supabase/functions/procesar-cancelacion/_regression_cuantia.ts` (no invocable como edge function; solo `deno run` manual con `LOVABLE_API_KEY` y credenciales de service_role). Para cada ID:
 
-1. `supabaseService.storage.from(BUCKET_OUTPUT).list(<prefix>)` → mismos paths que usa `reprocess_cuantia`.
-2. `createSignedStorageUrl` por página.
-3. Llamada a `extractCuantiaDedicada` reusada tal cual con el prompt nuevo.
-4. Imprime a stdout: `motivo_null`, `confianza`, monto final, y `candidatos_vistos` completos (con fragmento + clasificación + monto).
+1. `supabaseService.storage.list(<prefix>)` → mismos paths que usa `reprocess_cuantia`.
+2. `createSignedUrl` por página.
+3. Llamada a `extractCuantiaDedicada` reusada.
+4. Imprime a stdout: `motivo_null`, `confianza`, monto final, `candidatos_vistos` completos.
 5. NO escribe en BD, NO consume créditos, NO llama a `logCuantiaEvent`.
 
 Umbral de aceptación:
-
-- `4b05d210` debe devolver dígitos exactos $8.558.475 (regresión-cero).
-- Al menos uno de los otros dos debe pasar a "éxito" o a un `motivo_null` accionable (no `fallo_ambiguo_desconocido`).
-- Ninguno debe alucinar cifras ausentes del PDF (verificación manual contra `candidatos_vistos`).
-
-Si el umbral no se cumple, iteramos sobre el prompt antes de tocar producción.
+- `4b05d210` devuelve $8.558.475 exactos.
+- Al menos uno de los otros dos pasa a "exito" o a `motivo_null` accionable (no `fallo_ambiguo_desconocido`).
+- Ninguno alucina cifras ausentes del PDF (verificación manual contra `candidatos_vistos`).
 
 ## Pasos de implementación (cuando aprobado)
 
-1. Reemplazar `CUANTIA_DEDICADA_SYSTEM` (1419-1450) + parameters de `cuantiaDedicadaTool` (1395-1414) + interfaces (1452-1465).
-2. Añadir helper `deriveCuantiaResultado` y usarlo en los dos call-sites (1915-1935 y 2222-2244); enriquecer `extra`.
-3. Escribir `supabase/functions/procesar-cancelacion/_regression_cuantia.ts` (script standalone, no edge function). Correrlo contra los 3 IDs; adjuntar output al ticket antes del deploy.
-4. Solo si los 3 casos pasan el umbral, desplegar. Si no, iterar prompt.
-5. Sin cambios en Vitest — los tests de `procesar-cancelacion/index_test.ts` cubren cirugías v2 (dirección, SNR, limitaciones), no la cuantía; el rediseño no rompe sus asserts.
-6. `rg "fallo_ambiguo" src/ supabase/` ya devolvió cero coincidencias fuera del propio `index.ts` — no hay dashboards ni filtros de admin que romper.
+1. Reemplazar `CUANTIA_DEDICADA_SYSTEM` + parameters de `cuantiaDedicadaTool` + interfaces.
+2. Añadir helpers `deriveCuantiaResultado` y `buildCuantiaExtra`; usarlos en los dos call-sites.
+3. Exportar `extractCuantiaDedicada` para que el script standalone la reuse.
+4. Escribir `_regression_cuantia.ts`. Correrlo contra los 3 IDs; adjuntar output al ticket.
+5. Solo si los 3 casos pasan el umbral, desplegar.
+6. Sin cambios en Vitest — los tests actuales cubren cirugías v2 (dirección, SNR, limitaciones), no la cuantía.
 
 ## Riesgos y mitigaciones
 
-- **R1** — `candidatos_vistos` obligatorio aumenta tokens de salida (~200–800 tokens extra). Mitigación: `maxLength: 200` en `texto_fragmento`; el costo se justifica por auditoría accionable.
-- **R2** — Gemini 2.5 Flash podría omitir `candidatos_vistos` cuando el ganador es obvio. Mitigación: `required` en schema + instrucción explícita "no omitir"; si aun así llega vacío, el tool-call falla validación y cae en `fallo_parse` (ya existente).
-- **R3** — La reclasificación `fallo_ambiguo` → 3 etiquetas rompería dashboards. Verificado: no hay consumidores externos del literal — se puede desplegar sin migración de UI.
+- **R1** — `candidatos_vistos` obligatorio aumenta tokens de salida (~200–800 extra). Mitigación: `maxLength: 200` en `texto_fragmento`.
+- **R2** — Gemini 2.5 Flash podría omitir `candidatos_vistos` cuando el ganador es obvio. Mitigación: `required` en schema + instrucción explícita; si aun así llega vacío, tool-call falla y cae en `fallo_parse` existente.
+- **R3** — Reclasificación `fallo_ambiguo` → 3 etiquetas rompería dashboards. Verificado: `rg` no encuentra consumidores externos del literal.
