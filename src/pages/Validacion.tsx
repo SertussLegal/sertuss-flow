@@ -2778,20 +2778,10 @@ const Validacion = () => {
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">Datos de la Notaría</span>
-            {(() => {
-              const notariaInline = Array.from(inlineBadgeMap.entries()).find(([k]) => k.startsWith("notaria_"));
-              if (!notariaInline) return null;
-              const [, v] = notariaInline;
-              return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1" />;
-            })()}
             <span className="text-xs text-muted-foreground">
               ({camposLlenos}/{NOTARIA_FIELDS.length} campos)
             </span>
-            {notariaSuggestions.size > 0 && (
-              <Badge variant="outline" className="border-primary/40 text-primary text-[10px]">
-                {notariaSuggestions.size} sugerencia{notariaSuggestions.size !== 1 ? "s" : ""} de IA
-              </Badge>
-            )}
+
           </div>
           {notariaPanelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
