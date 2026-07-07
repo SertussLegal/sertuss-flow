@@ -1,111 +1,178 @@
 
-# Análisis: implicaciones reales de encender `POWER_V5_ENABLED`
+# Diseño — Fix de raíz del Poder General en Cancelaciones
 
-**Conclusión ejecutiva:** encender la flag hoy, sola, **no arregla el caso de Alejandra**. Cambia mucho menos de lo que el nombre sugiere: no cambia el prompt, no activa el schema v6 en cancelaciones, y no toca el rasterizador. Los problemas reales (truncado a 25 páginas, JPEGs uniformes, schema plano en cancelaciones) viven fuera del alcance de esta flag.
-
----
-
-## 1. Qué cambia exactamente al activar la flag
-
-Hay **dos flags distintas con el mismo nombre**, y una **tercera pieza (v6)** que no depende de ninguna:
-
-| Flag | Ubicación | Default hoy | Qué controla |
-|---|---|---|---|
-| `POWER_V5_ENABLED` (edge) | `supabase/functions/_shared/poderBancoSchemaVersion.ts` (env Deno) | **false** | (a) cachear OCR del poder en `ocr_raw_cache`; (b) seleccionar `TEMPLATE_MINUTA_V3` si `data.poder_banco.apoderado.tipo` está poblado |
-| `VITE_POWER_V5_ENABLED` (client) | `src/lib/featureFlags.ts` | **true** | Mostrar `PoderBannersV5` y modal de prosa apoderado en `CancelacionValidar.tsx` |
-| Schema v6 (`poder_banco_v6`) | `scan-document/core/poderBanco/tool.ts` | siempre activo | Usado por `scan-document` (llamado desde `Validacion.tsx` en tramites, **no** en cancelaciones) |
-
-**Camino "flag apagada" (hoy en cancelaciones):**
-1. `procesar-cancelacion` corre monolítico Gemini 2.5 Pro (cert + escr + poder juntos).
-2. En paralelo corre `extractPoderBancoDedicado` con **schema plano legacy** (5 campos: nombre, cédula, escritura, fecha, notaría). Gemini 2.5 Flash, una sola llamada multimodal con todas las páginas del poder.
-3. Merge Read-then-Merge y persiste.
-
-**Camino "flag encendida" (edge) en cancelaciones:**
-1. Igual monolítico.
-2. Igual `extractPoderBancoDedicado` con el **mismo schema plano** — **el prompt no cambia**.
-3. Único delta real: el resultado del extractor dedicado pasa por `runWithPoderCache` (`ocr_raw_cache` por SHA-256 del PDF). Hit → 0 llamadas a Gemini. Miss → misma llamada que hoy + INSERT en caché.
-4. `selectMinutaTemplate` **intentaría** usar `TEMPLATE_MINUTA_V3`, pero el extractor plano **jamás** puebla `apoderado.tipo`, así que **v3 nunca se activa desde este flujo**. En la práctica se queda en v2.
-
-**Compatibilidad de datos con `CancelacionValidar.tsx`:** ninguna forma de datos cambia. La flag no altera el shape de `data.poder_banco`.
+Solo diseño. Nada se ejecuta. Cada prioridad lista: archivos, cambio, riesgo y verificación.
 
 ---
 
-## 2. ¿El pipeline v6 fue probado alguna vez?
+## P1 — Bug de rasterizado (JPEGs uniformes de 12.192 bytes)
 
-- **Tests unitarios que ejerciten `runWithPoderCache` end-to-end con un PDF real: 0.** No existen.
-- Tests relacionados encontrados: `validatePoderSuficiencia_test.ts` (valida sufuciencia de datos, no el extractor), `apoderadoClassifier.test.ts` (clasifica payloads ya extraídos), contract tests de prosa (Davivienda) — todos operan sobre **inputs sintéticos**, ninguno invoca Gemini ni prueba el flujo cacheado.
-- Evidencia en BD (verificación previa): `ocr_raw_cache` tiene **0 filas**. Nunca se ha escrito una entrada v6 en producción.
-- Las 2 únicas cancelaciones con `poder_banco` en BD usan **schema plano legacy**, no v6.
+### Diagnóstico línea a línea (`src/lib/pdfToImages.ts`)
 
-**Riesgo:** encender la flag activaría por primera vez `runWithPoderCache` en producción con tráfico real. El código tiene `try/catch` degradantes ("si la caché falla, corre el extractor sin caché") — es defensivo, pero nunca se ejerció con carga.
+Puntos donde un JPEG "placeholder" puede colarse sin error visible:
 
----
+1. **L46 `pdf.getPage(i)`** — si tira, aborta todo el bucle: no es la causa (no produciría 25 JPEGs).
+2. **L48 `Math.min(2, maxDimension / longest)`** — con un PDF donde `longest` sea ridículamente grande, `scale` cae a un valor mínimo. No colapsa a 0, pero puede dar canvas diminuto.
+3. **L53–56 `canvas.getContext("2d", { alpha:false })`** — si falla, lanza. OK.
+4. **L60 `page.render(...).promise`** — PDF.js con `page.render` puede **rechazar por "Rendering cancelled"** o "Transport destroyed" si `pdf.cleanup()`/`pdf.destroy()` del bucle anterior no terminó, o por OOM en Chrome móvil. La promesa se resolvería mal pero llegaría a `toBlob`.
+5. **L62 `canvas.toBlob(..., "image/jpeg", 0.75)`** — **Este es el punto crítico**: si el canvas quedó en blanco por un `render` que abortó silenciosamente, `toBlob` sigue devolviendo un JPEG válido (blanco/opaco). 25 canvas blancos idénticos = **25 blobs con MD5 idéntico y tamaño idéntico** → exactamente el patrón "12.192 bytes ×25" observado.
+6. **L72 `page.cleanup()`** — no invalida el canvas ya renderizado; no es la causa.
+7. **No hay `try/catch` por página** — un error de `render` en cualquier iteración corta todo el proceso pero **no se detecta cuando `render` "resuelve" con un canvas en blanco** (caso principal).
 
-## 3. Bug de los JPEGs uniformes (12.192 bytes) — ¿lo arregla la flag?
+### Hipótesis principal
+`page.render` está retornando su promesa antes de pintar en dispositivos con memoria baja o con la nueva API v4 de PDF.js que rompió la firma `{ canvasContext, viewport, canvas }` — pdfjs-dist ≥4.x requiere solo `{ canvasContext, viewport }` (el 3.er param `canvas` es ignorado o rompe silenciosamente en algunas builds).
 
-**No.** El bug (si es bug) vive en `src/lib/pdfToImages.ts`, **cliente, antes de subir**. La flag actúa sobre el extractor edge que consume los JPEGs ya subidos. Si las páginas llegan degradadas al bucket, activar la caché solo **memoriza el mismo output pobre** por SHA — empeora, no mejora.
+### Reproducción sin PDF de Alejandra
+- **Test A** (síntoma exacto): subir cualquier PDF ≥20 páginas al flujo de Cancelaciones desde móvil o pestaña de Chrome con throttling de memoria (DevTools → Performance → "Low-end mobile"), inspeccionar los objetos en `expediente-files/{id}/cancelaciones/soportes/poder/pXX.jpg` y comparar tamaños con `curl -sI | grep Content-Length`. Si todos idénticos → confirmado.
+- **Test B** (aislado): crear `src/lib/pdfToImages.test.ts` con un PDF fixture generado por `pdfkit` de 3 páginas con contenido diferente (texto distinto), correr `pdfToImages` en jsdom+canvas mock, y assert que `blob.size` de las 3 páginas sea distinto entre sí (>±5%).
+- **Test C** (versión de pdfjs): `bun pm ls pdfjs-dist` para ver si es ≥4.x — si sí, la firma de `render` cambió y la teoría es correcta.
 
-Observación adicional: `pdfToImages` renderiza a `maxDimension = 1600` con `jpegQuality = 0.75`. 12.192 bytes exactos por 25 páginas sugiere **canvas colapsado a placeholder** (posiblemente `canvas.width = 0` disparado antes de tiempo, o `page.render` fallando silenciosamente antes de `toBlob`). Requiere investigación aparte, independiente de la flag.
+### Fix propuesto
+Archivo: `src/lib/pdfToImages.ts`
+1. Reemplazar `page.render({ canvasContext: ctx, viewport, canvas })` por `page.render({ canvasContext: ctx, viewport }).promise` (sin `canvas`).
+2. Envolver cada iteración en `try/catch`: al fallar una página, arrojar `PdfPageRenderError(pageNumber, cause)` — que la UI muestre "Página 12 no se pudo renderizar; reduce tamaño o divide el PDF" en vez de continuar.
+3. **Validación forense post-render**: antes de `toBlob`, muestrear píxeles (`ctx.getImageData(w/2, h/2, 1, 1)`) — si el canvas es 100% blanco/uniforme, tirar `EmptyCanvasError` explícito. Evita el modo silencioso.
+4. Añadir asserción de tamaño mínimo: `if (blob.size < 3000) throw ...` (un JPEG con contenido real de página nunca baja de ~15 KB a 1600 px lado mayor).
 
----
+### Riesgo de regresión
+Bajo. Cambio localizado a un helper puro. Rollback = revertir el archivo.
 
-## 4. Costo incremental de activar v5
-
-Por poder procesado en cancelaciones:
-
-| Escenario | Llamadas Gemini adicionales | Costo delta |
-|---|---|---|
-| Miss (primera vez este PDF) | **0** (misma llamada que hoy) | +1 INSERT en `ocr_raw_cache` |
-| Hit (mismo PDF reprocesado) | **-1** (ahorra 2.5 Flash multipágina) | -~$0.001–0.005 USD según páginas |
-
-**Neto: costo baja levemente o queda igual.** No aplica análisis del skill `pricing-creditos-sertuss` porque no hay acción monetizable nueva ni cambio en `credit_prices` — el precio de la cancelación no depende de esto.
-
----
-
-## 5. Rollout: ¿hay flag por organización?
-
-**No.** Es una env var global de la edge function (`Deno.env.get("POWER_V5_ENABLED")`). Todo o nada, para todos los tenants a la vez.
-
-Alternativas si se quiere rollout acotado (no incluidas hoy, solo mencionadas):
-- Gate por `organizationId` dentro del código (parche menor).
-- Gate por `debug_tools_enabled` en `organizations` (ya existe).
+### Verificación
+- Test unitario nuevo (Test B arriba) — vitest.
+- Prueba manual: re-subir un poder real de 10 páginas en preview y verificar que los blobs en storage tienen **tamaños dispares** (variación >20% pico-valle) y que las páginas 20+ son legibles al abrirlas.
 
 ---
 
-## 6. Plan de rollback
+## P2 — Límite de 25 páginas (`PODER_MAX_PAGES`)
 
-**Rápido y seguro:**
-- Desactivar env var y redeploy edge → vuelve al camino legacy en segundos.
-- Datos en `ocr_raw_cache` quedan como registros huérfanos inofensivos (nunca se leen si la flag está off).
-- Cancelaciones procesadas mientras estuvo encendida quedan **idénticas** a las del camino legacy (el shape de `data.poder_banco` no cambia — solo se cacheó el resultado).
+### Origen del límite
+`src/pages/CancelacionNueva.tsx` L25. Se puso al cablear el pipeline v5/v6 para acotar RPM del gateway (Gemini 2.5 Flash cobra por página y hay techo de contexto). No hay comentario justificándolo — es un tope defensivo, no un límite físico.
 
-**Sin efectos de largo plazo, sin datos corruptos, sin migración inversa.**
+### Opciones y recomendación
+
+| Opción | Trade-offs |
+|---|---|
+| A. Subir a 50 páginas | Cubre >95% de poderes reales; costo por trámite sube ~2×; sin cambios de arquitectura. |
+| B. Quitar el tope y trocear en batches de 20 páginas con múltiples llamadas a Gemini + merge | Cubre 100%; latencia sube (2–3 llamadas secuenciales); requiere lógica de merge dedupe; complejidad alta. |
+| **C. Recomendada: A + telemetría + aviso duro si excede** | Simple, resuelve el caso conocido (Alejandra: 25), deja B para cuando aparezcan poderes de 40+ que hoy no tenemos evidencia de que existan. |
+
+### Diseño del cambio (Opción C)
+Archivos:
+- `src/pages/CancelacionNueva.tsx`: subir `PODER_MAX_PAGES` de 25 a 50. Cambiar copy del `FileDropzone` para reflejar 50. Añadir **validación pre-envío** que lea `pdfjs.getDocument(file).numPages` antes de rasterizar y, si excede 50, toast bloqueante: *"El Poder tiene N páginas y el límite es 50. Divide el PDF o comprime."* — no truncar silenciosamente.
+- `supabase/functions/scan-document/core/poderBanco/prompt.ts` L10: cambiar "hasta 30 páginas" por "hasta 50".
+- `supabase/functions/procesar-cancelacion/index.ts` L284: cambiar copy "hasta 25 páginas".
+
+### Riesgo
+Costo IA por poder ~2× en peor caso. `system_events` ya rastrea `paginas_enviadas` — mide impacto real en 1 semana.
+
+### Verificación
+- Subir poder de 35 y 48 páginas, confirmar que el pipeline completa y `data_ia.poder_banco.apoderado_nombre` sale poblado.
+- Subir poder de 60, confirmar toast bloqueante sin creación de borrador ni cargo de créditos.
 
 ---
 
-## 7. ¿Resuelve el caso original de Alejandra?
+## P3 — Cablear el extractor v6 (schema profundo) al flujo de cancelaciones
 
-**No, y hay que ser explícito sobre por qué.** El caso original: poder de 25+ páginas donde la cláusula de designación está al final y el sistema devolvió `poder_banco` vacío.
+### Problema actual
+`procesar-cancelacion/index.ts` L1180–1256 tiene su propio tool `extract_poder_banco_dedicado` con schema **plano** (5 campos) y su propio system prompt. El schema profundo (`apoderados[]`, `poderdante`, `apoderado.tipo`, `sociedad_constitucion`, etc.) vive en `scan-document/core/poderBanco/{tool,prompt,handler}.ts` y **no se invoca desde cancelaciones**. Por eso `TEMPLATE_MINUTA_V3` nunca se dispara (L61–68 requiere `data.poder_banco.apoderado.tipo`).
 
-Lo que la flag **no** arregla:
+### Diseño
 
-1. **Truncado a 25 páginas en el cliente:** `CancelacionNueva.tsx` tiene `PODER_MAX_PAGES = 25` hardcodeado. Si el poder de Alejandra tenía más páginas, esas simplemente **no se suben**. La flag opera río abajo.
-2. **JPEGs uniformes de 12.192 bytes:** ya subidos así al bucket. La flag procesa lo que hay; si son placeholders, extrae nada. Cachearía "nada".
-3. **Schema plano en cancelaciones:** `procesar-cancelacion` usa `extractPoderBancoDedicado` con **5 campos legacy**, no el schema v6 profundo. El schema v6 (`apoderados[]`, `total_paginas`, `schema_version`, cadena poderdante→apoderado→instrumento) **solo existe en `scan-document`**, que **no** se llama desde el flujo de cancelaciones. El fix supuesto del "poder que no se leyó" (B3) requiere **cablear el extractor v6 dentro de procesar-cancelacion** — trabajo que **no está hecho**.
-4. **Template v3 nunca se dispara:** aunque la flag esté encendida, `apoderado.tipo` nunca se puebla desde el extractor plano actual → siempre cae en v2.
+**Paso 1 — Extraer el extractor v6 a `_shared/isomorphic/`:**
+Nuevo módulo `supabase/functions/_shared/isomorphic/poderBancoExtractor/` con:
+- `tool.ts` — mover el schema desde `scan-document/core/poderBanco/tool.ts` (código Deno puro, sin dependencias de infra).
+- `prompt.ts` — mover el prompt.
+- `index.ts` — función pura `buildPoderBancoRequest(pages: string[]) → { messages, tools, tool_choice }` para ser llamada tanto desde `scan-document` como desde `procesar-cancelacion`.
+- Re-export desde `scan-document/core/poderBanco/*` con `export * from "@shared/poderBancoExtractor/..."` para no romper llamadas actuales.
 
-**Lo que sí haría la flag para Alejandra:** ahorrarnos una llamada a Gemini si reprocesa el mismo PDF. Nada más.
+**Paso 2 — Reemplazar `extractPoderBancoDedicado` en `procesar-cancelacion`:**
+- Sustituir el tool plano por el request del módulo compartido.
+- Al recibir la respuesta, aplicar `classifyApoderado(payload.apoderado)` (ya existe) para consolidar `apoderado.tipo`.
+- Poblar tanto los **campos planos legacy** (via el mapeo que ya define `poderBanco/prompt.ts` L82–93) **como el bloque profundo** en `data_ia.poder_banco`.
+
+**Paso 3 — Selector de plantilla:**
+`selectMinutaTemplate()` (L61–68) ya lee `data.poder_banco.apoderado.tipo`. Una vez P3 puebla ese campo, v3 se dispara sola cuando `POWER_V5_ENABLED=true`.
+
+**Paso 4 — UI (`CancelacionValidar.tsx` + `ProsaLiveRenderer`):**
+- El schema plano legacy sigue mostrándose tal cual (backward-compat).
+- Si `data_final.poder_banco.apoderado.tipo === "juridica"`, `ProsaLiveRenderer` ya sabe renderizar la cadena (código isomórfico existente en `_shared/isomorphic/prosaBancos/davivienda.ts`).
+- **Cambio mínimo requerido en UI**: exponer en `PoderViewerTab` un panel plegable "Cadena de representación (v6)" que muestre `poderdante`, `apoderado.tipo`, `sociedad_constitucion`, `representantes[]`. Solo lectura; edición avanzada queda para siguiente iteración.
+
+### Riesgo de regresión
+Medio. El extractor profundo puede devolver `null` en campos que el plano rellenaba. Mitigación: mantener `mergePoderBanco` (L1260–1285) y priorizar valores no-null del profundo sobre los planos. Añadir feature-flag `POWER_V6_EXTRACTOR_ENABLED` (default `false`) para rollout gradual — ortogonal a `POWER_V5_ENABLED` (que controla caché + plantilla).
+
+### Testing
+- Test unitario `procesar-cancelacion/poder_v6.test.ts` con fixture JSON simulando respuesta de Gemini con `apoderado.tipo="juridica"` y confirmar que:
+  1. `data_ia.poder_banco.apoderado.tipo === "juridica"`.
+  2. `data_ia.poder_banco.apoderado_nombre` = primer representante (fallback plano correcto).
+  3. `selectMinutaTemplate()` devuelve `TEMPLATE_MINUTA_V3` cuando ambos flags están on.
+- **Test sintético del caso Alejandra**: fixture de 30 páginas donde la designación aparece en página 28. Confirmar que el extractor v6 (con `poderBancoPrompt` que exige revisar TODAS las páginas) devuelve `apoderado.nombre` correcto, mientras que el plano actual (validado ahora) lo dejaría null si truncara.
 
 ---
 
-## Recomendación (no ejecutable, solo análisis)
+## P4 — Activar `POWER_V5_ENABLED`
 
-**No encender la flag como solución al caso de Alejandra.** Antes de activarla, decidir el orden real de arreglos:
+Precondición: P1, P2, P3 en verde en preview.
 
-- **P1 (crítico, bloqueante):** investigar el bug de JPEGs uniformes en `pdfToImages`. Sin PDFs bien rasterizados, ningún extractor funciona.
-- **P2 (alto):** subir o eliminar `PODER_MAX_PAGES = 25` (paginar en subida, o cambiar el pipeline para leer el PDF completo del bucket).
-- **P3 (alto):** cablear el extractor v6 de `scan-document/core/poderBanco` **dentro de** `procesar-cancelacion` (o llamarlo como sub-invoke), para que `data.poder_banco.apoderado.tipo` se pueble y `TEMPLATE_MINUTA_V3` tenga sentido.
-- **P4 (medio):** una vez P1–P3 estén hechos y probados con el PDF real de Alejandra, entonces encender `POWER_V5_ENABLED` como optimización de costo (caché).
-- **P5 (opcional, higiene):** re-alinear el nombre — hoy conviven `POWER_V5_ENABLED` (edge), `VITE_POWER_V5_ENABLED` (client, default true), y `POWER_SCHEMA_VERSION = poder_banco_v6`. Nombres confusos, riesgo de decisiones equivocadas futuras.
+### Diseño
+- Fase 1: activar en preview vía secret `POWER_V5_ENABLED=true` en edge y `VITE_POWER_V5_ENABLED=true` en cliente (ya default `true`).
+- Fase 2: correr 3 cancelaciones reales con poder (una natural, una jurídica, una sin poder). Validar:
+  - `ocr_raw_cache` recibe filas con `schema_version="poder_banco_v6"`.
+  - `TEMPLATE_MINUTA_V3` se selecciona solo cuando corresponde.
+  - Cache hit en el 2º intento con el mismo PDF (bajar costo).
+- Fase 3: activar en prod, monitorear `system_events` categoría `POWER_CACHE_HIT|MISS` durante 48 h.
 
-Cualquier otra ruta (encender la flag y esperar que arregle a Alejandra) sería, con la evidencia actual, **teatro de seguridad de producto**.
+### Rollback
+Setear la env var a `false` y redeploy. Datos en `ocr_raw_cache` quedan como registros inertes; `selectMinutaTemplate` vuelve a v2.
+
+---
+
+## P5 — Higiene de nombres
+
+### Estado actual (confuso)
+- Edge: `POWER_V5_ENABLED` (default `false`) — controla caché + selector de plantilla.
+- Cliente: `VITE_POWER_V5_ENABLED` (default `true`) — usado por `src/lib/featureFlags.ts` para banners UI.
+- Schema: `POWER_SCHEMA_VERSION = "poder_banco_v6"` — dice v6 pero el flag dice v5.
+
+### Propuesta (sin romper nada)
+- Renombrar `POWER_V5_ENABLED` → `POWER_DEEP_SCHEMA_ENABLED` (edge). Deprecar el nombre viejo leyendo ambas env vars 30 días.
+- Renombrar `VITE_POWER_V5_ENABLED` → `VITE_POWER_DEEP_UI_ENABLED`.
+- Añadir constante nueva `POWER_V6_EXTRACTOR_ENABLED` (de P3) — ortogonal.
+- Documentar en `_shared/poderBancoSchemaVersion.ts` la matriz de flags: schema (dato), extractor (código), UI (renderizado), caché (persistencia).
+
+### Riesgo
+Mínimo. Con la lectura dual durante 30 días no rompe deployments.
+
+---
+
+## Validación final con el caso de Alejandra
+
+No tenemos el PDF original. Plan de aceptación:
+
+1. Producto contacta a Alejandra: *"El fix está en preview; ¿nos re-envías el mismo poder que fallaba en junio (o uno equivalente, largo, con designación al final)?"*.
+2. Sertuss carga el PDF vía preview con `POWER_V5_ENABLED=true` y `POWER_V6_EXTRACTOR_ENABLED=true`.
+3. Verificación de aceptación en un solo pantallazo:
+   - JPEGs generados con tamaños dispares (P1 OK).
+   - `data_ia.poder_banco.apoderado.tipo` poblado.
+   - `TEMPLATE_MINUTA_V3` seleccionado.
+   - Minuta descargable con la antefirma correcta.
+4. Screenshot + hash del PDF quedan en `system_events` como evidencia trazable.
+5. Solo entonces se marca B3 como "verificado end-to-end con caso real".
+
+---
+
+## Resumen de archivos afectados
+
+| Prioridad | Archivos |
+|---|---|
+| P1 | `src/lib/pdfToImages.ts` + nuevo `src/lib/pdfToImages.test.ts` |
+| P2 | `src/pages/CancelacionNueva.tsx`, `supabase/functions/scan-document/core/poderBanco/prompt.ts`, `supabase/functions/procesar-cancelacion/index.ts` (copy) |
+| P3 | Nuevo `supabase/functions/_shared/isomorphic/poderBancoExtractor/*`, edit `supabase/functions/scan-document/core/poderBanco/*` (re-export), edit `supabase/functions/procesar-cancelacion/index.ts` (reemplazar `extractPoderBancoDedicado`), edit `src/components/cancelaciones/PoderViewerTab.tsx` (panel v6 lectura), nuevo test |
+| P4 | Solo secrets + observación de `system_events`; no toca código |
+| P5 | `supabase/functions/_shared/poderBancoSchemaVersion.ts`, `src/lib/featureFlags.ts`, doc |
+
+---
+
+## Orden de ejecución sugerido
+
+P1 (día 1) → P2 (día 1) → P3 (día 2–3, con feature-flag off en prod) → validación con Alejandra en preview → P4 (activar en prod) → P5 (higiene, sin urgencia).
