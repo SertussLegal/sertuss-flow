@@ -362,7 +362,14 @@ const ReglasPropuestas = () => {
             </TableHeader>
             <TableBody>
               {filtradas.map((p) => (
-                <TableRow key={p.id}>
+                <TableRow
+                  key={p.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => {
+                    setSelectedId(p.id);
+                    setModalOpen(true);
+                  }}
+                >
                   <TableCell className="font-medium max-w-md">{p.titulo}</TableCell>
                   <TableCell className="capitalize">{p.tipo_acto}</TableCell>
                   <TableCell className="capitalize">{p.categoria}</TableCell>
