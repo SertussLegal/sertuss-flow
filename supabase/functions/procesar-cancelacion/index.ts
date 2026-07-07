@@ -1787,6 +1787,76 @@ if (import.meta.main) serve(async (req) => {
     });
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // MODO REGRESSION_CUANTIA (solo lectura, platform-admin only):
+  // ejecuta extractCuantiaDedicada contra las páginas de la escritura
+  // ya almacenadas en storage para una lista de trámites históricos.
+  // NO escribe en cancelaciones, NO llama logCuantiaEvent, NO consume
+  // créditos. Se usa para validar regresiones del prompt semántico.
+  // ─────────────────────────────────────────────────────────────
+  // deno-lint-ignore no-explicit-any
+  const bodyAny = body as any;
+  if (bodyAny?.action === "regression_cuantia") {
+    const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
+    if (isAdminErr || isAdminData !== true) {
+      return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const ids = Array.isArray(bodyAny.tramite_ids) ? (bodyAny.tramite_ids as unknown[]).filter((x) => typeof x === "string") as string[] : [];
+    if (ids.length === 0) {
+      return new Response(JSON.stringify({ error: "tramite_ids (string[]) requerido" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const LOVABLE_API_KEY_REG = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY_REG) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const results = await Promise.all(ids.map(async (id) => {
+      try {
+        const prefix = `${id}/cancelaciones/soportes/escritura`;
+        const { data: files, error: listErr } = await supabaseService.storage
+          .from(BUCKET_OUTPUT).list(prefix);
+        if (listErr || !files || files.length === 0) {
+          return { tramite_id: id, error: `no_pages (${listErr?.message ?? "empty"}) prefix=${prefix}` };
+        }
+        const paths = files
+          .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+          .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
+          .map((f: { name: string }) => `${prefix}/${f.name}`);
+        if (paths.length === 0) {
+          return { tramite_id: id, error: `no_jpg prefix=${prefix}` };
+        }
+        const urls = await Promise.all(paths.map((p) => createSignedStorageUrl(supabaseService, p)));
+        const t0 = Date.now();
+        const run = await extractCuantiaDedicada(urls, LOVABLE_API_KEY_REG);
+        const ms = Date.now() - t0;
+        return {
+          tramite_id: id,
+          ms,
+          paginas_totales: run.paginas_totales,
+          paginas_enviadas: run.paginas_enviadas,
+          truncado: run.truncado,
+          error_status: run.error_status ?? null,
+          error_msg: run.error_msg ?? null,
+          monto: run.result?.valor_hipoteca_original ?? null,
+          es_indeterminada: run.result?.valor_hipoteca_es_indeterminada ?? null,
+          confianza: run.result?.confianza ?? null,
+          motivo_null: run.result?.motivo_null ?? null,
+          resultado_derivado: deriveCuantiaResultado(run),
+          candidatos_vistos: run.result?.candidatos_vistos ?? [],
+        };
+      } catch (e) {
+        return { tramite_id: id, error: (e as Error).message };
+      }
+    }));
+    return new Response(JSON.stringify({ ok: true, results }, null, 2), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides, action } = body;
 
