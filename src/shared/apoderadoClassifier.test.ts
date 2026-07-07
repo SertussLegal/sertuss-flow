@@ -122,7 +122,10 @@ describe("classifyApoderado", () => {
     });
     expect(r.tipoEfectivo).toBe("natural");
     expect(r.fromOverride).toBe(true);
+  });
+
   it("Regla C rediseñada: patrón directo (poder general banco→natural) con instrumento_poder es válido sin escritura_poder_*", () => {
+
     const r = classifyApoderado(
       {
         tipo: "natural",
