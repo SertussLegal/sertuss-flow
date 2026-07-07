@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Lightbulb, Loader2, Play } from "lucide-react";
+import PropuestaDetalleModal from "./PropuestaDetalleModal";
 
 interface Propuesta {
   id: string;
@@ -118,6 +119,8 @@ const ReglasPropuestas = () => {
   const [filtroTipo, setFiltroTipo] = useState<string>("todos");
   const pollRef = useRef<number | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const loadPropuestas = useCallback(async () => {
     const { data, error } = await supabase
@@ -359,7 +362,14 @@ const ReglasPropuestas = () => {
             </TableHeader>
             <TableBody>
               {filtradas.map((p) => (
-                <TableRow key={p.id}>
+                <TableRow
+                  key={p.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => {
+                    setSelectedId(p.id);
+                    setModalOpen(true);
+                  }}
+                >
                   <TableCell className="font-medium max-w-md">{p.titulo}</TableCell>
                   <TableCell className="capitalize">{p.tipo_acto}</TableCell>
                   <TableCell className="capitalize">{p.categoria}</TableCell>
@@ -381,6 +391,16 @@ const ReglasPropuestas = () => {
           </Table>
         </CardContent>
       </Card>
+
+      <PropuestaDetalleModal
+        propuestaId={selectedId}
+        open={modalOpen}
+        onOpenChange={(o) => {
+          setModalOpen(o);
+          if (!o) setSelectedId(null);
+        }}
+        onReviewed={loadPropuestas}
+      />
     </div>
   );
 };
