@@ -1,82 +1,55 @@
 
-# Compilación de feedback real de usuarios — Cancelaciones & Poder
+# Verificación con evidencia real — fixes B3 (poder v6) y A2 (minuta Alejandra)
 
-Revisión de solo lectura del historial completo del proyecto (1963 mensajes). No se modificó nada. La usuaria concreta más citada es **Alejandra Arciniegas** (razón social "ALEJANDRA ARCINIEGAS ABOGADA"), que envió audios de WhatsApp `.opus`, capturas y minutas reales.
-
-Nota: los `.opus` no fueron transcribibles directamente por la herramienta (ver #213/#214); todo el contenido de audio quedó en el historial vía resúmenes que el dueño del producto pegó a mano (#215, #1271, #1291, #1307).
+Investigación de solo lectura sobre BD y storage. Ninguna prueba sintética. Reporto lo que la evidencia sostiene y lo que no.
 
 ---
 
-## BLOQUE A — CANCELACIONES DE HIPOTECA
+## 1. ¿Los documentos originales de Alejandra siguen disponibles?
 
-### A1. 2026-05-19 — Falso modal "sin créditos" + errores 500/546 (#1179, #1191, #1195, #1201, #1211)
-- **Feedback**: al procesar cancelación, UI se quedaba cargando y saltaba "Sin créditos suficientes (2 créditos)" aunque el usuario tenía 80. Después: `WORKER_RESOURCE_LIMIT`, TDZ en `certPath`, 413 en AI Gateway con PDFs >30MB, recursión RLS en `memberships`. Capturas adjuntas.
-- **Estado**: ✅ **Resuelto**. Envelope de error de negocio, refactor de variables, fragmentación de PDFs y fix RLS.
+**Parcialmente.** Consulta a `storage.objects` (bucket `expediente-files`) y a `cancelaciones`:
 
-### A2. 2026-05-20 → 2026-05-24 — Auditoría de Alejandra sobre `minuta_2.docx` (#1245, #1271, #1291, #1307)
-Feedback derivado de 4 audios + minuta descargada + `ESCRITURA_2924.docx` como referencia correcta. Puntos:
+- Alejandra (`malejaarciniegas@gmail.com`, org `ALEJANDRA ARCINIEGAS ABOGADA`) tiene **10 cancelaciones** entre 2026-05-21 y 2026-06-24 (6 completed + 4 draft). Ninguna posterior al 24 de junio.
+- Los PDFs originales NO se persisten — solo se guardan los JPEGs de páginas rasterizadas por `pdfToImages`. Los `.opus` de WhatsApp y los `.docx` adjuntos vía chat (incluido `ESCRITURA_2924.docx`) NO están en ningún bucket. Los adjuntos de chat no son descargables retroactivamente por esta herramienta.
+- Sí sobreviven, como JPEGs, las páginas del poder que Alejandra subió el 2026-06-24 (cancelación `4b05d210-...`): 25 páginas bajo `4b05d210.../cancelaciones/soportes/poder/p01..p25.jpg`. **Anomalía: las 25 páginas pesan exactamente 12.192 bytes cada una**, lo que sugiere que todas se renderizaron idénticas (probablemente placeholder/error de rasterizado del cliente). Es decir, el "archivo original" superviviente probablemente no es fiel al PDF que ella cargó.
+- El poder de la cancelación Sertuss `290fd66a-...` (2026-07-06, 20 páginas, tamaños 150K–280K) sí es contenido real.
 
-1. **Tabla "DATOS DE LA ESCRITURA PÚBLICA" con `X X` / `4165`** — la plantilla exige día/mes/notaría atómicos, la IA guardaba un solo string prosaico. → ✅ **Resuelto** con parsers regex (`parseFechaNotarial`, `extractNotariaNumero`).
-2. **Confusión "escritura nueva vs. hipoteca anterior"** — Lovable había vaciado la tabla; Alejandra aclara que ahí van los datos de la hipoteca que se cancela. → ✅ **Resuelto**.
-3. **Duplicado "UBICACIÓN DEL PREDIO" == "NOMBRE O DIRECCIÓN"** con `(DIRECCION CATASTRAL)(DIRECCION CATASTRAL)` pegado dos veces. → ✅ **Resuelto** separando `descripcion_predio` (arquitectónica) vs `nomenclatura_predio` (postal), sufijo inyectado una sola vez.
-4. **Linderos invadían el encabezado SNR** — se añadió campo `linderos_detallados` y luego se eliminaron por completo de cancelaciones (memoria `Cancelaciones Reglas Inmueble`). → ✅ **Resuelto**.
-5. **Formato notarial `TEXTO (NÚMERO)`** con concordancia de género obligatorio. → ✅ **Resuelto** (skills `formato-texto-numero-notarial`, `concordancia-genero-minutas`).
-6. **Cuantía del crédito no debe hardcodearse a `$129.685.000`** — extracción semántica multi-contexto (Mutuo/Pago/Liquidación). → ✅ **Resuelto** (memoria `Valor crédito hipotecario cancelación`, skill `extraccion-cuantia-semantica`).
-7. **Variabilidad nacional de formatos notariales** (Zero-Bias, sin hardcoding). → ✅ **Resuelto** (motor jurídico Zero-Bias).
+**No hay copia limpia del PDF original de Alejandra para re-procesar de forma fiel.** Reprocesar los JPEGs corruptos no probaría nada útil sobre el fix.
 
-### A3. 2026-06-07 — Auditoría UX interna de `CancelacionValidar.tsx` (#1484)
-- Diagnóstico estático (no feedback externo). Riesgos medios de fluidez de overrides manuales. → Parcialmente resuelto vía Smart Audit Mode y auto-guardado 5s.
+## 2. ¿El pipeline v6 del poder está realmente activo en producción?
 
-### A4. 2026-06-16/17 — Findings del Deep Security Scan (#1605, #1609, #1611)
-- No es feedback de UX de cancelaciones sino de seguridad general. → ✅ Resuelto en las sesiones subsiguientes (incluida la actual).
+**No, según la evidencia en BD.** Esto es lo más importante del reporte:
 
-### A5. 2026-06-21 — "No se le cargó el valor de la hipoteca, tocó escribirlo a mano" (#1677, #1679)
-- **Feedback + captura**. Adjunta PDFs reales. Diagnóstico: el certificado registraba "CUANTÍA INDETERMINADA"; el valor sí existía en la escritura de hipoteca pero no se estaba extrayendo con prioridad.
-- **Regla aprobada** (#1679, Opción 1): extraer SIEMPRE el monto de la escritura, con prioridad Mutuo → Pago → Liquidación.
-- **Estado**: ✅ **Resuelto** (memoria `Valor crédito hipotecario cancelación`).
+- `ocr_raw_cache` tiene **0 filas**. Cero. El wrapper `runWithPoderCache` (`supabase/functions/_shared/poderBancoCache.ts`) nunca ha escrito. Consistente con `POWER_V5_ENABLED` desactivado por defecto (ver `poderBancoSchemaVersion.ts`, línea final: `Deno.env.get("POWER_V5_ENABLED") ?? "false"`).
+- Las **2 únicas** cancelaciones con `data_ia.poder_banco` no vacío usan schema **LEGACY plano** (`apoderado_nombre`, `apoderado_cedula`, `apoderado_escritura`, `apoderado_notaria_poder`, `apoderado_fecha`), NO el schema v6 anidado (`apoderados[]`, `total_paginas`, `schema_version`).
+  - `4b05d210` (Alejandra, 2026-06-24, 25 pág): `apoderado_nombre = MARIA CAMILA PEÑA RAMÍREZ` — devolvió datos pese a que los JPEGs son sospechosos.
+  - `290fd66a` (Sertuss, 2026-07-06, 20 pág): `apoderado_nombre = FELIX REUZE CAÑAS`.
+- No hay ninguna cancelación con `apoderados[]`, `total_paginas`, ni marcador `poder_banco_v6`.
 
-### A6. 2026-06-21 noche — Múltiples deudores + tuning fino (#1701, #1703)
-- Reglas de oro: cédulas limpias (solo dígitos, máscara UI), soporte CE/Pasaporte, mayúsculas automáticas, orden de firmas vs. orden certificado.
-- **Estado**: ✅ **Resuelto** (plan v4 de 8 capas aplicado, `onlyDigits()`, deudoresTokens plural, `normalizeCC`).
+**El fix v6 existe en código pero no está corriendo en producción.** Fue diseñado, escrito, testeado unitariamente, y dejado detrás de un feature flag apagado. La flag nunca se activó.
 
-### A7. 2026-07-04 — Validación de plantilla v3 en storage (#1771, #1773)
-- Usuario detecta duplicación `.doc` legacy + `.docx`. Verifica etiquetas.
-- **Estado**: ✅ **Resuelto** (plantilla v2/v3 confirmada, blindaje cancelaciones v2 activo).
+## 3. ¿Hay evidencia indirecta de casos post-fix con poder >25 páginas?
 
----
+**No.** El único poder post-fix con datos completos es de 20 páginas (`290fd66a`, Sertuss). El único de Alejandra post-fix (`4b05d210`, 25 páginas) está en el límite del cap viejo y sus JPEGs son sospechosos. Ningún caso real de >25 páginas post-fix en BD.
 
-## BLOQUE B — PODER (Especial / General del Banco)
+## 4. Auditoría A2 de la minuta (mayo)
 
-### B1. 2026-03-09 — Audios fundacionales (#213, #215, #221)
-- Alejandra pide desde el arranque: soporte para "actúa en nombre propio o a través de apoderado", campos separados de apoderado del vendedor/comprador, y del **apoderado del banco** con carta de crédito.
-- **Estado**: ✅ **Resuelto** en el pipeline general (PersonaForm con rol apoderado; sección "Apoderado del Banco" en cancelaciones).
+**No verificable directamente.** `ESCRITURA_2924.docx` no está en storage; las minutas generadas se guardan como `<uuid>/cancelaciones/minuta.docx` (13 en total). Podríamos abrir la minuta de las cancelaciones mayo/junio de Alejandra y verificar los 7 puntos de A2 (tabla "DATOS DE LA ESCRITURA", duplicado UBICACIÓN, linderos, formato TEXTO (NÚMERO), cuantía, etc.) contra el DOCX real. Eso sí sería evidencia real, aunque contra la minuta ya generada, no contra un re-procesamiento.
 
-### B2. 2026-05-21 — Sección "Apoderado del Banco" en cancelaciones (#1271, sección 3)
-- Feedback: tercer FileDropzone "Poder General del Banco (PDF)", extracción semántica (nombre, cédula, escritura, fecha, notaría), no obligatorio para procesar, fallback a `___________` si no se carga.
-- **Estado**: ✅ **Resuelto** (handler `poderBanco`, prompt, tool, cache, schema v6).
+## 5. Nivel de certeza honesto
 
-### B3. 2026-06-21 — "Adjuntó el poder pero el sistema no lo leyó y mostró 'No se adjuntó Poder General'" (#1665, #1667)
-- **Feedback con captura** del mensaje falso. Usuaria: Alejandra Arciniegas. Query a BD confirmó 5/5 cancelaciones con `data_ia.poder_banco` completamente vacío.
-- **Causas raíz identificadas**: (a) tope duro de 25 páginas `PODER_MAX_PAGES` truncaba poderes largos donde el apoderado sustituto está al final; (b) el schema plano legacy no capturaba notas de vigencia.
-- **Estado**: ✅ **Resuelto**. Se introdujo el pipeline v5/v6 (lectura profunda, cache `poderBancoCache`, validador determinista `validatePoderSuficiencia`, banners K3/L3/C1 en `PoderBannersV5`, clasificador `classifyApoderado`, `POWER_SCHEMA_VERSION = poder_banco_v6`).
+| Afirmación | Certeza |
+|---|---|
+| Los PDFs originales de Alejandra no son recuperables fielmente | **Alta** — storage confirma solo JPEGs, y los de 2026-06-24 son idénticos (12.192 B). |
+| El pipeline v6 del poder no está activo en producción | **Alta** — 0 filas en `ocr_raw_cache`, 0 payloads con schema v6, flag `POWER_V5_ENABLED` default `false`. |
+| El fix B3 "resuelve el caso original de Alejandra" | **No verificado.** El caso reportado (#1665: poder >25pág, `poder_banco` vacío) no se puede reproducir hoy con su PDF real, y el pipeline que supuestamente lo arregla no está encendido. Los `apoderado_*` que sí aparecen provienen del extractor **legacy**, no del v6. |
+| La auditoría A2 de la minuta quedó implementada en código | **Alta** en código (skills, memorias, parsers, plantilla v2/v3). |
+| A2 se ve reflejada en las minutas reales de Alejandra generadas post-fix | **No verificado.** Requiere abrir los `minuta.docx` de sus cancelaciones y contrastar contra los 7 puntos. |
 
-### B4. 2026-06-21 — Ambigüedad de firma banco (directo vs. apoderado) y vigencia
-- Consecuencia del B3: se agregaron banners resolutivos K3 (ambigüedad de firma), L3 (vigencia contra fecha real de otorgamiento) y C1 (override manual persona natural/jurídica).
-- **Estado**: ✅ **Resuelto** (componente `PoderBannersV5`).
+## Próximos pasos recomendados (solo si quieres cerrar la verificación)
 
----
+1. **Decidir sobre `POWER_V5_ENABLED`**: o encenderlo en el ambiente y validar con un caso nuevo real (idealmente pidiéndole a Alejandra que suba otra vez uno de sus poderes largos), o quitar del roadmap la reclamación de que "B3 está resuelto en producción" y marcarlo como "resuelto en código, pendiente de activación".
+2. **Descargar y abrir las 6 minutas completed de Alejandra** (`1c969432`, `5022544d`, `15a90eef`, `1ac20fa1`, `b9606577`, `1d5b2aa7`, `d7193993`, `0e80553d`, `4b05d210`) y checar contra los 7 puntos de A2 uno por uno. Es la evidencia real más cercana disponible.
+3. **Auditar por qué los 25 JPEGs del poder de Alejandra (2026-06-24) pesan lo mismo** — puede ser un bug latente de `pdfToImages` que también contribuyó al reporte original.
 
-## Resumen ejecutivo
-
-| Módulo | Puntos únicos planteados por usuarios | Resueltos | Parciales | Pendientes |
-|---|---|---|---|---|
-| Cancelaciones | 14 | 14 | 0 | 0 |
-| Poder (especial/general) | 5 | 5 | 0 | 0 |
-| **Total** | **19** | **19 (100%)** | 0 | 0 |
-
-Observaciones honestas:
-- **Todo el feedback externo verbal/visual de Alejandra** está direccionado en código y memorias. La trazabilidad es sólida.
-- Vale la pena una **nueva ronda de testing con usuaria real** después de: (i) el fix v6 del poder (B3/B4), (ii) plantilla v3 (A7) y (iii) los cambios de seguridad RLS de esta semana — no hay feedback post-2026-07-04 en el historial.
-- No aparece feedback de otros usuarios distintos a Alejandra; se recomienda ampliar la muestra antes de dar por cerrada la ronda cualitativa.
-
-No hay acciones de implementación pendientes derivadas de esta compilación.
+Sin implementación pendiente derivada de esta verificación. Solo corrección del nivel de confianza en el plan de estado anterior.
