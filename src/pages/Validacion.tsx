@@ -1465,7 +1465,7 @@ const Validacion = () => {
     } finally {
       setSidebarUploading(null);
     }
-  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted, validarDespuesDeCarga]);
+  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
 
   // ── Deep-clean state linked to a document type ──
   const cleanStateForDocType = useCallback((tipo: string) => {
