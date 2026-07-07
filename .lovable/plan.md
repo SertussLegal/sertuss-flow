@@ -1,115 +1,55 @@
-## Diagnóstico de causa raíz — corrijo mi conclusión anterior
+## Contexto
 
-**Mi reporte previo estaba mal.** V6 SÍ corrió en el caso `0443d2f1`. La ausencia del bloque `apoderado` anidado no viene de que el flag esté apagado, sino de que el OCR no pudo leer la cláusula de poder en ese PDF específico.
+El caso `79ed163f` falló con `Upstream idle timeout exceeded` a los ~181s. Evidencia:
 
-## Evidencia línea por línea
+- Un único error `AI gateway 200 with provider error code=504` durante la ejecución en background.
+- V6 corre en paralelo (`Promise.allSettled`, no serial) y no está en la ruta de error — el error viene de la promesa `mono` (Gemini 2.5 Pro sobre las 33 páginas).
+- Caso exitoso previo (`0443d2f1`) mandó **más** páginas (41) y terminó en 126s → no es límite de páginas ni regresión de V6.
+- `supabase/functions/_shared/aiFetch.ts:99` sólo reintenta `500|502|503|429`. El 504 no reintentó y salió directo como fallo.
 
-### 1. Lectura del env var (nombre exacto)
+Diagnóstico: **timeout transitorio de Gemini 2.5 Pro en el monolítico**, no reintentado porque 504 no está en la lista de reintentables.
 
-`supabase/functions/_shared/poderBancoSchemaVersion.ts:60-61`
+## Alcance
 
-```ts
-export const POWER_V6_EXTRACTOR_ENABLED =
-  (Deno.env.get("POWER_V6_EXTRACTOR_ENABLED") ?? "false") === "true";
-```
+Solo dos cambios chicos, sin tocar V6, sin tocar el flujo de UX ni la lógica de merge:
 
-Nombre leído: `POWER_V6_EXTRACTOR_ENABLED`. Nombre del secret listado por `fetch_secrets`: `POWER_V6_EXTRACTOR_ENABLED`. **Coinciden carácter por carácter.**
+### 1. Agregar 504 a la lista de reintentables en `aiFetch.ts`
 
-### 2. Gate del extractor v6 (condición completa)
+Archivo: `supabase/functions/_shared/aiFetch.ts`
 
-`supabase/functions/procesar-cancelacion/index.ts:2340-2348`
+- Línea ~99 (retry HTTP): incluir 504 junto a 429/502/503.
+- Línea ~93 (retry sobre inner provider error): incluir 504 junto a 500/502/503/429.
 
-```ts
-const v6Runner = async (): Promise<PoderBancoDeepPayload | null> => {
-  if (!POWER_V6_EXTRACTOR_ENABLED || poderUrls.length === 0) return null;
-  try {
-    return await extractPoderBancoV6(poderUrls, LOVABLE_API_KEY);
-  } catch (e) {
-    console.error("[procesar-cancelacion mono] v6 extractor failed:", e);
-    return null;
-  }
-};
-```
+Efecto: el 504 transitorio de Gemini se reintenta 2 veces adicionales con backoff lineal 2s/4s. Es exactamente el patrón que ya usa el 502 upstream.
 
-**Simple OR, no compuesto con V5.** V6 corre siempre que su propio flag esté ON y haya páginas de poder. Idéntico gate en la línea 1973 (segunda entrada del pipeline).
+### 2. (Opcional, mismo turno) Ampliar telemetría del monolítico
 
-Merge (línea 2372-2374):
+Archivo: `supabase/functions/procesar-cancelacion/index.ts`, bloque `logPoderEvent` líneas 2386-2404.
 
-```ts
-const mergedPoder = POWER_V6_EXTRACTOR_ENABLED
-  ? mergePoderBancoV6(extracted.poder_banco, dedicatedResult, v6Result)
-  : mergePoderBanco(extracted.poder_banco, dedicatedResult);
-```
+Agregar al `extra`:
+- `mono_status: monoSettled.status` (hoy solo se loguea `dedicated_status`, aunque el que rompe es el monolítico).
+- `v6_status: v6Settled.status` y `v6_enabled: POWER_V6_EXTRACTOR_ENABLED`.
 
-### 3. Por qué el log dice `v5_enabled: false`
+Efecto: la próxima vez que falle sabemos en un solo query cuál de las tres promesas rompió, sin adivinar por logs.
 
-Telemetría en `index.ts:2386-2404`. El bloque `extra` **solo loguea `v5_enabled: POWER_V5_ENABLED`** — no loguea `v6_enabled`. Es una **omisión de telemetría**, no evidencia de que V6 no corrió. Confundí ausencia de log con ausencia de ejecución.
+## Fuera de alcance
 
-### 4. Prueba positiva de que V6 SÍ corrió en este caso
+- **No** desactivar V6. Evidencia demuestra que no participó en este fallo.
+- **No** cambiar timeouts globales de la edge function ni del gateway (no los controlamos y el `attempt=1/3` sugiere que 504 vino de Google, no de nosotros).
+- **No** partir el monolítico en subpromesas o pre-resumir páginas — cambio grande sin evidencia de que sea necesario todavía.
+- **No** tocar el pipeline v6, la caché OCR ni el schema del poder.
 
-Los campos `_classifier_motivos`, `has_apoderado_banco_v3` y `motivos_incompletitud` **solo se emiten en la rama V6** del merge (`merge.ts:135-137`). El merge legacy (`mergePoderBanco`) no los produce. El `data_ia.poder_banco` del trámite auditado contiene los tres:
+## Verificación
 
-```json
-{
-  "_classifier_motivos": ["no_apoderado_tipo_from_ocr"],
-  "has_apoderado_banco_v3": "null",
-  "motivos_incompletitud": ["paginas_parciales_sin_clausula_de_poder"],
-  "apoderado_nombre": "null",
-  "apoderado_cedula": "null",
-  "apoderado_escritura": "DOS MIL CUATROCIENTOS QUINCE (2415)",
-  "apoderado_fecha": "DIECINUEVE (19) DE ENERO DE DOS MIL VEINTICINCO (2025)",
-  "apoderado_notaria_poder": "TREINTA Y DOS (32) DE BOGOTA D.C."
-}
-```
+1. `bunx vitest run` para confirmar que no rompe nada (los tests de `aiFetch` que existan cubren el matcher de reintentables).
+2. Redeploy de `procesar-cancelacion`.
+3. Reprocesar la misma cancelación `79ed163f` desde la UI (o via `reprocess_poder` si el usuario prefiere solo el paso del poder). Si el 504 era transitorio, ahora los 2 reintentos deberían absorberlo.
+4. Confirmar en `system_events` que `mono_status=fulfilled` en la corrida siguiente.
 
-**⇒ V6 corrió, devolvió payload, y el merge V6 escribió su output.**
+## Rollback
 
-### 5. Por qué no hay bloque `apoderado` anidado
+Revertir el diff de `aiFetch.ts` (2 líneas) y redeploy. Cambio quirúrgico, sin migración ni flags.
 
-En `merge.ts:112-118`:
+## Recomendación
 
-```ts
-const apoderadoIn = (deepV6.apoderado ?? undefined) as ApoderadoPayload | undefined;
-const cls = classifyApoderado(apoderadoIn);
-const apoderadoOut = apoderadoIn
-  ? { ...apoderadoIn, tipo: cls.tipoEfectivo ?? null }
-  : null;
-// ...
-apoderado: apoderadoOut ?? undefined,   // ← si es null se pierde en JSON
-```
-
-Cuando Gemini no encuentra la cláusula (`has_apoderado_banco_v3: "null"` por regla K del prompt en `prompt.ts:29-31`), no puebla `deepV6.apoderado`, entonces `apoderadoOut = null` y la clave `apoderado` sale como `undefined` (se descarta al serializar). Comportamiento **correcto por diseño**: el propio motivo lo dice — `"paginas_parciales_sin_clausula_de_poder"`.
-
-Adicionalmente, `apoderado_nombre` y `apoderado_cedula` quedan como el string literal `"null"` — eso viene del OCR devolviendo la cadena `"null"` en lugar de JSON `null`, y el pipeline no lo normaliza. Es un bug menor de saneamiento, no relacionado con V6.
-
-### 6. Secret y despliegue
-
-- Secret `POWER_V6_EXTRACTOR_ENABLED` **sí figura** en el listado actual (`fetch_secrets`). Su valor no es visible pero el hecho de que V6 haya corrido confirma que está en `"true"`.
-- Hora del set del secret y hora del deploy: irrelevante — la prueba positiva (campos exclusivos del merge V6 presentes) demuestra que el runtime que procesó el caso ya tenía el flag ON.
-
-### 7. `Deno.env.get()` en Supabase Edge Functions
-
-No requiere nada especial. El secret configurado en Project Settings → Secrets se expone como env var estándar en el runtime Deno del edge function. La prueba está en que otros secrets del mismo tipo (`LOVABLE_API_KEY`, `GOOGLE_API_KEY`) funcionan sin ceremonia.
-
-## Diagnóstico final
-
-**Causa raíz: NO hay bug de flag.** V6 está activo y corriendo en producción. El caso `0443d2f1` procesó un Poder Davivienda donde el OCR (Gemini 2.5 Flash con el prompt v6) no pudo localizar la cláusula del apoderado — probablemente porque las páginas del PDF están parciales / cortadas / con una firma aislada sin contexto (motivo declarado por el propio modelo: `"paginas_parciales_sin_clausula_de_poder"`).
-
-El pipeline se comportó como está diseñado:
-- V6 corrió → devolvió payload sin `apoderado` con `has_apoderado_banco_v3 = "null"`.
-- Merge V6 propagó la telemetría (`_classifier_motivos`, `motivos_incompletitud`).
-- `apoderado_nombre/cedula` cayeron a la cadena literal `"null"` (bug menor de saneamiento).
-- Cuantía semántica funcionó (`indeterminada_confirmada`).
-- Trámite terminó `completed`.
-
-## Hallazgos secundarios reales (no bloqueantes)
-
-1. **Telemetría incompleta:** `logPoderEvent.extra` no incluye `v6_enabled` ni un summary del payload V6 (por ejemplo `has_apoderado_banco_v3`, `campos_deep_llenos`). Por eso me confundí. Añadirlo evita futuros diagnósticos falsos.
-2. **Saneamiento de `"null"` string:** `mergePoderBancoFlat` no trata `"null"`/`"NULL"` como valor vacío. Si Gemini devuelve la cadena literal `"null"`, se persiste como si fuera un valor real. Debería normalizarse a `undefined`.
-3. **Retrocompatibilidad de mi reporte anterior:** el veredicto "V6 no corrió" era **incorrecto**. Corrijo formalmente: **V6 está ON en runtime y funcionó**. El caso simplemente fue un PDF difícil de leer.
-
-## Próximo paso (requiere aprobación para pasar a build)
-
-1. **No hay corrección urgente del flag** — está bien.
-2. Antes de invitar a Alejandra, procesar un segundo caso con un Poder Davivienda **completo y legible** para confirmar que en el happy path aparece el bloque `apoderado` anidado con `tipo: "juridica"` y `representantes[]` poblado.
-3. (Opcional, mejora chica) Añadir `v6_enabled`, `has_apoderado_banco_v3` y `v6_apoderado_tipo` al bloque `extra` de `logPoderEvent`, y normalizar la cadena `"null"` en el merge.
+Aplicar los 2 cambios juntos. El #1 arregla la clase de error observada; el #2 evita otra sesión de diagnóstico a ciegas si vuelve a pasar.
