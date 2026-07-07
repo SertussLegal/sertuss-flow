@@ -391,6 +391,16 @@ const ReglasPropuestas = () => {
           </Table>
         </CardContent>
       </Card>
+
+      <PropuestaDetalleModal
+        propuestaId={selectedId}
+        open={modalOpen}
+        onOpenChange={(o) => {
+          setModalOpen(o);
+          if (!o) setSelectedId(null);
+        }}
+        onReviewed={loadPropuestas}
+      />
     </div>
   );
 };
