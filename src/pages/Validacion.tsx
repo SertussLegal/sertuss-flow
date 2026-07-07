@@ -2954,14 +2954,8 @@ const Validacion = () => {
                 <div key={key} className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
                     {NOTARIA_LABELS[key]}
-                    {(() => {
-                      const attr = NOTARIA_INPUT_ATTR[key];
-                      if (!attr) return null;
-                      const v = inlineBadgeMap.get(attr);
-                      if (!v) return null;
-                      return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
-                    })()}
                   </label>
+
                   {renderNotariaInput(key)}
                 </div>
               ))}
