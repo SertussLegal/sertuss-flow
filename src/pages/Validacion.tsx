@@ -2720,9 +2720,8 @@ const Validacion = () => {
     };
 
     const renderNotariaInput = (key: keyof NotariaTramite) => {
-      const sug = notariaSuggestions.get(key);
       const dataAttr = NOTARIA_INPUT_ATTR[key];
-      const input = (
+      return (
         <input
           type="text"
           value={notariaTramite[key]}
@@ -2732,17 +2731,8 @@ const Validacion = () => {
           className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
       );
-      if (!sug) return input;
-      return (
-        <OcrSuggestion
-          value={sug}
-          onConfirm={() => applyNotariaSuggestion(key, sug)}
-          onIgnore={() => ignoreNotariaSuggestion(key, sug)}
-        >
-          <div className="ring-2 ring-primary/40 rounded-md">{input}</div>
-        </OcrSuggestion>
-      );
     };
+
 
     const camposLlenos = NOTARIA_FIELDS.filter(k => notariaTramite[k]).length;
     // Campos del bloque número (manejados por la sub-tarjeta especial)
