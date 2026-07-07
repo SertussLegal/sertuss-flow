@@ -94,6 +94,11 @@ const FIELD_TO_ACTOS: Record<string, keyof Actos> = {
 
 type SyncStatus = "saved" | "saving" | "unsaved" | "idle";
 
+// Fase 1 (2026-07): mapa vacío estable para las props `inlineBadges` de los
+// forms hijos. Se retira junto con el tipo `Validacion` en una fase futura.
+const EMPTY_INLINE_BADGES: ReadonlyMap<string, ClaudeValidacion> = new Map();
+
+
 /** Robust DOCX XML override algorithm with text virtualization and node consolidation */
 function applyOverridesToDocx(xml: string, overrides: TextOverride[]): string {
   const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
