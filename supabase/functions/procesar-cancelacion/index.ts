@@ -1804,16 +1804,13 @@ if (import.meta.main) serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const bodyAny = body as any;
   if (bodyAny?.action === "regression_cuantia") {
-    let allowed = hasRegressionBypass;
-    if (!allowed) {
-      const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
-      allowed = !isAdminErr && isAdminData === true;
-    }
-    if (!allowed) {
+    const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
+    if (isAdminErr || isAdminData !== true) {
       return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
 
     const ids = Array.isArray(bodyAny.tramite_ids) ? (bodyAny.tramite_ids as unknown[]).filter((x) => typeof x === "string") as string[] : [];
     if (ids.length === 0) {
