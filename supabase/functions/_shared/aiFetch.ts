@@ -121,7 +121,7 @@ export async function fetchAiGateway(
       lastStatus = response.status;
       lastBody = await response.text().catch(() => "");
 
-      const retryable = response.status === 429 || response.status === 502 || response.status === 503;
+      const retryable = response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504;
       console.error(
         `[${tag}] AI gateway non-OK status=${response.status} attempt=${attempt + 1}/${totalAttempts} body=${lastBody.slice(0, 300)}`,
       );
