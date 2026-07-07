@@ -16,8 +16,9 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import { validarConClaude, tieneErroresCriticos, contarPorNivel, obtenerBloqueantes, obtenerSidePanel, obtenerInlineBadges, type Validacion as ClaudeValidacion } from "@/services/validacionClaude";
-import { InlineBadgeDot } from "@/components/tramites/InlineBadgeDot";
+import type { Validacion as ClaudeValidacion } from "@/services/validacionClaude";
+import { computeTopIssues, type DeterministicIssue } from "@/lib/computeTopIssues";
+
 import { toast as sonnerToast } from "sonner";
 import PersonaForm from "@/components/tramites/PersonaForm";
 import InmuebleForm from "@/components/tramites/InmuebleForm";
@@ -92,6 +93,11 @@ const FIELD_TO_ACTOS: Record<string, keyof Actos> = {
 };
 
 type SyncStatus = "saved" | "saving" | "unsaved" | "idle";
+
+// Fase 1 (2026-07): mapa vacío estable para las props `inlineBadges` de los
+// forms hijos. Se retira junto con el tipo `Validacion` en una fase futura.
+const EMPTY_INLINE_BADGES: ReadonlyMap<string, ClaudeValidacion> = new Map();
+
 
 /** Robust DOCX XML override algorithm with text virtualization and node consolidation */
 function applyOverridesToDocx(xml: string, overrides: TextOverride[]): string {
@@ -278,14 +284,11 @@ const Validacion = () => {
   const [validando, setValidando] = useState(false);
   const [sidebarUploading, setSidebarUploading] = useState<string | null>(null);
   const [tramiteMetadata, setTramiteMetadata] = useState<Record<string, any> | null>(null);
-  const [validacionDialogOpen, setValidacionDialogOpen] = useState(false);
-  const [validacionResultado, setValidacionResultado] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
-  const [validacionCampos, setValidacionCampos] = useState<Awaited<ReturnType<typeof validarConClaude>> | null>(null);
-  const [validandoCampos, setValidandoCampos] = useState(false);
+  const [topIssues, setTopIssues] = useState<DeterministicIssue[]>([]);
   const [bannerExpanded, setBannerExpanded] = useState(false);
   const [notariaTramite, setNotariaTramite] = useState<NotariaTramite>(createEmptyNotariaTramite());
   const [notariaPanelOpen, setNotariaPanelOpen] = useState(false);
-  const [ignoredNotariaSuggestions, setIgnoredNotariaSuggestions] = useState<Set<string>>(new Set());
+
   // Campos del bloque notaría que el usuario tocó manualmente (no auto-derivar al cambiar el número)
   const [notariaManualOverrides, setNotariaManualOverrides] = useState<Set<keyof NotariaTramite>>(new Set());
   const [formatoOrdinalNotaria, setFormatoOrdinalNotaria] = useState<FormatoOrdinal>("volada");
@@ -870,32 +873,8 @@ const Validacion = () => {
     });
   }, []);
 
-  // ─── Fase 3.5: mapa de inline-badges indexado por data-field-input ───
-  const inlineBadgeMap = useMemo(() => {
-    const map = new Map<string, ClaudeValidacion>();
-    if (!validacionCampos?.validaciones?.length) return map;
-    const inline = obtenerInlineBadges(validacionCampos.validaciones as ClaudeValidacion[]);
-    const resolveKey = (raw: string): string => {
-      if (!raw) return raw;
-      if (FIELD_ALIAS[raw]) return FIELD_ALIAS[raw];
-      if (FIELD_TO_INMUEBLE[raw]) return raw; // ya coincide con data-field-input
-      if (FIELD_TO_ACTOS[raw]) return raw;
-      // soporta claves "actos.valor_compraventa", "inmueble.matricula"
-      const stripped = raw.replace(/^(inmueble|actos|apoderado_banco|notaria_tramite|notaria)\./, "");
-      if (FIELD_ALIAS[raw]) return FIELD_ALIAS[raw];
-      return stripped || raw;
-    };
-    for (const v of inline) {
-      const keys = [v.campo, ...(v.campos_relacionados || [])].filter(Boolean);
-      for (const k of keys) {
-        const resolved = resolveKey(k);
-        if (resolved && !map.has(resolved)) map.set(resolved, v);
-        // También indexamos la clave original por si ya coincide
-        if (k && !map.has(k)) map.set(k, v);
-      }
-    }
-    return map;
-  }, [validacionCampos]);
+
+
 
   const calculateProgress = () => {
     const personaFields: (keyof Persona)[] = ["nombre_completo", "numero_cedula", "estado_civil", "direccion", "municipio_domicilio"];
@@ -1342,42 +1321,8 @@ const Validacion = () => {
     };
   };
 
-  const validarDespuesDeCarga = useCallback((
-    tipoDoc: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial",
-    datosDocumento: any,
-    tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos"
-  ) => {
-    if (!tramiteIdRef.current || !profile?.organization_id) return;
-    setValidandoCampos(true);
-    (async () => {
-      try {
-        const resultado = await validarConClaude({
-          modo: "campos",
-          tramiteId: tramiteIdRef.current!,
-          organizationId: profile.organization_id!,
-          tipoActo: actos.tipo_acto || "compraventa",
-          tabOrigen,
-          datosExtraidos: {
-            documento_cargado: { tipo: tipoDoc, datos: datosDocumento },
-            vendedores: vendedores.map(enrichPersonaForClaude),
-            compradores: compradores.map(enrichPersonaForClaude),
-            inmueble,
-            actos,
-          },
-          validacionesApp: [
-            ...(vendedores.length || compradores.length ? ["cruce_roles_certificado_completado"] : []),
-          ],
-        });
-        if (resultado.estado !== "error_sistema") {
-          setValidacionCampos(resultado);
-        }
-      } catch {
-        /* silencio total */
-      } finally {
-        setValidandoCampos(false);
-      }
-    })();
-  }, [profile?.organization_id, vendedores, compradores, inmueble, actos]);
+
+
 
   // Handle sidebar document upload: invoke scan-document and re-hydrate
   const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
@@ -1482,21 +1427,9 @@ const Validacion = () => {
 
         toast({ title: "Documento procesado", description: `${file.name} escaneado y datos actualizados.` });
 
-        // Disparar validación Claude en background (Momento 1: campos)
-        const tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos" =
-          scanType === "certificado_tradicion" || scanType === "predial" ? "inmueble"
-          : tipo === "carta_credito" || tipo === "poder_notarial" ? "actos"
-          : scanType === "escritura_antecedente" ? "vendedores"
-          : tipo.startsWith("cedula_") ? "vendedores"
-          : "vendedores";
-        const tipoDocMapped: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial" =
-          scanType === "certificado_tradicion" ? "certificado"
-          : scanType === "predial" ? "predial"
-          : scanType === "escritura_antecedente" ? "escritura_previa"
-          : tipo === "carta_credito" ? "carta_credito"
-          : tipo === "poder_notarial" ? "poder_notarial"
-          : "cedula";
-        validarDespuesDeCarga(tipoDocMapped, d, tabOrigen);
+        // (Retirado en Fase 1: auditor Claude en vivo. El "top-3" determinista se
+        // calcula al pulsar "Generar y Analizar Word".)
+
       }
       await refreshCredits();
     } catch (err: any) {
@@ -1511,7 +1444,7 @@ const Validacion = () => {
     } finally {
       setSidebarUploading(null);
     }
-  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted, validarDespuesDeCarga]);
+  }, [profile?.organization_id, toast, handlePersonasExtracted, handleDocumentoExtracted]);
 
   // ── Deep-clean state linked to a document type ──
   const cleanStateForDocType = useCallback((tipo: string) => {
@@ -1906,103 +1839,25 @@ const Validacion = () => {
 
     setValidando(true);
     try {
-      const datosExtraidos = {
-        vendedores: vendedores.map(v => enrichPersonaForClaude({
-          nombre_completo: v.nombre_completo,
-          numero_cedula: v.numero_cedula,
-          lugar_expedicion: v.lugar_expedicion,
-          estado_civil: v.estado_civil,
-          direccion: v.direccion,
-          municipio_domicilio: v.municipio_domicilio,
-          es_persona_juridica: v.es_persona_juridica,
-          razon_social: v.razon_social,
-          nit: v.nit,
-        })),
-        compradores: compradores.map(c => enrichPersonaForClaude({
-          nombre_completo: c.nombre_completo,
-          numero_cedula: c.numero_cedula,
-          lugar_expedicion: c.lugar_expedicion,
-          estado_civil: c.estado_civil,
-          direccion: c.direccion,
-          municipio_domicilio: c.municipio_domicilio,
-          es_persona_juridica: c.es_persona_juridica,
-          razon_social: c.razon_social,
-          nit: c.nit,
-        })),
-        inmueble: {
-          matricula_inmobiliaria: inmueble.matricula_inmobiliaria,
-          identificador_predial: inmueble.identificador_predial,
-          departamento: inmueble.departamento,
-          municipio: inmueble.municipio,
-          direccion: inmueble.direccion,
-          area: inmueble.area,
-          linderos: inmueble.linderos,
-          avaluo_catastral: inmueble.avaluo_catastral,
-          codigo_orip: inmueble.codigo_orip,
-        },
-        actos: {
-          tipo_acto: actos.tipo_acto,
-          valor_compraventa: actos.valor_compraventa,
-          es_hipoteca: actos.es_hipoteca,
-          valor_hipoteca: actos.valor_hipoteca,
-          entidad_bancaria: actos.entidad_bancaria,
-        },
-      };
-
-      const validacionesApp: string[] = [];
-      if (vendedores.length > 0 || compradores.length > 0) {
-        validacionesApp.push("cruce_roles_certificado_completado");
-      }
-      const tienePendientes = [...vendedores, ...compradores].some(
-        (p: any) => p.pendiente === true
-      );
-      if (tienePendientes) {
-        validacionesApp.push("placeholders_pendientes_aplicados");
-      }
-
-      const resultado = await validarConClaude({
-        modo: "documento",
-        tramiteId,
-        organizationId: profile.organization_id,
+      const issues = computeTopIssues({
         tipoActo: actos.tipo_acto || "compraventa",
-        datosExtraidos,
-        validacionesApp,
+        vendedores,
+        compradores,
+        inmueble,
+        actos,
+        notariaTramite,
       });
-
-      // Error sistema → no bloquear, abrir preview directamente
-      if (resultado.estado === "error_sistema") {
-        setPreviewOpen(true);
-        return;
-      }
-
-      // Aprobado sin problemas
-      if (resultado.estado === "aprobado" && !tieneErroresCriticos(resultado)) {
-        setPreviewOpen(true);
-        return;
-      }
-
-      // Errores críticos → mostrar dialog
-      if (tieneErroresCriticos(resultado)) {
-        setValidacionResultado(resultado);
-        setValidacionDialogOpen(true);
-        return;
-      }
-
-      // Solo advertencias/sugerencias → toast + abrir preview
-      const conteo = contarPorNivel(resultado);
-      sonnerToast.info(
-        `Validación: ${resultado.puntuacion ?? "—"}/100 — ${conteo.advertencias} advertencia(s), ${conteo.sugerencias} sugerencia(s)`,
-        { description: resultado.retroalimentacion_general, duration: 6000 }
-      );
+      setTopIssues(issues);
       setPreviewOpen(true);
     } catch (err) {
-      console.error("Error en validación pre-preview:", err);
-      // Fallback: abrir preview sin bloquear
+      console.error("Error calculando top-issues:", err);
+      setTopIssues([]);
       setPreviewOpen(true);
     } finally {
       setValidando(false);
     }
   };
+
 
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
@@ -2499,66 +2354,11 @@ const Validacion = () => {
   };
 
   const renderTabs = () => {
-    // Helper: pick highest-severity validation for a tab
-    const getTabSeverity = (tabKey: string) => {
-      if (!validacionCampos?.validaciones?.length) return null;
-      const matches = validacionCampos.validaciones.filter(v =>
-        v.campo?.startsWith(`${tabKey}.`) || v.campo === tabKey ||
-        v.campos_relacionados?.some(c => c.startsWith(`${tabKey}.`))
-      );
-      if (!matches.length) return null;
-      const order = { error: 3, advertencia: 2, sugerencia: 1 } as const;
-      const top = matches.reduce((a, b) =>
-        (order[b.nivel as keyof typeof order] || 0) > (order[a.nivel as keyof typeof order] || 0) ? b : a
-      );
-      return { nivel: top.nivel, explicacion: top.explicacion, count: matches.length };
-    };
+    // Fase 1 (2026-07): auditor Claude retirado. Los indicadores por pestaña se
+    // retiran junto con él. Se conserva la función como no-op para no tocar los
+    // 4 TabsTrigger que la invocan.
+    const renderTabIcon = (_tabKey: string): React.ReactNode => null;
 
-    // Detecta si una pestaña tiene inline-badges (Fase 3.5)
-    const hasTabInlineBadges = (tabKey: string): { v: ClaudeValidacion } | null => {
-      if (!inlineBadgeMap.size) return null;
-      const prefixes: string[] =
-        tabKey === "vendedores" ? ["vendedor_"] :
-        tabKey === "compradores" ? ["comprador_"] :
-        tabKey === "inmueble" ? ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "codigo_orip", "direccion_inmueble", "area_construida", "area_privada", "avaluo_catastral", "linderos", "tipo_predio", "tipo_identificador_predial"] :
-        tabKey === "actos" ? ["valor_compraventa", "valor_hipoteca", "entidad_bancaria", "entidad_nit", "entidad_domicilio", "pago_inicial", "saldo_financiado", "fecha_credito", "tipo_acto", "apoderado_"] :
-        [];
-      for (const [k, v] of inlineBadgeMap) {
-        if (prefixes.some(p => k.startsWith(p) || k === p)) return { v };
-      }
-      return null;
-    };
-
-    const renderTabIcon = (tabKey: string) => {
-      const sev = getTabSeverity(tabKey);
-      if (!sev) {
-        const inline = hasTabInlineBadges(tabKey);
-        if (inline) {
-          return <InlineBadgeDot explicacion={inline.v.explicacion} nivel={inline.v.nivel} className="ml-1.5" />;
-        }
-        return null;
-      }
-      const Icon = sev.nivel === "error" ? AlertCircle : sev.nivel === "advertencia" ? AlertTriangle : Info;
-      const colorCls = sev.nivel === "error" ? "text-destructive" : sev.nivel === "advertencia" ? "text-accent" : "text-primary";
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Icon className={`h-3.5 w-3.5 ml-1.5 ${colorCls}`} />
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-              <p className="text-xs">{sev.explicacion}</p>
-              {sev.count > 1 && <p className="text-[10px] opacity-70 mt-1">+{sev.count - 1} más</p>}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    };
-
-    const conteo = validacionCampos ? contarPorNivel(validacionCampos) : null;
-    const totalHallazgos = conteo ? conteo.errores + conteo.advertencias + conteo.sugerencias : 0;
-
-    // Sugerencias de notaría detectadas por Claude (auto-corregibles, campo notaria_tramite.*)
     const NOTARIA_FIELDS: Array<keyof NotariaTramite> = [
       "numero_notaria", "numero_notaria_letras", "numero_ordinal", "circulo",
       "departamento", "nombre_notario", "tipo_notario", "decreto_nombramiento", "genero_notario",
@@ -2574,37 +2374,8 @@ const Validacion = () => {
       decreto_nombramiento: "Decreto / Resolución",
       genero_notario: "Género (MASCULINO / FEMENINO)",
     };
-    const notariaSuggestions = new Map<keyof NotariaTramite, string>();
-    if (validacionCampos?.validaciones) {
-      for (const v of validacionCampos.validaciones) {
-        if (!v.auto_corregible || !v.valor_sugerido) continue;
-        const m = (v.campo || "").match(/^notaria(?:_tramite)?\.(.+)$/);
-        if (!m) continue;
-        const key = m[1] as keyof NotariaTramite;
-        if (!NOTARIA_FIELDS.includes(key)) continue;
-        if (ignoredNotariaSuggestions.has(`${key}=${v.valor_sugerido}`)) continue;
-        if (notariaTramite[key]) continue; // ya tiene valor: no sugerir
-        if (!notariaSuggestions.has(key)) notariaSuggestions.set(key, v.valor_sugerido);
-      }
-    }
 
-    const applyNotariaSuggestion = (key: keyof NotariaTramite, value: string) => {
-      setNotariaTramite(prev => ({ ...prev, [key]: value }));
-      setIgnoredNotariaSuggestions(prev => new Set(prev).add(`${key}=${value}`));
-    };
-    const ignoreNotariaSuggestion = (key: keyof NotariaTramite, value: string) => {
-      setIgnoredNotariaSuggestions(prev => new Set(prev).add(`${key}=${value}`));
-    };
-    const applyAllNotariaSuggestions = () => {
-      const updates: Partial<NotariaTramite> = {};
-      const newIgnored = new Set(ignoredNotariaSuggestions);
-      notariaSuggestions.forEach((value, key) => {
-        updates[key] = value as any;
-        newIgnored.add(`${key}=${value}`);
-      });
-      setNotariaTramite(prev => ({ ...prev, ...updates }));
-      setIgnoredNotariaSuggestions(newIgnored);
-    };
+
 
     // Handler especial para `numero_notaria` que también re-deriva letras y ordinal
     // (excepto si el usuario ya los marcó como manuales).
@@ -2720,9 +2491,8 @@ const Validacion = () => {
     };
 
     const renderNotariaInput = (key: keyof NotariaTramite) => {
-      const sug = notariaSuggestions.get(key);
       const dataAttr = NOTARIA_INPUT_ATTR[key];
-      const input = (
+      return (
         <input
           type="text"
           value={notariaTramite[key]}
@@ -2732,17 +2502,8 @@ const Validacion = () => {
           className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
       );
-      if (!sug) return input;
-      return (
-        <OcrSuggestion
-          value={sug}
-          onConfirm={() => applyNotariaSuggestion(key, sug)}
-          onIgnore={() => ignoreNotariaSuggestion(key, sug)}
-        >
-          <div className="ring-2 ring-primary/40 rounded-md">{input}</div>
-        </OcrSuggestion>
-      );
     };
+
 
     const camposLlenos = NOTARIA_FIELDS.filter(k => notariaTramite[k]).length;
     // Campos del bloque número (manejados por la sub-tarjeta especial)
@@ -2778,20 +2539,10 @@ const Validacion = () => {
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">Datos de la Notaría</span>
-            {(() => {
-              const notariaInline = Array.from(inlineBadgeMap.entries()).find(([k]) => k.startsWith("notaria_"));
-              if (!notariaInline) return null;
-              const [, v] = notariaInline;
-              return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1" />;
-            })()}
             <span className="text-xs text-muted-foreground">
               ({camposLlenos}/{NOTARIA_FIELDS.length} campos)
             </span>
-            {notariaSuggestions.size > 0 && (
-              <Badge variant="outline" className="border-primary/40 text-primary text-[10px]">
-                {notariaSuggestions.size} sugerencia{notariaSuggestions.size !== 1 ? "s" : ""} de IA
-              </Badge>
-            )}
+
           </div>
           {notariaPanelOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
@@ -2801,16 +2552,8 @@ const Validacion = () => {
               Estos datos se usan para llenar las referencias a la notaría en la escritura.
               Si los dejas vacíos, el documento mostrará líneas en blanco (___________).
             </p>
-            {notariaSuggestions.size > 0 && (
-              <div className="flex items-center justify-between gap-2 rounded bg-primary/5 border border-primary/20 px-2 py-1.5">
-                <span className="text-xs text-foreground">
-                  El asistente IA detectó {notariaSuggestions.size} dato{notariaSuggestions.size !== 1 ? "s" : ""} de notaría en los documentos cargados.
-                </span>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={applyAllNotariaSuggestions}>
-                  Aplicar todas
-                </Button>
-              </div>
-            )}
+
+
 
             {/* ── Bloque único: Número de Notaría (genera letras y ordinal) ── */}
             <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-3">
@@ -2954,14 +2697,8 @@ const Validacion = () => {
                 <div key={key} className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
                     {NOTARIA_LABELS[key]}
-                    {(() => {
-                      const attr = NOTARIA_INPUT_ATTR[key];
-                      if (!attr) return null;
-                      const v = inlineBadgeMap.get(attr);
-                      if (!v) return null;
-                      return <InlineBadgeDot explicacion={v.explicacion} nivel={v.nivel} className="ml-1.5" />;
-                    })()}
                   </label>
+
                   {renderNotariaInput(key)}
                 </div>
               ))}
@@ -2977,76 +2714,38 @@ const Validacion = () => {
         <TabsTrigger value="actos" className="flex-1">Actos{renderTabIcon("actos")}</TabsTrigger>
       </TabsList>
 
-      {validandoCampos && (
-        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" /> Validando coherencia con asistente IA...
+      {topIssues.length > 0 && (
+        <div className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 space-y-1.5">
+          <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+            <Info className="h-3.5 w-3.5 text-primary" />
+            Top {topIssues.length} a revisar antes de generar
+          </div>
+          <ul className="space-y-1">
+            {topIssues.map((it) => {
+              const Icon = it.nivel === "error" ? AlertCircle
+                         : it.nivel === "advertencia" ? AlertTriangle : Info;
+              const cls = it.nivel === "error" ? "text-destructive"
+                        : it.nivel === "advertencia" ? "text-accent" : "text-primary";
+              return (
+                <li key={it.codigo_regla + it.campo} className="flex items-start gap-2 text-xs">
+                  <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${cls}`} />
+                  <span>
+                    <span className="font-medium text-foreground">{it.campo}</span>
+                    <span className="text-muted-foreground"> · {it.explicacion}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
-      {validacionCampos && totalHallazgos > 0 && (
-        <div className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setBannerExpanded(v => !v)}
-              className="flex items-center gap-2 text-xs text-foreground hover:text-primary transition-colors flex-1 text-left"
-            >
-              <Info className="h-3.5 w-3.5 text-primary" />
-              <span>
-                {conteo!.errores > 0 && <span className="text-destructive font-medium">{conteo!.errores} error{conteo!.errores !== 1 ? "es" : ""}</span>}
-                {conteo!.errores > 0 && (conteo!.advertencias > 0 || conteo!.sugerencias > 0) && <span>, </span>}
-                {conteo!.advertencias > 0 && <span className="text-accent font-medium">{conteo!.advertencias} advertencia{conteo!.advertencias !== 1 ? "s" : ""}</span>}
-                {conteo!.advertencias > 0 && conteo!.sugerencias > 0 && <span>, </span>}
-                {conteo!.sugerencias > 0 && <span>{conteo!.sugerencias} sugerencia{conteo!.sugerencias !== 1 ? "s" : ""}</span>}
-                <span className="text-muted-foreground"> tras la última carga</span>
-              </span>
-              {bannerExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setValidacionCampos(null)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Descartar"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          {bannerExpanded && (
-            <ul className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
-              {(() => {
-                // Fase 3: side panel ordenado por prioridad. Si la validación no
-                // trae ui_target (respuesta vieja), entra al panel lateral por default.
-                const sidePanelItems = obtenerSidePanel(validacionCampos.validaciones as ClaudeValidacion[]);
-                const items = sidePanelItems.length > 0 ? sidePanelItems : (validacionCampos.validaciones as ClaudeValidacion[]);
-                return items.map((v, idx) => {
-                  const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
-                  const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
-                  const prio = v.priority ?? (v.nivel === "error" ? "high" : v.nivel === "advertencia" ? "medium" : "low");
-                  const bgCls =
-                    prio === "high" ? "bg-destructive/10 border-l-2 border-destructive/60" :
-                    prio === "medium" ? "bg-accent/10 border-l-2 border-accent/60" :
-                    "bg-notarial-gold/5 border-l-2 border-notarial-gold/40";
-                  return (
-                    <li key={idx} className={`flex items-start gap-2 text-xs rounded-sm pl-2 py-1 pr-1 ${bgCls}`}>
-                      <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
-                      <div className="flex-1">
-                        <span className="font-medium text-foreground">{v.campo}</span>
-                        <span className="text-muted-foreground"> · {v.explicacion}</span>
-                      </div>
-                    </li>
-                  );
-                });
-              })()}
-            </ul>
-          )}
-        </div>
-      )}
 
       <TabsContent value="vendedores">
-        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
+        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
       </TabsContent>
       <TabsContent value="compradores">
-        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
       </TabsContent>
       <TabsContent value="inmueble">
         <InmuebleForm
@@ -3059,12 +2758,13 @@ const Validacion = () => {
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
           metadata={tramiteMetadata}
-          inlineBadges={inlineBadgeMap}
+          inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>}
         />
       </TabsContent>
       <TabsContent value="actos">
-        <ActosForm actos={actos} onChange={setActos} inlineBadges={inlineBadgeMap} />
+        <ActosForm actos={actos} onChange={setActos} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
       </TabsContent>
+
     </Tabs>
     );
   };
@@ -3506,113 +3206,10 @@ const Validacion = () => {
         onDebugVisualChange={setDebugDocxOn}
       />
 
-
-      {/* Dialog de validación Claude — errores críticos */}
-      <AlertDialog open={validacionDialogOpen} onOpenChange={setValidacionDialogOpen}>
-        <AlertDialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              Revisión de validación
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                {validacionResultado && (
-                  <>
-                    {validacionResultado.puntuacion != null && (
-                      <p className="text-sm font-medium">
-                        Puntuación: <span className="text-foreground">{validacionResultado.puntuacion}/100</span>
-                      </p>
-                    )}
-                    <p className="text-sm">{validacionResultado.retroalimentacion_general}</p>
-
-                    {/* Fase 3: banner bloqueante destacado (no inhabilita el botón Confirmar) */}
-                    {(() => {
-                      const bloqueantes = obtenerBloqueantes(validacionResultado.validaciones as ClaudeValidacion[]);
-                      if (bloqueantes.length === 0) return null;
-                      return (
-                        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 space-y-1.5">
-                          <p className="text-sm font-semibold text-destructive flex items-center gap-1.5">
-                            <AlertCircle className="h-4 w-4" />
-                            Atención: {bloqueantes.length} hallazgo{bloqueantes.length !== 1 ? "s" : ""} crítico{bloqueantes.length !== 1 ? "s" : ""} multi-campo
-                          </p>
-                          <ul className="space-y-1">
-                            {bloqueantes.map((v, i) => (
-                              <li key={i} className="text-xs text-foreground">
-                                <span className="font-medium">{v.campo}</span>: {v.explicacion}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Errores */}
-                    {validacionResultado.validaciones.filter(v => v.nivel === "error").length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-destructive flex items-center gap-1">
-                          <AlertCircle className="h-3.5 w-3.5" /> Errores
-                        </p>
-                        {validacionResultado.validaciones.filter(v => v.nivel === "error").map((v, i) => (
-                          <div key={i} className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs">
-                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
-                            {v.valor_sugerido && (
-                              <span className="block text-muted-foreground mt-0.5">Sugerido: {v.valor_sugerido}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Advertencias */}
-                    {validacionResultado.validaciones.filter(v => v.nivel === "advertencia").length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-yellow-600 flex items-center gap-1">
-                          <AlertTriangle className="h-3.5 w-3.5" /> Advertencias
-                        </p>
-                        {validacionResultado.validaciones.filter(v => v.nivel === "advertencia").map((v, i) => (
-                          <div key={i} className="rounded border border-yellow-500/30 bg-yellow-500/5 p-2 text-xs">
-                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Sugerencias */}
-                    {validacionResultado.validaciones.filter(v => v.nivel === "sugerencia").length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-blue-600 flex items-center gap-1">
-                          <Info className="h-3.5 w-3.5" /> Sugerencias
-                        </p>
-                        {validacionResultado.validaciones.filter(v => v.nivel === "sugerencia").map((v, i) => (
-                          <div key={i} className="rounded border border-blue-500/30 bg-blue-500/5 p-2 text-xs">
-                            <span className="font-medium">{v.campo}</span>: {v.explicacion}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Corregir</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setValidacionDialogOpen(false);
-                setPreviewOpen(true);
-              }}
-              className="bg-notarial-gold text-notarial-dark hover:bg-notarial-gold/90"
-            >
-              Continuar de todas formas
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
+
 
 const personaToRow = (p: Persona) => ({
   nombre_completo: p.nombre_completo,
