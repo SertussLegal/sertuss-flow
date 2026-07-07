@@ -1,178 +1,121 @@
-# Plan: cerrar 55 warnings SECURITY DEFINER + smoke-test tablas vacías
+# Plan: cerrar 3 hallazgos del Deep Security Scan
 
-Solo diseño. Nada se ejecuta. Revisa el SQL línea por línea antes de aprobar.
+Solo diseño. Nada se ejecuta hasta tu OK.
 
-## Contexto
+## Hallazgo #1 — CRÍTICO: `adaptar-estilo-prosa` sin validación de JWT
 
-El linter marca cada función `SECURITY DEFINER` en `public` como warning porque, por default, `PUBLIC` (que incluye `anon` y `authenticated`) tiene `EXECUTE`. Endurecemos por función según quién la llama hoy realmente (verificado vía grep en `src/` + `supabase/functions/`).
+### Contexto verificado
+- Callers reales hoy: **1 solo** — `src/components/cancelaciones/prosa/ProsaApoderadoModal.tsx:136` vía `supabase.functions.invoke("adaptar-estilo-prosa", ...)`. `invoke()` inyecta automáticamente el `Authorization: Bearer <jwt>` del usuario logueado. Ningún caller anónimo legítimo → cambio seguro.
+- Patrón canónico ya usado en `process-expediente/index.ts` (líneas 23-41) y `procesar-cancelacion/index.ts` (líneas 1554-1570): `getClaims(token)` con `SUPABASE_ANON_KEY` + client con Authorization header. Rechaza con 401.
+- `supabase/config.toml`: NO tiene `[functions.process-expediente]` ni `[functions.procesar-cancelacion]` — ambas usan el default de Lovable Cloud (`verify_jwt = false`) y validan en código con `getClaims()`. **La regla del sistema** (`disable-jwt-edge-functions`) dice que con signing-keys el patrón correcto es `verify_jwt = false` + validación en código. **No hay que tocar `config.toml`**.
 
-## Inventario de callers (verificado hoy)
+### Diff exacto propuesto para `supabase/functions/adaptar-estilo-prosa/index.ts`
 
-| Función | Caller real hoy | Rol requerido |
-|---|---|---|
-| `consume_credit_v2` | `src/services/credits.ts`, edge `procesar-cancelacion` (con userClient) | authenticated |
-| `unlock_expediente` | `src/pages/Validacion.tsx` | authenticated |
-| `set_active_context` | `src/contexts/AuthContext.tsx` | authenticated |
-| `create_organization_for_user` | `AuthContext.tsx`, `SetupOrgModal.tsx` | authenticated |
-| `is_platform_admin` | `descubrir-reglas` (userClient) + usada en policies | authenticated |
-| `admin_review_propuesta` | `PropuestaDetalleModal.tsx` | authenticated (chequea `is_platform_admin` dentro) |
-| `admin_list_org_users`, `admin_update_organization`, `admin_toggle_module` | `AdminOrgEdit.tsx` | authenticated (chequea admin dentro) |
-| `get_all_organizations`, `admin_update_credits`, `admin_set_debug_tools` | `Admin.tsx` | authenticated (chequea admin dentro) |
-| `restore_credit` | edge `procesar-cancelacion` (serviceClient) | service_role SOLO — bloquea `auth.uid() IS NOT NULL` |
-| `consume_credit` (legacy wrapper) | nadie en frontend/edge | revocable de todos |
-| `get_active_org`, `get_user_org`, `get_user_role`, `is_org_member`, `is_org_admin` | usadas dentro de policies RLS | authenticated (RLS evalúa con el rol del caller) |
-| `accept_invitation` | nadie hoy en el código, pero es user-facing por diseño | authenticated |
-| `next_radicado` | trigger `assign_radicado_on_insert` | interna |
-| `purge_expired_drafts` | nadie (job manual/cron a futuro) | service_role |
-| Triggers puros (`assign_radicado_on_insert`, `handle_new_user`, `assign_core_modules_on_org_insert`, `prevent_profile_role_self_update`, `handle_membership_revocation`, `set_logs_extraccion_org`, `set_updated_at`, `enforce_credit_tramite`, `log_word_generated`, `validate_configuracion_notaria`, `validate_reglas_validacion`, `validate_historial_validaciones`) | disparadas por triggers, nadie las llama directo | ninguna directa |
+Cambios:
+1. Añadir import de `createClient`.
+2. Insertar bloque de validación al inicio del `try` en `serve(...)`, antes de leer el body.
 
-## Tarea 1 — SQL de REVOKE/GRANT (diseño, no ejecutar)
+```diff
+ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
++import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ import { OverrideSchema } from "../_shared/isomorphic/prosaBancos/index.ts";
 
-Estrategia: para toda función, primero `REVOKE EXECUTE ... FROM PUBLIC` (borra el default) y luego `GRANT EXECUTE ... TO <roles>` explícito. Es idempotente y quirúrgico.
+ const corsHeaders = { ... };
+
+ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
++const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
++const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+ const MODEL = "google/gemini-2.5-flash";
+ ...
+
+ serve(async (req) => {
+   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+   try {
+     if (!LOVABLE_API_KEY) {
+       return json({ error: "LOVABLE_API_KEY no configurada" }, 500);
+     }
++
++    // JWT auth — evita que anónimos consuman el cupo de IA de Sertuss.
++    const authHeader = req.headers.get("Authorization");
++    if (!authHeader?.startsWith("Bearer ")) {
++      return json({ error: "Unauthorized" }, 401);
++    }
++    const sbUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
++      global: { headers: { Authorization: authHeader } },
++    });
++    const { data: claimsData, error: claimsErr } = await sbUser.auth.getClaims(
++      authHeader.replace("Bearer ", ""),
++    );
++    if (claimsErr || !claimsData?.claims?.sub) {
++      return json({ error: "Unauthorized" }, 401);
++    }
++
+     const body = (await req.json()) as Payload;
+     ...
+```
+
+Nada más cambia — el resto del handler (validación MIME, tamaño, llamada al gateway, sanitización con `OverrideSchema`) se mantiene idéntico.
+
+**`supabase/config.toml`: NO se toca.** Mismo patrón que las 2 funciones ya protegidas.
+
+## Hallazgo #2 y #3 — Warnings: policies con rol `public` en vez de `authenticated`
+
+### Estado real verificado (`pg_policies`)
+| Tabla | Policy | roles actual | qual |
+|---|---|---|---|
+| `ocr_raw_cache` | `Members read their org cache` | `{public}` | `is_org_member(organization_id)` |
+| `profiles` | `Users can view own profile` | `{public}` | `id = auth.uid()` |
+
+Condición idéntica, solo cambia el rol al que aplica. Ambas ya son seguras en la práctica (anon no pasa `is_org_member` ni `auth.uid()`), pero el scanner exige `TO authenticated` para defensa en profundidad.
+
+### Migración SQL exacta
 
 ```sql
--- =========================================================
--- BLOQUE A: funciones para authenticated (usuario logueado)
--- =========================================================
--- Callable desde el cliente autenticado o desde policies RLS.
+-- Hallazgo #2: ocr_raw_cache
+DROP POLICY "Members read their org cache" ON public.ocr_raw_cache;
+CREATE POLICY "Members read their org cache"
+  ON public.ocr_raw_cache
+  FOR SELECT
+  TO authenticated
+  USING (public.is_org_member(organization_id));
 
-DO $$
-DECLARE
-  fn text;
-  fns text[] := ARRAY[
-    'consume_credit_v2(uuid,uuid,text,uuid,text,integer)',
-    'unlock_expediente(uuid,uuid,uuid)',
-    'set_active_context(uuid)',
-    'create_organization_for_user(uuid,text,text)',
-    'accept_invitation(uuid)',
-    'is_platform_admin()',
-    'get_active_org(uuid)',
-    'get_user_org(uuid)',
-    'get_user_role(uuid)',
-    'is_org_member(uuid)',
-    'is_org_admin(uuid)',
-    'admin_review_propuesta(uuid,text,jsonb,text)',
-    'admin_list_org_users(uuid)',
-    'admin_update_organization(uuid,text,varchar,text)',
-    'admin_toggle_module(uuid,text,boolean)',
-    'get_all_organizations()',
-    'admin_update_credits(uuid,integer,text)',
-    'admin_set_debug_tools(uuid,boolean)',
-    'tramite_org_from_path(text)'
-  ];
-BEGIN
-  FOREACH fn IN ARRAY fns LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC, anon', fn);
-    EXECUTE format('GRANT EXECUTE ON FUNCTION public.%s TO authenticated, service_role', fn);
-  END LOOP;
-END $$;
-
--- =========================================================
--- BLOQUE B: solo service_role
--- =========================================================
--- restore_credit ya bloquea auth.uid() IS NOT NULL, pero además revocamos EXECUTE.
--- purge_expired_drafts: mantenimiento, sin caller autenticado.
--- consume_credit (wrapper legacy): sin callers.
-
-REVOKE EXECUTE ON FUNCTION public.restore_credit(uuid)           FROM PUBLIC, anon, authenticated;
-GRANT  EXECUTE ON FUNCTION public.restore_credit(uuid)           TO service_role;
-
-REVOKE EXECUTE ON FUNCTION public.purge_expired_drafts()         FROM PUBLIC, anon, authenticated;
-GRANT  EXECUTE ON FUNCTION public.purge_expired_drafts()         TO service_role;
-
-REVOKE EXECUTE ON FUNCTION public.consume_credit(uuid)           FROM PUBLIC, anon, authenticated;
-GRANT  EXECUTE ON FUNCTION public.consume_credit(uuid)           TO service_role;
-
-REVOKE EXECUTE ON FUNCTION public.next_radicado(uuid)            FROM PUBLIC, anon, authenticated;
-GRANT  EXECUTE ON FUNCTION public.next_radicado(uuid)            TO service_role;
-
--- =========================================================
--- BLOQUE C: funciones de trigger puras (ningún caller directo)
--- =========================================================
--- El motor de triggers ejecuta como owner; nadie necesita EXECUTE.
-
-DO $$
-DECLARE
-  fn text;
-  fns text[] := ARRAY[
-    'assign_radicado_on_insert()',
-    'handle_new_user()',
-    'assign_core_modules_on_org_insert()',
-    'prevent_profile_role_self_update()',
-    'handle_membership_revocation()',
-    'set_logs_extraccion_org()',
-    'set_updated_at()',
-    'enforce_credit_tramite()',
-    'log_word_generated()',
-    'validate_configuracion_notaria()',
-    'validate_reglas_validacion()',
-    'validate_historial_validaciones()'
-  ];
-BEGIN
-  FOREACH fn IN ARRAY fns LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC, anon, authenticated', fn);
-  END LOOP;
-END $$;
+-- Hallazgo #3: profiles
+DROP POLICY "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile"
+  ON public.profiles
+  FOR SELECT
+  TO authenticated
+  USING (id = auth.uid());
 ```
 
-### Recomendación sobre `admin_*` (Bloque A)
+Sin cambio de `USING`, sin cambio de `cmd`, sin cambio semántico.
 
-Se mantienen accesibles a `authenticated` porque el frontend las invoca con JWT normal — el gate lo hace `is_platform_admin()` dentro de cada función y devuelve `Unauthorized` para cualquier otro usuario. Revocar de `authenticated` rompería `AdminOrgEdit.tsx`, `Admin.tsx` y `PropuestaDetalleModal.tsx`. No hay ganancia real de seguridad porque el check interno ya es estricto y auditado.
+## Confirmación de no-regresión
 
-### Notas
+- **`adaptar-estilo-prosa`**: único caller frontend ya manda JWT vía `invoke()`. Usuarios no autenticados no llegan al modal `ProsaApoderadoModal` (requiere sesión activa y contexto de cancelación).
+- **`ocr_raw_cache`**: lecturas hoy salen desde componentes del panel de cancelaciones (usuario logueado). Ningún flujo anónimo.
+- **`profiles`**: `AuthContext.tsx` y el resto de lecturas ocurren post-login. Restringir a `authenticated` no cambia nada observable.
 
-- `tramite_org_from_path` la incluí en Bloque A porque puede usarse desde RLS de storage; si no la usa nadie hoy la movemos a Bloque C. Verificable con `\df+`.
-- No tocamos `has_role` porque no aparece listada en las funciones actuales del proyecto (está mencionada en la doc pero no existe en el DDL cargado).
+## Plan de verificación (post-aprobación)
 
-## Tarea 2 — Smoke-test controlado de tablas vacías
+1. `bunx vitest run` — esperamos 96/96 verde (los cambios no tocan tests).
+2. **Prueba anónima negativa** vía shell:
+   ```bash
+   curl -i -X POST https://<project>.supabase.co/functions/v1/adaptar-estilo-prosa \
+     -H "Content-Type: application/json" \
+     -H "apikey: <anon-key>" \
+     -d '{"fileBase64":"x","mimeType":"text/plain"}'
+   # Esperado: HTTP/2 401 {"error":"Unauthorized"}
+   ```
+3. **Prueba autenticada positiva** vía Playwright con el JWT real (patrón `LOVABLE_BROWSER_SUPABASE_*`): invocar la función con un texto plano corto y confirmar respuesta 200 con `notas_sugeridas`.
+4. Re-lectura de `pg_policies` para confirmar `roles = {authenticated}` en ambas policies migradas.
+5. Prueba manual en el preview: abrir el `ProsaApoderadoModal`, adjuntar un `.txt` de referencia, confirmar que sigue devolviendo sugerencias (flujo end-to-end intacto).
+6. Re-correr el Deep Security Scan — los 3 hallazgos deben desaparecer.
 
-Objetivo: cerrar el hueco empírico del audit adversarial (`configuracion_notaria` y `notaria_styles` sin filas) confirmando que un usuario legítimo SÍ ve sus propias filas y NO ve las ajenas, con las policies endurecidas ya en vigor.
+## Riesgos residuales
 
-Script pensado para correr contra el preview con el JWT real del usuario dueño de la sesión (no service_role). Se ejecuta con Playwright desde `/tmp/browser/rls_smoke/` inyectando la sesión Supabase ya minted por Lovable (patrón estándar `LOVABLE_BROWSER_SUPABASE_*`).
-
-```python
-# /tmp/browser/rls_smoke/run.py — SOLO DISEÑO, NO EJECUTAR AÚN
-# Pasos:
-# 1. Restaurar sesión Supabase del usuario legítimo (patrón LOVABLE_BROWSER_*).
-# 2. Leer active_org vía RPC get_active_org(auth.uid()).
-# 3. INSERT una fila de prueba en configuracion_notaria con
-#    organization_id = active_org, notario = 'SMOKE-TEST', etc.
-# 4. SELECT * FROM configuracion_notaria WHERE organization_id = active_org
-#    → debe devolver la fila insertada.
-# 5. SELECT * FROM configuracion_notaria WHERE organization_id = '<uuid-ajeno-conocido>'
-#    → debe devolver [].
-# 6. Repetir 3-5 para notaria_styles (nombre_estilo = 'SMOKE-TEST').
-# 7. DELETE WHERE notario = 'SMOKE-TEST' y DELETE WHERE nombre_estilo = 'SMOKE-TEST'.
-# 8. Assert final: SELECT count(*) WHERE notario='SMOKE-TEST' = 0.
-```
-
-Todas las operaciones vía el cliente `supabase-js` de la app (no `psql`, no service_role) para ejercitar RLS real. El `active_org` y el uuid ajeno se leen del entorno actual, no se hardcodean.
-
-## Tarea 3 — Impacto sobre flujos ya verificados
-
-| Flujo | Función tocada | Impacto |
-|---|---|---|
-| Consumo créditos (validación, apertura expediente, docx) | `consume_credit_v2`, `unlock_expediente` | Ninguno: authenticated sigue con EXECUTE |
-| Cancelaciones (edge `procesar-cancelacion`) | `consume_credit_v2` (user JWT), `restore_credit` (service_role) | Ninguno: cada rol conserva el privilegio que usa |
-| Escrituras (edge `process-expediente`) | usa service_role para todo | Ninguno |
-| `descubrir-reglas` (edge) | `is_platform_admin` con userClient | Ninguno: authenticated conserva EXECUTE |
-| Panel admin (`Admin.tsx`, `AdminOrgEdit.tsx`, `PropuestaDetalleModal.tsx`) | `admin_*`, `get_all_organizations`, `admin_review_propuesta` | Ninguno: authenticated conserva EXECUTE, gate interno intacto |
-| Auth/onboarding | `create_organization_for_user`, `set_active_context`, `handle_new_user` (trigger) | Ninguno: RPC accesibles, trigger sin cambio de invocación |
-| Policies RLS | `get_active_org`, `is_org_member`, etc. | Ninguno: authenticated retiene EXECUTE, requerido por el evaluador RLS |
-
-## Verificación post-migración (cuando apruebes)
-
-1. `SELECT proname, proacl FROM pg_proc WHERE pronamespace='public'::regnamespace AND prosecdef` — confirmar ACLs finales.
-2. Re-correr el linter Supabase: los 55 warnings deben bajar a ~0 en esta categoría.
-3. `bunx vitest run` completo.
-4. Smoke-test de Tarea 2.
-5. Repetir el cross-org RLS Playwright del audit anterior (debe seguir bloqueando lecturas ajenas).
-6. Prueba manual mínima en el preview: login, crear trámite, abrir expediente (consume créditos), abrir panel admin como `info@sertuss.com`, aprobar/rechazar una propuesta en `admin_review_propuesta`.
-
-## Riesgos residuales conocidos
-
-- Si algún caller autenticado de `next_radicado` existiera fuera del trigger (no encontrado hoy), fallaría. Rollback: `GRANT EXECUTE ... TO authenticated`.
-- `accept_invitation` no tiene UI hoy; cuando se agregue debe llamarse con JWT autenticado (ya cubierto).
-- `tramite_org_from_path` — si el linter la marca como no usada tras la migración, la degradamos a service_role en un follow-up.
+- Ninguno identificado. Los cambios son puramente aditivos (nueva validación) y de metadata (rol de policy).
+- Rollback trivial si algo falla: revertir el bloque de auth en la edge y re-crear las 2 policies con `TO public`.
 
 Nada se ejecuta hasta tu OK explícito.
