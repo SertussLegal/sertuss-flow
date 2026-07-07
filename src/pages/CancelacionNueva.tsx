@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
 import { pdfToImages } from "@/lib/pdfToImages";
+import * as pdfjs from "pdfjs-dist";
 
 const BANCO_FIJO = "Banco Davivienda S.A.";
 const BUCKET_OUTPUT = "expediente-files";
@@ -22,7 +23,7 @@ const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_PODER_BYTES = 40 * 1024 * 1024; // 40 MB
 const ESCRITURA_MAX_PAGES = 10;
 const CERTIFICADO_MAX_PAGES = 3;
-const PODER_MAX_PAGES = 25;
+const PODER_MAX_PAGES = 50;
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -98,6 +99,31 @@ export const CancelacionNueva = () => {
       });
       return;
     }
+
+    // Pre-check de páginas del Poder — evita crear borrador y cobrar créditos
+    // si el documento excede el tope. Se hace ANTES de rasterizar porque
+    // rasterizar 60+ páginas es costoso en CPU/memoria del navegador.
+    if (poder) {
+      try {
+        const buf = await poder.arrayBuffer();
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+        const numPages = doc.numPages;
+        await doc.destroy();
+        if (numPages > PODER_MAX_PAGES) {
+          toast.error("Poder demasiado extenso", {
+            description: `El Poder tiene ${numPages} páginas y el límite es ${PODER_MAX_PAGES}. Divide el PDF o comprime.`,
+          });
+          return;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error("No se pudo leer el Poder", {
+          description: `Verifica que el PDF no esté corrupto ni protegido. Detalle: ${msg}`,
+        });
+        return;
+      }
+    }
+
 
     setSaving(true);
     // Capturamos el id fuera del try para que el catch externo pueda redirigir

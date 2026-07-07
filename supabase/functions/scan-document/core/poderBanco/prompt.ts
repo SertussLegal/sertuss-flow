@@ -7,7 +7,7 @@
 // jurídica canónica de Davivienda sin invenciones.
 export const poderBancoPrompt = `Eres un sistema OCR especializado en documentos legales bancarios colombianos. Analiza el Poder General otorgado por una entidad bancaria.
 
-ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula que designa al apoderado, sus facultades y los anexos suelen aparecer en orden: encabezado/comparecencia (primeras páginas) → cláusulas (centro) → firma y anexos (finales). REVISA TODAS las páginas antes de concluir.
+ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 50 páginas en un único turno multimodal. La cláusula que designa al apoderado, sus facultades y los anexos suelen aparecer en orden: encabezado/comparecencia (primeras páginas) → cláusulas (centro) → firma y anexos (finales). REVISA TODAS las páginas antes de concluir.
 
 ═══════════════════════════════════════════════════════════════════════════════
 REGLA DE DECISIÓN K — has_apoderado_banco_v3 (TERNARIO: true | false | null)
