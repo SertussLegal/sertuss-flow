@@ -281,7 +281,7 @@ const SYSTEM_PROMPT = `Eres un asistente jurídico experto en derecho notarial c
 Recibes hasta tres documentos:
 1. Certificado de Tradición y Libertad del inmueble.
 2. Escritura Pública de Constitución de Hipoteca.
-3. (Opcional) Poder General del banco a su apoderado — PDF de hasta 25 páginas.
+3. (Opcional) Poder General del banco a su apoderado — PDF de hasta 50 páginas.
 
 REGLAS ESTRICTAS DE FORMATO:
 - Toda escritura, notaría, valor y fecha debe expresarse en DOBLE EXPRESIÓN: LETRAS y NÚMEROS entre paréntesis.
@@ -1201,7 +1201,7 @@ const poderDedicadoTool = [
 
 const PODER_DEDICADO_SYSTEM = `Eres un sistema OCR jurídico especializado EXCLUSIVAMENTE en extraer la designación de apoderado y sus datos de identificación a partir de un Poder General otorgado por un banco colombiano (típicamente Banco Davivienda S.A.).
 
-ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula que designa al apoderado y enumera sus facultades suele aparecer en las PÁGINAS FINALES — revisa TODAS las páginas, no solo las primeras.
+ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 50 páginas en un único turno multimodal. La cláusula que designa al apoderado y enumera sus facultades suele aparecer en las PÁGINAS FINALES — revisa TODAS las páginas, no solo las primeras.
 
 PALABRAS CLAVE para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
 
