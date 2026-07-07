@@ -1613,7 +1613,7 @@ function sliceHeadTail(urls: string[]): { sliced: string[]; truncado: boolean } 
   return { sliced: [...urls.slice(0, CUANTIA_HEAD), ...urls.slice(-CUANTIA_TAIL)], truncado: true };
 }
 
-async function extractCuantiaDedicada(
+export async function extractCuantiaDedicada(
   escUrls: string[],
   apiKey: string,
 ): Promise<CuantiaDedicadaRun> {
