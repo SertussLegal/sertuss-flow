@@ -13,7 +13,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, FileWarning, ShieldCheck } from "lucide-react";
+import { Loader2, FileWarning, ShieldCheck, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 const BUCKET = "expediente-files";
@@ -21,6 +21,79 @@ const SIGNED_URL_TTL_SECONDS = 15 * 60; // 15 min — corto por Ley 1581.
 
 interface PoderViewerTabProps {
   cancelacionId: string;
+}
+
+// ── V6 read-only panel ─────────────────────────────────────────────────────
+type V6Payload = Record<string, unknown> | null;
+
+function hasV6Signal(pb: V6Payload): boolean {
+  if (!pb || typeof pb !== "object") return false;
+  return !!(pb.apoderado || pb.poderdante || pb.instrumento_poder);
+}
+
+function V6ChainPanel({ pb }: { pb: V6Payload }) {
+  const [open, setOpen] = useState(false);
+  if (!hasV6Signal(pb)) return null;
+  const apo = (pb!.apoderado ?? {}) as Record<string, unknown>;
+  const pod = (pb!.poderdante ?? {}) as Record<string, unknown>;
+  const inst = (pb!.instrumento_poder ?? {}) as Record<string, unknown>;
+  const reps = Array.isArray(apo.representantes) ? (apo.representantes as Array<Record<string, unknown>>) : [];
+  const tipo = typeof apo.tipo === "string" ? apo.tipo : null;
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      className="rounded-md border border-primary/30 bg-primary/5 text-xs"
+    >
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 font-medium text-primary">
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+        Cadena de representación (v6)
+        {tipo && <span className="ml-auto rounded bg-primary/10 px-2 py-0.5 text-[10px] uppercase">{tipo}</span>}
+      </summary>
+      <div className="space-y-3 border-t border-primary/20 px-3 py-2 text-muted-foreground">
+        {pod.entidad_nombre != null && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-foreground/60">Poderdante</div>
+            <div className="text-foreground">{String(pod.entidad_nombre ?? "")}</div>
+            {pod.entidad_nit != null && <div>NIT: {String(pod.entidad_nit)}</div>}
+            {pod.representante_legal_nombre != null && (
+              <div>Firma: {String(pod.representante_legal_nombre)} {pod.representante_legal_cargo ? `(${String(pod.representante_legal_cargo)})` : ""}</div>
+            )}
+          </div>
+        )}
+        {tipo === "juridica" && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-foreground/60">Sociedad apoderada</div>
+            <div className="text-foreground">{String(apo.sociedad_razon_social ?? "—")}</div>
+            {apo.sociedad_nit != null && <div>NIT: {String(apo.sociedad_nit)}</div>}
+          </div>
+        )}
+        {reps.length > 0 && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-foreground/60">Representantes designados</div>
+            <ul className="space-y-0.5">
+              {reps.map((r, i) => (
+                <li key={i} className="text-foreground">
+                  {String(r.nombre ?? "—")} — C.C. {String(r.cedula ?? "—")} {r.cargo ? `· ${String(r.cargo)}` : ""}
+                  {r.es_firmante === false && <span className="ml-1 text-destructive">(no firma)</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {(inst.escritura_num || inst.notaria_numero) && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-foreground/60">Instrumento del poder</div>
+            <div>Escritura N° {String(inst.escritura_num ?? "—")} · Notaría {String(inst.notaria_numero ?? "—")} de {String(inst.notaria_ciudad ?? "—")}</div>
+            {inst.fecha_texto && <div>{String(inst.fecha_texto)}</div>}
+          </div>
+        )}
+        <div className="border-t border-primary/10 pt-2 text-[10px] italic">
+          Vista de solo lectura. La edición manual del bloque profundo aún no está disponible.
+        </div>
+      </div>
+    </details>
+  );
 }
 
 export function PoderViewerTab({ cancelacionId }: PoderViewerTabProps) {
