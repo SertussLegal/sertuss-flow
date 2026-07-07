@@ -1136,6 +1136,7 @@ export type Database = {
       }
       regla_propuesta_run: {
         Row: {
+          costo_estimado_cop: number | null
           costo_estimado_usd: number
           created_at: string
           disparado_por: string
@@ -1152,6 +1153,7 @@ export type Database = {
           triggered_by_user: string | null
         }
         Insert: {
+          costo_estimado_cop?: number | null
           costo_estimado_usd?: number
           created_at?: string
           disparado_por?: string
@@ -1168,6 +1170,7 @@ export type Database = {
           triggered_by_user?: string | null
         }
         Update: {
+          costo_estimado_cop?: number | null
           costo_estimado_usd?: number
           created_at?: string
           disparado_por?: string
