@@ -100,6 +100,7 @@ export function PoderViewerTab({ cancelacionId }: PoderViewerTabProps) {
   const [state, setState] = useState<"loading" | "empty" | "ready" | "error">("loading");
   const [pages, setPages] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
+  const [pbV6, setPbV6] = useState<V6Payload>(null);
   const aliveRef = useRef(true);
 
   useEffect(() => {
@@ -134,6 +135,23 @@ export function PoderViewerTab({ cancelacionId }: PoderViewerTabProps) {
         if (!aliveRef.current) return;
         const urls = signed.filter(Boolean);
         setPages(urls);
+        // Best-effort: cargar poder_banco de la BD para detectar bloques v6.
+        // Silencioso ante error → el panel simplemente no aparece.
+        try {
+          const { data: cancRow } = await supabase
+            .from("cancelaciones")
+            .select("data_final, data_ia")
+            .eq("id", cancelacionId)
+            .maybeSingle();
+          if (aliveRef.current && cancRow) {
+            const df = (cancRow.data_final ?? {}) as Record<string, unknown>;
+            const di = (cancRow.data_ia ?? {}) as Record<string, unknown>;
+            const pb = (df.poder_banco ?? di.poder_banco ?? null) as V6Payload;
+            setPbV6(pb);
+          }
+        } catch {
+          // Ignorar: panel v6 es informativo, no crítico.
+        }
         setState(urls.length > 0 ? "ready" : "error");
       } catch (e) {
         if (!aliveRef.current) return;
