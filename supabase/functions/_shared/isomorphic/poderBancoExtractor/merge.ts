@@ -138,6 +138,25 @@ export function mergePoderBancoV6(
     : null;
 
   const finalFlat: PoderBancoFlat = { ...(flatMerged || {}) };
+
+  // V6-wins override: cuando el classifier NO degradó (tipoEfectivo !== null),
+  // el bloque profundo V6 es más confiable que monolítico/dedicado legacy para
+  // identificar al apoderado. Sobrescribe nombre/cédula planos con V6.
+  if (apoderadoOut && cls.tipoEfectivo !== null) {
+    if (cls.tipoEfectivo === "natural") {
+      if (apoderadoOut.nombre) finalFlat.apoderado_nombre = String(apoderadoOut.nombre);
+      if (apoderadoOut.cedula) finalFlat.apoderado_cedula = String(apoderadoOut.cedula);
+    } else if (cls.tipoEfectivo === "juridica") {
+      const reps = apoderadoOut.representantes || [];
+      const firmante = reps.find((r) => r?.es_firmante && r?.nombre)
+        || reps.find((r) => r?.nombre)
+        || reps[0];
+      if (firmante?.nombre) finalFlat.apoderado_nombre = String(firmante.nombre);
+      if (firmante?.cedula) finalFlat.apoderado_cedula = String(firmante.cedula);
+    }
+  }
+
+  // Fallback legacy (tipoEfectivo === null): rellenar huecos sin sobrescribir.
   if (!finalFlat.apoderado_nombre && apoderadoOut?.tipo === "juridica") {
     const reps = apoderadoOut.representantes || [];
     const primer = reps.find((r) => r?.nombre) || reps[0];
@@ -148,6 +167,7 @@ export function mergePoderBancoV6(
     finalFlat.apoderado_nombre = String(apoderadoOut.nombre);
     if (apoderadoOut.cedula && !finalFlat.apoderado_cedula) finalFlat.apoderado_cedula = String(apoderadoOut.cedula);
   }
+
 
   const out: Record<string, unknown> = {
     ...finalFlat,

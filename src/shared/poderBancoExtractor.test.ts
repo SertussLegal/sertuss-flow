@@ -112,7 +112,60 @@ describe("mergePoderBancoV6", () => {
     // No debe existir bloque profundo cuando deepV6 es null.
     expect((merged as Record<string, unknown>)?.apoderado).toBeUndefined();
   });
+
+  it("V6-wins natural: cedula de deepV6 sobrescribe monolítico cuando tipo='natural'", () => {
+    const mono = { apoderado_nombre: "ANA MARIA MONTOYA", apoderado_cedula: "79.123.456" };
+    const deep: PoderBancoDeepPayload = {
+      has_apoderado_banco_v3: "true",
+      instrumento_poder: { escritura_num: "1234", fecha: "2025-01-01", notaria_numero: "5", notaria_ciudad: "BOGOTA" },
+      apoderado: { tipo: "natural", nombre: "ANA MARIA MONTOYA ECHEVERRY", cedula: "52219803" },
+    };
+    const merged = mergePoderBancoV6(mono, null, deep);
+    expect(merged?.apoderado_cedula).toBe("52219803");
+    expect(merged?.apoderado_nombre).toBe("ANA MARIA MONTOYA ECHEVERRY");
+  });
+
+  it("V6-wins jurídica: prefiere representante con es_firmante=true sobre el primero", () => {
+    const mono = { apoderado_nombre: "OTRA PERSONA", apoderado_cedula: "111" };
+    const deep: PoderBancoDeepPayload = {
+      has_apoderado_banco_v3: "true",
+      apoderado: {
+        tipo: "juridica",
+        sociedad_razon_social: "MI SOCIEDAD S.A.S.",
+        sociedad_nit: "900123456-7",
+        sociedad_constitucion: { camara_comercio_numero: "999" },
+        representantes: [
+          { nombre: "SUPLENTE UNO", cedula: "222", cargo: "SUPLENTE", es_firmante: false },
+          { nombre: "REP PRINCIPAL", cedula: "333", cargo: "REP LEGAL", es_firmante: true },
+        ],
+      },
+    };
+    const merged = mergePoderBancoV6(mono, null, deep);
+    expect(merged?.apoderado_nombre).toBe("REP PRINCIPAL");
+    expect(merged?.apoderado_cedula).toBe("333");
+  });
+
+  it("V6 degradado (tipo=null): mantiene monolítico, no aplica override", () => {
+    const mono = { apoderado_nombre: "MONO NOMBRE", apoderado_cedula: "999" };
+    const deep: PoderBancoDeepPayload = {
+      has_apoderado_banco_v3: "true",
+      apoderado: { tipo: "juridica", representantes: [] },
+    };
+    const merged = mergePoderBancoV6(mono, null, deep);
+    expect(merged?.apoderado_nombre).toBe("MONO NOMBRE");
+    expect(merged?.apoderado_cedula).toBe("999");
+    expect((merged?.apoderado as { tipo?: string | null })?.tipo).toBeNull();
+  });
+
+  it("V6 apagado (deepV6=null): comportamiento legacy intacto", () => {
+    const mono = { apoderado_nombre: "LEGACY", apoderado_cedula: "555" };
+    const merged = mergePoderBancoV6(mono, null, null);
+    expect(merged?.apoderado_nombre).toBe("LEGACY");
+    expect(merged?.apoderado_cedula).toBe("555");
+    expect((merged as Record<string, unknown>)?.apoderado).toBeUndefined();
+  });
 });
+
 
 describe("mergePoderBancoFlat", () => {
   it("prioriza monolítico sobre dedicado", () => {
