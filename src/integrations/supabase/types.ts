@@ -1389,6 +1389,15 @@ export type Database = {
           user_id: string
         }[]
       }
+      admin_review_propuesta: {
+        Args: {
+          p_cambios?: Json
+          p_id: string
+          p_nota?: string
+          p_nuevo_status: string
+        }
+        Returns: undefined
+      }
       admin_set_debug_tools: {
         Args: { enabled: boolean; target_org_id: string }
         Returns: undefined
