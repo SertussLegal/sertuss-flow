@@ -206,6 +206,7 @@ export function PoderViewerTab({ cancelacionId }: PoderViewerTabProps) {
         <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
         URLs firmadas con vigencia de 15 min. Al salir de esta pestaña, se eliminan del visor.
       </div>
+      <V6ChainPanel pb={pbV6} />
       {pages.map((url, i) => (
         <figure key={url} className="rounded-md border border-border bg-background shadow-sm overflow-hidden">
           <img
