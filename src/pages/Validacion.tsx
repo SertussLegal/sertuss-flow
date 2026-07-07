@@ -2791,16 +2791,8 @@ const Validacion = () => {
               Estos datos se usan para llenar las referencias a la notaría en la escritura.
               Si los dejas vacíos, el documento mostrará líneas en blanco (___________).
             </p>
-            {notariaSuggestions.size > 0 && (
-              <div className="flex items-center justify-between gap-2 rounded bg-primary/5 border border-primary/20 px-2 py-1.5">
-                <span className="text-xs text-foreground">
-                  El asistente IA detectó {notariaSuggestions.size} dato{notariaSuggestions.size !== 1 ? "s" : ""} de notaría en los documentos cargados.
-                </span>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={applyAllNotariaSuggestions}>
-                  Aplicar todas
-                </Button>
-              </div>
-            )}
+
+
 
             {/* ── Bloque único: Número de Notaría (genera letras y ordinal) ── */}
             <div className="rounded-md border border-primary/20 bg-primary/5 p-3 space-y-3">
