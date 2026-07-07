@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
 import { pdfToImages } from "@/lib/pdfToImages";
+import * as pdfjs from "pdfjs-dist";
 
 const BANCO_FIJO = "Banco Davivienda S.A.";
 const BUCKET_OUTPUT = "expediente-files";
