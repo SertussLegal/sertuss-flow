@@ -117,8 +117,11 @@ export async function pdfToImages(
       const ctx = canvas.getContext("2d", { alpha: false });
       if (!ctx) throw new Error("No se pudo crear contexto 2D");
 
-      // Firma correcta para pdfjs-dist ≥4/5: sin `canvas` como 3.er param.
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      // pdfjs-dist v5 exige `canvas` en RenderParameters (los tipos lo marcan
+      // como required). La hipótesis previa de "quitar canvas" es incorrecta
+      // para esta versión; el bug de "placeholders uniformes" se ataca abajo
+      // con muestreo forense + asserción de tamaño mínimo.
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
       // Validación forense: si el canvas quedó uniforme, el render abortó
       // silenciosamente. No dejamos que llegue a Storage como placeholder.
