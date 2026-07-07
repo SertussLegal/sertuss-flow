@@ -1,59 +1,102 @@
+## Contexto y hallazgos frescos
 
-# Auditoría final de sesión — reporte SOLO LECTURA
+Confirmé leyendo el código (no confiando en reportes previos):
 
-## 1. Tests
-`bunx vitest run` → **13 archivos / 115 tests, 100% verde** (7.84s). Sin warnings de resource leaks.
-
-## 2. Tipos
-`bunx tsgo --noEmit` → **0 errores, 0 output**. Limpio.
-
-## 3. Bypass regression_cuantia — confirmado cerrado
-Código en `procesar-cancelacion/index.ts:1806-1812`:
-```ts
-if (bodyAny?.action === "regression_cuantia") {
-  const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
-  if (isAdminErr || isAdminData !== true) {
-    return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), { status: 403, ... });
-  }
-```
-Solo `is_platform_admin()`. Cero matches de `REGRESSION_CUANTIA_TOKEN`, `X-Regression-Token` o `hasRegressionBypass` en todo el repo. Secreto ya no listado.
-
-## 4. Estado real en BD de los 3 casos de cuantía
-```
-4b05d210 → valor_hipoteca_original = "OCHO MILLONES ... ($8.558.475)"   updated 2026-06-24
-290fd66a → valor_hipoteca_original = NULL                                updated 2026-07-06
-2bef1db3 → valor_hipoteca_original = NULL                                updated 2026-07-07
-```
-**Discrepancia detectada:** El modo `regression_cuantia` de hoy reportó `indeterminada_confirmada` para `290fd66a` y `2bef1db3`, pero ese modo es solo-lectura y no persiste. En BD ambos siguen con `valor_hipoteca_original = NULL` y **no hay columna `valor_hipoteca_es_indeterminada`** (no existe en el schema de `cancelaciones` — solo hay `valor_hipoteca`, `valor_hipoteca_original`, `numero_escritura_hipoteca`, `fecha_escritura_hipoteca`, `notaria_hipoteca`). Es decir, el flag booleano de "indeterminada" que devuelve el extractor no tiene columna persistente donde aterrizar en `cancelaciones`. Cabo suelto arquitectónico — revisar si debe persistirse o si vive solo en `data_ia`/logs.
-
-## 5. Feature flags — estado y relación con la cuantía
-| Flag | Default | Estado |
-|---|---|---|
-| `POWER_DEEP_SCHEMA_ENABLED` (alias `POWER_V5_ENABLED`) | **OFF** | Edge; controla pipeline profundo del Poder |
-| `POWER_V6_EXTRACTOR_ENABLED` | **OFF** | Edge; extractor v6 del Poder |
-| `VITE_POWER_DEEP_UI_ENABLED` | **ON** | Cliente; UI profunda del Poder |
-
-**Punto importante y positivo:** `extractCuantiaDedicada` se invoca en el flujo real de usuarios en `index.ts:2092` y `:2421` (no solo desde regression mode). **El prompt semántico de cuantía validado hoy YA ESTÁ ACTIVO en producción**, no gateado por flag.
-
-**Riesgo desalineado:** `POWER_V5/V6` están OFF por defecto en edge, pero la UI (`VITE_POWER_DEEP_UI_ENABLED`) está ON. Si un despliegue no setea explícitamente los flags edge, la UI muestra widgets profundos mientras el backend corre en modo legacy — puede producir estados inconsistentes en el Poder. Verificar los secrets de edge en el entorno de producción.
-
-## 6. Residuos de la sesión
-- **`_regression_cuantia.ts`**: script one-shot con encabezado que aclara "NO es edge function invocable — no exporta handler, no se despliega". Documentado correctamente; se puede conservar como herramienta de re-validación futura o mover a `scripts/`. No es urgente.
-- **TODOs/FIXMEs añadidos hoy**: ninguno detectado. Los "TODOS" que aparecen son la palabra en español mayúscula en prompts.
-- **Borradores huérfanos**: 0 pendientes de más de 15 días, 0 pendientes totales. `purge_expired_drafts` no tiene trabajo pendiente.
-- **Secrets huérfanos**: lista actual = `CLAUDE_API_KEY`, `GOOGLE_API_KEY`, `LOVABLE_API_KEY`, `SUPABASE_*`. Sin residuos.
-
-## 7. Recomendación: correr Deep Security Scan
-No lo ejecuté (solo-lectura estricta y evita alterar estado del scanner). Se recomienda correr `security--run_security_scan` en el próximo turno, especialmente porque hoy se tocaron: RLS, gate de admin, y edge functions con service_role.
-
-## 8. Cabos sueltos / cosas a mirar
-1. **`valor_hipoteca_es_indeterminada` sin columna en `cancelaciones`** — el extractor lo devuelve, pero la BD no lo persiste. ¿Se pierde información?
-2. **Flags `POWER_V5/V6_ENABLED` OFF por default en edge vs UI ON** — posible desalineación en producción.
-3. **`_regression_cuantia.ts`** dentro de `supabase/functions/` — Deno lo verá, no es un edge (no exporta handler) pero convive con `index.ts`. Considerar moverlo fuera del directorio de la función (`scripts/` o `tools/`) para evitar confusión.
-4. **Los 2 casos `290fd66a` y `2bef1db3`** en BD siguen sin cuantía persistida. Si en la operación real esos trámites deberían quedar marcados como "indeterminada" tras el rediseño, hay que reprocesarlos por la vía normal (no regression) para que se persistan.
-
-## Veredicto
-La sesión quedó **verde en lo estructural**: tests 115/115, tipos 0 errores, bypass cerrado, sin residuos de secrets. **Cabos sueltos reales**: la persistencia del flag `es_indeterminada` (arquitectural) y la desalineación de flags Power V5/V6 (operacional). Nada bloqueante pero merecen un ticket cada uno.
+- **`POWER_V6_EXTRACTOR_ENABLED`** (edge): OFF por default. En `procesar-cancelacion/index.ts:1973-1978` y `:2341-2372` corre dentro de `try/catch` — si el flag está ON y v6 falla, se loguea el error y `deepV6 = null`. El merge (`mergePoderBancoV6`) recibe `deepV6=null` y el resultado degrada al camino legacy sin romper. **Fallback seguro confirmado.**
+- **`POWER_DEEP_SCHEMA_ENABLED`** (alias V5, edge): OFF por default. Controla (a) caché `ocr_raw_cache` inmutable, (b) `selectMinutaTemplate` — solo devuelve plantilla v3 si el flag está ON *y* existe en el bucket; si no, cae a v2 (`index.ts:67`).
+- **`VITE_POWER_DEEP_UI_ENABLED`** (cliente): ON por default. En `src/pages/CancelacionValidar.tsx:1214` gatea `<ProsaApoderadoPreviewCard>`, que consume `data.partes.banco_nit` + prosa Davivienda — **no depende de bloques v6 profundos**. El componente ya funciona con el schema plano legacy. La "desalineación" que anoté en `.lovable/plan.md` es menos grave de lo que parecía: la UI no requiere V6 para renderizar.
+- **Estado actual en prod:** `V6_EXTRACTOR=OFF`, `DEEP_SCHEMA=OFF`, `UI=ON`. El extractor semántico de cuantía (`extractCuantiaDedicada`, líneas 2092 y 2421) **no está gateado por ningún flag** y ya corre en el camino real de usuarios.
 
 ---
-*Este reporte es solo lectura — no requiere aprobación de plan; ninguna acción de código propuesta.*
+
+## Recomendación por punto
+
+### 1. Activar `POWER_V6_EXTRACTOR_ENABLED=true` (edge secret)
+
+**Recomendación: SÍ, activar antes de la prueba de Alejandra.**
+
+Justificación:
+- Fallback probado en código (try/catch → `deepV6=null` → merge legacy).
+- Tests verdes (115/115) incluyen `poderBancoExtractor.test.ts` y `apoderadoClassifier.test.ts`.
+- Populates `data_ia.poder_banco.apoderado.tipo` (natural vs jurídica) — mejor auditabilidad sin afectar salida docx.
+- Los bloques profundos v6 (`poderdante`, `instrumento_poder`, `facultades`) se copian tal cual en `data_final` (línea 2010), no rompen nada porque la UI no los edita todavía.
+
+Riesgo: costo extra de una llamada Gemini por poder (v6 corre **además** del dedicado plano, no en su lugar). Aceptable para validar el schema profundo con tráfico real.
+
+### 2. `POWER_DEEP_SCHEMA_ENABLED` (V5)
+
+**Recomendación: NO activar todavía. Dejar para después de la prueba de Alejandra.**
+
+Trade-offs:
+
+| Activar ahora | Dejar OFF |
+|---|---|
+| ✅ Caché `ocr_raw_cache` ahorra costos en re-procesos | ✅ Cero cambio en la ruta caliente que Alejandra probará |
+| ✅ Selector de plantilla v3 (si existe en bucket) | ⚠️ Si no hay `template_v3.docx` en `cancelaciones-plantillas`, cae a v2 sin ruido — pero cambio no verificado |
+| ⚠️ Doble variable en el experimento de Alejandra | ✅ Aísla la prueba a V6 puro |
+| ⚠️ Caché inmutable puede mostrar payloads viejos si el prompt cambió sin bump de versión | |
+
+**Preferencia:** una variable a la vez. V6 aporta valor observable (schema profundo en `data_ia`); V5 es optimización de infra que no cambia lo que Alejandra ve. Activar V5 en un segundo pase, tras 24-48h de V6 estable.
+
+### 3. Corregir desalineación de flags
+
+Con la decisión (V6=ON, V5=OFF, UI=ON):
+
+- **UI (`VITE_POWER_DEEP_UI_ENABLED=ON`)**: mantener. Verifiqué que `ProsaApoderadoPreviewCard` no requiere bloques v6 profundos — usa `buildProsaContext(pb, ne)` sobre el schema plano. Ya funciona en prod.
+- **No hay que apagar la UI.** La "desalineación" documentada era pesimista; el componente degrada bien.
+- **Acción concreta única:** actualizar el comentario en `.lovable/plan.md` y en `poderBancoSchemaVersion.ts` para reflejar que UI no depende de v6.
+
+### 4. Plan de verificación pre-Alejandra
+
+Antes de que Alejandra toque el sistema, ejecutar en este orden:
+
+1. **Deploy con `V6=true`** y confirmar boot en logs (`edge_function_logs`).
+2. **Smoke test con `curl_edge_functions`** contra un `cancelacionId` de staging propio (no de cliente), acción `reprocess_poder`. Verificar en respuesta:
+   - `resultado ∈ {exito, parcial}`
+   - `data_ia.poder_banco.apoderado.tipo` presente (evidencia de que v6 corrió)
+   - Sin errores `[v6 extractor failed]` en logs.
+3. **Regresión sobre los 3 casos históricos** (`4b05d210`, `290fd66a`, `2bef1db3`) vía `_regression_cuantia.ts` (solo-lectura, no persiste): confirmar `resultado_derivado` idéntico al reporte anterior (éxito + 2 indeterminada_confirmada).
+4. **Ejecutar `bunx vitest run`** — debe seguir 115/115.
+5. **`security--run_security_scan`** — no debe introducir findings nuevos (V6 no toca RLS ni secrets).
+6. **Prueba end-to-end manual** con una cancelación de prueba (owner sertuss): subir Poder Davivienda real, validar que la UI de "Prosa apoderado" renderiza sin errores y que el docx generado no perdió campos vs. la versión pre-V6.
+
+Solo si los 6 pasos pasan → invitar a Alejandra.
+
+### 5. Plan de rollback
+
+**Trigger:** cualquiera de: (a) Alejandra reporta error visible, (b) tasa de `[v6 extractor failed]` en logs > 10%, (c) discrepancia en `data_ia.poder_banco` vs. lo que muestra la UI, (d) aumento de costo Gemini inaceptable.
+
+**Rollback en 1 paso (30 segundos):**
+1. En Project Settings → Secrets: cambiar `POWER_V6_EXTRACTOR_ENABLED` de `true` a `false` (o eliminar el secret; default es OFF).
+2. Redesplegar `procesar-cancelacion` (`supabase--deploy_edge_functions`).
+3. Verificar en logs que el próximo boot lee `POWER_V6_EXTRACTOR_ENABLED=false`.
+
+**No requiere revertir código.** Los flags son runtime, el fallback es automático. Los datos ya persistidos en `data_ia.poder_banco.apoderado.*` con V6 quedan como huérfanos benignos — la UI no los consume, no rompen nada.
+
+**Comunicación:** avisar a Alejandra en cuanto se dispare el rollback y anotar en `.lovable/plan.md` el motivo + timestamp.
+
+---
+
+## Resumen ejecutivo
+
+| Punto | Decisión |
+|---|---|
+| V6 extractor edge | **Activar** (`POWER_V6_EXTRACTOR_ENABLED=true`) |
+| V5 deep schema edge | **Dejar OFF** hasta ver resultado con Alejandra |
+| UI flag cliente | **Mantener ON** — no requiere v6 |
+| Pre-Alejandra | 6 pasos de verificación (boot, smoke, regresión, tests, scan, e2e manual) |
+| Rollback | Toggle 1 secret + redeploy, sin cambios de código |
+
+## Pasos de ejecución (para aprobar antes de correr)
+
+1. `secrets--set_secret` → `POWER_V6_EXTRACTOR_ENABLED=true`.
+2. `supabase--deploy_edge_functions` → `["procesar-cancelacion"]`.
+3. `supabase--edge_function_logs` → confirmar boot.
+4. `supabase--curl_edge_functions` → smoke test contra caso propio.
+5. Correr `_regression_cuantia.ts` contra los 3 IDs (solo-lectura).
+6. `bunx vitest run`.
+7. `security--run_security_scan`.
+8. Actualizar `.lovable/plan.md` con resultado.
+9. Dar luz verde para Alejandra.
+
+**Nada de esto se ejecuta sin tu OK explícito.**
