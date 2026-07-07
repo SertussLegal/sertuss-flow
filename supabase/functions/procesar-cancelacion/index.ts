@@ -1572,9 +1572,14 @@ export function deriveCuantiaResultado(run: CuantiaDedicadaRun | null): string {
   if (run.error_status === "network") return "fallo_red";
   if (run.error_status === "parse") return "fallo_parse";
   if (typeof run.error_status === "number") return `fallo_${run.error_status}`;
+  // La indeterminación confirmada gana sobre cualquier string en
+  // valor_hipoteca_original: si la escritura declara HIPOTECA ABIERTA,
+  // la telemetría debe reflejar ese estado semántico, no "exito".
+  const esIndet = run.result?.valor_hipoteca_es_indeterminada === true;
+  const motivo = run.result?.motivo_null;
+  if (esIndet && motivo === "escritura_declara_abierta") return "indeterminada_confirmada";
   const monto = (run.result?.valor_hipoteca_original ?? "").trim();
   if (monto) return "exito";
-  const motivo = run.result?.motivo_null;
   if (motivo === "escritura_declara_abierta") return "indeterminada_confirmada";
   if (motivo === "ambigua_multiple") return "fallo_ambiguo_multiple";
   if (motivo === "sin_evidencia") return "fallo_sin_evidencia";
