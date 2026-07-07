@@ -1,57 +1,115 @@
-## Caso auditado
+## Diagnóstico de causa raíz — corrijo mi conclusión anterior
 
-- **Cancelación:** `0443d2f1-2206-4e44-bc46-6c0af2bbf7ee`
-- **Org:** Sertuss Notaría Central (`614a4a8d…`)
-- **Creada:** 2026-07-07 21:09:15Z · **Última actualización:** 21:11:21Z
-- **Status:** `completed`
+**Mi reporte previo estaba mal.** V6 SÍ corrió en el caso `0443d2f1`. La ausencia del bloque `apoderado` anidado no viene de que el flag esté apagado, sino de que el OCR no pudo leer la cláusula de poder en ese PDF específico.
 
-## 1. ¿Corrió el extractor v6?
+## Evidencia línea por línea
 
-**NO.** Evidencia directa del `system_events` del propio trámite:
+### 1. Lectura del env var (nombre exacto)
 
-```
-evento: procesar-cancelacion.poder  resultado: exito
-detalle: { v5_enabled: false, cache_reason: "v5_disabled",
-          dedicated_status: "fulfilled", campos_llenos: 8,
-          poder_banco_presente: true, paginas_enviadas: 28 }
+`supabase/functions/_shared/poderBancoSchemaVersion.ts:60-61`
+
+```ts
+export const POWER_V6_EXTRACTOR_ENABLED =
+  (Deno.env.get("POWER_V6_EXTRACTOR_ENABLED") ?? "false") === "true";
 ```
 
-`data_ia.poder_banco.apoderado` está **vacío** (no existe la clave anidada). Solo hay los campos planos legacy (`apoderado_nombre`, `apoderado_cedula`, `apoderado_escritura`, etc.) más un `_classifier_motivos: ["no_apoderado_tipo_from_ocr"]`. `apoderado_nombre` y `apoderado_cedula` vienen como el string literal `"null"` (no `null` JSON).
+Nombre leído: `POWER_V6_EXTRACTOR_ENABLED`. Nombre del secret listado por `fetch_secrets`: `POWER_V6_EXTRACTOR_ENABLED`. **Coinciden carácter por carácter.**
 
-- `data_ia.poder_banco.apoderado.tipo` → **ausente**.
-- No hay eventos con `[v6 extractor failed]` en logs del trámite.
-- El evento del poder no tiene ninguna traza `v6_*`, solo `v5_enabled: false`.
+### 2. Gate del extractor v6 (condición completa)
 
-**Diagnóstico:** el secret `POWER_V6_EXTRACTOR_ENABLED=true` que se seteó en el turno anterior **no está activo en el runtime** que procesó este caso. Hipótesis probables (a confirmar en build mode):
-- El redeploy de `procesar-cancelacion` posterior al `set_secret` no llegó a inyectar el env var, o el secret quedó con otro nombre / no propagado.
-- El gate del v6 en el código exige adicionalmente que `POWER_DEEP_SCHEMA_ENABLED` esté ON (revisar `procesar-cancelacion/index.ts:1973-1978`). Si es una AND, v6 nunca corre con V5=OFF.
+`supabase/functions/procesar-cancelacion/index.ts:2340-2348`
 
-## 2. Cuantía semántica
+```ts
+const v6Runner = async (): Promise<PoderBancoDeepPayload | null> => {
+  if (!POWER_V6_EXTRACTOR_ENABLED || poderUrls.length === 0) return null;
+  try {
+    return await extractPoderBancoV6(poderUrls, LOVABLE_API_KEY);
+  } catch (e) {
+    console.error("[procesar-cancelacion mono] v6 extractor failed:", e);
+    return null;
+  }
+};
+```
 
-**Funcionó como se esperaba.** `resultado_derivado = indeterminada_confirmada`, confianza `alta`, `motivo_null = "escritura_declara_abierta"`, `cert_indeterminada = true`. Detectó 2 candidatos (`102.767.850` y `67.000.000`) y los clasificó ambos como `"otro"` (no cuantía del crédito). `valor_hipoteca_original = NULL` correctamente persistido.
+**Simple OR, no compuesto con V5.** V6 corre siempre que su propio flag esté ON y haya páginas de poder. Idéntico gate en la línea 1973 (segunda entrada del pipeline).
 
-## 3. Documento final (.docx)
+Merge (línea 2372-2374):
 
-No hay evidencia directa de generación exitosa en `system_events` (no aparece evento `docx_generado` ni error). `status = completed` y `updated_at` 21:11:21Z sugiere que el flujo terminó sin excepción, pero **no puedo confirmar sin logs de edge** (indexación en 0 resultados para `procesar-cancelacion`) ni sin abrir el archivo generado. `data_final` está vacío para `cuantia_hipoteca`.
+```ts
+const mergedPoder = POWER_V6_EXTRACTOR_ENABLED
+  ? mergePoderBancoV6(extracted.poder_banco, dedicatedResult, v6Result)
+  : mergePoderBanco(extracted.poder_banco, dedicatedResult);
+```
 
-## 4. UI ProsaApoderadoPreviewCard
+### 3. Por qué el log dice `v5_enabled: false`
 
-**No verificable desde backend.** No hay telemetría de render de este componente. Dado que `data_ia.poder_banco.apoderado` viene vacío y `buildProsaContext` es tolerante (sintetiza shape desde campos planos), el componente **debería** haber renderizado con `tipo = "Tipo no definido"` y prosa Davivienda default. No hay error reportado, pero no hay confirmación positiva.
+Telemetría en `index.ts:2386-2404`. El bloque `extra` **solo loguea `v5_enabled: POWER_V5_ENABLED`** — no loguea `v6_enabled`. Es una **omisión de telemetría**, no evidencia de que V6 no corrió. Confundí ausencia de log con ausencia de ejecución.
 
-## 5. Veredicto de pipeline end-to-end
+### 4. Prueba positiva de que V6 SÍ corrió en este caso
 
-| Componente | Estado |
-|---|---|
-| P1-P3 extractor plano legacy | ✅ Corrió (`campos_llenos: 8`, `dedicated_status: fulfilled`) |
-| **V6 extractor profundo** | ❌ **NO corrió** (`v5_enabled: false`, sin bloque `apoderado` anidado) |
-| Cuantía semántica | ✅ Funcionó (`indeterminada_confirmada`, confianza alta) |
-| Docx final | ⚠️ Sin evidencia negativa, sin confirmación positiva |
-| UI Prosa apoderado | ⚠️ No verificable desde backend |
+Los campos `_classifier_motivos`, `has_apoderado_banco_v3` y `motivos_incompletitud` **solo se emiten en la rama V6** del merge (`merge.ts:135-137`). El merge legacy (`mergePoderBanco`) no los produce. El `data_ia.poder_banco` del trámite auditado contiene los tres:
 
-**Conclusión honesta:** el pipeline legacy + cuantía semántica funcionó. **El objetivo declarado de la sesión anterior (activar V6 antes de que Alejandra pruebe) NO se cumplió en runtime.** El secret quedó seteado pero el trámite real fue procesado con V6 apagado. Antes de invitar a Alejandra hay que investigar por qué `POWER_V6_EXTRACTOR_ENABLED=true` no tuvo efecto: revisar el gate exacto en `procesar-cancelacion/index.ts` (¿requiere también V5?), reconfirmar el redeploy, y correr un segundo caso de prueba verificando que aparezca el bloque `data_ia.poder_banco.apoderado.{tipo,nombre,…}` y trazas v6 en `system_events`.
+```json
+{
+  "_classifier_motivos": ["no_apoderado_tipo_from_ocr"],
+  "has_apoderado_banco_v3": "null",
+  "motivos_incompletitud": ["paginas_parciales_sin_clausula_de_poder"],
+  "apoderado_nombre": "null",
+  "apoderado_cedula": "null",
+  "apoderado_escritura": "DOS MIL CUATROCIENTOS QUINCE (2415)",
+  "apoderado_fecha": "DIECINUEVE (19) DE ENERO DE DOS MIL VEINTICINCO (2025)",
+  "apoderado_notaria_poder": "TREINTA Y DOS (32) DE BOGOTA D.C."
+}
+```
 
-## Próximo paso sugerido (requiere aprobación para pasar a build)
+**⇒ V6 corrió, devolvió payload, y el merge V6 escribió su output.**
 
-1. Leer líneas ~1973-1978 y ~2341-2372 de `procesar-cancelacion/index.ts` para verificar la condición exacta del gate v6.
-2. Comprobar en Project Settings que `POWER_V6_EXTRACTOR_ENABLED` figura y su valor.
-3. Redesplegar y correr un smoke test controlado antes de habilitar a Alejandra.
+### 5. Por qué no hay bloque `apoderado` anidado
+
+En `merge.ts:112-118`:
+
+```ts
+const apoderadoIn = (deepV6.apoderado ?? undefined) as ApoderadoPayload | undefined;
+const cls = classifyApoderado(apoderadoIn);
+const apoderadoOut = apoderadoIn
+  ? { ...apoderadoIn, tipo: cls.tipoEfectivo ?? null }
+  : null;
+// ...
+apoderado: apoderadoOut ?? undefined,   // ← si es null se pierde en JSON
+```
+
+Cuando Gemini no encuentra la cláusula (`has_apoderado_banco_v3: "null"` por regla K del prompt en `prompt.ts:29-31`), no puebla `deepV6.apoderado`, entonces `apoderadoOut = null` y la clave `apoderado` sale como `undefined` (se descarta al serializar). Comportamiento **correcto por diseño**: el propio motivo lo dice — `"paginas_parciales_sin_clausula_de_poder"`.
+
+Adicionalmente, `apoderado_nombre` y `apoderado_cedula` quedan como el string literal `"null"` — eso viene del OCR devolviendo la cadena `"null"` en lugar de JSON `null`, y el pipeline no lo normaliza. Es un bug menor de saneamiento, no relacionado con V6.
+
+### 6. Secret y despliegue
+
+- Secret `POWER_V6_EXTRACTOR_ENABLED` **sí figura** en el listado actual (`fetch_secrets`). Su valor no es visible pero el hecho de que V6 haya corrido confirma que está en `"true"`.
+- Hora del set del secret y hora del deploy: irrelevante — la prueba positiva (campos exclusivos del merge V6 presentes) demuestra que el runtime que procesó el caso ya tenía el flag ON.
+
+### 7. `Deno.env.get()` en Supabase Edge Functions
+
+No requiere nada especial. El secret configurado en Project Settings → Secrets se expone como env var estándar en el runtime Deno del edge function. La prueba está en que otros secrets del mismo tipo (`LOVABLE_API_KEY`, `GOOGLE_API_KEY`) funcionan sin ceremonia.
+
+## Diagnóstico final
+
+**Causa raíz: NO hay bug de flag.** V6 está activo y corriendo en producción. El caso `0443d2f1` procesó un Poder Davivienda donde el OCR (Gemini 2.5 Flash con el prompt v6) no pudo localizar la cláusula del apoderado — probablemente porque las páginas del PDF están parciales / cortadas / con una firma aislada sin contexto (motivo declarado por el propio modelo: `"paginas_parciales_sin_clausula_de_poder"`).
+
+El pipeline se comportó como está diseñado:
+- V6 corrió → devolvió payload sin `apoderado` con `has_apoderado_banco_v3 = "null"`.
+- Merge V6 propagó la telemetría (`_classifier_motivos`, `motivos_incompletitud`).
+- `apoderado_nombre/cedula` cayeron a la cadena literal `"null"` (bug menor de saneamiento).
+- Cuantía semántica funcionó (`indeterminada_confirmada`).
+- Trámite terminó `completed`.
+
+## Hallazgos secundarios reales (no bloqueantes)
+
+1. **Telemetría incompleta:** `logPoderEvent.extra` no incluye `v6_enabled` ni un summary del payload V6 (por ejemplo `has_apoderado_banco_v3`, `campos_deep_llenos`). Por eso me confundí. Añadirlo evita futuros diagnósticos falsos.
+2. **Saneamiento de `"null"` string:** `mergePoderBancoFlat` no trata `"null"`/`"NULL"` como valor vacío. Si Gemini devuelve la cadena literal `"null"`, se persiste como si fuera un valor real. Debería normalizarse a `undefined`.
+3. **Retrocompatibilidad de mi reporte anterior:** el veredicto "V6 no corrió" era **incorrecto**. Corrijo formalmente: **V6 está ON en runtime y funcionó**. El caso simplemente fue un PDF difícil de leer.
+
+## Próximo paso (requiere aprobación para pasar a build)
+
+1. **No hay corrección urgente del flag** — está bien.
+2. Antes de invitar a Alejandra, procesar un segundo caso con un Poder Davivienda **completo y legible** para confirmar que en el happy path aparece el bloque `apoderado` anidado con `tipo: "juridica"` y `representantes[]` poblado.
+3. (Opcional, mejora chica) Añadir `v6_enabled`, `has_apoderado_banco_v3` y `v6_apoderado_tipo` al bloque `extra` de `logPoderEvent`, y normalizar la cadena `"null"` en el merge.
