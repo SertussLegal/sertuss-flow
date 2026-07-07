@@ -218,6 +218,9 @@ const Admin = () => {
             <TabsTrigger value="monitor">
               <Activity className="mr-1 h-4 w-4" /> Monitor del Sistema
             </TabsTrigger>
+            <TabsTrigger value="reglas">
+              <Lightbulb className="mr-1 h-4 w-4" /> Reglas propuestas
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="organizaciones" className="space-y-6 mt-4">
