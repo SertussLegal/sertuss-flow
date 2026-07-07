@@ -2977,70 +2977,32 @@ const Validacion = () => {
         <TabsTrigger value="actos" className="flex-1">Actos{renderTabIcon("actos")}</TabsTrigger>
       </TabsList>
 
-      {validandoCampos && (
-        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" /> Validando coherencia con asistente IA...
+      {topIssues.length > 0 && (
+        <div className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 space-y-1.5">
+          <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+            <Info className="h-3.5 w-3.5 text-primary" />
+            Top {topIssues.length} a revisar antes de generar
+          </div>
+          <ul className="space-y-1">
+            {topIssues.map((it) => {
+              const Icon = it.nivel === "error" ? AlertCircle
+                         : it.nivel === "advertencia" ? AlertTriangle : Info;
+              const cls = it.nivel === "error" ? "text-destructive"
+                        : it.nivel === "advertencia" ? "text-accent" : "text-primary";
+              return (
+                <li key={it.codigo_regla + it.campo} className="flex items-start gap-2 text-xs">
+                  <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${cls}`} />
+                  <span>
+                    <span className="font-medium text-foreground">{it.campo}</span>
+                    <span className="text-muted-foreground"> · {it.explicacion}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
-      {validacionCampos && totalHallazgos > 0 && (
-        <div className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setBannerExpanded(v => !v)}
-              className="flex items-center gap-2 text-xs text-foreground hover:text-primary transition-colors flex-1 text-left"
-            >
-              <Info className="h-3.5 w-3.5 text-primary" />
-              <span>
-                {conteo!.errores > 0 && <span className="text-destructive font-medium">{conteo!.errores} error{conteo!.errores !== 1 ? "es" : ""}</span>}
-                {conteo!.errores > 0 && (conteo!.advertencias > 0 || conteo!.sugerencias > 0) && <span>, </span>}
-                {conteo!.advertencias > 0 && <span className="text-accent font-medium">{conteo!.advertencias} advertencia{conteo!.advertencias !== 1 ? "s" : ""}</span>}
-                {conteo!.advertencias > 0 && conteo!.sugerencias > 0 && <span>, </span>}
-                {conteo!.sugerencias > 0 && <span>{conteo!.sugerencias} sugerencia{conteo!.sugerencias !== 1 ? "s" : ""}</span>}
-                <span className="text-muted-foreground"> tras la última carga</span>
-              </span>
-              {bannerExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setValidacionCampos(null)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Descartar"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          {bannerExpanded && (
-            <ul className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
-              {(() => {
-                // Fase 3: side panel ordenado por prioridad. Si la validación no
-                // trae ui_target (respuesta vieja), entra al panel lateral por default.
-                const sidePanelItems = obtenerSidePanel(validacionCampos.validaciones as ClaudeValidacion[]);
-                const items = sidePanelItems.length > 0 ? sidePanelItems : (validacionCampos.validaciones as ClaudeValidacion[]);
-                return items.map((v, idx) => {
-                  const Icon = v.nivel === "error" ? AlertCircle : v.nivel === "advertencia" ? AlertTriangle : Info;
-                  const colorCls = v.nivel === "error" ? "text-destructive" : v.nivel === "advertencia" ? "text-accent" : "text-primary";
-                  const prio = v.priority ?? (v.nivel === "error" ? "high" : v.nivel === "advertencia" ? "medium" : "low");
-                  const bgCls =
-                    prio === "high" ? "bg-destructive/10 border-l-2 border-destructive/60" :
-                    prio === "medium" ? "bg-accent/10 border-l-2 border-accent/60" :
-                    "bg-notarial-gold/5 border-l-2 border-notarial-gold/40";
-                  return (
-                    <li key={idx} className={`flex items-start gap-2 text-xs rounded-sm pl-2 py-1 pr-1 ${bgCls}`}>
-                      <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${colorCls}`} />
-                      <div className="flex-1">
-                        <span className="font-medium text-foreground">{v.campo}</span>
-                        <span className="text-muted-foreground"> · {v.explicacion}</span>
-                      </div>
-                    </li>
-                  );
-                });
-              })()}
-            </ul>
-          )}
-        </div>
-      )}
 
       <TabsContent value="vendedores">
         <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
