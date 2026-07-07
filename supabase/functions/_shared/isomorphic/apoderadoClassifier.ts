@@ -66,6 +66,23 @@ export interface ClassifierResult {
   fromOverride: boolean;
 }
 
+/**
+ * Contexto opcional del extractor v6. Permite validar que el "natural"
+ * tiene evidencia de un poder — ya sea el instrumento directo (poder general
+ * del banco a persona natural) o la escritura de sustitución (cadena).
+ */
+export interface ClassifyContext {
+  instrumento_poder?: {
+    escritura_num?: string | null;
+    fecha?: string | null;
+    fecha_texto?: string | null;
+    notaria_numero?: string | null;
+    notaria_ciudad?: string | null;
+  } | null;
+  has_apoderado_banco_v3?: "true" | "false" | "null" | boolean | null;
+}
+
+
 // Palabras clave corporativas que contaminan una clasificación "natural"
 // y disparan la degradación a null (Regla A).
 const CORPORATE_PATTERNS: RegExp[] = [
