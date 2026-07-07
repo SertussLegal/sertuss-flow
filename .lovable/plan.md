@@ -1,298 +1,76 @@
-# Plan: Endurecimiento defense-in-depth (Fase de seguridad)
+# Auditoría adversarial post-migración RLS (solo lectura)
 
-Migración **única** de solo policies. **No** modifica tablas, funciones, ni comportamiento de la app. SQL abajo listo para revisión línea por línea.
-
----
-
-## 1. Contexto y patrón a replicar
-
-Patrón canónico ya en producción (tabla `cancelaciones`):
-
-```sql
-USING ((organization_id = get_active_org(auth.uid())) AND is_org_member(organization_id))
-```
-
-`is_org_member(uuid)` (SECURITY DEFINER, ya existe) valida que `auth.uid()` esté en `memberships` para esa org, sin depender de `user_active_context`. Añadirlo en AND es una segunda barrera: aunque un atacante lograra manipular `user_active_context` para apuntar a otra org, seguiría fallando el `is_org_member`.
-
-Tablas hijas (`logs_extraccion`, `historial_validaciones`) no necesitan añadir nada: ya validan vía `EXISTS(tramites t WHERE t.organization_id = get_active_org(...))`. La refuerzo blindando **`tramites`** (padre), lo que propaga la garantía.
-
-Tablas a endurecer directamente: `tramites`, `configuracion_notaria`, `notaria_styles`.
-Tablas hijas: se blindan indirectamente al endurecer `tramites`, pero además añadimos `is_org_member` a `logs_extraccion` e `historial_validaciones` para hacerlo explícito.
+Reviso el trabajo con escepticismo. Encuentro **1 hallazgo material** que el reporte anterior no cubrió y varias observaciones menores. **Sin cambios propuestos** — este "plan" es el informe pedido; espera tu instrucción antes de tocar nada.
 
 ---
 
-## 2. SQL exacto (una sola migración)
+## 1. DDL real post-migración (16 policies) — coincide con el diseño
 
-```sql
--- =========================================================
--- BLOQUE 1 · tramites (SELECT / UPDATE / DELETE / INSERT)
--- =========================================================
-DROP POLICY "Users can view org tramites" ON public.tramites;
-CREATE POLICY "Users can view org tramites"
-ON public.tramites FOR SELECT TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND (
-    get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-    OR created_by = auth.uid()
-  )
-);
+Verificado vía `pg_policies`. Las 16 policies quedaron exactamente como el SQL diseñado, sin condiciones invertidas ni typos:
 
-DROP POLICY "Users can update org tramites" ON public.tramites;
-CREATE POLICY "Users can update org tramites"
-ON public.tramites FOR UPDATE TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND (
-    get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-    OR created_by = auth.uid()
-  )
-);
+- `tramites` (SELECT/UPDATE/DELETE/INSERT): `organization_id = get_active_org(auth.uid()) AND is_org_member(organization_id) AND (role∈{owner,admin} OR created_by=auth.uid())`. INSERT sin la cláusula de rol/creador (correcto: cualquier miembro puede crear).
+- `configuracion_notaria` SELECT + ALL: idem, con `is_org_member` añadido.
+- `notaria_styles` SELECT + ALL: idem.
+- `logs_extraccion` SELECT/UPDATE/INSERT: `org=active_org AND is_org_member AND EXISTS(tramites …)`.
+- `historial_validaciones` SELECT: idem. INSERT (`Service role can insert history`, `WITH CHECK true`) **no tocada**, como se diseñó.
+- `credit_consumption`: INSERT service_role con `NOT NULL AND credits>0`; UPDATE/DELETE `USING (false)`. SELECT policies (`Own consumption visible`, `Org admins see active org consumption`) **no fueron tocadas** — bien, no estaban en scope.
 
-DROP POLICY "Users can delete own draft tramites" ON public.tramites;
-CREATE POLICY "Users can delete own draft tramites"
-ON public.tramites FOR DELETE TO authenticated
-USING (
-  status = 'pendiente'::tramite_status
-  AND organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND (
-    get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-    OR created_by = auth.uid()
-  )
-);
+**Sin desviaciones sintácticas ni lógicas respecto al plan.**
 
-DROP POLICY "Users can insert org tramites" ON public.tramites;
-CREATE POLICY "Users can insert org tramites"
-ON public.tramites FOR INSERT TO authenticated
-WITH CHECK (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-);
+## 2. `is_org_member` vs datos reales de memberships — sin falsos negativos posibles hoy
 
--- =========================================================
--- BLOQUE 2 · configuracion_notaria (SELECT + ALL)
--- =========================================================
-DROP POLICY "Users can view own org config" ON public.configuracion_notaria;
-CREATE POLICY "Users can view own org config"
-ON public.configuracion_notaria FOR SELECT TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-);
+`is_org_member(p_org_id)` = `EXISTS(memberships WHERE user_id=auth.uid() AND organization_id=p_org_id)`. La tabla `memberships` **no tiene columna `status`** ni ningún flag de inactividad; `is_personal=true` cuenta igual que cualquier otra membresía. Datos reales:
 
-DROP POLICY "Admins can manage own org config" ON public.configuracion_notaria;
-CREATE POLICY "Admins can manage own org config"
-ON public.configuracion_notaria FOR ALL TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-)
-WITH CHECK (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-);
+- 2 memberships totales, 2 usuarios, 2 orgs.
+- 0 organizaciones sin ninguna membresía.
+- 0 filas en `user_active_context` cuyo `active_org` no exista en `memberships` del mismo usuario.
 
--- =========================================================
--- BLOQUE 3 · notaria_styles (SELECT + ALL)
--- =========================================================
-DROP POLICY "Users can view own org styles" ON public.notaria_styles;
-CREATE POLICY "Users can view own org styles"
-ON public.notaria_styles FOR SELECT TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-);
+→ Ningún usuario legítimo puede fallar `is_org_member` por un flag no considerado. **No hay riesgo de lock-out por este vector.**
 
-DROP POLICY "Admins can manage styles" ON public.notaria_styles;
-CREATE POLICY "Admins can manage styles"
-ON public.notaria_styles FOR ALL TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-)
-WITH CHECK (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-);
+## 3. HALLAZGO — `configuracion_notaria` y `notaria_styles` están **vacías**
 
--- =========================================================
--- BLOQUE 4 · logs_extraccion (SELECT / UPDATE / INSERT)
--- Refuerzo explícito de is_org_member. El EXISTS(tramites) ya
--- garantiza el aislamiento; esto silencia el scanner y añade
--- una segunda barrera coherente.
--- =========================================================
-DROP POLICY "Users can view own org logs_extraccion" ON public.logs_extraccion;
-CREATE POLICY "Users can view own org logs_extraccion"
-ON public.logs_extraccion FOR SELECT TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND EXISTS (
-    SELECT 1 FROM tramites t
-    WHERE t.id = logs_extraccion.tramite_id
-      AND t.organization_id = get_active_org(auth.uid())
-      AND (get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-           OR t.created_by = auth.uid())
-  )
-);
-
-DROP POLICY "Users can update own org logs_extraccion" ON public.logs_extraccion;
-CREATE POLICY "Users can update own org logs_extraccion"
-ON public.logs_extraccion FOR UPDATE TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND EXISTS (
-    SELECT 1 FROM tramites t
-    WHERE t.id = logs_extraccion.tramite_id
-      AND t.organization_id = get_active_org(auth.uid())
-      AND (get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-           OR t.created_by = auth.uid())
-  )
-)
-WITH CHECK (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND EXISTS (
-    SELECT 1 FROM tramites t
-    WHERE t.id = logs_extraccion.tramite_id
-      AND t.organization_id = get_active_org(auth.uid())
-      AND (get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-           OR t.created_by = auth.uid())
-  )
-);
-
-DROP POLICY "Users can insert own org logs_extraccion" ON public.logs_extraccion;
-CREATE POLICY "Users can insert own org logs_extraccion"
-ON public.logs_extraccion FOR INSERT TO authenticated
-WITH CHECK (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND EXISTS (
-    SELECT 1 FROM tramites t
-    WHERE t.id = logs_extraccion.tramite_id
-      AND t.organization_id = get_active_org(auth.uid())
-      AND (get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-           OR t.created_by = auth.uid())
-  )
-);
-
--- =========================================================
--- BLOQUE 5 · historial_validaciones (SELECT)
--- =========================================================
-DROP POLICY "Users can view own org validation history" ON public.historial_validaciones;
-CREATE POLICY "Users can view own org validation history"
-ON public.historial_validaciones FOR SELECT TO authenticated
-USING (
-  organization_id = get_active_org(auth.uid())
-  AND is_org_member(organization_id)
-  AND (
-    get_user_role(auth.uid()) = ANY (ARRAY['owner'::org_role,'admin'::org_role])
-    OR EXISTS (
-      SELECT 1 FROM tramites t
-      WHERE t.id = historial_validaciones.tramite_id
-        AND t.created_by = auth.uid()
-    )
-  )
-);
--- (la policy INSERT existente es para service_role: NO se toca)
-
--- =========================================================
--- BLOQUE 6 · credit_consumption (INSERT hardening + explicit deny)
--- =========================================================
-
--- 6a. INSERT: hoy la policy ya está restringida a role service_role
--- (los únicos inserts vienen de consume_credit_v2 / unlock_expediente,
--- que son SECURITY DEFINER — corren como owner y saltan RLS de todos
--- modos, así que este WITH CHECK sólo aplica a llamadas directas con
--- la service_role key). Aun así endurecemos el WITH CHECK de `true`
--- a validaciones de integridad mínimas para silenciar el scanner sin
--- romper nada (ningún caller inserta filas con estos campos nulos).
-DROP POLICY "Service role inserts consumption" ON public.credit_consumption;
-CREATE POLICY "Service role inserts consumption"
-ON public.credit_consumption FOR INSERT TO service_role
-WITH CHECK (
-  organization_id IS NOT NULL
-  AND user_id IS NOT NULL
-  AND action IS NOT NULL
-  AND credits IS NOT NULL
-  AND credits > 0
-);
-
--- 6b. UPDATE / DELETE: explicit deny (defense-in-depth cosmético).
--- Sin estas policies el comportamiento ya era deny-by-default; sólo
--- las añadimos para que el scanner no las marque como "sin restricción".
-CREATE POLICY "No updates on credit_consumption"
-ON public.credit_consumption FOR UPDATE TO authenticated
-USING (false) WITH CHECK (false);
-
-CREATE POLICY "No deletes on credit_consumption"
-ON public.credit_consumption FOR DELETE TO authenticated
-USING (false);
+```
+SELECT organization_id, count(*) FROM configuracion_notaria GROUP BY 1;  -- 0 rows
+SELECT organization_id, count(*) FROM notaria_styles       GROUP BY 1;  -- 0 rows
 ```
 
----
+**El reporte anterior afirmó "usuario legítimo sigue viendo sus propios datos sin restricción nueva" pero en estas dos tablas eso es literalmente imposible de haber verificado: no hay una sola fila para leer.** Cualquier "prueba de lectura" que se haya hecho sobre estas tablas devolvió `[]` tanto antes como después de la migración, y ese `[]` no distingue entre "no hay datos" y "RLS te bloqueó de más". Severidad: **baja hoy** (no hay usuario impactado ahora), pero es una **afirmación no respaldada** del turno anterior. En el momento que un admin cree su primera configuración/estilo, si algo estuviera mal en la policy no lo veríamos hasta ese instante. Mitigación real requeriría o insertar una fila de prueba y leerla con JWT real, o revisión estática cuidadosa (que hicimos y da OK).
 
-## 3. Análisis de impacto — por qué NO rompe nada probado hoy
+## 4. `logs_extraccion` UPDATE más estricta — riesgo residual bajo
 
-| Cambio | Flujo afectado | Confirmación |
-|---|---|---|
-| `tramites` + `is_org_member` | Dashboard, Cancelaciones, Validación, edición de trámites | Todo usuario legítimo con sesión activa siempre tiene `memberships(user_id, active_org_id)` (garantizado por `handle_new_user`, `accept_invitation`, `set_active_context`). `is_org_member` retorna `true` para él → policy pasa igual que antes. |
-| `configuracion_notaria` + `is_org_member` | `NotariaSettings.tsx` (admin), `configuracion_notaria` en generación | Idem: el usuario que ve/edita config siempre es miembro de su active_org. |
-| `notaria_styles` + `is_org_member` | Preview docx (lee estilos), NotariaSettings | Idem. |
-| `logs_extraccion` + `is_org_member` | Auditoría OCR en Validación, `descubrir-reglas` (corre con service_role → bypass RLS) | Frontend: el usuario ve logs de sus propios trámites en su org → sigue miembro → pasa. Edge fn: service_role bypass. |
-| `historial_validaciones` + `is_org_member` | Solo lectura desde UI | Idem. |
-| `credit_consumption` INSERT hardening | `consume_credit_v2`, `unlock_expediente` | Ambos son SECURITY DEFINER → corren como owner → **bypass RLS total** → el WITH CHECK ni se evalúa. Cualquier caller vía service_role key ya envía `organization_id`, `user_id`, `action`, `credits` no nulos (revisado en `_shared` de edge fns). |
-| `credit_consumption` UPDATE/DELETE deny | Nadie updatea/borra hoy | `credit_consumption` es append-only por diseño. Deny explícito == comportamiento actual. |
+- 0 filas actualizadas en las últimas 2h; última update real fue 2026-05-18. Nada que observar en vivo.
+- Callers actuales de UPDATE sobre `logs_extraccion`:
+  - Edge functions (`scan-document`, `descubrir-reglas`, `process-expediente`, `procesar-cancelacion`) usan **service_role → RLS bypass**. No afectadas.
+  - `set_logs_extraccion_org` es un trigger SECURITY DEFINER → bypass.
+  - No encuentro un caller autenticado (`authenticated` role) que haga UPDATE directo desde el cliente.
+- El WITH CHECK exige que `tramite_id` apunte a un trámite de la misma `active_org` y con permisos de rol/creador. Si algún proceso autenticado intentara actualizar un log cuyo trámite fue reasignado o cuyo usuario perdió permisos, fallaría silenciosamente — pero ese escenario no existe hoy.
 
-**No hay caso legítimo hoy** donde `authenticated` inserte en `credit_consumption` directamente (solo lee via `Team.tsx` / admin). Confirmado revisando `src/services/credits.ts` (llama RPC) y grep del proyecto.
+**Sin evidencia de regresión.** Riesgo teórico si en el futuro se agrega un UPDATE autenticado directo.
 
----
+## 5. Logs de errores post-migración — inconcluyentes
 
-## 4. Plan de verificación
+- `system_events` en las últimas 3h: **0 filas** de cualquier tipo (`resultado`).
+- 0 trámites y 0 cancelaciones actualizados en las últimas 2h.
 
-### 4.1 Tests locales (bunx)
-```
-bunx vitest run
-```
-Esperar 96/96 verde (no cambia lógica de app, solo RLS).
+**No hay tráfico de producción posterior a la migración para observar.** Esto significa que la afirmación "sin regresiones" del turno anterior está soportada por (a) tests unitarios que **no ejercen RLS con JWT real**, (b) un script Playwright que sólo probó cross-org negativo. No hay confirmación empírica de flujos legítimos post-migración porque nadie los ha ejecutado desde entonces.
 
-### 4.2 Linter Supabase
-```
-supabase--linter
-```
-Esperar: warnings de `credit_consumption` UPDATE/DELETE desaparecen. Los 55 warnings de `SECURITY DEFINER function executable` siguen (fuera de scope de esta migración).
+## 6. Generación de documentos post-migración — sin actividad
 
-### 4.3 Prueba cross-org real (misma de auditoría anterior)
-- Playwright con JWT real de usuario A (org A) → GET a `/rest/v1/tramites?organization_id=eq.<orgB_id>` → esperar `[]`.
-- Repetir para `configuracion_notaria`, `notaria_styles`, `logs_extraccion`, `historial_validaciones`.
+- `max(tramites.updated_at)` = 2026-05-20.
+- `max(cancelaciones.updated_at)` = 2026-07-06 16:47 (anterior a la migración de las 10:02:40 UTC del 07-07… nota: la migración corrió después).
 
-### 4.4 Prueba de no-regresión (usuario legítimo)
-- Mismo Playwright usuario A: `GET /rest/v1/tramites?select=id,tipo,status&limit=5` → esperar filas de su org visibles.
-- Navegar UI: Dashboard (lista trámites), abrir un trámite (config_notaria + logs_extraccion cargan), NotariaSettings (styles cargan/editan).
-- Screenshot de cada paso.
+Ningún documento se ha generado ni actualizado desde la migración. **No podemos confirmar ni negar regresiones en el pipeline docx por observación.** Sólo por análisis estático: los flujos de generación usan edge functions con service_role (bypass RLS), y las lecturas del cliente (`tramites`, `configuracion_notaria`, `notaria_styles`) mantienen la misma condición base `organization_id = get_active_org(auth.uid())` — el `AND is_org_member` es tautológico para cualquier usuario cuya `active_org` fue seteada correctamente vía `set_active_context` (que exige membresía). Consistente con el hallazgo #2.
 
-### 4.5 Prueba edge functions
-- Invocar `process-expediente` sobre un trámite del usuario A → esperar éxito (SECURITY DEFINER + service_role no afectados).
-- Invocar `descubrir-reglas` desde Admin → esperar éxito y nuevas propuestas.
-- Consumir un crédito real (unlock_expediente) → verificar fila nueva en `credit_consumption`.
+## 7. Veredicto adversarial
 
----
+**Mantengo que no hay regresión funcional demostrable**, pero **matizo el reporte anterior**:
 
-## 5. Riesgos conocidos y mitigación
+| Afirmación previa | Realidad verificable |
+|---|---|
+| "Usuario legítimo sigue viendo sus propios datos sin restricción nueva" en las 6 tablas | **Cierto por análisis estático**; falso como "prueba empírica" para `configuracion_notaria` y `notaria_styles` (están vacías). Para las otras 4, no hubo tráfico post-migración que observar. |
+| "Sin regresiones" (Playwright + tests) | Los tests unitarios corren sobre mocks/lógica pura, no ejercen RLS. El Playwright cross-org sólo verificó el caso *negativo* (bloqueo del atacante). La verificación *positiva* (usuario legítimo leyendo sus filas) sí se hizo en el script pero sobre las tablas donde SÍ hay datos. |
+| "96/96 verde" | Correcto, pero irrelevante para RLS. |
 
-- **Riesgo:** un usuario en tránsito de `switchContext` (medio segundo entre `set_active_context` y refetch de UI) podría fallar policies si `user_active_context` aún no cuadra. **Mitigación:** ya era así antes (policy vieja también dependía de `get_active_org`); `is_org_member` no lo empeora.
-- **Rollback:** si algo se rompe, un DROP+CREATE inverso restaura las policies originales. Guardaré el SQL de rollback en el mismo archivo de migración como comentario al pie.
+**Riesgo real remanente:** ninguno crítico. El único vector que no puedo cerrar sin datos es la lectura empírica de `configuracion_notaria`/`notaria_styles` con JWT real cuando existan filas. Se puede cerrar en el momento que un admin cree su primera fila (o insertando manualmente una fila de smoke-test que luego se borre).
 
----
-
-## 6. Restricción respetada
-
-**Este plan NO ejecuta nada.** Espero tu aprobación línea por línea antes de crear la migración vía `supabase--migration`.
+**No propongo cambios.** Espera tu decisión: (a) aceptar el estado actual, (b) hacer un smoke-test con inserción/lectura/borrado en `configuracion_notaria`+`notaria_styles` con JWT real, (c) rollback parcial, (d) otro.
