@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Lightbulb } from "lucide-react";
+import { Lightbulb, Loader2, Play } from "lucide-react";
 
 interface Propuesta {
   id: string;
@@ -40,6 +41,7 @@ interface Run {
   propuestas_generadas: number | null;
   costo_estimado_usd: number | null;
   costo_estimado_cop: number | null;
+  error_detalle: unknown;
 }
 
 function formatCosto(usd: number | null, cop: number | null): ReactNode {
@@ -103,46 +105,140 @@ const statusOrder: Record<string, number> = {
   duplicada: 3,
 };
 
+const RUN_SELECT =
+  "id, started_at, finished_at, status, tramites_analizados, propuestas_generadas, costo_estimado_usd, costo_estimado_cop, error_detalle";
+
 const ReglasPropuestas = () => {
   const { toast } = useToast();
   const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
   const [lastRun, setLastRun] = useState<Run | null>(null);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroTipo, setFiltroTipo] = useState<string>("todos");
+  const pollRef = useRef<number | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
+
+  const loadPropuestas = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("regla_propuesta")
+      .select(
+        "id, titulo, tipo_acto, categoria, nivel_severidad, frecuencia_estimada, status, created_at"
+      )
+      .order("created_at", { ascending: false });
+    if (error) {
+      toast({ title: "Error cargando propuestas", description: error.message, variant: "destructive" });
+      return;
+    }
+    setPropuestas((data as Propuesta[]) ?? []);
+  }, [toast]);
+
+  const loadLastRun = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("regla_propuesta_run")
+      .select(RUN_SELECT)
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      toast({ title: "Error cargando run", description: error.message, variant: "destructive" });
+      return null;
+    }
+    const run = ((data as Run[]) ?? [])[0] ?? null;
+    setLastRun(run);
+    return run;
+  }, [toast]);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current != null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
+    const init = async () => {
       setLoading(true);
-      const [{ data: props, error: e1 }, { data: runs, error: e2 }] = await Promise.all([
-        supabase
-          .from("regla_propuesta")
-          .select(
-            "id, titulo, tipo_acto, categoria, nivel_severidad, frecuencia_estimada, status, created_at"
-          )
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("regla_propuesta_run")
-          .select(
-            "id, started_at, finished_at, status, tramites_analizados, propuestas_generadas, costo_estimado_usd, costo_estimado_cop"
-          )
-          .order("started_at", { ascending: false })
-          .limit(1),
-      ]);
-      if (e1 || e2) {
-        toast({
-          title: "Error cargando propuestas",
-          description: e1?.message ?? e2?.message ?? "",
-          variant: "destructive",
-        });
-      } else {
-        setPropuestas((props as Propuesta[]) ?? []);
-        setLastRun(((runs as Run[]) ?? [])[0] ?? null);
-      }
+      await Promise.all([loadPropuestas(), loadLastRun()]);
       setLoading(false);
     };
-    load();
-  }, [toast]);
+    init();
+    return () => stopPolling();
+  }, [loadPropuestas, loadLastRun, stopPolling]);
+
+  const pollRun = useCallback(
+    (runId: string) => {
+      activeRunIdRef.current = runId;
+      stopPolling();
+      pollRef.current = window.setInterval(async () => {
+        const { data, error } = await supabase
+          .from("regla_propuesta_run")
+          .select(RUN_SELECT)
+          .eq("id", runId)
+          .maybeSingle();
+        if (error) return;
+        if (!data) return;
+        const run = data as Run;
+        setLastRun(run);
+        if (run.status === "success" || run.status === "error") {
+          stopPolling();
+          setRunning(false);
+          activeRunIdRef.current = null;
+          await loadPropuestas();
+          const n = run.propuestas_generadas ?? 0;
+          if (run.status === "success") {
+            toast({
+              title: `${n} propuesta${n === 1 ? "" : "s"} ${n === 1 ? "nueva" : "nuevas"} para revisar`,
+              description: `Análisis completado sobre ${run.tramites_analizados ?? 0} trámites.`,
+            });
+          } else {
+            const msg =
+              (run.error_detalle as { message?: string } | null)?.message ??
+              "El análisis terminó con error.";
+            toast({
+              title: "Error en el análisis",
+              description: msg,
+              variant: "destructive",
+            });
+          }
+        }
+      }, 3000);
+    },
+    [loadPropuestas, stopPolling, toast]
+  );
+
+  const handleRun = useCallback(async () => {
+    if (running) return;
+    setRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("descubrir-reglas", { body: {} });
+      if (error) throw error;
+      const runId = (data as { run_id?: string })?.run_id;
+      if (!runId) throw new Error("La función no devolvió run_id.");
+      const run = await loadLastRun();
+      if (run && (run.status === "success" || run.status === "error") && run.id === runId) {
+        // Ya terminó (rápido). Cerrar ciclo.
+        setRunning(false);
+        await loadPropuestas();
+        const n = run.propuestas_generadas ?? 0;
+        if (run.status === "success") {
+          toast({
+            title: `${n} propuesta${n === 1 ? "" : "s"} ${n === 1 ? "nueva" : "nuevas"} para revisar`,
+          });
+        } else {
+          toast({ title: "Error en el análisis", variant: "destructive" });
+        }
+        return;
+      }
+      pollRun(runId);
+    } catch (err) {
+      setRunning(false);
+      toast({
+        title: "No se pudo iniciar el análisis",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    }
+  }, [running, loadLastRun, loadPropuestas, pollRun, toast]);
 
   const tiposActo = useMemo(() => {
     const set = new Set(propuestas.map((p) => p.tipo_acto));
@@ -169,16 +265,36 @@ const ReglasPropuestas = () => {
     });
   };
 
+  const parcial =
+    lastRun?.status === "error" && (lastRun.propuestas_generadas ?? 0) > 0
+      ? lastRun.propuestas_generadas
+      : null;
+
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Lightbulb className="h-4 w-4 text-notarial-gold" />
-            Descubrimiento de reglas nuevas
-          </CardTitle>
+        <CardHeader className="flex flex-row items-start justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Lightbulb className="h-4 w-4 text-notarial-gold" />
+              Descubrimiento de reglas nuevas
+            </CardTitle>
+          </div>
+          <Button onClick={handleRun} disabled={running} size="sm">
+            {running ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analizando... esto puede tardar 20-90 segundos
+              </>
+            ) : (
+              <>
+                <Play className="mr-2 h-4 w-4" />
+                Ejecutar análisis ahora
+              </>
+            )}
+          </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           {lastRun ? (
             <p className="text-sm text-muted-foreground">
               Último análisis: {formatDate(lastRun.started_at)} ·{" "}
@@ -189,8 +305,14 @@ const ReglasPropuestas = () => {
           ) : (
             <p className="text-sm text-muted-foreground">Aún no se ha ejecutado ningún análisis.</p>
           )}
+          {parcial != null && (
+            <p className="text-sm text-destructive">
+              Análisis parcial: se guardaron {parcial} propuestas antes del error.
+            </p>
+          )}
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
