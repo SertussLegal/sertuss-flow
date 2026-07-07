@@ -18,7 +18,7 @@ const baseInput = () => ({
     identificador_predial: "AAA000",
     municipio: "Bogotá",
   },
-  actos: { valor_compraventa: "100000000", es_hipoteca: false },
+  actos: { valor_compraventa: "100000000", es_hipoteca: false, valor_hipoteca: "" } as any,
   notariaTramite: { numero_notaria: "10", circulo: "Bogotá", nombre_notario: "X" },
 });
 
