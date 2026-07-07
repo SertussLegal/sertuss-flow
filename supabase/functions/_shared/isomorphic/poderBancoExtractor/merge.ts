@@ -37,16 +37,37 @@ export interface DedicadoFlatResult {
   apoderado_notaria_poder?: string | null;
 }
 
-/** Unwraps a confField `{valor, confianza}` a string plano. */
+/** Marcadores literales que la IA a veces devuelve como string. Deben tratarse como ausencia real. */
+const NULLY_STRINGS = new Set([
+  "null", "NULL", "Null",
+  "undefined", "UNDEFINED",
+  "n/a", "N/A", "N/a",
+  "na", "NA",
+  "none", "NONE", "None",
+  "---", "--", "-",
+  "?", "??",
+]);
+
+/** Normaliza cualquier string a string real, o undefined si es vacío/nully. */
+export function sanitizeString(raw: unknown): string | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (NULLY_STRINGS.has(trimmed)) return undefined;
+  return trimmed;
+}
+
+/** Unwraps a confField `{valor, confianza}` a string plano, saneando "null"/etc. */
 export function unwrapConf(v: unknown): string | undefined {
   if (v == null) return undefined;
-  if (typeof v === "string") return v.trim() || undefined;
+  if (typeof v === "string") return sanitizeString(v);
   if (typeof v === "object" && v !== null && "valor" in (v as Record<string, unknown>)) {
-    const raw = (v as { valor?: unknown }).valor;
-    if (typeof raw === "string") return raw.trim() || undefined;
+    return sanitizeString((v as { valor?: unknown }).valor);
   }
   return undefined;
 }
+
 
 /** Merge plano legacy (equivalente al `mergePoderBanco` interno de la edge). */
 export function mergePoderBancoFlat(
