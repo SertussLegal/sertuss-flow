@@ -126,14 +126,14 @@ export default function PropuestaDetalleModal({
       return;
     }
 
-    const cambios: Record<string, unknown> = {
+    const cambios = {
       titulo: titulo.trim(),
       descripcion: descripcion.trim(),
       categoria,
       nivel_severidad: severidad,
       tipo_acto: tipoActo,
       regla_deterministica_sugerida: reglaParsed,
-    };
+    } as unknown as import("@/integrations/supabase/types").Json;
 
     setSaving(nuevo_status);
     const { error } = await supabase.rpc("admin_review_propuesta", {
