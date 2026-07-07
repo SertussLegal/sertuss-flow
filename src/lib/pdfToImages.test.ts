@@ -79,9 +79,12 @@ function installCanvasMocks(opts: {
 }
 
 function makeFile(): File {
-  return new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "poder.pdf", {
+  // jsdom's File no implementa arrayBuffer() — parcheamos ad-hoc.
+  const f = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "poder.pdf", {
     type: "application/pdf",
   });
+  (f as any).arrayBuffer = async () => new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer;
+  return f;
 }
 
 describe("pdfToImages", () => {
