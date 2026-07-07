@@ -1906,103 +1906,25 @@ const Validacion = () => {
 
     setValidando(true);
     try {
-      const datosExtraidos = {
-        vendedores: vendedores.map(v => enrichPersonaForClaude({
-          nombre_completo: v.nombre_completo,
-          numero_cedula: v.numero_cedula,
-          lugar_expedicion: v.lugar_expedicion,
-          estado_civil: v.estado_civil,
-          direccion: v.direccion,
-          municipio_domicilio: v.municipio_domicilio,
-          es_persona_juridica: v.es_persona_juridica,
-          razon_social: v.razon_social,
-          nit: v.nit,
-        })),
-        compradores: compradores.map(c => enrichPersonaForClaude({
-          nombre_completo: c.nombre_completo,
-          numero_cedula: c.numero_cedula,
-          lugar_expedicion: c.lugar_expedicion,
-          estado_civil: c.estado_civil,
-          direccion: c.direccion,
-          municipio_domicilio: c.municipio_domicilio,
-          es_persona_juridica: c.es_persona_juridica,
-          razon_social: c.razon_social,
-          nit: c.nit,
-        })),
-        inmueble: {
-          matricula_inmobiliaria: inmueble.matricula_inmobiliaria,
-          identificador_predial: inmueble.identificador_predial,
-          departamento: inmueble.departamento,
-          municipio: inmueble.municipio,
-          direccion: inmueble.direccion,
-          area: inmueble.area,
-          linderos: inmueble.linderos,
-          avaluo_catastral: inmueble.avaluo_catastral,
-          codigo_orip: inmueble.codigo_orip,
-        },
-        actos: {
-          tipo_acto: actos.tipo_acto,
-          valor_compraventa: actos.valor_compraventa,
-          es_hipoteca: actos.es_hipoteca,
-          valor_hipoteca: actos.valor_hipoteca,
-          entidad_bancaria: actos.entidad_bancaria,
-        },
-      };
-
-      const validacionesApp: string[] = [];
-      if (vendedores.length > 0 || compradores.length > 0) {
-        validacionesApp.push("cruce_roles_certificado_completado");
-      }
-      const tienePendientes = [...vendedores, ...compradores].some(
-        (p: any) => p.pendiente === true
-      );
-      if (tienePendientes) {
-        validacionesApp.push("placeholders_pendientes_aplicados");
-      }
-
-      const resultado = await validarConClaude({
-        modo: "documento",
-        tramiteId,
-        organizationId: profile.organization_id,
+      const issues = computeTopIssues({
         tipoActo: actos.tipo_acto || "compraventa",
-        datosExtraidos,
-        validacionesApp,
+        vendedores,
+        compradores,
+        inmueble,
+        actos,
+        notariaTramite,
       });
-
-      // Error sistema → no bloquear, abrir preview directamente
-      if (resultado.estado === "error_sistema") {
-        setPreviewOpen(true);
-        return;
-      }
-
-      // Aprobado sin problemas
-      if (resultado.estado === "aprobado" && !tieneErroresCriticos(resultado)) {
-        setPreviewOpen(true);
-        return;
-      }
-
-      // Errores críticos → mostrar dialog
-      if (tieneErroresCriticos(resultado)) {
-        setValidacionResultado(resultado);
-        setValidacionDialogOpen(true);
-        return;
-      }
-
-      // Solo advertencias/sugerencias → toast + abrir preview
-      const conteo = contarPorNivel(resultado);
-      sonnerToast.info(
-        `Validación: ${resultado.puntuacion ?? "—"}/100 — ${conteo.advertencias} advertencia(s), ${conteo.sugerencias} sugerencia(s)`,
-        { description: resultado.retroalimentacion_general, duration: 6000 }
-      );
+      setTopIssues(issues);
       setPreviewOpen(true);
     } catch (err) {
-      console.error("Error en validación pre-preview:", err);
-      // Fallback: abrir preview sin bloquear
+      console.error("Error calculando top-issues:", err);
+      setTopIssues([]);
       setPreviewOpen(true);
     } finally {
       setValidando(false);
     }
   };
+
 
   const handleConfirmGenerate = async () => {
     if (!tramiteId || !profile?.organization_id) {
