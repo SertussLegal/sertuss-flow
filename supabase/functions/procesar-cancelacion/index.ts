@@ -1386,82 +1386,218 @@ async function logPoderEvent(
 // turno multimodal, y devuelve la cifra anclada sintácticamente al verbo
 // rector del gravamen (skill `extraccion-cuantia-semantica`).
 // ──────────────────────────────────────────────────────────────────────
+export type CuantiaMotivoNull =
+  | "sin_evidencia"
+  | "ambigua_multiple"
+  | "escritura_declara_abierta"
+  | null;
+
+export type CuantiaClasificacion =
+  | "cuantia_credito"
+  | "precio_venta"
+  | "avaluo"
+  | "subrogacion"
+  | "abono_saldo"
+  | "subsidio"
+  | "uvr_upac"
+  | "otro";
+
+export interface CuantiaCandidato {
+  texto_fragmento: string;
+  clasificacion: CuantiaClasificacion;
+  monto: number | null;
+  pagina_aprox?: number | null;
+}
+
 const cuantiaDedicadaTool = [
   {
     type: "function" as const,
     function: {
       name: "extract_cuantia_credito_dedicada",
-      description: "Extrae el monto del crédito hipotecario a partir de TODAS las páginas de la escritura antecedente. Aplicar anclaje sintáctico al verbo rector del gravamen e ignorar lista negra (precio, avalúo, subsidio, UVR/UPAC).",
+      description: "Determina la cuantía del CRÉDITO HIPOTECARIO (mutuo) razonando semánticamente sobre TODAS las cifras monetarias del documento. NO usa lista fija de verbos: clasifica cada cifra por su rol semántico (cuantia_credito / precio_venta / avaluo / subrogacion / abono_saldo / subsidio / uvr_upac / otro), desambigua entre las clasificadas como cuantia_credito, y devuelve el ganador o un motivo_null específico.",
       parameters: {
         type: "object",
         properties: {
           valor_hipoteca_original: {
             type: ["string", "null"],
-            description: "Monto del MUTUO anclado al verbo rector ('constituye', 'grava', 'hipoteca', 'garantiza', 'presta', 'concede', 'desembolsa'). Formato OBLIGATORIO: '<LETRAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)' en MAYÚSCULAS, ej: 'OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)'. Devuelve `null` (JSON null, NUNCA cadena vacía) si la hipoteca es ABIERTA / CUANTÍA INDETERMINADA, si el monto es ambiguo, o si no hay evidencia clara.",
+            description: "Monto del crédito hipotecario en formato notarial estricto: '<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)'. Devuelve JSON null (NUNCA cadena vacía) si la escritura declara la hipoteca ABIERTA/INDETERMINADA, si hay ambigüedad irreconciliable, o si no hay evidencia.",
           },
           valor_hipoteca_es_indeterminada: {
             type: "boolean",
-            description: "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA', o 'DE CUANTÍA INDETERMINADA'. En cualquier otro caso false.",
+            description: "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. En cualquier otro caso false.",
           },
           confianza: {
             type: "string",
             enum: ["alta", "media", "baja"],
-            description: "Nivel de confianza en la extracción.",
+            description: "Nivel de confianza en la decisión final del PASO 3.",
+          },
+          motivo_null: {
+            type: ["string", "null"],
+            enum: ["sin_evidencia", "ambigua_multiple", "escritura_declara_abierta", null],
+            description: "OBLIGATORIO no-null cuando valor_hipoteca_original es null. null cuando la extracción fue exitosa.",
+          },
+          candidatos_vistos: {
+            type: "array",
+            description: "TODAS las cifras monetarias enumeradas en el PASO 1 con su clasificación semántica. NO omitir aunque haya ganador claro — esto es auditoría.",
+            items: {
+              type: "object",
+              properties: {
+                texto_fragmento: {
+                  type: "string",
+                  maxLength: 200,
+                  description: "Fragmento textual literal alrededor de la cifra (~140 chars).",
+                },
+                clasificacion: {
+                  type: "string",
+                  enum: ["cuantia_credito", "precio_venta", "avaluo", "subrogacion", "abono_saldo", "subsidio", "uvr_upac", "otro"],
+                },
+                monto: {
+                  type: ["integer", "null"],
+                  description: "Entero en pesos, sin decimales ni separadores. null si la cifra está expresada solo en UVR/UPAC.",
+                },
+                pagina_aprox: {
+                  type: ["integer", "null"],
+                },
+              },
+              required: ["texto_fragmento", "clasificacion", "monto"],
+              additionalProperties: false,
+            },
           },
         },
-        required: ["valor_hipoteca_original", "valor_hipoteca_es_indeterminada"],
+        required: [
+          "valor_hipoteca_original",
+          "valor_hipoteca_es_indeterminada",
+          "motivo_null",
+          "candidatos_vistos",
+        ],
         additionalProperties: false,
       },
     },
   },
 ];
 
-const CUANTIA_DEDICADA_SYSTEM = `Eres un sistema OCR jurídico-notarial colombiano especializado EXCLUSIVAMENTE en extraer la cuantía del crédito hipotecario (mutuo) a partir de las páginas de una Escritura Pública de Constitución de Hipoteca.
+const CUANTIA_DEDICADA_SYSTEM = `Eres un sistema OCR jurídico-notarial colombiano. Tu única tarea es determinar la CUANTÍA DEL CRÉDITO HIPOTECARIO (mutuo) documentada en una Escritura Pública de Constitución de Hipoteca, cuando el Certificado de Tradición la registra como "CUANTÍA INDETERMINADA / ABIERTA".
 
-CONTEXTO: el Certificado de Tradición y Libertad de este expediente registra la hipoteca como "CUANTÍA INDETERMINADA" y por eso te llamamos para encontrar el monto real dentro de la escritura.
+ALCANCE: hasta 30 páginas multimodales en un turno. La cifra puede estar en carátula, cláusula de mutuo, cláusula de pago de la compraventa, casilla de liquidación, o cualquier parte del cuerpo — recorre TODO.
 
-ALCANCE MULTIPÁGINA: el usuario puede enviarte hasta 30 páginas en un único turno multimodal. La cláusula del mutuo / cláusula de pago puede estar en cualquier parte del documento — revisa TODAS las páginas.
+PROCEDIMIENTO OBLIGATORIO (en este orden):
 
-JERARQUÍA DE BÚSQUEDA (en orden):
-1. MUTUO — el banco "presta / otorga / concede / desembolsa / entrega" una suma al deudor como crédito.
-2. PAGO — cláusula de compraventa: "el saldo del precio se cubrirá con el producto del crédito que le concede [BANCO] por valor de…".
-3. LIQUIDACIÓN — casilla anexa "CUANTÍA DEL MUTUO", "VALOR DEL CRÉDITO", "MONTO DEL PRÉSTAMO".
+PASO 1 — ENUMERAR
+Lista TODAS las cifras monetarias en pesos colombianos ($) que veas en el documento, sin filtrar. Para cada una captura el fragmento textual literal (máx. ~140 caracteres alrededor de la cifra) tal como aparece.
 
-ANCLAJE SINTÁCTICO (obligatorio): la cifra DEBE estar gobernada gramaticalmente por un verbo rector del gravamen: 'constituye', 'grava', 'hipoteca', 'garantiza', 'otorga garantía hipotecaria', 'presta', 'concede', 'desembolsa', 'entrega'. La proximidad física a la palabra "hipoteca" NO basta.
+PASO 2 — CLASIFICAR
+Para cada cifra, decide su rol SEGÚN EL CONTEXTO SEMÁNTICO que la rodea (no por proximidad a palabras clave). Clasifica en UNA de estas categorías:
 
-LISTA NEGRA (ignora estas cifras, NO el párrafo):
-- precio de venta / valor de la compraventa
-- avalúo catastral / avalúo comercial
-- liberación de gravamen / subrogación
-- abono / saldo pendiente
-- subsidio / cesantías
-- DENOMINACIONES UVR / UPAC (busca SIEMPRE la cifra principal en PESOS M/CTE).
+  - "cuantia_credito"    → la suma que el banco presta / concede / desembolsa / entrega al deudor, O que la escritura llama explícitamente cuantía del mutuo, valor del crédito, monto del préstamo, cuantía del crédito otorgado, o equivalente semántico (aunque el verbo no esté conjugado: construcciones nominales tipo "la cuantía del crédito otorgado es: $X" cuentan).
+  - "precio_venta"       → precio de la compraventa del inmueble.
+  - "avaluo"             → avalúo catastral o comercial.
+  - "subrogacion"        → liberación / subrogación de gravamen previo.
+  - "abono_saldo"        → abono, saldo pendiente, cuota inicial.
+  - "subsidio"           → subsidio familiar, cesantías aplicadas.
+  - "uvr_upac"           → cifra expresada en UVR o UPAC (nunca en pesos como cuantía principal — la real está en pesos M/CTE).
+  - "otro"               → honorarios, gastos notariales, impuestos, seguros, tasas, cualquier otro concepto.
 
-FORMATO DE SALIDA (estricto):
-- valor_hipoteca_original: "<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)". Ej: "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)".
-- valor_hipoteca_es_indeterminada: true SOLO si la escritura misma declara la hipoteca como abierta / sin límite / de cuantía indeterminada.
+PASO 3 — DESAMBIGUAR (elige UNA salida)
+
+  a) Exactamente UNA cifra clasificada como "cuantia_credito"
+     → úsala. Confianza = "alta".
+
+  b) VARIAS cifras "cuantia_credito" con el MISMO monto normalizado (mismo entero en pesos, ignorando formato/decimales/UVR paralelo)
+     → úsala. Confianza = "alta" (redundancia entre mutuo, pago y liquidación es lo esperado en escrituras bien redactadas).
+
+  c) VARIAS cifras "cuantia_credito" con montos DISTINTOS que no puedes conciliar
+     → valor_hipoteca_original = null, motivo_null = "ambigua_multiple". Confianza = "baja".
+
+  d) CERO cifras "cuantia_credito" pero la escritura declara expresamente "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA"
+     → valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = true, motivo_null = "escritura_declara_abierta". Confianza = "alta".
+
+  e) CERO cifras "cuantia_credito" y sin declaración de apertura
+     → valor_hipoteca_original = null, motivo_null = "sin_evidencia". Confianza = "baja".
+
+REGLAS DE FORMATO (solo aplican a los casos a/b):
+- valor_hipoteca_original = "<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)"
+- valor_hipoteca_es_indeterminada = false
+- motivo_null = null
 
 ANTI-ALUCINACIÓN (estricto):
-- Si no encuentras evidencia clara, devuelve \`valor_hipoteca_original = null\` (JSON null, NUNCA cadena vacía) y \`valor_hipoteca_es_indeterminada = false\`.
-- Si encuentras dos cifras candidatas ambiguas y no puedes desambiguar, devuelve \`null\` y \`false\`.
-- Si la escritura declara la hipoteca como ABIERTA / SIN LÍMITE / INDETERMINADA, devuelve \`valor_hipoteca_original = null\` y \`valor_hipoteca_es_indeterminada = true\`.
-- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---', literales descriptivos en el campo de monto, o cifras inventadas.
+- NUNCA promuevas a "cuantia_credito" una cifra cuyo contexto la ubica en las categorías precio_venta / avaluo / subrogacion / abono_saldo / subsidio / uvr_upac / otro. Estas cifras se enumeran y clasifican, pero se descartan.
+- NUNCA inventes una cifra que no aparece literalmente en el documento.
+- NUNCA devuelvas "N/A", "ilegible", "?", "---" ni literales descriptivos en el campo de monto. Si dudas, monto = null con motivo_null correcto.
+- Si el texto es ilegible en una cifra, no la incluyas en candidatos_vistos.
+
+DEVUELVE SIEMPRE candidatos_vistos con TODAS las cifras enumeradas en PASO 1 (no solo la ganadora). Esto es auditoría — no lo omitas ni siquiera en el caso a).
+
+EJEMPLOS:
+
+Ejemplo 1 — MUTUO clásico (verbo conjugado)
+  Fragmento: "…el BANCO POPULAR S.A. concede al deudor un mutuo por la suma de VEINTICINCO MILLONES DE PESOS ($25.000.000) M/CTE, garantizado con hipoteca…"
+  Salida: valor_hipoteca_original = "VEINTICINCO MILLONES DE PESOS ($25.000.000)", valor_hipoteca_es_indeterminada = false, motivo_null = null, confianza = "alta", candidatos_vistos incluye {clasificacion:"cuantia_credito", monto:25000000}.
+
+Ejemplo 2 — Construcción nominal de carátula (escrituras 90s–2000s)
+  Fragmentos: "PARA EFECTOS DE LIQUIDACIÓN, LA CUANTÍA DEL CRÉDITO OTORGADO ES: $ 8.558.475.oo" + "precio de venta: $65.000.000" + "avalúo catastral: $12.400.000".
+  Salida: valor_hipoteca_original = "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)", valor_hipoteca_es_indeterminada = false, motivo_null = null, confianza = "alta", candidatos_vistos = [{..., "cuantia_credito", 8558475}, {..., "precio_venta", 65000000}, {..., "avaluo", 12400000}].
+
+Ejemplo 3 — Ambigüedad real (dos cifras de crédito irreconciliables → null)
+  Fragmentos: "cláusula sexta: el mutuo asciende a CINCUENTA MILLONES DE PESOS ($50.000.000)" + "cláusula décima: reliquidado el crédito, el saldo insoluto es SESENTA Y DOS MILLONES DE PESOS ($62.000.000) al momento del otorgamiento".
+  Salida: valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = false, motivo_null = "ambigua_multiple", confianza = "baja", candidatos_vistos = [{..., "cuantia_credito", 50000000}, {..., "cuantia_credito", 62000000}].
 
 Llama SIEMPRE a la herramienta extract_cuantia_credito_dedicada.`;
 
-interface CuantiaDedicadaResult {
+export interface CuantiaDedicadaResult {
   valor_hipoteca_original?: string | null;
   valor_hipoteca_es_indeterminada?: boolean;
   confianza?: "alta" | "media" | "baja";
+  motivo_null?: CuantiaMotivoNull;
+  candidatos_vistos?: CuantiaCandidato[];
 }
 
-interface CuantiaDedicadaRun {
+export interface CuantiaDedicadaRun {
   result: CuantiaDedicadaResult | null;
   paginas_totales: number;
   paginas_enviadas: number;
   truncado: boolean;
   error_status?: number | "network" | "parse";
   error_msg?: string;
+}
+
+/**
+ * Deriva la etiqueta `resultado` para system_events a partir del run del
+ * extractor dedicado. Reemplaza el balde único "fallo_ambiguo" con
+ * etiquetas semánticamente accionables. Los códigos de error http/red se
+ * conservan tal cual (fallo_413 / fallo_red / fallo_<n> / fallo_parse).
+ */
+export function deriveCuantiaResultado(run: CuantiaDedicadaRun | null): string {
+  if (!run) return "fallo_sin_evidencia";
+  if (run.error_status === 413) return "fallo_413";
+  if (run.error_status === "network") return "fallo_red";
+  if (run.error_status === "parse") return "fallo_parse";
+  if (typeof run.error_status === "number") return `fallo_${run.error_status}`;
+  const monto = (run.result?.valor_hipoteca_original ?? "").trim();
+  if (monto) return "exito";
+  const motivo = run.result?.motivo_null;
+  if (motivo === "escritura_declara_abierta") return "indeterminada_confirmada";
+  if (motivo === "ambigua_multiple") return "fallo_ambiguo_multiple";
+  if (motivo === "sin_evidencia") return "fallo_sin_evidencia";
+  return "fallo_ambiguo_desconocido";
+}
+
+/**
+ * Bloque `extra` común de telemetría con candidatos_vistos y motivo_null.
+ * Usado en el flujo auto y en reprocess_cuantia.
+ */
+export function buildCuantiaExtra(run: CuantiaDedicadaRun | null, trigger: string): Record<string, unknown> {
+  const candidatos = run?.result?.candidatos_vistos ?? [];
+  return {
+    trigger,
+    paginas_totales: run?.paginas_totales ?? 0,
+    truncado: run?.truncado ?? false,
+    error_status: run?.error_status,
+    error_msg: run?.error_msg,
+    motivo_null: run?.result?.motivo_null ?? null,
+    confianza: run?.result?.confianza ?? null,
+    candidatos_vistos: candidatos,
+    candidatos_cuantia_credito_count: candidatos.filter((c) => c.clasificacion === "cuantia_credito").length,
+  };
 }
 
 // Tope de páginas para mantenernos por debajo del límite de 30MB del gateway
@@ -1477,7 +1613,7 @@ function sliceHeadTail(urls: string[]): { sliced: string[]; truncado: boolean } 
   return { sliced: [...urls.slice(0, CUANTIA_HEAD), ...urls.slice(-CUANTIA_TAIL)], truncado: true };
 }
 
-async function extractCuantiaDedicada(
+export async function extractCuantiaDedicada(
   escUrls: string[],
   apiKey: string,
 ): Promise<CuantiaDedicadaRun> {
@@ -1564,7 +1700,7 @@ async function logCuantiaEvent(
     orgId: string;
     cancelacionId: string;
     userId: string;
-    resultado: "exito" | "fallo" | "no_aplica" | "sin_escritura";
+    resultado: string;
     paginas_enviadas: number;
     cert_indeterminada: boolean;
     monto_encontrado: boolean;
@@ -1914,24 +2050,13 @@ if (import.meta.main) serve(async (req) => {
 
       void logCuantiaEvent(supabaseService, {
         orgId, cancelacionId, userId,
-        resultado: dedicadaMonto
-          ? "exito"
-          : (cuantiaRun.error_status === 413 ? "fallo_413"
-            : cuantiaRun.error_status === "network" ? "fallo_red"
-            : cuantiaRun.error_status ? `fallo_${cuantiaRun.error_status}`
-            : "fallo_ambiguo"),
+        resultado: deriveCuantiaResultado(cuantiaRun),
         paginas_enviadas: cuantiaRun.paginas_enviadas,
         cert_indeterminada: true,
         monto_encontrado: !!dedicadaMonto,
         aplicado,
         tiempo_ms: Date.now() - tStart,
-        extra: {
-          trigger: "reprocess_cuantia",
-          paginas_totales: cuantiaRun.paginas_totales,
-          truncado: cuantiaRun.truncado,
-          error_status: cuantiaRun.error_status,
-          error_msg: cuantiaRun.error_msg,
-        },
+        extra: buildCuantiaExtra(cuantiaRun, "reprocess_cuantia"),
       });
 
 
@@ -2221,26 +2346,13 @@ if (import.meta.main) serve(async (req) => {
         const cuantiaMontoOk = !!(cuantiaRun?.result?.valor_hipoteca_original);
         void logCuantiaEvent(supabaseService, {
           orgId, cancelacionId, userId,
-          resultado: !debeReintentar
-            ? "no_aplica"
-            : cuantiaMontoOk
-              ? "exito"
-              : (cuantiaRun?.error_status === 413 ? "fallo_413"
-                : cuantiaRun?.error_status === "network" ? "fallo_red"
-                : cuantiaRun?.error_status ? `fallo_${cuantiaRun.error_status}`
-                : "fallo_ambiguo"),
+          resultado: !debeReintentar ? "no_aplica" : deriveCuantiaResultado(cuantiaRun),
           paginas_enviadas: cuantiaRun?.paginas_enviadas ?? 0,
           cert_indeterminada: certIndet,
           monto_encontrado: cuantiaMontoOk,
           aplicado: cuantiaAplicada,
           tiempo_ms: debeReintentar ? Date.now() - tCuantiaStart : 0,
-          extra: {
-            trigger: "auto",
-            paginas_totales: cuantiaRun?.paginas_totales ?? 0,
-            truncado: cuantiaRun?.truncado ?? false,
-            error_status: cuantiaRun?.error_status,
-            error_msg: cuantiaRun?.error_msg,
-          },
+          extra: buildCuantiaExtra(cuantiaRun, "auto"),
         });
 
 
