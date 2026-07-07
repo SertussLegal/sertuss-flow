@@ -12,10 +12,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/superAdmin";
-import { Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity, Bug } from "lucide-react";
+import { Search, Building2, Coins, Pencil, Settings, FlaskConical, Activity, Bug, Lightbulb } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SystemMonitor from "@/components/admin/SystemMonitor";
+import ReglasPropuestas from "@/components/admin/ReglasPropuestas";
 
 interface Org {
   id: string;
