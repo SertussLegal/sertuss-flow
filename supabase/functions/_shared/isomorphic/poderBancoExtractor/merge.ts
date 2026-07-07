@@ -76,10 +76,9 @@ export function mergePoderBancoFlat(
 ): PoderBancoFlat | undefined {
   if (!monolitico && !dedicado) return undefined;
   const pick = (m?: string | null, d?: string | null): string | undefined => {
-    if (m && m.trim()) return m;
-    if (d && d.trim()) return d;
-    return undefined;
+    return sanitizeString(m) ?? sanitizeString(d);
   };
+
   const merged: PoderBancoFlat = {
     apoderado_nombre: pick(monolitico?.apoderado_nombre, dedicado?.apoderado_nombre),
     apoderado_cedula: pick(monolitico?.apoderado_cedula, dedicado?.apoderado_cedula),
