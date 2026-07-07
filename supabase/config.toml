@@ -4,4 +4,5 @@ project_id = "cmcikwbszokxeepchqib"
 verify_jwt = false
 
 [functions.validar-con-claude]
+[functions.validar-con-claude]
 verify_jwt = false

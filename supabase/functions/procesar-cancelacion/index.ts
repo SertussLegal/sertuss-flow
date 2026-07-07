@@ -1768,6 +1768,8 @@ if (import.meta.main) serve(async (req) => {
   }
   const userId = claimsData.claims.sub as string;
 
+
+
   let body: {
     cancelacionId?: string;
     certificadoPath?: string;
@@ -1808,6 +1810,8 @@ if (import.meta.main) serve(async (req) => {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+
     const ids = Array.isArray(bodyAny.tramite_ids) ? (bodyAny.tramite_ids as unknown[]).filter((x) => typeof x === "string") as string[] : [];
     if (ids.length === 0) {
       return new Response(JSON.stringify({ error: "tramite_ids (string[]) requerido" }), {
