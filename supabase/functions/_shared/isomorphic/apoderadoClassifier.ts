@@ -121,7 +121,10 @@ function isNonEmpty(v: unknown): boolean {
  *   2. Reglas de degradación defensiva → null si hay ambigüedad.
  *   3. Si no hay motivos de degradación, respeta el tipo propuesto por la IA.
  */
-export function classifyApoderado(apo: ApoderadoPayload | null | undefined): ClassifierResult {
+export function classifyApoderado(
+  apo: ApoderadoPayload | null | undefined,
+  ctx?: ClassifyContext,
+): ClassifierResult {
   if (!apo) {
     return { tipoEfectivo: null, motivos: ["no_apoderado_tipo_from_ocr"], fromOverride: false };
   }
@@ -151,15 +154,29 @@ export function classifyApoderado(apo: ApoderadoPayload | null | undefined): Cla
     if (hasCorporateContamination([apo.nombre, apo.cargo])) {
       motivos.push("corporate_keywords_in_natural_classification");
     }
-    // Regla C — "natural" sin datos mínimos del poder.
-    const faltaEscritura =
-      !isNonEmpty(apo.escritura_poder_num) ||
-      !isNonEmpty(apo.escritura_poder_fecha) ||
-      !isNonEmpty(apo.escritura_poder_notaria_num);
-    if (faltaEscritura) {
+
+    // Regla C rediseñada — "natural" requiere:
+    //   (i) identidad mínima: nombre + cédula
+    //   (ii) evidencia del poder: instrumento_poder directo (poder general
+    //        del banco a persona natural) O escritura_poder_* (sustitución).
+    const tieneIdentidad = isNonEmpty(apo.nombre) && isNonEmpty(apo.cedula);
+    const ip = ctx?.instrumento_poder || {};
+    const tieneInstrumentoDirecto =
+      isNonEmpty(ip.escritura_num) &&
+      (isNonEmpty(ip.fecha) || isNonEmpty(ip.fecha_texto)) &&
+      isNonEmpty(ip.notaria_numero);
+    const tieneSustitucion =
+      isNonEmpty(apo.escritura_poder_num) &&
+      isNonEmpty(apo.escritura_poder_fecha) &&
+      isNonEmpty(apo.escritura_poder_notaria_num);
+
+    if (!tieneIdentidad) {
+      motivos.push("natural_missing_poder_data");
+    } else if (!tieneInstrumentoDirecto && !tieneSustitucion) {
       motivos.push("natural_missing_poder_data");
     }
   }
+
 
   // (2d) Regla B — "juridica" sin esqueleto mínimo de constitución.
   if (tipoIA === "juridica") {
