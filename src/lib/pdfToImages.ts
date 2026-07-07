@@ -134,11 +134,7 @@ export async function pdfToImages(
       // con muestreo forense + asserción de tamaño mínimo.
       await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
-      // Validación forense: si el canvas quedó uniforme, el render abortó
-      // silenciosamente. No dejamos que llegue a Storage como placeholder.
-      if (isCanvasUniform(ctx, canvas.width, canvas.height)) {
-        throw new EmptyCanvasError(i);
-      }
+      const uniform = isCanvasUniform(ctx, canvas.width, canvas.height);
 
       const blob: Blob = await new Promise((resolve, reject) => {
         canvas!.toBlob(
@@ -154,6 +150,22 @@ export async function pdfToImages(
             `Probable placeholder blanco.`,
         );
       }
+
+      // Solo abortamos por uniforme si además el JPEG es liviano. El bug
+      // histórico de placeholders producía canvases uniformes Y pequeños
+      // simultáneamente. Una página escueta pero legítima (poco contenido,
+      // márgenes amplios) genera JPEG por encima de HEALTHY_JPEG_BYTES y
+      // debe pasar aunque el muestreo la marque como "uniforme".
+      if (uniform && blob.size < HEALTHY_JPEG_BYTES) {
+        throw new EmptyCanvasError(i);
+      }
+      if (uniform) {
+        console.warn(
+          `[pdfToImages] Página ${i}: muestreo uniforme pero blob de ${blob.size} bytes ` +
+            `(≥ ${HEALTHY_JPEG_BYTES}); se acepta como página escueta legítima.`,
+        );
+      }
+
 
       out.push({ pageNumber: i, blob, size: blob.size });
 

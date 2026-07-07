@@ -118,15 +118,23 @@ describe("pdfToImages", () => {
     expect(pages).toHaveLength(4);
   });
 
-  it("lanza EmptyCanvasError cuando el canvas queda uniforme (placeholder blanco)", async () => {
+  it("uniform=true con blob sano (>=8 KB) NO lanza — página escueta legítima", async () => {
+    // Default sizePerPage = 20_000 + n*3_000 → siempre >= HEALTHY_JPEG_BYTES.
     installCanvasMocks({ uniform: true });
+    const { pdfToImages } = await import("./pdfToImages");
+    const pages = await pdfToImages(makeFile(), { maxPages: 1 });
+    expect(pages).toHaveLength(1);
+  });
+
+  it("uniform=true con blob pequeño (<8 KB) SÍ lanza EmptyCanvasError", async () => {
+    installCanvasMocks({ uniform: true, sizePerPage: () => 4_000 });
     const { pdfToImages, EmptyCanvasError } = await import("./pdfToImages");
     await expect(pdfToImages(makeFile(), { maxPages: 1 })).rejects.toBeInstanceOf(
       EmptyCanvasError,
     );
   });
 
-  it("lanza error explícito si el JPEG sale por debajo del umbral mínimo", async () => {
+  it("lanza error explícito si el JPEG sale por debajo del umbral mínimo (1.5 KB)", async () => {
     installCanvasMocks({ sizePerPage: () => 500 });
     const { pdfToImages } = await import("./pdfToImages");
     await expect(pdfToImages(makeFile(), { maxPages: 1 })).rejects.toThrow(
