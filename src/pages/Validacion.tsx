@@ -2499,66 +2499,11 @@ const Validacion = () => {
   };
 
   const renderTabs = () => {
-    // Helper: pick highest-severity validation for a tab
-    const getTabSeverity = (tabKey: string) => {
-      if (!validacionCampos?.validaciones?.length) return null;
-      const matches = validacionCampos.validaciones.filter(v =>
-        v.campo?.startsWith(`${tabKey}.`) || v.campo === tabKey ||
-        v.campos_relacionados?.some(c => c.startsWith(`${tabKey}.`))
-      );
-      if (!matches.length) return null;
-      const order = { error: 3, advertencia: 2, sugerencia: 1 } as const;
-      const top = matches.reduce((a, b) =>
-        (order[b.nivel as keyof typeof order] || 0) > (order[a.nivel as keyof typeof order] || 0) ? b : a
-      );
-      return { nivel: top.nivel, explicacion: top.explicacion, count: matches.length };
-    };
+    // Fase 1 (2026-07): auditor Claude retirado. Los indicadores por pestaña se
+    // retiran junto con él. Se conserva la función como no-op para no tocar los
+    // 4 TabsTrigger que la invocan.
+    const renderTabIcon = (_tabKey: string): React.ReactNode => null;
 
-    // Detecta si una pestaña tiene inline-badges (Fase 3.5)
-    const hasTabInlineBadges = (tabKey: string): { v: ClaudeValidacion } | null => {
-      if (!inlineBadgeMap.size) return null;
-      const prefixes: string[] =
-        tabKey === "vendedores" ? ["vendedor_"] :
-        tabKey === "compradores" ? ["comprador_"] :
-        tabKey === "inmueble" ? ["matricula_inmobiliaria", "identificador_predial", "departamento", "municipio", "codigo_orip", "direccion_inmueble", "area_construida", "area_privada", "avaluo_catastral", "linderos", "tipo_predio", "tipo_identificador_predial"] :
-        tabKey === "actos" ? ["valor_compraventa", "valor_hipoteca", "entidad_bancaria", "entidad_nit", "entidad_domicilio", "pago_inicial", "saldo_financiado", "fecha_credito", "tipo_acto", "apoderado_"] :
-        [];
-      for (const [k, v] of inlineBadgeMap) {
-        if (prefixes.some(p => k.startsWith(p) || k === p)) return { v };
-      }
-      return null;
-    };
-
-    const renderTabIcon = (tabKey: string) => {
-      const sev = getTabSeverity(tabKey);
-      if (!sev) {
-        const inline = hasTabInlineBadges(tabKey);
-        if (inline) {
-          return <InlineBadgeDot explicacion={inline.v.explicacion} nivel={inline.v.nivel} className="ml-1.5" />;
-        }
-        return null;
-      }
-      const Icon = sev.nivel === "error" ? AlertCircle : sev.nivel === "advertencia" ? AlertTriangle : Info;
-      const colorCls = sev.nivel === "error" ? "text-destructive" : sev.nivel === "advertencia" ? "text-accent" : "text-primary";
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Icon className={`h-3.5 w-3.5 ml-1.5 ${colorCls}`} />
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-              <p className="text-xs">{sev.explicacion}</p>
-              {sev.count > 1 && <p className="text-[10px] opacity-70 mt-1">+{sev.count - 1} más</p>}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    };
-
-    const conteo = validacionCampos ? contarPorNivel(validacionCampos) : null;
-    const totalHallazgos = conteo ? conteo.errores + conteo.advertencias + conteo.sugerencias : 0;
-
-    // Sugerencias de notaría detectadas por Claude (auto-corregibles, campo notaria_tramite.*)
     const NOTARIA_FIELDS: Array<keyof NotariaTramite> = [
       "numero_notaria", "numero_notaria_letras", "numero_ordinal", "circulo",
       "departamento", "nombre_notario", "tipo_notario", "decreto_nombramiento", "genero_notario",
@@ -2574,37 +2519,8 @@ const Validacion = () => {
       decreto_nombramiento: "Decreto / Resolución",
       genero_notario: "Género (MASCULINO / FEMENINO)",
     };
-    const notariaSuggestions = new Map<keyof NotariaTramite, string>();
-    if (validacionCampos?.validaciones) {
-      for (const v of validacionCampos.validaciones) {
-        if (!v.auto_corregible || !v.valor_sugerido) continue;
-        const m = (v.campo || "").match(/^notaria(?:_tramite)?\.(.+)$/);
-        if (!m) continue;
-        const key = m[1] as keyof NotariaTramite;
-        if (!NOTARIA_FIELDS.includes(key)) continue;
-        if (ignoredNotariaSuggestions.has(`${key}=${v.valor_sugerido}`)) continue;
-        if (notariaTramite[key]) continue; // ya tiene valor: no sugerir
-        if (!notariaSuggestions.has(key)) notariaSuggestions.set(key, v.valor_sugerido);
-      }
-    }
 
-    const applyNotariaSuggestion = (key: keyof NotariaTramite, value: string) => {
-      setNotariaTramite(prev => ({ ...prev, [key]: value }));
-      setIgnoredNotariaSuggestions(prev => new Set(prev).add(`${key}=${value}`));
-    };
-    const ignoreNotariaSuggestion = (key: keyof NotariaTramite, value: string) => {
-      setIgnoredNotariaSuggestions(prev => new Set(prev).add(`${key}=${value}`));
-    };
-    const applyAllNotariaSuggestions = () => {
-      const updates: Partial<NotariaTramite> = {};
-      const newIgnored = new Set(ignoredNotariaSuggestions);
-      notariaSuggestions.forEach((value, key) => {
-        updates[key] = value as any;
-        newIgnored.add(`${key}=${value}`);
-      });
-      setNotariaTramite(prev => ({ ...prev, ...updates }));
-      setIgnoredNotariaSuggestions(newIgnored);
-    };
+
 
     // Handler especial para `numero_notaria` que también re-deriva letras y ordinal
     // (excepto si el usuario ya los marcó como manuales).
