@@ -3043,10 +3043,10 @@ const Validacion = () => {
       )}
 
       <TabsContent value="vendedores">
-        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
+        <PersonaForm title="Vendedores" personas={vendedores} onChange={setVendedores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
       </TabsContent>
       <TabsContent value="compradores">
-        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={inlineBadgeMap} />
+        <PersonaForm title="Compradores" personas={compradores} onChange={setCompradores} confianzaFields={confianzaFields} onConfianzaChange={handleConfianzaChange} hasEscrituraProcessed={!!(tramiteMetadata?.extracted_escritura_comparecientes?.length > 0 || tramiteMetadata?.extracted_documento)} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
       </TabsContent>
       <TabsContent value="inmueble">
         <InmuebleForm
@@ -3059,12 +3059,13 @@ const Validacion = () => {
           confianzaFields={confianzaFields}
           onConfianzaChange={handleConfianzaChange}
           metadata={tramiteMetadata}
-          inlineBadges={inlineBadgeMap}
+          inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>}
         />
       </TabsContent>
       <TabsContent value="actos">
-        <ActosForm actos={actos} onChange={setActos} inlineBadges={inlineBadgeMap} />
+        <ActosForm actos={actos} onChange={setActos} inlineBadges={EMPTY_INLINE_BADGES as Map<string, ClaudeValidacion>} />
       </TabsContent>
+
     </Tabs>
     );
   };
