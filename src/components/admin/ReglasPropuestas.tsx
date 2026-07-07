@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Lightbulb, Loader2, Play } from "lucide-react";
+import PropuestaDetalleModal from "./PropuestaDetalleModal";
 
 interface Propuesta {
   id: string;
