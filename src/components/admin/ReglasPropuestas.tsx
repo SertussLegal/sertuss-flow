@@ -119,6 +119,8 @@ const ReglasPropuestas = () => {
   const [filtroTipo, setFiltroTipo] = useState<string>("todos");
   const pollRef = useRef<number | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const loadPropuestas = useCallback(async () => {
     const { data, error } = await supabase
