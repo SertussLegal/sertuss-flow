@@ -22,7 +22,7 @@ const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_PODER_BYTES = 40 * 1024 * 1024; // 40 MB
 const ESCRITURA_MAX_PAGES = 10;
 const CERTIFICADO_MAX_PAGES = 3;
-const PODER_MAX_PAGES = 25;
+const PODER_MAX_PAGES = 50;
 
 const StepNumber = ({ n }: { n: number }) => (
   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
