@@ -17,7 +17,7 @@ import { z } from "npm:zod@3.25.76";
 import { diffTramite, groupPatterns, type Pattern } from "./_patterns.ts";
 
 const CLAUDE_API_KEY = Deno.env.get("CLAUDE_API_KEY")!;
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+const CLAUDE_MODEL = "claude-sonnet-4-5-20250929";
 
 // Precios oficiales Sonnet 4 (USD por 1M tokens)
 const PRICE_INPUT_PER_M = 3;
