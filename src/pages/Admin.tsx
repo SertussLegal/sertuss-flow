@@ -331,6 +331,10 @@ const Admin = () => {
           <TabsContent value="monitor" className="mt-4">
             <SystemMonitor />
           </TabsContent>
+
+          <TabsContent value="reglas" className="mt-4">
+            <ReglasPropuestas />
+          </TabsContent>
         </Tabs>
       </main>
 
