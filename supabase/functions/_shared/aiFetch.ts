@@ -98,7 +98,7 @@ export async function fetchAiGateway(
             console.error(
               `[${tag}] AI gateway 200 with provider error code=${errCode} msg=${errMsg} attempt=${attempt + 1}/${totalAttempts}`,
             );
-            const retryable = errCode === 502 || errCode === 503 || errCode === 429 || errCode === 500;
+            const retryable = errCode === 502 || errCode === 503 || errCode === 504 || errCode === 429 || errCode === 500;
             if (retryable && attempt < totalAttempts - 1) {
               await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
               continue;
