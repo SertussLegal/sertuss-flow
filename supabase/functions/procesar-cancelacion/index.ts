@@ -2393,7 +2393,10 @@ if (import.meta.main) serve(async (req) => {
           campos_llenos: pbFilled,
           tiempo_ms: Date.now() - tPoderStart,
           extra: {
+            mono_status: monoSettled.status,
             dedicated_status: dedicatedSettled.status,
+            v6_status: v6Settled.status,
+            v6_enabled: POWER_V6_EXTRACTOR_ENABLED,
             dedicated_error: dedicatedSettled.status === "rejected"
               ? String((dedicatedSettled as PromiseRejectedResult).reason).slice(0, 200)
               : undefined,
