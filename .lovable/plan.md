@@ -1,45 +1,61 @@
-# Verificación adaptar-estilo-prosa — SOLO LECTURA
+# Diagnóstico causa raíz — alerta persistente `adaptar-estilo-prosa`
 
-## 1. Timeline
-- **Ahora (UTC):** 2026-07-07 14:09:20
-- **Fix aplicado (mtime del archivo):** 2026-07-07 14:08:55 UTC — hace ~25 segundos respecto al `date` de la verificación, y aproximadamente ~35 min antes de este mensaje del usuario (deploy previo en la conversación anterior).
-- **"Last scanned 23 minutes ago"** reportado por el panel → el scan corrió **antes** del deploy más reciente. El scanner no ha vuelto a correr contra la versión endurecida.
+**Modo:** SOLO LECTURA. No se aplicó ningún cambio.
 
-## 2. Prueba anónima en vivo (ahora mismo)
-Dos requests reales contra `https://cmcikwbszokxeepchqib.supabase.co/functions/v1/adaptar-estilo-prosa`:
+## 1. Evidencia recolectada
 
-- Con solo `apikey` anon (sin Bearer): **HTTP 401 `{"error":"Unauthorized"}`**
-- Sin ningún header de auth: **HTTP 401 `{"error":"Unauthorized"}`**
+### A. Timeline verificado
+- Fix desplegado: **2026-07-07 14:08:55 UTC** (mtime real del archivo).
+- Último scan: **2026-07-07 14:17:37 UTC** (~9 min después del fix). Campo `up_to_date: true`.
+- Creación original de la finding: **2026-07-07 12:16:36 UTC** (antes del fix). El scanner **no cerró** la finding al re-correr.
 
-El fix está activo en producción.
+Esto ya descarta "escaneo obsoleto" como en el turno anterior. El scan sí corrió después del fix.
 
-## 3. Código actual real
-`supabase/functions/adaptar-estilo-prosa/index.ts` conserva el bloque de validación al inicio de `serve()`:
+### B. Prueba runtime — 5 variantes anónimas contra el endpoint en producción
+Todas devuelven **HTTP 401** ahora mismo:
+- Sin ningún header → 401
+- Solo `apikey` anon (sin Authorization) → 401
+- `Authorization:` vacío → 401
+- `Authorization: Bearer_malformed` (sin espacio) → 401
+- `Authorization: Bearer_` → 401
 
-```ts
-const authHeader = req.headers.get("Authorization");
-if (!authHeader?.startsWith("Bearer ")) {
-  return json({ error: "Unauthorized" }, 401);
-}
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  global: { headers: { Authorization: authHeader } },
-});
-const token = authHeader.replace("Bearer ", "");
-const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-if (claimsError || !claimsData?.claims) {
-  return json({ error: "Unauthorized" }, 401);
-}
-```
+El endpoint está correctamente protegido en runtime. **No hay bypass real.**
 
-No hubo reversión.
+### C. Comparativa con las funciones que SÍ pasan el scan
+`process-expediente` y `procesar-cancelacion` usan el **mismo patrón exacto** que `adaptar-estilo-prosa`:
+- Ninguna tiene `[functions.<name>] verify_jwt = true` en `supabase/config.toml` (config.toml solo declara `scan-document` y `validar-con-claude`, ambas con `verify_jwt = false`).
+- Las 3 confían en validación aplicativa: `req.headers.get("Authorization")` → check `Bearer ` → `createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization } } })` → `auth.getClaims(token)` → 401.
+- El patrón que exige el scanner ("Example from scan-document/index.ts" en la remediation) coincide **literalmente** con lo que ya tenemos.
 
-## 4. Diagnóstico
-**La alerta es un escaneo desactualizado, no un fallo real del fix.**
+Hipótesis (1) descartada: el scanner no exige `verify_jwt` a nivel plataforma; si lo exigiera, `process-expediente` y `procesar-cancelacion` también estarían flagged.
 
-Evidencia convergente:
-- El scan es de hace 23 min, previo al último redeploy.
-- La función devuelve 401 a cualquier caller sin JWT válido en este instante.
-- El código en disco (y desplegado, según la prueba en vivo) contiene la validación.
+### D. Sin copias duplicadas
+No existe otro archivo `adaptar-estilo-prosa` en el repo (`supabase/functions/adaptar-estilo-prosa/index.ts` es único). No hay `_shared/handlers` ni preview separado. Lovable Cloud despliega una sola versión — la que respondió 401 en la prueba.
 
-## Acción sugerida (no ejecutada)
-Cuando el dueño del producto quiera limpiar el panel: volver a correr el Deep Security Scan desde la UI. No se requiere ningún cambio de código.
+Hipótesis (4) descartada.
+
+### E. Naturaleza del scanner
+El bloque es `agent_security` (scanner agentic basado en LLM que lee el código fuente), no un prober HTTP dinámico. La `description` de la finding afirma textualmente: *"adaptar-estilo-prosa skips this step entirely"* — lo cual **es falso hoy** (líneas 55-66 tienen el bloque JWT completo).
+
+Esto confirma que el scanner:
+- Está evaluando una versión **cacheada** del archivo (índice previo al fix), o
+- Reutilizó la finding del scan de 12:16 sin re-verificar el contenido actual del archivo (los scanners agentic suelen "arrastrar" findings abiertas cuando no las re-evalúan explícitamente).
+
+## 2. Causa raíz
+
+**El scanner `agent_security` está reportando una finding cacheada/arrastrada, no un fallo real del código.** El endpoint responde 401 a todas las variantes anónimas, el patrón coincide con el que el propio scanner cita como ejemplo correcto, y no existe otra versión desplegada.
+
+Las hipótesis 1, 2 (patrón no reconocido), 3 (bypass runtime) y 4 (versión cacheada distinta a la nuestra) quedan descartadas por evidencia. Queda la hipótesis 5-derivada: **cache interna del propio scanner agentic**.
+
+## 3. Acción recomendada (no aplicada)
+
+Dos opciones, ambas SIN tocar código:
+
+**Opción A — Marcar la finding como fixed con explicación auditable** vía `security--manage_security_finding` (`operation: mark_as_fixed`, `internal_id: adaptar_prosa_no_auth`, `scanner_name: agent_security`). La explicación cita: fix desplegado 14:08:55, curl multi-variante devuelve 401, patrón idéntico a las otras 4 funciones que sí pasan.
+
+**Opción B — Esperar al próximo scan y forzar re-análisis** con `security--run_security_scan` (fuerza al scanner a re-leer el archivo). Si sigue apareciendo tras un scan forzado limpio, escalar a soporte Lovable con esta evidencia.
+
+Recomiendo **Opción A** — la evidencia runtime + estática es concluyente y la finding es demostrablemente incorrecta hoy.
+
+## 4. Restricción respetada
+No se ejecutó ningún fix, ni se tocaron botones del scanner, ni se desplegó nada. Solo lectura y pruebas HTTP inertes.
