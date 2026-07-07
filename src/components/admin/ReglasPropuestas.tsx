@@ -41,6 +41,7 @@ interface Run {
   propuestas_generadas: number | null;
   costo_estimado_usd: number | null;
   costo_estimado_cop: number | null;
+  error_detalle: unknown;
 }
 
 function formatCosto(usd: number | null, cop: number | null): ReactNode {
