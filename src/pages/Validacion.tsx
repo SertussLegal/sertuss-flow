@@ -1342,42 +1342,8 @@ const Validacion = () => {
     };
   };
 
-  const validarDespuesDeCarga = useCallback((
-    tipoDoc: "cedula" | "certificado" | "predial" | "escritura_previa" | "carta_credito" | "poder_notarial",
-    datosDocumento: any,
-    tabOrigen: "vendedores" | "compradores" | "inmueble" | "actos"
-  ) => {
-    if (!tramiteIdRef.current || !profile?.organization_id) return;
-    setValidandoCampos(true);
-    (async () => {
-      try {
-        const resultado = await validarConClaude({
-          modo: "campos",
-          tramiteId: tramiteIdRef.current!,
-          organizationId: profile.organization_id!,
-          tipoActo: actos.tipo_acto || "compraventa",
-          tabOrigen,
-          datosExtraidos: {
-            documento_cargado: { tipo: tipoDoc, datos: datosDocumento },
-            vendedores: vendedores.map(enrichPersonaForClaude),
-            compradores: compradores.map(enrichPersonaForClaude),
-            inmueble,
-            actos,
-          },
-          validacionesApp: [
-            ...(vendedores.length || compradores.length ? ["cruce_roles_certificado_completado"] : []),
-          ],
-        });
-        if (resultado.estado !== "error_sistema") {
-          setValidacionCampos(resultado);
-        }
-      } catch {
-        /* silencio total */
-      } finally {
-        setValidandoCampos(false);
-      }
-    })();
-  }, [profile?.organization_id, vendedores, compradores, inmueble, actos]);
+
+
 
   // Handle sidebar document upload: invoke scan-document and re-hydrate
   const handleSidebarUpload = useCallback(async (tipo: string, file: File) => {
