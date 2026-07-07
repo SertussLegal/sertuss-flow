@@ -1,55 +1,111 @@
 
-# Verificación con evidencia real — fixes B3 (poder v6) y A2 (minuta Alejandra)
+# Análisis: implicaciones reales de encender `POWER_V5_ENABLED`
 
-Investigación de solo lectura sobre BD y storage. Ninguna prueba sintética. Reporto lo que la evidencia sostiene y lo que no.
+**Conclusión ejecutiva:** encender la flag hoy, sola, **no arregla el caso de Alejandra**. Cambia mucho menos de lo que el nombre sugiere: no cambia el prompt, no activa el schema v6 en cancelaciones, y no toca el rasterizador. Los problemas reales (truncado a 25 páginas, JPEGs uniformes, schema plano en cancelaciones) viven fuera del alcance de esta flag.
 
 ---
 
-## 1. ¿Los documentos originales de Alejandra siguen disponibles?
+## 1. Qué cambia exactamente al activar la flag
 
-**Parcialmente.** Consulta a `storage.objects` (bucket `expediente-files`) y a `cancelaciones`:
+Hay **dos flags distintas con el mismo nombre**, y una **tercera pieza (v6)** que no depende de ninguna:
 
-- Alejandra (`malejaarciniegas@gmail.com`, org `ALEJANDRA ARCINIEGAS ABOGADA`) tiene **10 cancelaciones** entre 2026-05-21 y 2026-06-24 (6 completed + 4 draft). Ninguna posterior al 24 de junio.
-- Los PDFs originales NO se persisten — solo se guardan los JPEGs de páginas rasterizadas por `pdfToImages`. Los `.opus` de WhatsApp y los `.docx` adjuntos vía chat (incluido `ESCRITURA_2924.docx`) NO están en ningún bucket. Los adjuntos de chat no son descargables retroactivamente por esta herramienta.
-- Sí sobreviven, como JPEGs, las páginas del poder que Alejandra subió el 2026-06-24 (cancelación `4b05d210-...`): 25 páginas bajo `4b05d210.../cancelaciones/soportes/poder/p01..p25.jpg`. **Anomalía: las 25 páginas pesan exactamente 12.192 bytes cada una**, lo que sugiere que todas se renderizaron idénticas (probablemente placeholder/error de rasterizado del cliente). Es decir, el "archivo original" superviviente probablemente no es fiel al PDF que ella cargó.
-- El poder de la cancelación Sertuss `290fd66a-...` (2026-07-06, 20 páginas, tamaños 150K–280K) sí es contenido real.
+| Flag | Ubicación | Default hoy | Qué controla |
+|---|---|---|---|
+| `POWER_V5_ENABLED` (edge) | `supabase/functions/_shared/poderBancoSchemaVersion.ts` (env Deno) | **false** | (a) cachear OCR del poder en `ocr_raw_cache`; (b) seleccionar `TEMPLATE_MINUTA_V3` si `data.poder_banco.apoderado.tipo` está poblado |
+| `VITE_POWER_V5_ENABLED` (client) | `src/lib/featureFlags.ts` | **true** | Mostrar `PoderBannersV5` y modal de prosa apoderado en `CancelacionValidar.tsx` |
+| Schema v6 (`poder_banco_v6`) | `scan-document/core/poderBanco/tool.ts` | siempre activo | Usado por `scan-document` (llamado desde `Validacion.tsx` en tramites, **no** en cancelaciones) |
 
-**No hay copia limpia del PDF original de Alejandra para re-procesar de forma fiel.** Reprocesar los JPEGs corruptos no probaría nada útil sobre el fix.
+**Camino "flag apagada" (hoy en cancelaciones):**
+1. `procesar-cancelacion` corre monolítico Gemini 2.5 Pro (cert + escr + poder juntos).
+2. En paralelo corre `extractPoderBancoDedicado` con **schema plano legacy** (5 campos: nombre, cédula, escritura, fecha, notaría). Gemini 2.5 Flash, una sola llamada multimodal con todas las páginas del poder.
+3. Merge Read-then-Merge y persiste.
 
-## 2. ¿El pipeline v6 del poder está realmente activo en producción?
+**Camino "flag encendida" (edge) en cancelaciones:**
+1. Igual monolítico.
+2. Igual `extractPoderBancoDedicado` con el **mismo schema plano** — **el prompt no cambia**.
+3. Único delta real: el resultado del extractor dedicado pasa por `runWithPoderCache` (`ocr_raw_cache` por SHA-256 del PDF). Hit → 0 llamadas a Gemini. Miss → misma llamada que hoy + INSERT en caché.
+4. `selectMinutaTemplate` **intentaría** usar `TEMPLATE_MINUTA_V3`, pero el extractor plano **jamás** puebla `apoderado.tipo`, así que **v3 nunca se activa desde este flujo**. En la práctica se queda en v2.
 
-**No, según la evidencia en BD.** Esto es lo más importante del reporte:
+**Compatibilidad de datos con `CancelacionValidar.tsx`:** ninguna forma de datos cambia. La flag no altera el shape de `data.poder_banco`.
 
-- `ocr_raw_cache` tiene **0 filas**. Cero. El wrapper `runWithPoderCache` (`supabase/functions/_shared/poderBancoCache.ts`) nunca ha escrito. Consistente con `POWER_V5_ENABLED` desactivado por defecto (ver `poderBancoSchemaVersion.ts`, línea final: `Deno.env.get("POWER_V5_ENABLED") ?? "false"`).
-- Las **2 únicas** cancelaciones con `data_ia.poder_banco` no vacío usan schema **LEGACY plano** (`apoderado_nombre`, `apoderado_cedula`, `apoderado_escritura`, `apoderado_notaria_poder`, `apoderado_fecha`), NO el schema v6 anidado (`apoderados[]`, `total_paginas`, `schema_version`).
-  - `4b05d210` (Alejandra, 2026-06-24, 25 pág): `apoderado_nombre = MARIA CAMILA PEÑA RAMÍREZ` — devolvió datos pese a que los JPEGs son sospechosos.
-  - `290fd66a` (Sertuss, 2026-07-06, 20 pág): `apoderado_nombre = FELIX REUZE CAÑAS`.
-- No hay ninguna cancelación con `apoderados[]`, `total_paginas`, ni marcador `poder_banco_v6`.
+---
 
-**El fix v6 existe en código pero no está corriendo en producción.** Fue diseñado, escrito, testeado unitariamente, y dejado detrás de un feature flag apagado. La flag nunca se activó.
+## 2. ¿El pipeline v6 fue probado alguna vez?
 
-## 3. ¿Hay evidencia indirecta de casos post-fix con poder >25 páginas?
+- **Tests unitarios que ejerciten `runWithPoderCache` end-to-end con un PDF real: 0.** No existen.
+- Tests relacionados encontrados: `validatePoderSuficiencia_test.ts` (valida sufuciencia de datos, no el extractor), `apoderadoClassifier.test.ts` (clasifica payloads ya extraídos), contract tests de prosa (Davivienda) — todos operan sobre **inputs sintéticos**, ninguno invoca Gemini ni prueba el flujo cacheado.
+- Evidencia en BD (verificación previa): `ocr_raw_cache` tiene **0 filas**. Nunca se ha escrito una entrada v6 en producción.
+- Las 2 únicas cancelaciones con `poder_banco` en BD usan **schema plano legacy**, no v6.
 
-**No.** El único poder post-fix con datos completos es de 20 páginas (`290fd66a`, Sertuss). El único de Alejandra post-fix (`4b05d210`, 25 páginas) está en el límite del cap viejo y sus JPEGs son sospechosos. Ningún caso real de >25 páginas post-fix en BD.
+**Riesgo:** encender la flag activaría por primera vez `runWithPoderCache` en producción con tráfico real. El código tiene `try/catch` degradantes ("si la caché falla, corre el extractor sin caché") — es defensivo, pero nunca se ejerció con carga.
 
-## 4. Auditoría A2 de la minuta (mayo)
+---
 
-**No verificable directamente.** `ESCRITURA_2924.docx` no está en storage; las minutas generadas se guardan como `<uuid>/cancelaciones/minuta.docx` (13 en total). Podríamos abrir la minuta de las cancelaciones mayo/junio de Alejandra y verificar los 7 puntos de A2 (tabla "DATOS DE LA ESCRITURA", duplicado UBICACIÓN, linderos, formato TEXTO (NÚMERO), cuantía, etc.) contra el DOCX real. Eso sí sería evidencia real, aunque contra la minuta ya generada, no contra un re-procesamiento.
+## 3. Bug de los JPEGs uniformes (12.192 bytes) — ¿lo arregla la flag?
 
-## 5. Nivel de certeza honesto
+**No.** El bug (si es bug) vive en `src/lib/pdfToImages.ts`, **cliente, antes de subir**. La flag actúa sobre el extractor edge que consume los JPEGs ya subidos. Si las páginas llegan degradadas al bucket, activar la caché solo **memoriza el mismo output pobre** por SHA — empeora, no mejora.
 
-| Afirmación | Certeza |
-|---|---|
-| Los PDFs originales de Alejandra no son recuperables fielmente | **Alta** — storage confirma solo JPEGs, y los de 2026-06-24 son idénticos (12.192 B). |
-| El pipeline v6 del poder no está activo en producción | **Alta** — 0 filas en `ocr_raw_cache`, 0 payloads con schema v6, flag `POWER_V5_ENABLED` default `false`. |
-| El fix B3 "resuelve el caso original de Alejandra" | **No verificado.** El caso reportado (#1665: poder >25pág, `poder_banco` vacío) no se puede reproducir hoy con su PDF real, y el pipeline que supuestamente lo arregla no está encendido. Los `apoderado_*` que sí aparecen provienen del extractor **legacy**, no del v6. |
-| La auditoría A2 de la minuta quedó implementada en código | **Alta** en código (skills, memorias, parsers, plantilla v2/v3). |
-| A2 se ve reflejada en las minutas reales de Alejandra generadas post-fix | **No verificado.** Requiere abrir los `minuta.docx` de sus cancelaciones y contrastar contra los 7 puntos. |
+Observación adicional: `pdfToImages` renderiza a `maxDimension = 1600` con `jpegQuality = 0.75`. 12.192 bytes exactos por 25 páginas sugiere **canvas colapsado a placeholder** (posiblemente `canvas.width = 0` disparado antes de tiempo, o `page.render` fallando silenciosamente antes de `toBlob`). Requiere investigación aparte, independiente de la flag.
 
-## Próximos pasos recomendados (solo si quieres cerrar la verificación)
+---
 
-1. **Decidir sobre `POWER_V5_ENABLED`**: o encenderlo en el ambiente y validar con un caso nuevo real (idealmente pidiéndole a Alejandra que suba otra vez uno de sus poderes largos), o quitar del roadmap la reclamación de que "B3 está resuelto en producción" y marcarlo como "resuelto en código, pendiente de activación".
-2. **Descargar y abrir las 6 minutas completed de Alejandra** (`1c969432`, `5022544d`, `15a90eef`, `1ac20fa1`, `b9606577`, `1d5b2aa7`, `d7193993`, `0e80553d`, `4b05d210`) y checar contra los 7 puntos de A2 uno por uno. Es la evidencia real más cercana disponible.
-3. **Auditar por qué los 25 JPEGs del poder de Alejandra (2026-06-24) pesan lo mismo** — puede ser un bug latente de `pdfToImages` que también contribuyó al reporte original.
+## 4. Costo incremental de activar v5
 
-Sin implementación pendiente derivada de esta verificación. Solo corrección del nivel de confianza en el plan de estado anterior.
+Por poder procesado en cancelaciones:
+
+| Escenario | Llamadas Gemini adicionales | Costo delta |
+|---|---|---|
+| Miss (primera vez este PDF) | **0** (misma llamada que hoy) | +1 INSERT en `ocr_raw_cache` |
+| Hit (mismo PDF reprocesado) | **-1** (ahorra 2.5 Flash multipágina) | -~$0.001–0.005 USD según páginas |
+
+**Neto: costo baja levemente o queda igual.** No aplica análisis del skill `pricing-creditos-sertuss` porque no hay acción monetizable nueva ni cambio en `credit_prices` — el precio de la cancelación no depende de esto.
+
+---
+
+## 5. Rollout: ¿hay flag por organización?
+
+**No.** Es una env var global de la edge function (`Deno.env.get("POWER_V5_ENABLED")`). Todo o nada, para todos los tenants a la vez.
+
+Alternativas si se quiere rollout acotado (no incluidas hoy, solo mencionadas):
+- Gate por `organizationId` dentro del código (parche menor).
+- Gate por `debug_tools_enabled` en `organizations` (ya existe).
+
+---
+
+## 6. Plan de rollback
+
+**Rápido y seguro:**
+- Desactivar env var y redeploy edge → vuelve al camino legacy en segundos.
+- Datos en `ocr_raw_cache` quedan como registros huérfanos inofensivos (nunca se leen si la flag está off).
+- Cancelaciones procesadas mientras estuvo encendida quedan **idénticas** a las del camino legacy (el shape de `data.poder_banco` no cambia — solo se cacheó el resultado).
+
+**Sin efectos de largo plazo, sin datos corruptos, sin migración inversa.**
+
+---
+
+## 7. ¿Resuelve el caso original de Alejandra?
+
+**No, y hay que ser explícito sobre por qué.** El caso original: poder de 25+ páginas donde la cláusula de designación está al final y el sistema devolvió `poder_banco` vacío.
+
+Lo que la flag **no** arregla:
+
+1. **Truncado a 25 páginas en el cliente:** `CancelacionNueva.tsx` tiene `PODER_MAX_PAGES = 25` hardcodeado. Si el poder de Alejandra tenía más páginas, esas simplemente **no se suben**. La flag opera río abajo.
+2. **JPEGs uniformes de 12.192 bytes:** ya subidos así al bucket. La flag procesa lo que hay; si son placeholders, extrae nada. Cachearía "nada".
+3. **Schema plano en cancelaciones:** `procesar-cancelacion` usa `extractPoderBancoDedicado` con **5 campos legacy**, no el schema v6 profundo. El schema v6 (`apoderados[]`, `total_paginas`, `schema_version`, cadena poderdante→apoderado→instrumento) **solo existe en `scan-document`**, que **no** se llama desde el flujo de cancelaciones. El fix supuesto del "poder que no se leyó" (B3) requiere **cablear el extractor v6 dentro de procesar-cancelacion** — trabajo que **no está hecho**.
+4. **Template v3 nunca se dispara:** aunque la flag esté encendida, `apoderado.tipo` nunca se puebla desde el extractor plano actual → siempre cae en v2.
+
+**Lo que sí haría la flag para Alejandra:** ahorrarnos una llamada a Gemini si reprocesa el mismo PDF. Nada más.
+
+---
+
+## Recomendación (no ejecutable, solo análisis)
+
+**No encender la flag como solución al caso de Alejandra.** Antes de activarla, decidir el orden real de arreglos:
+
+- **P1 (crítico, bloqueante):** investigar el bug de JPEGs uniformes en `pdfToImages`. Sin PDFs bien rasterizados, ningún extractor funciona.
+- **P2 (alto):** subir o eliminar `PODER_MAX_PAGES = 25` (paginar en subida, o cambiar el pipeline para leer el PDF completo del bucket).
+- **P3 (alto):** cablear el extractor v6 de `scan-document/core/poderBanco` **dentro de** `procesar-cancelacion` (o llamarlo como sub-invoke), para que `data.poder_banco.apoderado.tipo` se pueble y `TEMPLATE_MINUTA_V3` tenga sentido.
+- **P4 (medio):** una vez P1–P3 estén hechos y probados con el PDF real de Alejandra, entonces encender `POWER_V5_ENABLED` como optimización de costo (caché).
+- **P5 (opcional, higiene):** re-alinear el nombre — hoy conviven `POWER_V5_ENABLED` (edge), `VITE_POWER_V5_ENABLED` (client, default true), y `POWER_SCHEMA_VERSION = poder_banco_v6`. Nombres confusos, riesgo de decisiones equivocadas futuras.
+
+Cualquier otra ruta (encender la flag y esperar que arregle a Alejandra) sería, con la evidencia actual, **teatro de seguridad de producto**.
