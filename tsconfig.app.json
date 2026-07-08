@@ -44,6 +44,7 @@
     "supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts",
     "supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts",
     "supabase/functions/_shared/isomorphic/poderBancoExtractor/index.ts",
-    "supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts"
+    "supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts",
+    "supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts"
   ]
 }
