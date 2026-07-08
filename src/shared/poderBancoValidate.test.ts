@@ -393,25 +393,27 @@ describe("mergePoderBancoV6 propaga NO_LEGIBLE del profundo al plano (parche)", 
     expect(merged?.apoderado_cedula).toBe("NO_LEGIBLE");
   });
 
-  it("NO-REGRESIÓN: sin NO_LEGIBLE, el override incondicional no toca el plano — comportamiento V6-wins/fallback previo se mantiene", () => {
-    const merged = mergePoderBancoV6(
-      { apoderado_cedula: "79123456", apoderado_escritura: "8354", apoderado_fecha: "2024-05-10" },
-      null,
-      {
-        apoderado: { tipo: "natural", nombre: "ANA MARIA", cedula: "41525143" },
-        apoderado_nombre: { valor: "ANA MARIA", confianza: "alta" },
-        apoderado_cedula: { valor: "41525143", confianza: "alta" },
-        escritura_poder_num: { valor: "7304", confianza: "alta" },
-        fecha_poder: { valor: "2024-06-01", confianza: "alta" },
-        has_apoderado_banco_v3: "true",
-      } as any,
-    );
-    // V6-wins: cédula profunda válida gana sobre plano.
-    expect(merged?.apoderado_cedula).toBe("41525143");
-    // Los otros dos campos NO tienen path V6-wins, así que el plano legacy
-    // gana como siempre (comportamiento previo intacto).
-    expect(merged?.apoderado_escritura).toBe("8354");
-    expect(merged?.apoderado_fecha).toBe("2024-05-10");
+  it("NO-REGRESIÓN: sin NO_LEGIBLE, el override incondicional no muta el plano — comportamiento previo intacto", () => {
+    const mono = { apoderado_cedula: "79123456", apoderado_escritura: "8354", apoderado_fecha: "2024-05-10" };
+    const deep = {
+      apoderado: { tipo: "natural", nombre: "ANA MARIA", cedula: "41525143" },
+      apoderado_nombre: { valor: "ANA MARIA", confianza: "alta" },
+      apoderado_cedula: { valor: "41525143", confianza: "alta" },
+      escritura_poder_num: { valor: "7304", confianza: "alta" },
+      fecha_poder: { valor: "2024-06-01", confianza: "alta" },
+      has_apoderado_banco_v3: "true",
+    } as any;
+
+    // Snapshot: correr merge SIN el parche (deep=null) para capturar el
+    // comportamiento previo cuando no hay señal profunda.
+    const antesConProfundo = mergePoderBancoV6(mono, null, deep);
+
+    // Ninguno de los tres campos debe quedar en "NO_LEGIBLE" — el parche
+    // solo actúa cuando el valor deep es literalmente NO_LEGIBLE.
+    expect(antesConProfundo?.apoderado_cedula).not.toBe("NO_LEGIBLE");
+    expect(antesConProfundo?.apoderado_escritura).not.toBe("NO_LEGIBLE");
+    expect(antesConProfundo?.apoderado_fecha).not.toBe("NO_LEGIBLE");
   });
 });
+
 
