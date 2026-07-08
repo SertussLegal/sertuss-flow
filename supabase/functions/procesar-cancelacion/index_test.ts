@@ -325,3 +325,23 @@ Deno.test("A5-2) tabla SNR: escritura_nueva poblada NO contamina tags *_hipoteca
   assert(!/MEDELLIN/i.test(String(v.ciudad_hipoteca)));
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// A10 — Ausencia total del poder bancario: objeto vacío → todos los
+// campos de apoderado undefined (no solo basura, sino poder no adjuntado).
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("PODER-5) buildDocxVars: poder_banco={} → 8 campos apoderado undefined", () => {
+  const vars = buildDocxVars(withPoder({}));
+  // deno-lint-ignore no-explicit-any
+  const v = vars as any;
+  assertEquals(v.apoderado_nombre, undefined);
+  assertEquals(v.apoderado_cedula, undefined);
+  assertEquals(v.apoderado_escritura, undefined);
+  assertEquals(v.apoderado_fecha, undefined);
+  assertEquals(v.apoderado_fecha_dia, undefined);
+  assertEquals(v.apoderado_fecha_mes, undefined);
+  assertEquals(v.apoderado_fecha_ano, undefined);
+  assertEquals(v.apoderado_notaria_poder, undefined);
+});
+
+
