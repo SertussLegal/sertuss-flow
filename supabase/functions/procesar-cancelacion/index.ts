@@ -2282,6 +2282,11 @@ if (import.meta.main) serve(async (req) => {
           finalPoder as unknown as Record<string, unknown>,
           { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
         );
+        await runPoderCrossChecks(
+          supabaseService,
+          finalPoder as unknown as Record<string, unknown>,
+          { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
+        );
       }
       const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
       const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
