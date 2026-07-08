@@ -774,15 +774,18 @@ export const CancelacionValidar = () => {
                 <AlertTriangle className="h-3 w-3" /> Vista desactualizada
               </span>
             )}
-            <Button
-              size="sm"
-              variant={previewStale ? "default" : "outline"}
-              onClick={handleManualRegen}
-              disabled={previewRefreshing || saving}
-              className="gap-1.5 text-xs"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Regenerar
-            </Button>
+            {row?.status !== "requiere_revision_manual" && (
+              <Button
+                size="sm"
+                variant={previewStale ? "default" : "outline"}
+                onClick={handleManualRegen}
+                disabled={previewRefreshing || saving}
+                className="gap-1.5 text-xs"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Regenerar
+              </Button>
+            )}
+
             <SaveStatusChip
               isDirty={isDirty}
               saving={saving}
