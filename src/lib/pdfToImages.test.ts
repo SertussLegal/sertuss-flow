@@ -102,7 +102,10 @@ describe("pdfToImages", () => {
     vi.restoreAllMocks();
     (globalThis as any).__mockNumPages = 3;
     (globalThis as any).__lastRenderedPage = 0;
+    (globalThis as any).__basePt = { w: 800, h: 1000 };
+    (globalThis as any).__canvasDims = [];
   });
+
 
   it("produce un blob por página con tamaños dispares (>5% variación pico-valle)", async () => {
     installCanvasMocks({});
