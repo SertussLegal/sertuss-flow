@@ -1,20 +1,30 @@
 /**
- * Renderiza páginas de un PDF a JPEGs en serie, liberando memoria agresivamente
- * página a página para evitar OOM en el cliente con escrituras grandes.
+ * Renderiza páginas de un PDF a imágenes PNG binarizadas (blanco/negro puro)
+ * en serie, liberando memoria agresivamente página a página para evitar OOM
+ * en el cliente con escrituras grandes.
  *
  * Solo procesa las primeras `maxPages` páginas — para cancelaciones de hipoteca
  * Davivienda eso es suficiente (cuantía, deudores, banco, matrícula y cláusulas
  * residen en las primeras hojas).
  *
- * P1 (2026-07): endurecido contra el bug de "JPEGs uniformes de placeholder".
+ * 2026-07 — Migración JPEG → PNG binarizado:
+ * Los escaneos notariales colombianos vienen de fotocopiadoras CCITT Group 4
+ * (bitonal de fábrica). Codificarlos como JPEG q0.82 pesaba ~1.35 MB/pág.
+ * (37.86 MB en 28 páginas → 413 en AI Gateway, límite 30 MB). Binarizar por
+ * umbral de luma (Rec. 601) + PNG deflate reduce el mismo documento a
+ * ~223 KB/pág. (~6.3 MB total) manteniendo maxDimension=2600 (~200 DPI), con
+ * bordes de glifos más nítidos (sin ringing JPEG). Validado empíricamente
+ * sobre Escritura 16.390 (28 páginas).
+ *
+ * P1 (2026-07): endurecido contra el bug de "imágenes uniformes de placeholder".
  * En pdfjs-dist ≥4/5 la firma de `page.render` ya no acepta un 3.er param
  * `canvas`; pasarlo hacía que el render resolviera sin pintar y `toBlob`
- * generaba 25 JPEGs blancos idénticos (~12 KB c/u). Ahora:
+ * generaba imágenes blancas idénticas (~12 KB c/u). Ahora:
  *   1) Firma correcta `{ canvasContext, viewport }`.
  *   2) try/catch por página con `PdfPageRenderError` explícito.
  *   3) Muestreo de píxel post-render → `EmptyCanvasError` si el canvas quedó
- *      uniforme (blanco/negro).
- *   4) Asserción de tamaño mínimo (<3 KB = placeholder sospechoso).
+ *      uniforme (blanco/negro) Y el blob es sospechosamente pequeño.
+ *   4) Asserción de tamaño mínimo absoluto (placeholder sospechoso).
  */
 import * as pdfjs from "pdfjs-dist";
 // El worker se sirve estáticamente desde node_modules vía Vite
