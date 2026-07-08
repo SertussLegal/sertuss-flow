@@ -25,11 +25,29 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 export interface PdfToImagesOptions {
   /** Máximo de páginas a renderizar (default 10). Configurable: 3 certificados, 10 escrituras. */
   maxPages?: number;
-  /** Lado mayor del canvas, en pixeles (default 1600). */
+  /**
+   * Lado mayor del canvas, en pixeles (default 2600).
+   * Calibrado para ~200 DPI efectivo sobre Oficio colombiano (612×936 pt):
+   *   936 pt × (200/72) = 2600 px. Carta (792 pt) queda en 2200 px (200 DPI),
+   *   A4 (842 pt) queda en 2339 px (200 DPI). 200 DPI es el piso estándar
+   *   para OCR fiable de texto legal pequeño (cédulas, escrituras, firmas).
+   */
   maxDimension?: number;
-  /** Calidad JPEG entre 0 y 1 (default 0.75). */
+  /**
+   * Calidad JPEG entre 0 y 1 (default 0.82). Subida desde 0.75 para preservar
+   * los bordes de glifos pequeños que Gemini/Claude tokenizan; costo marginal
+   * en bytes (~+10%).
+   */
   jpegQuality?: number;
 }
+
+/**
+ * Tope de upscaling. Un PDF originalmente pequeño (p. ej. digital de 400 pt de
+ * lado mayor) se sube hasta 3× para alcanzar el objetivo de 200 DPI en vez de
+ * quedarse pixelado. 3× = 200/72 × margen (2.78 real).
+ */
+const MAX_UPSCALE = 3;
+
 
 export interface RenderedPage {
   pageNumber: number;
