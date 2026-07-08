@@ -1,76 +1,92 @@
+# Fase 2 — Contraste dirigido con Claude sobre PDF fuente
 
-# Auditoría — Grounding check (anclaje textual) para `poder_banco` y `nomenclatura_predio`
+## Reporte de auditoría (evidencia)
 
-Reporte de investigación previo a diseño. No hay cambios propuestos aún; primero cerramos las 5 preguntas con evidencia concreta.
+### 1. Integraciones con la API de Anthropic hoy en el proyecto
 
-## 1) ¿Existe texto OCR crudo en el pipeline de `procesar-cancelacion`?
+Solo hay **dos** edge functions que hablan directo con `api.anthropic.com`; el resto de menciones a "claude" en `src/` son nombres de archivos legacy (`validacionClaude.ts` stub que solo exporta el tipo `Validacion`) o comentarios.
 
-**No. El texto OCR crudo nunca existe en el pipeline.** Gemini se llama con **tool calling** (function calling), no en modo texto libre. Lo que devuelve es directamente el JSON estructurado del schema, no una transcripción del PDF.
+| Archivo | Línea | Modelo | Estado real |
+|---|---|---|---|
+| `supabase/functions/validar-con-claude/index.ts` | 5, 122, 130 | `claude-sonnet-4-20250514` | **En cuarentena**. Deployado, pero ningún archivo en `src/` lo invoca (`rg` sobre `src/` confirma 0 llamadas a `invoke("validar-con-claude"…)`). Retirado del flujo en vivo, reemplazado por `computeTopIssues` determinista. |
+| `supabase/functions/descubrir-reglas/index.ts` | 19-20, 163 | `claude-sonnet-4-5-20250929` | **Activo, offline**. Invocado manualmente desde `src/components/admin/ReglasPropuestas.tsx:216`. Corridas puntuales (no cron). |
 
-Evidencia:
-- `supabase/functions/scan-document/shared/runGemini.ts` y todos los handlers (`core/certificadoTradicion/handler.ts:5-14`, `core/poderBanco/handler.ts`, `core/escrituraAntecedente/handler.ts`) invocan `runGemini({ tools, toolName })` y retornan `ExtractedJson`. Nunca capturan la respuesta textual del modelo.
-- La caché `ocr_raw_cache` guarda `raw_payload` = **el JSON estructurado ya extraído**, no el texto (`supabase/functions/_shared/poderBancoCache.ts:107-149`). El nombre "raw" es engañoso: es "raw payload de la extracción", no "raw text del PDF".
-- Búsqueda exhaustiva de identificadores tipo `raw_text|ocr_text|full_response|response_text|texto_extraido` en `supabase/functions/`: **cero resultados**.
-- Lo único que persiste el pipeline aguas abajo son los PDFs originales en el bucket `expediente-files` y las imágenes JPEG derivadas para el SHA-256 (`_shared/pdfSha256.ts`).
+`process-expediente/index.ts` aparece en el grep pero solo por strings/comentarios; usa Gemini vía gateway, no Anthropic (sin `fetch` a `api.anthropic.com`).
 
-**Consecuencia:** hoy no hay dónde comparar. Para hacer grounding textual habría que **añadir una etapa de OCR-a-texto** (segunda pasada con Gemini en modo texto, o Tesseract/Google Vision, o simplemente pedirle a Gemini un campo `_texto_literal_fuente` dentro del mismo tool call) o **cachear la respuesta cruda de Gemini** en paralelo al JSON.
+`CLAUDE_API_KEY` está presente en `<supabase-configuration>` — no hace falta pedirla al usuario.
 
-## 2) `_coherencia_warnings` vs `revision_manual_requerida`
+### 2. ¿`descubrir-reglas` ve el documento fuente?
 
-Están **desconectados por diseño hoy**.
+**No.** `descubrir-reglas/index.ts:145-177` construye un `patternsPayload` que es puro texto/JSON agregado a partir del diff `data_ia` vs `data_final` de `logs_extraccion`, más el catálogo `reglas_validacion`. Se manda como `messages: [{ role: "user", content: userPrompt }]` — un solo bloque de texto. **Claude nunca recibe el PDF ni imágenes**; solo cuenta y redacta patrones ya consolidados por código determinista. Sirve para su rol actual (categorizar patrones), pero es inservible para verificación independiente contra la fuente.
 
-- Warnings se generan en `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts::validatePoderBancoCoherencia` (reglas puras sobre el JSON mergeado: escritura incoherente, año incoherente, formato de cédula inválido, apoderado colapsado con RL, NO_LEGIBLE en campos críticos).
-- Se anotan sobre el objeto mergeado en `procesar-cancelacion/index.ts:1374-1400 (annotatePoderCoherencia)`, invocado desde las líneas `2180` y `2580`. Además emiten un `system_events` no bloqueante.
-- El hard-block de Fase E lo decide **otra función independiente**: `detectRequiereRevisionManual(extracted)` en `procesar-cancelacion/index.ts:1216-1236`, llamada en `2689`. Solo mira si los 6 paths críticos contienen el string literal `"NO_LEGIBLE"`. **No consulta `_coherencia_warnings`.**
-- Resultado: los warnings de coherencia (los que sí detectan alucinación por incoherencia interna, no ilegibilidad admitida) **nunca disparan `status = requiere_revision_manual`**. Solo pintan chips en la UI (`src/pages/CancelacionValidar.tsx:1161-1163`).
+### 3. ¿Hay acceso al PDF original en el momento del contraste?
 
-Esa es la brecha exacta que abre el caso de la matrícula 50S-40394832: el poder era coherente consigo mismo (Gemini alucinó de forma auto-consistente), así que ni `validatePoderBancoCoherencia` ni `detectRequiereRevisionManual` dispararon.
+Sí. Los soportes se guardan en el bucket privado `expediente-files` (ver `<storage-buckets>` y `procesar-cancelacion/index.ts:47` `BUCKET_OUTPUT = "expediente-files"`). El mismo `procesar-cancelacion/index.ts:1262` ya usa `storage.from(...).createSignedUrl(path, 60*30)` — el patrón de firma de URL a 30 min ya está resuelto en la función que correría el contraste.
 
-## 3) Regla "índice más alto" para `nomenclatura_predio`
+Formato de envío a Claude: la Messages API acepta **PDF nativo** vía bloque `document` con `source.type: "base64"` y `media_type: "application/pdf"` (Sonnet 4/4.5). Alternativa: convertir a imágenes por página y mandarlas como `image` blocks base64. Hoy `scan-document/shared/runGemini.ts:28-32` ya trabaja con base64/data-URI para Gemini — el patrón está en casa, pero es Gemini, no Claude. Para Claude habría que armar el bloque `document` correcto (no está hecho hoy en ningún lado).
 
-Vive **solo en el prompt**, no en código determinista:
-- `procesar-cancelacion/index.ts:209` (schema description) y `:322` (SYSTEM_PROMPT bloque a).
-- `scan-document/core/certificadoTradicion/prompt.ts:17` y `tool.ts:32` (flujo del escaneo individual).
+### 4. Modelos y referencia de costo/latencia
 
-El post-procesado determinista (`buildDireccionCompletaSaneada` en `procesar-cancelacion/index.ts:667`, invocado en `:953`) **asume que `nomenclatura_predio` ya viene correcto** y solo sanea complementos/ciudad. No re-audita el renglón elegido.
+- `validar-con-claude`: `claude-sonnet-4-20250514`, `max_tokens: 4096`, sin tools (texto libre parseado post-hoc). No hay métricas guardadas en tabla propia; historial estaría en `activity_logs` si se registró, pero la función no reporta tokens.
+- `descubrir-reglas`: `claude-sonnet-4-5-20250929`, `max_tokens: 8192`, con `tool_choice` forzado. **Sí** guarda `tokens_input`, `tokens_output`, `costo_estimado_usd`, `tiempo_ms` en `regla_propuesta_run` (líneas 111-122). Esa tabla es la única referencia real de costo/latencia que existe en el proyecto para llamadas a Claude, pero es sobre payloads de texto — no comparable directo con PDF multimodal, que es más caro por página.
 
-Y como en el punto 1: **en ese momento el texto crudo del certificado no existe** en memoria. Solo está el JSON `data.inmueble.nomenclatura_predio`. No hay contra qué contrastar.
+### 5. Veredicto de factibilidad
 
-## 4) Auditoría retrospectiva — mismo nombre, cédulas distintas
+**Es extensión razonable, no integración desde cero.** Lo que ya existe cubre ~70%:
 
-Consulta sobre las 11 cancelaciones con `data_ia->poder_banco` no vacío:
+Ya está resuelto:
+- Credencial `CLAUDE_API_KEY` en secretos.
+- Patrón de llamada a `api.anthropic.com/v1/messages` con `tool_choice` forzado (`descubrir-reglas/index.ts:163-183`) — reutilizable tal cual, cambiando el schema del tool y el payload.
+- Firma de URLs de bucket privado (`procesar-cancelacion/index.ts:1262`).
+- Bus `credits:blocked` + `consume_credit_v2` para cobrar la acción nueva.
 
-| Nombre | Cédulas distintas | Valores |
-|---|---:|---|
-| **ANA MARIA MONTOYA ECHEVERRY** | **5** | `41525143`, `41944755`, `521639-4`, `79.123.456`, `NO_LEGIBLE` |
-| FELIX DE JESUS CAGUA | 1 | `79.123.456` |
-| FELIX REUZE CAÑAS | 1 | `19.345.545` |
-| MARIA CAMILA PEÑA RAMÍREZ | 1 | `101.846.520` |
-| MARIA FERNANDA PINZON ALVARADO | 1 | `52310103` |
+Lo que **falta construir**:
+- Descarga del PDF firmado + codificación base64 dentro de la edge function (Deno) para armar el bloque `document` de Anthropic. No hay ningún edge function que lo haga hoy — todo el multimodal actual va contra Gemini vía gateway, no directo a Anthropic.
+- Schema del tool `emit_verificacion` (probablemente `{ campo, valor_gemini, coincide: bool, cita_literal_pdf, confianza }` por cada campo verificado).
+- Prompt notarial específico ("mira este PDF, ¿el apoderado se llama X con cédula Y? Cita textual").
+- Precio en `credit_prices` (skill `pricing-creditos-sertuss` obligatorio antes de tocarlo — mem://index).
+- Conexión con `detectRequiereRevisionManual` (mismo hook que se acaba de conectar para `_coherencia_warnings`) para que `coincide=false` con confianza alta dispare hard-block.
+- Registro de tokens/costo (imitar `regla_propuesta_run`) para monitoreo real de gasto multimodal.
 
-Hallazgos concretos:
-- **"Ana María Montoya Echeverry" aparece con 5 cédulas distintas en 5 cancelaciones**, incluida `79.123.456` (número plantilla clásico de "cédula falsa de ejemplo") y `41.939.243` **no aparece** entre las 5 (la real conocida del caso auditado ayer estaba como `NO_LEGIBLE`).
-- El valor `79.123.456` se comparte además con "FELIX DE JESUS CAGUA": una misma cédula falsa aparece asignada a dos personas distintas.
-- Formatos incoherentes en el mismo campo: con puntos, sin puntos, con guion, y hasta el sentinel `NO_LEGIBLE`. `validatePoderBancoCoherencia` sí marca el guion como formato inválido, pero **no cruza contra otras filas** — cada extracción se valida en aislamiento.
+Riesgo mayor y no resuelto: **PDFs pesados**. Un certificado de tradición escaneado puede pasar de 5 MB; la Messages API limita PDF a 32 MB y 100 páginas por request, pero el costo escala con páginas. Habrá que decidir si mandamos el PDF entero o solo la(s) página(s) relevante(s) (p.ej. la carátula del poder para verificar identidad del apoderado). Hoy no tenemos código que sepa recortar páginas.
 
-Esto confirma la premisa del caso: la alucinación no es un evento aislado, es un patrón. Un chequeo de "esta cédula ya aparece asignada a otro nombre" o "este nombre ya apareció con cédula distinta" sería detectable **hoy con SQL** sin necesidad de OCR crudo.
+---
 
-## 5) Veredicto sobre construir el grounding check ahora
+## Plan propuesto (a ejecutar solo tras aprobación)
 
-**Complejidad honesta:**
-- Grounding **puro** (comparar valor final contra texto OCR crudo del documento fuente): **no es simple**. Requiere primero decidir cómo obtener el texto crudo — hoy no existe en ningún lado del pipeline (punto 1). Opciones ordenadas por costo:
-  1. Añadir un campo `_texto_literal_fragmento` al schema del tool para que Gemini devuelva la frase exacta donde vio cada dato crítico (nombre, cédula, escritura, nomenclatura). Costo: bajo, misma llamada, cero infraestructura nueva. Riesgo: la IA también puede alucinar la "cita".
-  2. Segunda pasada Gemini en modo texto libre (transcripción del PDF) cacheada en `ocr_raw_cache` como `raw_text`. Costo: +1 llamada por documento, +1 columna, +tokens.
-  3. OCR determinista externo (Tesseract/Google Vision) que sí sea "fuente independiente" de Gemini. Costo: infraestructura nueva.
-- Grounding **estadístico** (detectar patrones tipo "mismo nombre con cédulas distintas entre cancelaciones", "cédula duplicada entre nombres distintos", "cédula = valor plantilla `79.123.456`"): **sí es simple hoy**. Los datos ya están estructurados en `cancelaciones.data_ia`, se puede hacer con SQL o dentro de `annotatePoderCoherencia` con un extra query. No requiere tocar el OCR.
-- Conectar `_coherencia_warnings` a `detectRequiereRevisionManual` (que warnings críticos ya SÍ bloqueen): **trivial**, un edit en `index.ts:2689`. Independiente del grounding, y solo ese cambio ya hubiera bloqueado 3 de las 5 filas anómalas de Ana María.
+Trabajo dividido en **3 hitos** para poder abortar entre uno y otro si el costo real no cierra.
 
-**Recomendación de secuencia** (para discutir antes de codear nada):
-1. **Cheap win primero:** promover un subconjunto de `_coherencia_warnings` a bloqueantes (fusionar con Fase E). Cierra el gap descrito en el punto 2 sin infraestructura nueva.
-2. **Grounding estadístico cross-cancelación:** función determinista que consulte duplicidad de nombre↔cédula y cédulas tipo plantilla. Costo bajo, alto valor probatorio, y ya tiene datos históricos que lo justifican (punto 4).
-3. **Grounding textual real (0.2/0.3):** decidir entre opción (a) `_texto_literal_fragmento` en el mismo tool call o (b) segunda pasada de transcripción cacheada. Esto es el trabajo mayor y merece su propio plan aparte.
+### Hito 1 — Prueba de concepto acotada: identidad del apoderado en `poder_banco`
 
-## Preguntas abiertas para el usuario antes de escribir un plan de implementación
+Un único campo de alto valor probatorio, un único documento fuente (el PDF del poder bancario), sin tocar el flujo en vivo todavía.
 
-- ¿Quieres que el próximo plan cubra **solo el paso 1** (conectar warnings ↔ hard-block, ganancia inmediata) o los pasos 1+2 juntos?
-- Para el grounding textual real (paso 3), ¿prefieres explorar primero la opción (a) `_texto_literal_fragmento` (barata, misma llamada, pero misma IA como juez y parte) o pedir un OCR determinista externo (más caro, verdadera fuente independiente)?
+1. Nuevo edge function `verificar-con-claude` (misma cuarentena que `descubrir-reglas`: sin cron, invocable manualmente desde una acción admin en una cancelación existente).
+2. Recibe `{ cancelacion_id }`. Lee `cancelaciones.data_ia->poder_banco->apoderado_nombre / apoderado_cedula` y el `expediente_files` correspondiente al poder.
+3. Firma URL 30 min, descarga PDF, base64.
+4. Llama a `claude-sonnet-4-5-20250929` con bloque `document` + tool `emit_verificacion_identidad` (schema: `{ nombre_coincide, cedula_coincide, cita_literal, confianza: "alta"|"media"|"baja" }`).
+5. Guarda resultado en columna nueva `cancelaciones.claude_verificacion_poder jsonb` (migración con GRANTs). **No** dispara hard-block todavía — solo se muestra en UI admin de auditoría.
+6. Registra `tokens_input/output/costo_usd/tiempo_ms` en tabla nueva `verificacion_run` (mismo modelo que `regla_propuesta_run`, con GRANTs y RLS solo authenticated + platform_admin).
+7. Métrica de éxito antes de pasar a Hito 2: correr sobre las 7 cancelaciones ya marcadas + 20 aleatorias; medir tasa de "coincide=false" real y costo por corrida.
+
+### Hito 2 — Ampliar a dirección de inmueble y cuantía
+
+Solo si Hito 1 muestra tasa de detección útil (≥1 alucinación real detectada) y costo aceptable (<10¢ por documento).
+
+1. Extender schema del tool a los 3 campos (identidad apoderado, dirección predio vs certificado tradición, cuantía vs escritura de hipoteca).
+2. Se llama **una vez por documento fuente** (poder → identidad; certificado tradición → dirección; escritura hipoteca → cuantía), no una vez por campo. Máximo 3 llamadas por cancelación.
+3. Sigue en modo "auditoría, no bloqueo".
+
+### Hito 3 — Integración con hard-block
+
+Solo tras aprobación explícita de un lote piloto revisado por Alejandra o dueño de producto.
+
+1. Conectar `claude_verificacion_*.coincide === false && confianza === "alta"` con `detectRequiereRevisionManual` (mismo hook ya conectado para `_coherencia_warnings`).
+2. Consultar skill `pricing-creditos-sertuss` para asignar precio en `credit_prices` (acción nueva `VERIFICACION_CLAUDE`), cobrar vía `consume_credit_v2`.
+3. Botón UI en `PoderBannersV5.tsx` estilo "Verificar con IA independiente" opt-in, no automático en cada cancelación (control de costo).
+4. Documentar en memoria (`mem://tech/verificacion-claude-multimodal`) que Claude ahora sí ve el PDF, pero solo en flujo bajo demanda, nunca síncrono con generación.
+
+## Preguntas al usuario antes de codear
+
+1. ¿Arrancamos por **Hito 1 completo** (identidad apoderado, sin bloqueo) o preferís aún más pequeño — literal un script one-shot en una edge que corra sobre 1 cancelación y devuelva el JSON en la respuesta, sin tabla nueva?
+2. ¿PDF completo del poder o solo primera página? La segunda opción baja costo ~5x pero requiere agregar `pdf-lib` o similar a la edge (dependencia nueva).
+3. Para el modelo: ¿mantenemos `claude-sonnet-4-5-20250929` (el que ya usa `descubrir-reglas`) o probamos con `claude-haiku` primero por costo? Haiku 3.5 sí acepta PDF y es ~5x más barato, pero puede fallar en cédulas manuscritas.
