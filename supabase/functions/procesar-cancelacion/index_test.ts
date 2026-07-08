@@ -210,3 +210,62 @@ Deno.test("H2-5) mergeCuantiaIntoExtracted: humano con monto real NO se pisa por
   assertEquals(extracted.hipoteca_anterior.valor_hipoteca_original, "OCHENTA MILLONES DE PESOS ($80.000.000)");
   assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, false);
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Cierre raíz — patrón "null"/"undefined" string en poder_banco
+// (mismo defecto categórico que H2 pero en campos del apoderado).
+// ─────────────────────────────────────────────────────────────────────
+
+function withPoder(overrides: Record<string, unknown> = {}) {
+  const d = minimalData();
+  d.poder_banco = { ...overrides };
+  return d;
+}
+
+Deno.test("PODER-1) buildDocxVars: apoderado_nombre='null' → undefined (no imprime la palabra)", () => {
+  const vars = buildDocxVars(withPoder({ apoderado_nombre: "null", apoderado_cedula: "undefined" }));
+  // deno-lint-ignore no-explicit-any
+  const v = vars as any;
+  assertEquals(v.apoderado_nombre, undefined);
+  assertEquals(v.apoderado_cedula, undefined);
+});
+
+Deno.test("PODER-2) buildDocxVars: campos apoderado con basura 'NaN'/'---' → undefined", () => {
+  const vars = buildDocxVars(withPoder({
+    apoderado_nombre: "NaN",
+    apoderado_cedula: "---",
+    apoderado_escritura: "null",
+    apoderado_fecha: "undefined",
+    apoderado_notaria_poder: "N/A",
+  }));
+  // deno-lint-ignore no-explicit-any
+  const v = vars as any;
+  assertEquals(v.apoderado_nombre, undefined);
+  assertEquals(v.apoderado_cedula, undefined);
+  // formatProtocoloEscritura("") produce "", pero jamás la palabra "null"
+  assert(!/\bnull\b/i.test(String(v.apoderado_escritura ?? "")));
+  assertEquals(v.apoderado_fecha, undefined);
+  assert(!/\bN\/A\b/i.test(String(v.apoderado_notaria_poder ?? "")));
+});
+
+Deno.test("PODER-3) buildDocxVars: apoderado real preserva valores (no regresión)", () => {
+  const vars = buildDocxVars(withPoder({
+    apoderado_nombre: "ANA MARIA MONTOYA ECHEVERRY",
+    apoderado_cedula: "52.857.443",
+    apoderado_fecha: "SIETE (7) DE MARZO DE DOS MIL VEINTIDOS (2022)",
+  }));
+  // deno-lint-ignore no-explicit-any
+  const v = vars as any;
+  assertEquals(v.apoderado_nombre, "ANA MARIA MONTOYA ECHEVERRY");
+  assertEquals(v.apoderado_cedula, "52.857.443");
+  assertStringIncludes(String(v.apoderado_fecha), "2022");
+});
+
+Deno.test("PODER-4) prompts: no queda 'null si es ilegible' para campos del apoderado", async () => {
+  const SRC = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  // La instrucción legacy queda prohibida en los 3 sitios del poder.
+  assert(!/`null`\s+si\s+es\s+ilegible/.test(SRC), "instrucción legacy con backticks debe estar eliminada");
+  // El reemplazo canónico debe aparecer al menos 8 veces (2 tools × 4 campos).
+  const okCount = (SRC.match(/OMITE el campo si es ilegible/g) || []).length;
+  assert(okCount >= 8, `esperaba >=8 ocurrencias de 'OMITE el campo si es ilegible', hubo ${okCount}`);
+});

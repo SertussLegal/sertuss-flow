@@ -3,6 +3,7 @@
 // using normalized CC as the ONLY matching key.
 
 import type { Persona, Inmueble } from "@/lib/types";
+import { sanitizeString } from "@shared/poderBancoExtractor/merge";
 
 export interface ReconcileAlert {
   tipo: "discrepancia" | "dato_faltante";
@@ -300,17 +301,25 @@ export function reconcileInmueble(
   const result = { ...inmueble };
   const isDirty = (field: string) => dirtyFields.has(field);
 
-  if (predialData.avaluo_catastral && !result.avaluo_catastral && !isDirty("avaluo_catastral")) {
-    result.avaluo_catastral = String(predialData.avaluo_catastral);
+  // Guard defensivo mismo patrón H2: normaliza a string y descarta basura literal
+  // ("null"/"undefined"/"nan"/"") vía `sanitizeString` antes de persistir al modelo.
+  const coerce = (v: unknown): string | undefined =>
+    v == null ? undefined : sanitizeString(typeof v === "string" ? v : String(v));
+  const avaluoClean = coerce(predialData.avaluo_catastral);
+  if (avaluoClean && !result.avaluo_catastral && !isDirty("avaluo_catastral")) {
+    result.avaluo_catastral = avaluoClean;
   }
-  if (predialData.estrato && !result.estrato && !isDirty("estrato")) {
-    result.estrato = String(predialData.estrato);
+  const estratoClean = coerce(predialData.estrato);
+  if (estratoClean && !result.estrato && !isDirty("estrato")) {
+    result.estrato = estratoClean;
   }
-  if (predialData.area && !result.area && !isDirty("area")) {
-    result.area = String(predialData.area);
+  const areaClean = coerce(predialData.area);
+  if (areaClean && !result.area && !isDirty("area")) {
+    result.area = areaClean;
   }
-  if (predialData.direccion && !result.direccion && !isDirty("direccion")) {
-    result.direccion = String(predialData.direccion);
+  const direccionClean = coerce(predialData.direccion);
+  if (direccionClean && !result.direccion && !isDirty("direccion")) {
+    result.direccion = direccionClean;
   }
 
   return result;

@@ -23,6 +23,7 @@ import {
   PODER_BANCO_TOOL_NAME,
   type PoderBancoDeepPayload,
 } from "../_shared/isomorphic/poderBancoExtractor/index.ts";
+import { sanitizeString } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -261,13 +262,13 @@ const tools = [
           },
           poder_banco: {
             type: "object",
-            description: "DEVUELVE este objeto SIEMPRE que el usuario haya adjuntado páginas del Poder. Llénalo con TODOS los campos que puedas confirmar y usa `null` (JSON null, NO cadena vacía '') en cada campo individual ilegible. OMÍTELO completamente SOLO si NO se adjuntó poder. Los datos suelen estar en las cláusulas finales del PDF.",
+            description: "DEVUELVE este objeto SIEMPRE que el usuario haya adjuntado páginas del Poder. Llénalo con TODOS los campos que puedas confirmar y OMITE cada campo individual ilegible (no lo incluyas en el JSON; NO uses la cadena \"null\" ni cadena vacía). OMÍTELO completamente SOLO si NO se adjuntó poder. Los datos suelen estar en las cláusulas finales del PDF.",
             properties: {
               apoderado_nombre: { type: "string", description: "Nombre completo del apoderado / representante legal en MAYÚSCULAS. Si encuentras CUALQUIER nombre de apoderado, devuélvelo." },
-              apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. `null` si es ilegible." },
-              apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. `null` si es ilegible." },
-              apoderado_fecha: { type: "string", description: "Fecha del poder en FORMATO NOTARIAL COMPLETO: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. `null` si es ilegible." },
-              apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. `null` si es ilegible." },
+              apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+              apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+              apoderado_fecha: { type: "string", description: "Fecha del poder en FORMATO NOTARIAL COMPLETO: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+              apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
             },
             required: ["apoderado_nombre"],
             additionalProperties: false,
@@ -344,7 +345,7 @@ PODER GENERAL DEL BANCO (cuando se adjunte):
 - ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
 - Palabras clave para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
 - Devuelve la fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
-- Si SE ADJUNTÓ el Poder: DEVUELVE el objeto 'poder_banco' con TODOS los campos que puedas confirmar y usa **\`null\` (JSON null, NO cadena vacía '')** en cada campo individual ilegible. Si encuentras al menos el nombre del apoderado, devuelve el objeto.
+- Si SE ADJUNTÓ el Poder: DEVUELVE el objeto 'poder_banco' con TODOS los campos que puedas confirmar y **OMITE cada campo individual ilegible** (no lo incluyas en el JSON; NO uses la cadena \`"null"\` ni cadena vacía \`""\`). Si encuentras al menos el nombre del apoderado, devuelve el objeto.
 - Solo OMITE 'poder_banco' completamente si NO se adjuntó poder en absoluto.
 
 
@@ -849,7 +850,7 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     .map((d) => `${d.nombre}\nC.C. ${d.identificacion_formateada}`)
     .join("\n\n");
 
-  const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(pb.apoderado_nombre || "") || "";
+  const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(sanitizeString(pb.apoderado_nombre) || "") || "";
   const tratamientoBanco = data.partes.tratamiento_entidad || "";
   const tokensApoderado = apoderadoTokens(generoApoderado);
   const tokensBanco = bancoTokens(tratamientoBanco);
@@ -1075,14 +1076,16 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     // Ley 546
     aplica_ley_546: data.analisis_legal.aplica_ley_546,
     // Apoderado dinámico (sin hardcode). undefined → nullGetter → "___________"
-    apoderado_nombre: pb.apoderado_nombre || undefined,
-    apoderado_cedula: pb.apoderado_cedula || undefined,
-    apoderado_escritura: formatProtocoloEscritura(pb.apoderado_escritura || ""),
-    apoderado_fecha: pb.apoderado_fecha || undefined,
-    apoderado_fecha_dia: pb.apoderado_fecha_dia || fpPoder.dia || undefined,
-    apoderado_fecha_mes: pb.apoderado_fecha_mes || fpPoder.mes || undefined,
-    apoderado_fecha_ano: pb.apoderado_fecha_anio || fpPoder.ano || undefined,
-    apoderado_notaria_poder: formatProtocoloNotaria(pb.apoderado_notaria_poder || ""),
+    // Guard defensivo mismo patrón que H2 (cuantía): `sanitizeString` normaliza
+    // basura literal ("null"/"undefined"/"nan"/"") a undefined ANTES de imprimir.
+    apoderado_nombre: sanitizeString(pb.apoderado_nombre),
+    apoderado_cedula: sanitizeString(pb.apoderado_cedula),
+    apoderado_escritura: formatProtocoloEscritura(sanitizeString(pb.apoderado_escritura) || ""),
+    apoderado_fecha: sanitizeString(pb.apoderado_fecha),
+    apoderado_fecha_dia: sanitizeString(pb.apoderado_fecha_dia) || fpPoder.dia || undefined,
+    apoderado_fecha_mes: sanitizeString(pb.apoderado_fecha_mes) || fpPoder.mes || undefined,
+    apoderado_fecha_ano: sanitizeString(pb.apoderado_fecha_anio) || fpPoder.ano || undefined,
+    apoderado_notaria_poder: formatProtocoloNotaria(sanitizeString(pb.apoderado_notaria_poder) || ""),
     // Notario emisor (editable; vacío → nullGetter "___________")
     notario_nombre: ne.notario_nombre || undefined,
     notaria_emisora_titulo: ne.notaria_emisora_titulo || undefined,
@@ -1262,10 +1265,10 @@ const poderDedicadoTool = [
         type: "object",
         properties: {
           apoderado_nombre: { type: "string", description: "Nombre completo del apoderado en MAYÚSCULAS." },
-          apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. null si es ilegible." },
-          apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. null si es ilegible." },
-          apoderado_fecha: { type: "string", description: "Fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. null si es ilegible." },
-          apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. null si es ilegible." },
+          apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+          apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+          apoderado_fecha: { type: "string", description: "Fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+          apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
         },
         required: ["apoderado_nombre"],
         additionalProperties: false,
@@ -1288,9 +1291,9 @@ FORMATO DE SALIDA (estricto):
 - apoderado_notaria_poder: 'TREINTA Y DOS (32) DE BOGOTA D.C.'.
 
 ANTI-ALUCINACIÓN:
-- Si un campo individual es humanamente ilegible, devuelve **\`null\` (JSON null, NO cadena vacía '')**.
-- Si encuentras al menos el nombre del apoderado, devuelve el objeto con los demás campos en null cuando no los puedas confirmar.
-- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---' o reconstrucciones inventadas.
+- Si un campo individual es humanamente ilegible, **OMÍTELO del JSON** (no lo incluyas). NO devuelvas la cadena "null" ni cadena vacía "".
+- Si encuentras al menos el nombre del apoderado, devuelve el objeto con los demás campos omitidos cuando no los puedas confirmar.
+- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---', 'null' o reconstrucciones inventadas.
 
 Llama SIEMPRE a la herramienta extract_poder_banco_dedicado.`;
 
@@ -1338,10 +1341,9 @@ function mergePoderBanco(
 ): PoderBanco | undefined {
   if (!monolitico && !dedicado) return undefined;
   const pick = (m?: string | null, d?: string | null): string | undefined => {
-    // Dedicado pisa monolítico si el monolítico es null/empty.
-    if (m && m.trim()) return m;
-    if (d && d.trim()) return d;
-    return undefined;
+    // Dedicado pisa monolítico si el monolítico es null/empty/"null"/"undefined"/"nan".
+    // Delegamos a `sanitizeString` (fuente única) para no reintroducir la basura literal.
+    return sanitizeString(m) ?? sanitizeString(d);
   };
   const merged: PoderBanco = {
     apoderado_nombre: pick(monolitico?.apoderado_nombre, dedicado?.apoderado_nombre),
@@ -2190,11 +2192,13 @@ if (import.meta.main) serve(async (req) => {
       const finalPoderExt = (finalPoder ?? undefined) as (Record<string, unknown> | undefined);
       const mergedFinalPoder: PoderBanco | undefined = finalPoder
         ? ({
-            apoderado_nombre: existingFinalPoder.apoderado_nombre || finalPoder.apoderado_nombre,
-            apoderado_cedula: existingFinalPoder.apoderado_cedula || finalPoder.apoderado_cedula,
-            apoderado_escritura: existingFinalPoder.apoderado_escritura || finalPoder.apoderado_escritura,
-            apoderado_fecha: existingFinalPoder.apoderado_fecha || finalPoder.apoderado_fecha,
-            apoderado_notaria_poder: existingFinalPoder.apoderado_notaria_poder || finalPoder.apoderado_notaria_poder,
+            // sanitizeString aplica al lado humano ANTES de decidir si gana o cede al dedicado.
+            // Previene el mismo patrón H2: humano con "null"/"undefined" como string ganaba por truthy.
+            apoderado_nombre: sanitizeString(existingFinalPoder.apoderado_nombre) ?? finalPoder.apoderado_nombre,
+            apoderado_cedula: sanitizeString(existingFinalPoder.apoderado_cedula) ?? finalPoder.apoderado_cedula,
+            apoderado_escritura: sanitizeString(existingFinalPoder.apoderado_escritura) ?? finalPoder.apoderado_escritura,
+            apoderado_fecha: sanitizeString(existingFinalPoder.apoderado_fecha) ?? finalPoder.apoderado_fecha,
+            apoderado_notaria_poder: sanitizeString(existingFinalPoder.apoderado_notaria_poder) ?? finalPoder.apoderado_notaria_poder,
             apoderado_fecha_dia: existingFinalPoder.apoderado_fecha_dia,
             apoderado_fecha_mes: existingFinalPoder.apoderado_fecha_mes,
             apoderado_fecha_anio: existingFinalPoder.apoderado_fecha_anio,
