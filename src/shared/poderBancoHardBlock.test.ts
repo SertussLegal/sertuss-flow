@@ -25,9 +25,10 @@ describe("normalizeCedula", () => {
 });
 
 describe("PODER_CEDULAS_PLACEHOLDER", () => {
-  it("contiene los 2 casos empíricos del historial", () => {
+  it("contiene solo el placeholder confirmado empíricamente", () => {
     expect(PODER_CEDULAS_PLACEHOLDER.has("79123456")).toBe(true);
-    expect(PODER_CEDULAS_PLACEHOLDER.has("41939243")).toBe(true);
+    // 41939243 es cédula REAL (caso Armenia) — no debe estar en la lista.
+    expect(PODER_CEDULAS_PLACEHOLDER.has("41939243")).toBe(false);
   });
 });
 
