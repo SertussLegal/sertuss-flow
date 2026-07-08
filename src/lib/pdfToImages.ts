@@ -71,7 +71,7 @@ const MAX_UPSCALE = 3;
 export interface RenderedPage {
   pageNumber: number;
   blob: Blob;
-  /** Tamaño aproximado del JPEG en bytes. */
+  /** Tamaño del PNG resultante en bytes. */
   size: number;
 }
 
