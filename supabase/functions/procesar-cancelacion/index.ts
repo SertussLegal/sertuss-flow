@@ -1185,13 +1185,35 @@ async function fillTemplate(
  * NO actualiza el row de `cancelaciones`. Solo genera+sube y devuelve paths.
  * El caller decide qué campos escribir (status, url_*, timestamps, etc.).
  */
-async function generateAndUploadCancelacionDocs(
+export class ManualReviewRequiredError extends Error {
+  readonly code = "MANUAL_REVIEW_REQUIRED";
+  constructor(
+    public readonly paths: string[],
+    public readonly motivos: string[],
+  ) {
+    super(
+      `Generación bloqueada: ${paths.length} campo(s) NO_LEGIBLE, ` +
+      `${motivos.length} hard-block de coherencia.`,
+    );
+    this.name = "ManualReviewRequiredError";
+  }
+}
+
+export async function generateAndUploadCancelacionDocs(
   // deno-lint-ignore no-explicit-any
   supabaseService: any,
   cancelacionId: string,
   data: CancelacionData,
   prosaApoderadoOverride: ProsaApoderadoOverride | null,
 ): Promise<{ minutaPath: string; certPath: string }> {
+  // Fail-safe por construcción: bloquear si persiste NO_LEGIBLE o hard-block.
+  // Cubre los 3 call sites (flujo normal, confirm_manual_review, regen)
+  // y cualquier call site futuro.
+  const revision = detectRequiereRevisionManual(data);
+  if (revision.requiere) {
+    throw new ManualReviewRequiredError(revision.paths, revision.motivos);
+  }
+
   const vars = buildDocxVars(data, prosaApoderadoOverride);
   const minutaTemplate = selectMinutaTemplate(data);
   const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
@@ -1221,7 +1243,7 @@ async function generateAndUploadCancelacionDocs(
  * Decide si la cancelación debe frenar antes de generar la minuta
  * (Fase E — bloqueo duro con override manual).
  */
-function detectRequiereRevisionManual(extracted: CancelacionData): {
+export function detectRequiereRevisionManual(extracted: CancelacionData): {
   requiere: boolean;
   paths: string[];
   motivos: string[];
@@ -2183,6 +2205,26 @@ if (import.meta.main) serve(async (req) => {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (genErr) {
+        if (genErr instanceof ManualReviewRequiredError) {
+          // El usuario intentó confirmar sin resolver los campos NO_LEGIBLE /
+          // hard-blocks de coherencia. NO cambiamos status (sigue en
+          // 'requiere_revision_manual') y logueamos el intento.
+          void supabaseService.from("system_events").insert({
+            organization_id: orgId,
+            tramite_id: cancelacionId,
+            user_id: userId,
+            evento: "procesar-cancelacion.confirm_manual_review",
+            resultado: "rechazado",
+            categoria: "PODER_NO_LEGIBLE_PERSISTE",
+            detalle: { paths: genErr.paths, motivos: genErr.motivos },
+          }).then(() => {}, () => {});
+          const pendientes = [...genErr.paths, ...genErr.motivos].join(", ");
+          return biz(
+            "manual_review_not_resolved",
+            `Aún hay campos sin resolver: ${pendientes}. Corrígelos antes de confirmar.`,
+            { paths: genErr.paths, motivos: genErr.motivos },
+          );
+        }
         const msg = genErr instanceof Error ? genErr.message : String(genErr);
         console.error("[procesar-cancelacion.confirm_manual_review] error:", msg);
         return biz("generation_error", `No se pudo generar el documento: ${msg.slice(0, 300)}`);
@@ -2482,20 +2524,41 @@ if (import.meta.main) serve(async (req) => {
         });
       }
       const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
-      const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-        supabaseService, cancelacionId, data, prosaOv,
-      );
-      await supabaseService.from("cancelaciones").update({
-        data_final: data,
-        url_minuta_generada: minutaPath,
-        url_certificado_generado: certPath,
-        updated_at: new Date().toISOString(),
-      }).eq("id", cancelacionId);
+      try {
+        const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
+          supabaseService, cancelacionId, data, prosaOv,
+        );
+        await supabaseService.from("cancelaciones").update({
+          data_final: data,
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+          updated_at: new Date().toISOString(),
+        }).eq("id", cancelacionId);
 
-
-      return new Response(JSON.stringify({ ok: true, regenerated: true }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+        return new Response(JSON.stringify({ ok: true, regenerated: true }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (genErr) {
+        if (genErr instanceof ManualReviewRequiredError) {
+          // Persistir SOLO data_final (el usuario sigue editando) y NO tocar
+          // url_minuta_generada/url_certificado_generado — el docx previo (si
+          // existe) queda intacto en vez de sobrescribirlo con uno contaminado.
+          await supabaseService.from("cancelaciones").update({
+            data_final: data,
+            updated_at: new Date().toISOString(),
+          }).eq("id", cancelacionId);
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "manual_review_required",
+            paths: genErr.paths,
+            motivos: genErr.motivos,
+          }), {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        throw genErr;
+      }
     }
 
     // ─────────────────────────────────────────────────────────────

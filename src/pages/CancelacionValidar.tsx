@@ -33,6 +33,29 @@ import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/Pros
 import { getProsaBanco } from "@shared/prosaBancos";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
+// Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
+// cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
+// El SDK entrega `FunctionsHttpError` con `.context: Response`; leemos el body
+// una sola vez y devolvemos `{paths, motivos}` o `null` si es otro tipo de error.
+async function parseManualReviewError(
+  err: unknown,
+): Promise<{ paths: string[]; motivos: string[] } | null> {
+  const ctx = (err as { context?: Response } | null)?.context;
+  if (!ctx || typeof ctx.clone !== "function") return null;
+  try {
+    const body = await ctx.clone().json();
+    if (body && body.error === "manual_review_required") {
+      return {
+        paths: Array.isArray(body.paths) ? body.paths : [],
+        motivos: Array.isArray(body.motivos) ? body.motivos : [],
+      };
+    }
+  } catch {
+    // body no-JSON o ya consumido — no es el 409 esperado.
+  }
+  return null;
+}
+
 type NotariaEmisora = {
   notario_nombre?: string;
   notaria_emisora_titulo?: string;
@@ -449,6 +472,18 @@ export const CancelacionValidar = () => {
             toast.success("Cambios guardados");
           }
         } else {
+          // Hallazgo NO_LEGIBLE: si el 409 llega por `manual_review_required`,
+          // el autosave silencioso NO debe generar toast — el usuario está
+          // en pleno flujo de edición corrigiendo los campos.
+          const parsed = await parseManualReviewError(regenErr);
+          if (parsed) {
+            console.warn(
+              "[persistData] regen bloqueado por manual_review_required:",
+              { paths: parsed.paths, motivos: parsed.motivos },
+            );
+            setPreviewStale(true);
+            return true;
+          }
           // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
           // actualizó. Mostrar chip persistente "vista desactualizada".
           setPreviewStale(true);
@@ -503,6 +538,16 @@ export const CancelacionValidar = () => {
     isRegenInFlightRef.current = false;
     if (error) {
       setPreviewStale(true);
+      const parsed = await parseManualReviewError(error);
+      if (parsed) {
+        const pendientes = [...parsed.paths, ...parsed.motivos].join(", ");
+        toast.info("Revisión manual pendiente", {
+          description: pendientes
+            ? `Aún hay campos por corregir: ${pendientes}`
+            : "Hay campos del poder marcados como no legibles. Corrígelos antes de regenerar.",
+        });
+        return;
+      }
       toast.error("No se pudo regenerar", { description: error.message });
       return;
     }
