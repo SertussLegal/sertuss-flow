@@ -783,7 +783,13 @@ function normalizeDeudores(partes: CancelacionData["partes"]) {
 
 // Build the variable map sent to Docxtemplater
 export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoderadoOverride | null) {
-  const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
+  const rawIn = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
+  // Guard defensivo H2: strings basura ("null"/"undefined"/"nan") jamás deben llegar a la plantilla.
+  // Si por cualquier ruta (merge cliente, JSON round-trip, ?? "null") acabaron persistidos, los
+  // normalizamos a vacío ANTES de decidir la rama de renderizado. Esto impide de raíz que la palabra
+  // "null" aparezca incrustada en la prosa notarial.
+  const isTrashMonto = /^(null|undefined|nan)$/i.test(rawIn);
+  const valorRaw = isTrashMonto ? "" : rawIn;
   const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
   // Tolerancia retro: si una versión vieja inyectó el literal en el campo de monto, lo normalizamos al flag.
   const esIndeterminadaLegacy = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
