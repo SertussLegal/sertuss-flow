@@ -16,16 +16,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock de pdfjs-dist ─────────────────────────────────────────────────
+// El baseViewport (scale=1) se lee de __basePt para poder simular tamaños
+// reales de página (Carta 612×792, Oficio 612×936, etc.) en los tests de
+// calibración de DPI. Default 800×1000 para no romper tests preexistentes.
 vi.mock("pdfjs-dist", () => {
   const makePage = (n: number) => ({
-    getViewport: ({ scale }: { scale: number }) => ({
-      width: 800 * scale,
-      height: 1000 * scale,
-    }),
+    getViewport: ({ scale }: { scale: number }) => {
+      const base = (globalThis as any).__basePt ?? { w: 800, h: 1000 };
+      return { width: base.w * scale, height: base.h * scale };
+    },
     render: () => ({
       promise: (async () => {
-        // Emula "pintar" cambiando el color de fondo del canvas actual.
-        // El test controla qué píxeles devolvería getImageData vía __setPagePixel.
         (globalThis as any).__lastRenderedPage = n;
       })(),
     }),
@@ -44,6 +45,7 @@ vi.mock("pdfjs-dist", () => {
     }),
   };
 });
+
 
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "" }));
 
