@@ -59,16 +59,52 @@ export class EmptyCanvasError extends Error {
   }
 }
 
-/** Umbral mínimo razonable para un JPEG con contenido real a 1600px lado mayor. */
+/**
+ * Se lanza cuando el documento completo huele a placeholder: todas (o casi
+ * todas) las páginas producen JPEGs de tamaño idéntico. Es el fingerprint
+ * exacto del incidente 748f3220 (28 páginas × 12192 bytes) y de los 3
+ * casos históricos (0443d2f1, 0e80553d, 4b05d210). Un poder real de 20+
+ * páginas tiene siempre variación de tamaño ≥ ±10% entre páginas.
+ */
+export class UniformDocumentError extends Error {
+  constructor(
+    public totalPages: number,
+    public duplicatedPages: number,
+    public sampleSize: number,
+  ) {
+    super(
+      `Documento sospechoso: ${duplicatedPages}/${totalPages} páginas comparten el mismo ` +
+        `tamaño exacto (~${sampleSize} bytes). Probable render fallido/placeholder. ` +
+        `Vuelve a intentar la carga o usa un escáner distinto.`,
+    );
+    this.name = "UniformDocumentError";
+  }
+}
+
+/** Piso absoluto por página. Cualquier JPEG por debajo es basura garantizada. */
 const MIN_JPEG_BYTES = 1500;
 
 /**
- * Por encima de este tamaño consideramos que el render sí pintó contenido
- * "sustancial", aunque el muestreo dé uniforme. El bug histórico producía
- * ~12 KB en TODAS las páginas por igual; una página escueta legítima
- * (encabezado, firma) queda por debajo. Ver detección de duplicados abajo.
+ * Umbral "sano" por página a 1600px lado mayor.
+ * Datos reales observados en producción (auditoría 2026-07):
+ *   - Poderes/escrituras legítimas: 158 KB – 358 KB por página.
+ *   - Placeholder bug: 12192 bytes exactos en todas las páginas.
+ * A 30000 bytes atrapamos el caso 12192 con margen amplio (>2×) sin
+ * arriesgar falsos positivos contra la página más liviana vista en
+ * documentos reales (158 KB).
  */
-const HEALTHY_JPEG_BYTES = 8000;
+const HEALTHY_JPEG_BYTES = 30_000;
+
+/**
+ * Umbral para "documento uniforme": si ≥90% de páginas tienen el mismo tamaño
+ * EXACTO en bytes, es placeholder. Un PDF real jamás produce esto — hasta
+ * dos páginas visualmente casi idénticas difieren por metadatos JPEG.
+ * Solo se aplica si el documento tiene ≥3 páginas (con 1-2 páginas la
+ * coincidencia no es señal).
+ */
+const UNIFORM_DOC_MIN_PAGES = 3;
+const UNIFORM_DOC_THRESHOLD = 0.9;
+
 
 /**
  * Muestrea una grilla de 5x5 (25 puntos). Devuelve `true` si ≥80% comparten
@@ -185,5 +221,32 @@ export async function pdfToImages(
   await pdf.cleanup();
   await pdf.destroy();
 
+  // Detección de "documento uniforme": placeholder de todas las páginas.
+  // Agrupa por tamaño EXACTO; si ≥90% caen en el mismo tamaño y hay ≥3
+  // páginas, aborta el upload completo. Log ruidoso a consola con toda la
+  // información forense para poder correlacionar en Sentry/activity_logs.
+  if (out.length >= UNIFORM_DOC_MIN_PAGES) {
+    const bySize = new Map<number, number>();
+    for (const p of out) bySize.set(p.size, (bySize.get(p.size) ?? 0) + 1);
+    let topSize = 0;
+    let topCount = 0;
+    for (const [s, c] of bySize) {
+      if (c > topCount) {
+        topCount = c;
+        topSize = s;
+      }
+    }
+    const ratio = topCount / out.length;
+    if (ratio >= UNIFORM_DOC_THRESHOLD) {
+      console.error(
+        `[pdfToImages] DOCUMENTO UNIFORME rechazado: ${topCount}/${out.length} ` +
+          `páginas con tamaño idéntico (${topSize} bytes). Fingerprint sizes=`,
+        out.map((p) => p.size),
+      );
+      throw new UniformDocumentError(out.length, topCount, topSize);
+    }
+  }
+
   return out;
 }
+

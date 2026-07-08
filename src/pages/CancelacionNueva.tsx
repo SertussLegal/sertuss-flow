@@ -11,7 +11,7 @@ import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDropzone } from "@/components/shared/FileDropzone";
-import { pdfToImages } from "@/lib/pdfToImages";
+import { pdfToImages, UniformDocumentError, EmptyCanvasError } from "@/lib/pdfToImages";
 import * as pdfjs from "pdfjs-dist";
 
 const BANCO_FIJO = "Banco Davivienda S.A.";
@@ -34,7 +34,7 @@ const StepNumber = ({ n }: { n: number }) => (
 export const CancelacionNueva = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { activeOrgId, refreshCredits } = useAuth();
+  const { activeOrgId, refreshCredits, user } = useAuth();
 
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
@@ -247,6 +247,41 @@ export const CancelacionNueva = () => {
       navigate(`/cancelaciones/${cancelacionId}/validar`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+
+      // Rechazo por calidad del documento: JPEGs uniformes/placeholder.
+      // Registro RUIDOSO en activity_logs para que quede evidencia (a
+      // diferencia del caso 748f3220 donde el placeholder pasó silencioso).
+      // No redirigimos al validador porque no hay input procesable.
+      if (err instanceof UniformDocumentError || err instanceof EmptyCanvasError) {
+        try {
+          await supabase.from("activity_logs").insert([{
+            organization_id: activeOrgId,
+            user_id: user?.id ?? "00000000-0000-0000-0000-000000000000",
+            action: "pdf_quality_rejected",
+            entity_type: "cancelacion",
+            entity_id: cancelacionId ?? undefined,
+            metadata: {
+              error_name: err.name,
+              message: msg,
+              total_pages: err instanceof UniformDocumentError ? err.totalPages : undefined,
+              duplicated_pages: err instanceof UniformDocumentError ? err.duplicatedPages : undefined,
+              sample_size: err instanceof UniformDocumentError ? err.sampleSize : undefined,
+              page_number: err instanceof EmptyCanvasError ? err.pageNumber : undefined,
+            },
+          }]);
+        } catch (logErr) {
+          console.error("[CancelacionNueva] Falló activity_logs de pdf_quality_rejected", logErr);
+        }
+        toast.error("Documento ilegible", {
+          description:
+            "El PDF no se procesó correctamente (páginas en blanco o corruptas). " +
+            "Vuelve a intentar la carga o usa un escáner distinto.",
+        });
+        setSaving(false);
+        setStepLabel("");
+        return;
+      }
+
       // Hallazgo 1+4: si el borrador llegó a crearse, llevamos al usuario al
       // validador en lugar de dejarlo varado en la pantalla de subida con un
       // toast genérico. Allí el polling le mostrará el estado real.
@@ -264,6 +299,7 @@ export const CancelacionNueva = () => {
       setStepLabel("");
     }
   };
+
 
   return (
     <div className="min-h-screen bg-muted/30">
