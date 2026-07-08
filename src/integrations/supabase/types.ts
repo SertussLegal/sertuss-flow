@@ -167,6 +167,9 @@ export type Database = {
           organization_id: string
           poder_adjuntado: boolean
           prosa_apoderado_override: Json | null
+          revision_manual_confirmada_at: string | null
+          revision_manual_confirmada_por: string | null
+          revision_manual_requerida: boolean
           status: string
           updated_at: string
           url_certificado_generado: string | null
@@ -198,6 +201,9 @@ export type Database = {
           organization_id: string
           poder_adjuntado?: boolean
           prosa_apoderado_override?: Json | null
+          revision_manual_confirmada_at?: string | null
+          revision_manual_confirmada_por?: string | null
+          revision_manual_requerida?: boolean
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
@@ -229,6 +235,9 @@ export type Database = {
           organization_id?: string
           poder_adjuntado?: boolean
           prosa_apoderado_override?: Json | null
+          revision_manual_confirmada_at?: string | null
+          revision_manual_confirmada_por?: string | null
+          revision_manual_requerida?: boolean
           status?: string
           updated_at?: string
           url_certificado_generado?: string | null
