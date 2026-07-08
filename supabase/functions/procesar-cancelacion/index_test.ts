@@ -269,3 +269,59 @@ Deno.test("PODER-4) prompts: no queda 'null si es ilegible' para campos del apod
   const okCount = (SRC.match(/OMITE el campo si es ilegible/g) || []).length;
   assert(okCount >= 8, `esperaba >=8 ocurrencias de 'OMITE el campo si es ilegible', hubo ${okCount}`);
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// A5 — Segregación tabla SNR: tags *_hipoteca_* SIEMPRE desde
+// data.hipoteca_anterior; NUNCA desde notaria_emisora.numero_escritura_nueva.
+// Blindaje contra la regresión histórica de mayo/2026 en que Lovable
+// interpretó la tabla "DATOS DE LA ESCRITURA PÚBLICA" como escritura
+// nueva vacía en lugar de datos de la hipoteca a cancelar.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("A5-1) tabla SNR: 6 tags se pueblan desde hipoteca_anterior", () => {
+  const data = minimalData({
+    numero_escritura_hipoteca: "559",
+    fecha_escritura_hipoteca: "15/02/2019",
+    notaria_hipoteca: "NOTARIA 21 DE BOGOTA",
+  });
+  const vars = buildDocxVars(data);
+  // deno-lint-ignore no-explicit-any
+  const v = vars as any;
+  assertEquals(v.numero_escritura_hipoteca_corto, "0559");
+  assertEquals(v.fecha_escritura_hipoteca_dia, "15");
+  assertEquals(v.fecha_escritura_hipoteca_mes, "02");
+  assertEquals(v.fecha_escritura_hipoteca_ano, "2019");
+  assertEquals(v.notaria_hipoteca_numero, "0021");
+  assertStringIncludes(String(v.ciudad_hipoteca), "BOGOTA");
+});
+
+Deno.test("A5-2) tabla SNR: escritura_nueva poblada NO contamina tags *_hipoteca_*", () => {
+  const data = minimalData({
+    numero_escritura_hipoteca: "559",
+    fecha_escritura_hipoteca: "15/02/2019",
+    notaria_hipoteca: "NOTARIA 21 DE BOGOTA",
+  });
+  // Simula futuro en que la escritura nueva ya se numeró antes de generar.
+  data.notaria_emisora = {
+    numero_escritura_nueva: "9999",
+    fecha_otorgamiento_nueva: "31/12/2099",
+    notaria_emisora_numero: "77",
+    notaria_emisora_ciudad: "MEDELLIN",
+  };
+  const vars = buildDocxVars(data);
+  // deno-lint-ignore no-explicit-any
+  const v = vars as any;
+  // Tabla SNR intacta (hipoteca anterior)
+  assertEquals(v.numero_escritura_hipoteca_corto, "0559");
+  assertEquals(v.fecha_escritura_hipoteca_dia, "15");
+  assertEquals(v.fecha_escritura_hipoteca_mes, "02");
+  assertEquals(v.fecha_escritura_hipoteca_ano, "2019");
+  assertEquals(v.notaria_hipoteca_numero, "0021");
+  assertStringIncludes(String(v.ciudad_hipoteca), "BOGOTA");
+  // Y los tags de escritura nueva viven en su propio conjunto, sin cruzarse.
+  assertEquals(v.numero_escritura_nueva, "9999");
+  assert(!String(v.numero_escritura_hipoteca_corto).includes("9999"));
+  assert(!String(v.notaria_hipoteca_numero).includes("0077"));
+  assert(!/MEDELLIN/i.test(String(v.ciudad_hipoteca)));
+});
+
