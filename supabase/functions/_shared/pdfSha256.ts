@@ -28,7 +28,7 @@ export async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string
  * Para el caso "no tengo el PDF original sino solo las páginas JPEG":
  * concatena los blobs ordenados por nombre y hace SHA-256 del resultado.
  * Es estable mientras las páginas se nombren consistentemente
- * (p01.jpg, p02.jpg, ...). Esto reproduce la huella del MISMO PDF subido
+ * (p01.png, p02.png, ...). Esto reproduce la huella del MISMO PDF subido
  * dos veces por el flujo `pdfToImages` con el mismo `maxPages`.
  */
 export async function sha256OfOrderedBlobs(blobs: Uint8Array[]): Promise<string> {

@@ -1,20 +1,30 @@
 /**
- * Renderiza páginas de un PDF a JPEGs en serie, liberando memoria agresivamente
- * página a página para evitar OOM en el cliente con escrituras grandes.
+ * Renderiza páginas de un PDF a imágenes PNG binarizadas (blanco/negro puro)
+ * en serie, liberando memoria agresivamente página a página para evitar OOM
+ * en el cliente con escrituras grandes.
  *
  * Solo procesa las primeras `maxPages` páginas — para cancelaciones de hipoteca
  * Davivienda eso es suficiente (cuantía, deudores, banco, matrícula y cláusulas
  * residen en las primeras hojas).
  *
- * P1 (2026-07): endurecido contra el bug de "JPEGs uniformes de placeholder".
+ * 2026-07 — Migración JPEG → PNG binarizado:
+ * Los escaneos notariales colombianos vienen de fotocopiadoras CCITT Group 4
+ * (bitonal de fábrica). Codificarlos como JPEG q0.82 pesaba ~1.35 MB/pág.
+ * (37.86 MB en 28 páginas → 413 en AI Gateway, límite 30 MB). Binarizar por
+ * umbral de luma (Rec. 601) + PNG deflate reduce el mismo documento a
+ * ~223 KB/pág. (~6.3 MB total) manteniendo maxDimension=2600 (~200 DPI), con
+ * bordes de glifos más nítidos (sin ringing JPEG). Validado empíricamente
+ * sobre Escritura 16.390 (28 páginas).
+ *
+ * P1 (2026-07): endurecido contra el bug de "imágenes uniformes de placeholder".
  * En pdfjs-dist ≥4/5 la firma de `page.render` ya no acepta un 3.er param
  * `canvas`; pasarlo hacía que el render resolviera sin pintar y `toBlob`
- * generaba 25 JPEGs blancos idénticos (~12 KB c/u). Ahora:
+ * generaba imágenes blancas idénticas (~12 KB c/u). Ahora:
  *   1) Firma correcta `{ canvasContext, viewport }`.
  *   2) try/catch por página con `PdfPageRenderError` explícito.
  *   3) Muestreo de píxel post-render → `EmptyCanvasError` si el canvas quedó
- *      uniforme (blanco/negro).
- *   4) Asserción de tamaño mínimo (<3 KB = placeholder sospechoso).
+ *      uniforme (blanco/negro) Y el blob es sospechosamente pequeño.
+ *   4) Asserción de tamaño mínimo absoluto (placeholder sospechoso).
  */
 import * as pdfjs from "pdfjs-dist";
 // El worker se sirve estáticamente desde node_modules vía Vite
@@ -43,9 +53,9 @@ export interface PdfToImagesOptions {
    */
   maxDimension?: number;
   /**
-   * Calidad JPEG entre 0 y 1 (default 0.82). Subida desde 0.75 para preservar
-   * los bordes de glifos pequeños que Gemini/Claude tokenizan; costo marginal
-   * en bytes (~+10%).
+   * @deprecated 2026-07 — La ruta activa codifica PNG lossless binarizado
+   * (blanco/negro puro) y ya no acepta parámetro de calidad. Se mantiene en
+   * la firma pública para no romper callers; su valor se ignora.
    */
   jpegQuality?: number;
 }
@@ -61,7 +71,7 @@ const MAX_UPSCALE = 3;
 export interface RenderedPage {
   pageNumber: number;
   blob: Blob;
-  /** Tamaño aproximado del JPEG en bytes. */
+  /** Tamaño del PNG resultante en bytes. */
   size: number;
 }
 
@@ -88,7 +98,7 @@ export class EmptyCanvasError extends Error {
 
 /**
  * Se lanza cuando el documento completo huele a placeholder: todas (o casi
- * todas) las páginas producen JPEGs de tamaño idéntico. Es el fingerprint
+ * todas) las páginas producen imágenes de tamaño idéntico. Es el fingerprint
  * exacto del incidente 748f3220 (28 páginas × 12192 bytes) y de los 3
  * casos históricos (0443d2f1, 0e80553d, 4b05d210). Un poder real de 20+
  * páginas tiene siempre variación de tamaño ≥ ±10% entre páginas.
@@ -108,26 +118,49 @@ export class UniformDocumentError extends Error {
   }
 }
 
-/** Piso absoluto por página. Cualquier JPEG por debajo es basura garantizada. */
-const MIN_JPEG_BYTES = 1500;
+/**
+ * Umbral de binarización sobre luma Rec. 601 (0–255).
+ * Píxeles con luma >= threshold → blanco puro; el resto → negro puro.
+ * Valor validado empíricamente por el owner sobre escaneos notariales
+ * CCITT Group 4. Subirlo elimina grises tenues y sellos claros (pierde
+ * información); bajarlo conserva grises pero infla el PNG e introduce
+ * ruido de fondo del escáner. 180 balancea legibilidad OCR + compresión.
+ */
+const BINARIZATION_THRESHOLD = 180;
+
+/**
+ * Piso absoluto por página, independiente del muestreo de uniformidad.
+ * Cualquier PNG por debajo indica stream truncado/corrupto o canvas de
+ * dimensiones cero. Referencia empírica: PNG RGBA de blanco puro a
+ * 1836×2376 px = 22,234 B — un blob <5 KB es físicamente imposible bajo
+ * funcionamiento normal.
+ */
+const MIN_IMAGE_BYTES = 5_000;
 
 /**
  * Umbral "sano" por página al `maxDimension` por defecto (2600 px).
- * Datos reales observados en producción (auditoría 2026-07, entonces a 1600 px):
- *   - Poderes/escrituras legítimas: 158 KB – 358 KB por página.
- *   - Placeholder bug: 12192 bytes exactos en todas las páginas.
- * A 2600 px + q0.82 los tamaños suben aún más (400 KB – 950 KB densos), por
- * lo que 30000 bytes sigue siendo un piso conservador que atrapa el caso
- * 12192 con >2× de margen sin generar falsos positivos contra páginas
- * legítimamente ligeras.
+ * Combinado con `isCanvasUniform=true` dispara `EmptyCanvasError`.
+ *
+ * Distribución empírica medida (PNG binarizado RGBA a 1836×2376):
+ *   - Blanco puro (placeholder canvas vacío): 22,234 B
+ *   - Portada escueta (título + 3 líneas + firma): 28,646 B
+ *   - Página de firmas (5 renglones): 33,062 B
+ *   - Página densa (60 líneas texto notarial): 135,112 B
+ *   - Página densa real (Escritura 16.390): ~223,000 B promedio
+ *
+ * 40,000 B da +17.8 KB de holgura sobre placeholder (80% headroom) y
+ * queda por debajo del contenido legítimo mínimo esperado. Además, la
+ * conjunción con `isCanvasUniform` (≥80% de 25 muestras iguales) hace
+ * que sparse legítimo (28–33 KB) no caiga aquí — su título/firma
+ * quiebran el muestreo.
  */
-const HEALTHY_JPEG_BYTES = 30_000;
+const HEALTHY_IMAGE_BYTES = 40_000;
 
 
 /**
  * Umbral para "documento uniforme": si ≥90% de páginas tienen el mismo tamaño
- * EXACTO en bytes, es placeholder. Un PDF real jamás produce esto — hasta
- * dos páginas visualmente casi idénticas difieren por metadatos JPEG.
+ * EXACTO en bytes, es placeholder. PNG deflate es determinista bit-a-bit —
+ * dos páginas realmente distintas jamás producen el mismo tamaño exacto.
  * Solo se aplica si el documento tiene ≥3 páginas (con 1-2 páginas la
  * coincidencia no es señal).
  */
@@ -163,6 +196,24 @@ function isCanvasUniform(ctx: CanvasRenderingContext2D, w: number, h: number): b
   if (sampled === 0) return false;
   const maxSame = Math.max(...counts.values());
   return maxSame / sampled >= 0.8;
+}
+
+/**
+ * Binariza `imageData` in-place: cada píxel se convierte en blanco puro
+ * (255,255,255,255) o negro puro (0,0,0,255) según su luma Rec. 601
+ * (Y = 0.299·R + 0.587·G + 0.114·B) comparada contra `threshold`.
+ * Función pura sobre el buffer; no reasigna `imageData.data`.
+ */
+function binarizeImageData(imageData: ImageData, threshold: number): void {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const v = luma >= threshold ? 255 : 0;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+    data[i + 3] = 255;
+  }
 }
 
 export async function pdfToImages(
@@ -205,33 +256,44 @@ export async function pdfToImages(
 
       const uniform = isCanvasUniform(ctx, canvas.width, canvas.height);
 
+      // Binarización in-place: luma Rec. 601 → blanco/negro puro antes de
+      // codificar PNG. Reduce el peso 5–10× frente a JPEG q0.82 en escaneos
+      // notariales bitonales y elimina ringing de compresión en bordes de
+      // glifos pequeños (cédulas, matrículas, firmas).
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      binarizeImageData(imageData, BINARIZATION_THRESHOLD);
+      ctx.putImageData(imageData, 0, 0);
+
+      // `jpegQuality` se ignora deliberadamente: PNG es lossless (ver
+      // JSDoc @deprecated en PdfToImagesOptions).
+      void jpegQuality;
+
       const blob: Blob = await new Promise((resolve, reject) => {
         canvas!.toBlob(
           (b) => (b ? resolve(b) : reject(new Error(`Página ${i}: toBlob falló`))),
-          "image/jpeg",
-          jpegQuality,
+          "image/png",
         );
       });
 
-      if (blob.size < MIN_JPEG_BYTES) {
+      if (blob.size < MIN_IMAGE_BYTES) {
         throw new Error(
-          `Página ${i}: JPEG sospechosamente pequeño (${blob.size} bytes < ${MIN_JPEG_BYTES}). ` +
-            `Probable placeholder blanco.`,
+          `Página ${i}: imagen sospechosamente pequeña (${blob.size} bytes < ${MIN_IMAGE_BYTES}). ` +
+            `Probable stream truncado o canvas de dimensiones cero.`,
         );
       }
 
-      // Solo abortamos por uniforme si además el JPEG es liviano. El bug
+      // Solo abortamos por uniforme si además el blob es liviano. El bug
       // histórico de placeholders producía canvases uniformes Y pequeños
       // simultáneamente. Una página escueta pero legítima (poco contenido,
-      // márgenes amplios) genera JPEG por encima de HEALTHY_JPEG_BYTES y
+      // márgenes amplios) genera PNG por encima de HEALTHY_IMAGE_BYTES y
       // debe pasar aunque el muestreo la marque como "uniforme".
-      if (uniform && blob.size < HEALTHY_JPEG_BYTES) {
+      if (uniform && blob.size < HEALTHY_IMAGE_BYTES) {
         throw new EmptyCanvasError(i);
       }
       if (uniform) {
         console.warn(
           `[pdfToImages] Página ${i}: muestreo uniforme pero blob de ${blob.size} bytes ` +
-            `(≥ ${HEALTHY_JPEG_BYTES}); se acepta como página escueta legítima.`,
+            `(≥ ${HEALTHY_IMAGE_BYTES}); se acepta como página escueta legítima.`,
         );
       }
 
