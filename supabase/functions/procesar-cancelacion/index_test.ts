@@ -116,7 +116,7 @@ const SRC = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
 Deno.test("8) Schema nomenclatura_predio: ejemplo canónico 59 SUR 60-84 presente", () => {
   assertStringIncludes(
     SRC,
-    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84)",
+    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)",
   );
 });
 
