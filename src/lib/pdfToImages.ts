@@ -172,7 +172,10 @@ export async function pdfToImages(
   const { maxPages = 10, maxDimension = 2600, jpegQuality = 0.82 } = opts;
 
   const buf = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf) });
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buf),
+    wasmUrl: PDFJS_WASM_URL,
+  });
   const pdf = await loadingTask.promise;
   const total = Math.min(pdf.numPages, maxPages);
 
