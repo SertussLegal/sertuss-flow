@@ -86,7 +86,7 @@ export const poderBancoTool = {
                 "'natural' = persona natural firma directamente. 'juridica' = sociedad apoderada con sus propios representantes (cadena de 3 niveles).",
             },
             nombre: { type: "string", description: "Si tipo='natural': nombre completo en MAYÚSCULAS." },
-            cedula: { type: "string", description: "Si tipo='natural': cédula. Solo dígitos." },
+            cedula: { type: "string", description: "Si tipo='natural': cédula. Solo dígitos. Si aparece en el documento pero es ilegible (borrosa/tachada/cortada), devuelve exactamente 'NO_LEGIBLE' en vez de inventar." },
             sociedad_razon_social: { type: "string", description: "Si tipo='juridica': razón social en MAYÚSCULAS. Ej: 'CONECTIVA GLOBAL S.A.S.'" },
             sociedad_nit: { type: "string", description: "Si tipo='juridica': NIT con DV. Ej: '900666582-8'." },
             sociedad_constitucion: {
