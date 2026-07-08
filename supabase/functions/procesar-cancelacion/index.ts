@@ -262,13 +262,13 @@ const tools = [
           },
           poder_banco: {
             type: "object",
-            description: "DEVUELVE este objeto SIEMPRE que el usuario haya adjuntado páginas del Poder. Llénalo con TODOS los campos que puedas confirmar y usa `null` (JSON null, NO cadena vacía '') en cada campo individual ilegible. OMÍTELO completamente SOLO si NO se adjuntó poder. Los datos suelen estar en las cláusulas finales del PDF.",
+            description: "DEVUELVE este objeto SIEMPRE que el usuario haya adjuntado páginas del Poder. Llénalo con TODOS los campos que puedas confirmar y OMITE cada campo individual ilegible (no lo incluyas en el JSON; NO uses la cadena \"null\" ni cadena vacía). OMÍTELO completamente SOLO si NO se adjuntó poder. Los datos suelen estar en las cláusulas finales del PDF.",
             properties: {
               apoderado_nombre: { type: "string", description: "Nombre completo del apoderado / representante legal en MAYÚSCULAS. Si encuentras CUALQUIER nombre de apoderado, devuélvelo." },
-              apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. `null` si es ilegible." },
-              apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. `null` si es ilegible." },
-              apoderado_fecha: { type: "string", description: "Fecha del poder en FORMATO NOTARIAL COMPLETO: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. `null` si es ilegible." },
-              apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. `null` si es ilegible." },
+              apoderado_cedula: { type: "string", description: "Cédula del apoderado, estrictamente numérica con puntos de miles, ej: '79.123.456'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+              apoderado_escritura: { type: "string", description: "Número de escritura del poder en LETRAS Y NÚMEROS, ej: 'DOS MIL CUATROCIENTOS QUINCE (2415)'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+              apoderado_fecha: { type: "string", description: "Fecha del poder en FORMATO NOTARIAL COMPLETO: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
+              apoderado_notaria_poder: { type: "string", description: "Notaría donde se otorgó el poder en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y DOS (32) DE BOGOTA D.C.'. OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")." },
             },
             required: ["apoderado_nombre"],
             additionalProperties: false,
