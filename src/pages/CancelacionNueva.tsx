@@ -34,7 +34,7 @@ const StepNumber = ({ n }: { n: number }) => (
 export const CancelacionNueva = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { activeOrgId, refreshCredits } = useAuth();
+  const { activeOrgId, refreshCredits, user } = useAuth();
 
   const [certificado, setCertificado] = useState<File | null>(null);
   const [escritura, setEscritura] = useState<File | null>(null);
