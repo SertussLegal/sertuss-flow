@@ -39,6 +39,10 @@ export interface PoderBannersV5Props {
   apoderado?: ApoderadoPayload | null;
   /** Callback para persistir apoderado.tipo_override. */
   onSetTipoOverride?: (value: TipoApoderado) => void;
+  /** Warnings de coherencia determinista emitidos por el pipeline (Parte 2). */
+  coherenciaWarnings?: string[] | null;
+  /** Paths de campos sospechosos (para explicar cuáles revisar). */
+  coherenciaSuspicious?: string[] | null;
 }
 
 export function PoderBannersV5({
@@ -49,6 +53,8 @@ export function PoderBannersV5({
   poderAdjuntado,
   apoderado,
   onSetTipoOverride,
+  coherenciaWarnings,
+  coherenciaSuspicious,
 }: PoderBannersV5Props) {
   if (!poderAdjuntado) return null;
 
@@ -66,8 +72,47 @@ export function PoderBannersV5({
     classifier.tipoEfectivo === null &&
     !!onSetTipoOverride;
 
+  const warnings = (coherenciaWarnings || []).filter(Boolean);
+  const suspicious = (coherenciaSuspicious || []).filter(Boolean);
+  const showCoherencia = warnings.length > 0 || suspicious.length > 0;
+
   return (
     <div className="space-y-2">
+      {showCoherencia && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-[12px] leading-snug"
+        >
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-2 flex-1">
+              <p className="font-semibold text-amber-600 dark:text-amber-400">
+                Revisa manualmente los datos del poder
+              </p>
+              <p className="text-foreground/85">
+                El sistema detectó posibles inconsistencias en lo que la IA leyó.
+                Verifica contra el PDF antes de generar el documento final.
+              </p>
+              {warnings.length > 0 && (
+                <ul className="list-disc pl-4 space-y-0.5 text-foreground/85">
+                  {warnings.map((w) => (
+                    <li key={w}>{WARNING_LABELS[w] ?? w}</li>
+                  ))}
+                </ul>
+              )}
+              {suspicious.length > 0 && (
+                <p className="text-[11px] text-foreground/70">
+                  Campos a revisar:{" "}
+                  {suspicious
+                    .map((p) => SUSPICIOUS_FIELD_LABELS[p] ?? p)
+                    .join(" · ")}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showK3 && (
         <div
           role="alert"
