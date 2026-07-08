@@ -2021,6 +2021,13 @@ if (import.meta.main) serve(async (req) => {
       const finalPoder = POWER_V6_EXTRACTOR_ENABLED
         ? mergePoderBancoV6(undefined, dedicated, deepV6)
         : mergePoderBanco(undefined, dedicated);
+      if (finalPoder) {
+        await annotatePoderCoherencia(
+          supabaseService,
+          finalPoder as unknown as Record<string, unknown>,
+          { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
+        );
+      }
       const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
       const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
       const existingFinalPoder = (prevDataFinal.poder_banco ?? {}) as PoderBanco;
