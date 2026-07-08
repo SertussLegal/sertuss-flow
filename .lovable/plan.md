@@ -1,92 +1,101 @@
-# Fase 2 — Contraste dirigido con Claude sobre PDF fuente
+# Auditoría solo-lectura: origen de los JPGs ilegibles del poder
 
-## Reporte de auditoría (evidencia)
+## Respuestas directas a las 5 preguntas
 
-### 1. Integraciones con la API de Anthropic hoy en el proyecto
+### 1) Pipeline completo PDF → JPG
 
-Solo hay **dos** edge functions que hablan directo con `api.anthropic.com`; el resto de menciones a "claude" en `src/` son nombres de archivos legacy (`validacionClaude.ts` stub que solo exporta el tipo `Validacion`) o comentarios.
+**Dónde vive:** todo el pipeline corre **client-side (navegador)**. No hay ninguna conversión server-side.
 
-| Archivo | Línea | Modelo | Estado real |
-|---|---|---|---|
-| `supabase/functions/validar-con-claude/index.ts` | 5, 122, 130 | `claude-sonnet-4-20250514` | **En cuarentena**. Deployado, pero ningún archivo en `src/` lo invoca (`rg` sobre `src/` confirma 0 llamadas a `invoke("validar-con-claude"…)`). Retirado del flujo en vivo, reemplazado por `computeTopIssues` determinista. |
-| `supabase/functions/descubrir-reglas/index.ts` | 19-20, 163 | `claude-sonnet-4-5-20250929` | **Activo, offline**. Invocado manualmente desde `src/components/admin/ReglasPropuestas.tsx:216`. Corridas puntuales (no cron). |
+- **Punto de entrada:** `src/pages/CancelacionNueva.tsx:57`
+  ```ts
+  const pages = await pdfToImages(file, { maxPages });
+  // línea 61: basePath = `${cancelacionId}/cancelaciones/soportes/${kind}`
+  // líneas 63-71: sube `p.blob` como JPEG directamente al bucket expediente-files (upsert)
+  ```
+  Constantes en el mismo archivo (líneas 21-26): `MAX_PODER_BYTES = 40 MB`, `PODER_MAX_PAGES = 50`.
 
-`process-expediente/index.ts` aparece en el grep pero solo por strings/comentarios; usa Gemini vía gateway, no Anthropic (sin `fetch` a `api.anthropic.com`).
+- **Renderizador:** `src/lib/pdfToImages.ts` (líneas 103-189)
+  - Librería: `pdfjs-dist` v5 (import línea 19, worker línea 21)
+  - Config default (líneas 25-32): **`maxDimension = 1600 px`, `jpegQuality = 0.75`, `maxPages = 10`** (para el poder se sobrescribe a 50)
+  - Pipeline por página (líneas 116-183): `getPage → getViewport(scale) → canvas 2D → page.render({canvasContext, viewport, canvas}) → canvas.toBlob('image/jpeg', 0.75)`
+  - Scale calculado (línea 122): `Math.min(2, 1600 / longest_side)` — es decir, downsampling hacia máximo 1600 px lado largo.
 
-`CLAUDE_API_KEY` está presente en `<supabase-configuration>` — no hace falta pedirla al usuario.
+- **Original PDF: NO se persiste.** El código sube directamente los JPGs. No hay ningún `.upload(..., pdfFile)` para el poder. Se pierde inmediatamente al terminar el submit.
 
-### 2. ¿`descubrir-reglas` ve el documento fuente?
+### 2) Caso 748f3220: ¿existe el PDF original?
 
-**No.** `descubrir-reglas/index.ts:145-177` construye un `patternsPayload` que es puro texto/JSON agregado a partir del diff `data_ia` vs `data_final` de `logs_extraccion`, más el catálogo `reglas_validacion`. Se manda como `messages: [{ role: "user", content: userPrompt }]` — un solo bloque de texto. **Claude nunca recibe el PDF ni imágenes**; solo cuenta y redacta patrones ya consolidados por código determinista. Sirve para su rol actual (categorizar patrones), pero es inservible para verificación independiente contra la fuente.
+**No.** Verifiqué el listado completo del bucket para ese `cancelacion_id`:
 
-### 3. ¿Hay acceso al PDF original en el momento del contraste?
+```
+748f3220-…/cancelaciones/soportes/certificado/p01..p03.jpg  (137-358 KB — sanos)
+748f3220-…/cancelaciones/soportes/escritura/p01..p10.jpg    (243-320 KB — sanos)
+748f3220-…/cancelaciones/soportes/poder/p01..p28.jpg        (28 × 12192 bytes exactos — placeholder)
+```
 
-Sí. Los soportes se guardan en el bucket privado `expediente-files` (ver `<storage-buckets>` y `procesar-cancelacion/index.ts:47` `BUCKET_OUTPUT = "expediente-files"`). El mismo `procesar-cancelacion/index.ts:1262` ya usa `storage.from(...).createSignedUrl(path, 60*30)` — el patrón de firma de URL a 30 min ya está resuelto en la función que correría el contraste.
+Solo sobreviven los JPGs derivados. No hay `.pdf` en storage. Recuperar el original desde el usuario es la única opción de "obtener la fuente real" para este caso.
 
-Formato de envío a Claude: la Messages API acepta **PDF nativo** vía bloque `document` con `source.type: "base64"` y `media_type: "application/pdf"` (Sonnet 4/4.5). Alternativa: convertir a imágenes por página y mandarlas como `image` blocks base64. Hoy `scan-document/shared/runGemini.ts:28-32` ya trabaja con base64/data-URI para Gemini — el patrón está en casa, pero es Gemini, no Claude. Para Claude habría que armar el bloque `document` correcto (no está hecho hoy en ningún lado).
+### 3) ¿Por qué el poder pesa 12192 bytes/pág y los otros documentos no?
 
-### 4. Modelos y referencia de costo/latencia
+**Es el bug documentado en el propio `pdfToImages.ts` (líneas 9-18) que oficialmente estaba "arreglado":**
 
-- `validar-con-claude`: `claude-sonnet-4-20250514`, `max_tokens: 4096`, sin tools (texto libre parseado post-hoc). No hay métricas guardadas en tabla propia; historial estaría en `activity_logs` si se registró, pero la función no reporta tokens.
-- `descubrir-reglas`: `claude-sonnet-4-5-20250929`, `max_tokens: 8192`, con `tool_choice` forzado. **Sí** guarda `tokens_input`, `tokens_output`, `costo_estimado_usd`, `tiempo_ms` en `regla_propuesta_run` (líneas 111-122). Esa tabla es la única referencia real de costo/latencia que existe en el proyecto para llamadas a Claude, pero es sobre payloads de texto — no comparable directo con PDF multimodal, que es más caro por página.
+> "En pdfjs-dist ≥4/5 la firma de `page.render` ya no acepta un 3.er param `canvas`; pasarlo hacía que el render resolviera sin pintar y `toBlob` generaba **25 JPEGs blancos idénticos (~12 KB c/u)**"
 
-### 5. Veredicto de factibilidad
+Los 28 JPGs del caso 748f3220 tienen tamaño **exactamente 12192 bytes** — la firma del bug histórico. El fix en línea 135 (`page.render({ canvasContext: ctx, viewport, canvas })`) sí pasa `canvas` como propiedad (lo requerido en v5) — así que el bug _general_ está arreglado. Pero:
 
-**Es extensión razonable, no integración desde cero.** Lo que ya existe cubre ~70%:
+- **El caso 748f3220 quedó grabado antes o durante alguna regresión** (creado 2026-07-08 14:01, muy reciente). Certificado y escritura pasaron por el mismo `pdfToImages` con éxito en el mismo submit; solo el poder falló → sospechoso: puede ser un caso donde `page.render` resolvió sin pintar solo para ese PDF (PDF cifrado, PDF con XFA, PDF con solo formularios acroform, etc.).
+- **El guard actual NO lo atrapa:** `MIN_JPEG_BYTES = 1500` (línea 63) y `HEALTHY_JPEG_BYTES = 8000` (línea 71). 12192 > ambos umbrales → pasa silencioso. Además la asserción `uniform && blob.size < 8000` (línea 159) no dispara porque 12192 > 8000.
+- **No hay registro de error:** en `activity_logs` solo aparece la fila `MANUAL_REVIEW_REQUIRED_RETRO` de hoy (auditoría de warnings), no hay log de fallo de renderización para este trámite. `logs_extraccion` no tiene columna de mensaje/status; solo `data_ia`/`data_final` y no hay fila para esta cancelación. **El fallo silencioso es el problema.**
 
-Ya está resuelto:
-- Credencial `CLAUDE_API_KEY` en secretos.
-- Patrón de llamada a `api.anthropic.com/v1/messages` con `tool_choice` forzado (`descubrir-reglas/index.ts:163-183`) — reutilizable tal cual, cambiando el schema del tool y el payload.
-- Firma de URLs de bucket privado (`procesar-cancelacion/index.ts:1262`).
-- Bus `credits:blocked` + `consume_credit_v2` para cobrar la acción nueva.
+**Segundo hallazgo colateral no menor:** al buscar `p01.jpg` bajo todos los poderes, encontré **9 cancelaciones distintas con exactamente el mismo tamaño 274 568 bytes** para su `p01.jpg`. Byte-idénticos entre trámites no es imposible pero es sospechoso — puede indicar que también son un placeholder (un fondo escaneado repetido) o un patrón de bug distinto. Pendiente confirmar si es coincidencia por escaneado de la misma plantilla del banco o un segundo bug de raíz.
 
-Lo que **falta construir**:
-- Descarga del PDF firmado + codificación base64 dentro de la edge function (Deno) para armar el bloque `document` de Anthropic. No hay ningún edge function que lo haga hoy — todo el multimodal actual va contra Gemini vía gateway, no directo a Anthropic.
-- Schema del tool `emit_verificacion` (probablemente `{ campo, valor_gemini, coincide: bool, cita_literal_pdf, confianza }` por cada campo verificado).
-- Prompt notarial específico ("mira este PDF, ¿el apoderado se llama X con cédula Y? Cita textual").
-- Precio en `credit_prices` (skill `pricing-creditos-sertuss` obligatorio antes de tocarlo — mem://index).
-- Conexión con `detectRequiereRevisionManual` (mismo hook que se acaba de conectar para `_coherencia_warnings`) para que `coincide=false` con confianza alta dispare hard-block.
-- Registro de tokens/costo (imitar `regla_propuesta_run`) para monitoreo real de gasto multimodal.
+### 4) ¿Qué ve Gemini?
 
-Riesgo mayor y no resuelto: **PDFs pesados**. Un certificado de tradición escaneado puede pasar de 5 MB; la Messages API limita PDF a 32 MB y 100 páginas por request, pero el costo escala con páginas. Habrá que decidir si mandamos el PDF entero o solo la(s) página(s) relevante(s) (p.ej. la carátula del poder para verificar identidad del apoderado). Hoy no tenemos código que sepa recortar páginas.
+**Los mismos JPGs, sin fallback a fuente nativa.** Evidencia: `supabase/functions/procesar-cancelacion/index.ts` líneas 2206-2224:
 
----
+```ts
+const poderPrefix = `${cancelacionId}/cancelaciones/soportes/poder`;
+const { data: poderFiles } = await supabaseService.storage.from(BUCKET_OUTPUT).list(poderPrefix);
+const poderPaths = poderFiles.filter(...jpe?g).sort().map(f => `${poderPrefix}/${f.name}`);
+const poderUrls = await Promise.all(poderPaths.map(p => createSignedStorageUrl(supabaseService, p)));
+// → extractPoderBancoDedicado(poderUrls, LOVABLE_API_KEY_RP)
+```
 
-## Plan propuesto (a ejecutar solo tras aprobación)
+Es el mismo listado que consume `verificar-con-claude`. **Si el JPG es placeholder de 12 KB, Gemini también lo ve blanco.** Que Gemini haya devuelto identidad completa "MARIA FERNANDA PINZON ALVARADO / 52310103" con esa entrada solo puede explicarse como alucinación pura (sin fuente que soporte esos valores) o como reciclaje de un contexto previo. Esto confirma la hipótesis original de la auditoría anterior: **Gemini fabrica en vez de fallar cuando la fuente está vacía.**
 
-Trabajo dividido en **3 hitos** para poder abortar entre uno y otro si el costo real no cierra.
+### 5) Viabilidad de un quality gate al origen
 
-### Hito 1 — Prueba de concepto acotada: identidad del apoderado en `poder_banco`
+**Es viable y no es caro.** Ya existe la infraestructura (`pdfToImages.ts` tiene guardias, solo mal calibradas). Cuatro chequeos posibles, ordenados por costo/beneficio:
 
-Un único campo de alto valor probatorio, un único documento fuente (el PDF del poder bancario), sin tocar el flujo en vivo todavía.
+| # | Chequeo | Dónde | Costo | Detecta caso 748f3220 |
+|---|---|---|---|---|
+| A | Subir `HEALTHY_JPEG_BYTES` a ~30 KB para poderes (páginas reales scan quedan >100 KB) | `pdfToImages.ts:71` u opción por-doc | trivial (1 línea) | **Sí** (12 KB < 30 KB) |
+| B | Rechazar si **todas** las páginas tienen ±1% mismo tamaño (placeholder replica) | nuevo, en `CancelacionNueva.tsx` post-render pre-upload | 5-10 líneas | **Sí** (28 páginas exactas 12192) |
+| C | SHA-256 por página + rechazar si ≥60% son iguales entre sí | usa `pdfSha256.ts` que ya existe | 10-15 líneas | **Sí** (todas idénticas) |
+| D | Server-side post-upload: edge trigger que valide antes de habilitar `procesar-cancelacion` | nuevo, más invasivo | mayor | **Sí**, pero tarde |
 
-1. Nuevo edge function `verificar-con-claude` (misma cuarentena que `descubrir-reglas`: sin cron, invocable manualmente desde una acción admin en una cancelación existente).
-2. Recibe `{ cancelacion_id }`. Lee `cancelaciones.data_ia->poder_banco->apoderado_nombre / apoderado_cedula` y el `expediente_files` correspondiente al poder.
-3. Firma URL 30 min, descarga PDF, base64.
-4. Llama a `claude-sonnet-4-5-20250929` con bloque `document` + tool `emit_verificacion_identidad` (schema: `{ nombre_coincide, cedula_coincide, cita_literal, confianza: "alta"|"media"|"baja" }`).
-5. Guarda resultado en columna nueva `cancelaciones.claude_verificacion_poder jsonb` (migración con GRANTs). **No** dispara hard-block todavía — solo se muestra en UI admin de auditoría.
-6. Registra `tokens_input/output/costo_usd/tiempo_ms` en tabla nueva `verificacion_run` (mismo modelo que `regla_propuesta_run`, con GRANTs y RLS solo authenticated + platform_admin).
-7. Métrica de éxito antes de pasar a Hito 2: correr sobre las 7 cancelaciones ya marcadas + 20 aleatorias; medir tasa de "coincide=false" real y costo por corrida.
+Recomendación técnica: combinar **A + B** (client-side, antes del upload, antes de cobrar créditos). Es el punto más barato del pipeline. Server-side (D) solo tiene sentido como red de seguridad si nos preocupa un cliente adversarial saltándose validación client-side, lo cual no aplica hoy (el `unlock_expediente` cobra 2 créditos, no un flujo con adversario).
 
-### Hito 2 — Ampliar a dirección de inmueble y cuantía
+## Recomendación operativa (no implementación)
 
-Solo si Hito 1 muestra tasa de detección útil (≥1 alucinación real detectada) y costo aceptable (<10¢ por documento).
+Antes de invertir en Hito 2 (extender `verificar-con-claude`) tiene más sentido cerrar la fuente:
 
-1. Extender schema del tool a los 3 campos (identidad apoderado, dirección predio vs certificado tradición, cuantía vs escritura de hipoteca).
-2. Se llama **una vez por documento fuente** (poder → identidad; certificado tradición → dirección; escritura hipoteca → cuantía), no una vez por campo. Máximo 3 llamadas por cancelación.
-3. Sigue en modo "auditoría, no bloqueo".
+1. **Fix del origen (A+B):** endurece el gate en `pdfToImages.ts` para que 12 KB uniformes NO lleguen al bucket. Costo: ~30 min de código + tests. Elimina el 100% de casos como 748f3220 desde el momento del upload.
+2. **Reproceso retroactivo:** para las cancelaciones ya afectadas (748f3220 y las 9 con p01 de 274 568 sospechoso), tocará re-subir el poder desde el usuario — el PDF original no existe.
+3. **Después** decidir si Hito 2 sigue valiendo la pena: si el gate cierra el 90% de la alucinación por-fuente-vacía, el ROI de contrastar con Claude a $0.10/caso baja bastante.
 
-### Hito 3 — Integración con hard-block
+## Detalles técnicos (referencia)
 
-Solo tras aprobación explícita de un lote piloto revisado por Alejandra o dueño de producto.
+- `src/pages/CancelacionNueva.tsx` líneas 21-26, 50-73, 106-128 (upload + validación previa).
+- `src/lib/pdfToImages.ts` líneas 25-100 (config + `isCanvasUniform`), 103-189 (loop principal).
+- `supabase/functions/procesar-cancelacion/index.ts` líneas 2199-2260 (reprocess_poder), 2358 (escritura), 2563 (comentario convención bucket).
+- `supabase/functions/verificar-con-claude/index.ts` líneas 213-236 (consume las mismas rutas).
+- Guardias existentes (calibradas bajo): `MIN_JPEG_BYTES=1500`, `HEALTHY_JPEG_BYTES=8000`. Caso real observado: **12192 bytes uniformes** → pasa.
+- Bucket `expediente-files` (privado), convención `<id>/cancelaciones/soportes/<kind>/pXX.jpg`, sin retención del PDF original.
+- Cliente pdfjs-dist v5 con el bug de render histórico ya parcheado en firma, pero sin defensa contra "resolvió sin pintar" en casos borde (PDFs XFA, cifrados, corruptos).
 
-1. Conectar `claude_verificacion_*.coincide === false && confianza === "alta"` con `detectRequiereRevisionManual` (mismo hook ya conectado para `_coherencia_warnings`).
-2. Consultar skill `pricing-creditos-sertuss` para asignar precio en `credit_prices` (acción nueva `VERIFICACION_CLAUDE`), cobrar vía `consume_credit_v2`.
-3. Botón UI en `PoderBannersV5.tsx` estilo "Verificar con IA independiente" opt-in, no automático en cada cancelación (control de costo).
-4. Documentar en memoria (`mem://tech/verificacion-claude-multimodal`) que Claude ahora sí ve el PDF, pero solo en flujo bajo demanda, nunca síncrono con generación.
+## Qué NO se hizo en esta auditoría (por diseño)
 
-## Preguntas al usuario antes de codear
-
-1. ¿Arrancamos por **Hito 1 completo** (identidad apoderado, sin bloqueo) o preferís aún más pequeño — literal un script one-shot en una edge que corra sobre 1 cancelación y devuelva el JSON en la respuesta, sin tabla nueva?
-2. ¿PDF completo del poder o solo primera página? La segunda opción baja costo ~5x pero requiere agregar `pdf-lib` o similar a la edge (dependencia nueva).
-3. Para el modelo: ¿mantenemos `claude-sonnet-4-5-20250929` (el que ya usa `descubrir-reglas`) o probamos con `claude-haiku` primero por costo? Haiku 3.5 sí acepta PDF y es ~5x más barato, pero puede fallar en cédulas manuscritas.
+- No se modificó ningún archivo ni migración.
+- No se llamó a Gemini/Claude adicionales.
+- No se descargó el JPG de 12 KB para inspección binaria (podría hacerse en un turno de build si querés confirmar visualmente que es blanco puro vs. degradado).
+- No se buscó una edge/función server-side de conversión — se confirmó por búsqueda exhaustiva que no existe (`rg -n "pdfToImages|soportes/poder"` cubre todo).
