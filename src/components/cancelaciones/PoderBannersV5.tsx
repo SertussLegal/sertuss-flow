@@ -15,7 +15,7 @@
 // ============================================================================
 
 import { AlertTriangle, CheckCircle2, ShieldQuestion, UserRoundCog, ShieldAlert } from "lucide-react";
-import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS } from "@shared/poderBancoExtractor/validate";
+import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS, isHardBlockCoherenciaWarning } from "@shared/poderBancoExtractor/validate";
 import { Button } from "@/components/ui/button";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import {
