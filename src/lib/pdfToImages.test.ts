@@ -73,10 +73,15 @@ function installCanvasMocks(opts: {
     cb: BlobCallback,
   ) {
     const n = (globalThis as any).__lastRenderedPage ?? 1;
+    // Capturamos las dimensiones reales del canvas por página para permitir
+    // aserciones sobre la resolución efectiva (DPI) en los tests.
+    const dims = ((globalThis as any).__canvasDims ??= [] as Array<{ w: number; h: number }>);
+    dims.push({ w: this.width, h: this.height });
     const bytes = new Uint8Array(sizePerPage(n));
     cb(new Blob([bytes], { type: "image/jpeg" }));
   });
 }
+
 
 function makeFile(): File {
   // jsdom no implementa Blob.arrayBuffer; parcheamos en el prototipo una vez.
