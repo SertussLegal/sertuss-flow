@@ -134,9 +134,9 @@ export const poderBancoTool = {
           type: "object",
           description: "Datos de la escritura pública que constituye el poder.",
           properties: {
-            escritura_num: { type: "string", description: "Número de escritura. Solo dígitos. Ej: '16390'." },
-            fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD si se puede inferir." },
-            fecha_texto: { type: "string", description: "Fecha tal como aparece, formato notarial libre." },
+            escritura_num: { type: "string", description: "Número de escritura. Solo dígitos. Ej: '16390'. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'." },
+            fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD si se puede inferir. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'." },
+            fecha_texto: { type: "string", description: "Fecha tal como aparece, formato notarial libre. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'." },
             notaria_numero: { type: "string", description: "Número de notaría. Solo dígitos." },
             notaria_ciudad: { type: "string", description: "Ciudad. MAYÚSCULAS." },
             notario_titular_nombre: { type: "string", description: "Nombre del notario titular. null si no aparece." },
