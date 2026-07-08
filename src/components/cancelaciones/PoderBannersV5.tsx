@@ -14,7 +14,8 @@
 // gobierna sobre las reglas defensivas.
 // ============================================================================
 
-import { AlertTriangle, CheckCircle2, ShieldQuestion, UserRoundCog } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ShieldQuestion, UserRoundCog, ShieldAlert } from "lucide-react";
+import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS } from "@shared/poderBancoExtractor/validate";
 import { Button } from "@/components/ui/button";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import {
