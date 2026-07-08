@@ -5,8 +5,31 @@ import {
   buildDireccionCompletaSaneada,
   buildClausulaPagoHipoteca,
   buildClausulaLimitacionesSubsisten,
+  buildDocxVars,
+  mergeCuantiaIntoExtracted,
   pad4,
 } from "./index.ts";
+
+// Factory mínima para buildDocxVars — sólo campos consumidos en las ramas relevantes.
+// deno-lint-ignore no-explicit-any
+function minimalData(overrides: Record<string, unknown> = {}): any {
+  return {
+    hipoteca_anterior: {
+      numero_escritura_hipoteca: "3866",
+      fecha_escritura_hipoteca: "01/01/2011",
+      notaria_hipoteca: "NOTARIA 72 DE BOGOTA",
+      valor_hipoteca_original: "",
+      valor_hipoteca_es_indeterminada: false,
+      ...(overrides as Record<string, unknown>),
+    },
+    inmueble: { matricula_inmobiliaria: "", ciudad: "BOGOTA D.C.", departamento: "" },
+    partes: { deudor_nombre: "X", deudor_identificacion: "1", deudor_tipo_id: "CC", banco_acreedor: "BANCO DAVIVIENDA S.A.", banco_nit: "860034313-7" },
+    analisis_legal: { aplica_ley_546: false, explicacion_ley: "" },
+    notaria_emisora: {},
+    poder_banco: {},
+  };
+}
+
 
 Deno.test("1) Bogotá: dirección saneada incluye '(DIRECCION CATASTRAL)' una sola vez", () => {
   const out = buildDireccionCompletaSaneada({
