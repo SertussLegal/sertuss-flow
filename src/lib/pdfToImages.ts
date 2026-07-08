@@ -221,5 +221,32 @@ export async function pdfToImages(
   await pdf.cleanup();
   await pdf.destroy();
 
+  // Detección de "documento uniforme": placeholder de todas las páginas.
+  // Agrupa por tamaño EXACTO; si ≥90% caen en el mismo tamaño y hay ≥3
+  // páginas, aborta el upload completo. Log ruidoso a consola con toda la
+  // información forense para poder correlacionar en Sentry/activity_logs.
+  if (out.length >= UNIFORM_DOC_MIN_PAGES) {
+    const bySize = new Map<number, number>();
+    for (const p of out) bySize.set(p.size, (bySize.get(p.size) ?? 0) + 1);
+    let topSize = 0;
+    let topCount = 0;
+    for (const [s, c] of bySize) {
+      if (c > topCount) {
+        topCount = c;
+        topSize = s;
+      }
+    }
+    const ratio = topCount / out.length;
+    if (ratio >= UNIFORM_DOC_THRESHOLD) {
+      console.error(
+        `[pdfToImages] DOCUMENTO UNIFORME rechazado: ${topCount}/${out.length} ` +
+          `páginas con tamaño idéntico (${topSize} bytes). Fingerprint sizes=`,
+        out.map((p) => p.size),
+      );
+      throw new UniformDocumentError(out.length, topCount, topSize);
+    }
+  }
+
   return out;
 }
+
