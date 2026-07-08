@@ -98,7 +98,7 @@ export class EmptyCanvasError extends Error {
 
 /**
  * Se lanza cuando el documento completo huele a placeholder: todas (o casi
- * todas) las páginas producen JPEGs de tamaño idéntico. Es el fingerprint
+ * todas) las páginas producen imágenes de tamaño idéntico. Es el fingerprint
  * exacto del incidente 748f3220 (28 páginas × 12192 bytes) y de los 3
  * casos históricos (0443d2f1, 0e80553d, 4b05d210). Un poder real de 20+
  * páginas tiene siempre variación de tamaño ≥ ±10% entre páginas.
@@ -118,26 +118,49 @@ export class UniformDocumentError extends Error {
   }
 }
 
-/** Piso absoluto por página. Cualquier JPEG por debajo es basura garantizada. */
-const MIN_JPEG_BYTES = 1500;
+/**
+ * Umbral de binarización sobre luma Rec. 601 (0–255).
+ * Píxeles con luma >= threshold → blanco puro; el resto → negro puro.
+ * Valor validado empíricamente por el owner sobre escaneos notariales
+ * CCITT Group 4. Subirlo elimina grises tenues y sellos claros (pierde
+ * información); bajarlo conserva grises pero infla el PNG e introduce
+ * ruido de fondo del escáner. 180 balancea legibilidad OCR + compresión.
+ */
+const BINARIZATION_THRESHOLD = 180;
+
+/**
+ * Piso absoluto por página, independiente del muestreo de uniformidad.
+ * Cualquier PNG por debajo indica stream truncado/corrupto o canvas de
+ * dimensiones cero. Referencia empírica: PNG RGBA de blanco puro a
+ * 1836×2376 px = 22,234 B — un blob <5 KB es físicamente imposible bajo
+ * funcionamiento normal.
+ */
+const MIN_IMAGE_BYTES = 5_000;
 
 /**
  * Umbral "sano" por página al `maxDimension` por defecto (2600 px).
- * Datos reales observados en producción (auditoría 2026-07, entonces a 1600 px):
- *   - Poderes/escrituras legítimas: 158 KB – 358 KB por página.
- *   - Placeholder bug: 12192 bytes exactos en todas las páginas.
- * A 2600 px + q0.82 los tamaños suben aún más (400 KB – 950 KB densos), por
- * lo que 30000 bytes sigue siendo un piso conservador que atrapa el caso
- * 12192 con >2× de margen sin generar falsos positivos contra páginas
- * legítimamente ligeras.
+ * Combinado con `isCanvasUniform=true` dispara `EmptyCanvasError`.
+ *
+ * Distribución empírica medida (PNG binarizado RGBA a 1836×2376):
+ *   - Blanco puro (placeholder canvas vacío): 22,234 B
+ *   - Portada escueta (título + 3 líneas + firma): 28,646 B
+ *   - Página de firmas (5 renglones): 33,062 B
+ *   - Página densa (60 líneas texto notarial): 135,112 B
+ *   - Página densa real (Escritura 16.390): ~223,000 B promedio
+ *
+ * 40,000 B da +17.8 KB de holgura sobre placeholder (80% headroom) y
+ * queda por debajo del contenido legítimo mínimo esperado. Además, la
+ * conjunción con `isCanvasUniform` (≥80% de 25 muestras iguales) hace
+ * que sparse legítimo (28–33 KB) no caiga aquí — su título/firma
+ * quiebran el muestreo.
  */
-const HEALTHY_JPEG_BYTES = 30_000;
+const HEALTHY_IMAGE_BYTES = 40_000;
 
 
 /**
  * Umbral para "documento uniforme": si ≥90% de páginas tienen el mismo tamaño
- * EXACTO en bytes, es placeholder. Un PDF real jamás produce esto — hasta
- * dos páginas visualmente casi idénticas difieren por metadatos JPEG.
+ * EXACTO en bytes, es placeholder. PNG deflate es determinista bit-a-bit —
+ * dos páginas realmente distintas jamás producen el mismo tamaño exacto.
  * Solo se aplica si el documento tiene ≥3 páginas (con 1-2 páginas la
  * coincidencia no es señal).
  */
