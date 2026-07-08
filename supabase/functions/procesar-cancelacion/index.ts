@@ -1291,9 +1291,9 @@ FORMATO DE SALIDA (estricto):
 - apoderado_notaria_poder: 'TREINTA Y DOS (32) DE BOGOTA D.C.'.
 
 ANTI-ALUCINACIÓN:
-- Si un campo individual es humanamente ilegible, devuelve **\`null\` (JSON null, NO cadena vacía '')**.
-- Si encuentras al menos el nombre del apoderado, devuelve el objeto con los demás campos en null cuando no los puedas confirmar.
-- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---' o reconstrucciones inventadas.
+- Si un campo individual es humanamente ilegible, **OMÍTELO del JSON** (no lo incluyas). NO devuelvas la cadena "null" ni cadena vacía "".
+- Si encuentras al menos el nombre del apoderado, devuelve el objeto con los demás campos omitidos cuando no los puedas confirmar.
+- PROHIBIDO devolver 'N/A', 'ilegible', '?', '---', 'null' o reconstrucciones inventadas.
 
 Llama SIEMPRE a la herramienta extract_poder_banco_dedicado.`;
 
