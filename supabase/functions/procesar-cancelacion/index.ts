@@ -1164,7 +1164,71 @@ async function fillTemplate(
   return out;
 }
 
+/**
+ * Helper compartido: genera minuta+certificado a partir de un `CancelacionData`,
+ * sube los .docx al bucket de salida y retorna los paths uploadeados.
+ *
+ * Reusado por:
+ *   1. Flujo normal (heavyWork) — cuando no hay NO_LEGIBLE.
+ *   2. Modo `regen` (re-mapeo docx sin cobrar).
+ *   3. Acción `confirm_manual_review` — desbloqueo post-revisión humana.
+ *
+ * NO actualiza el row de `cancelaciones`. Solo genera+sube y devuelve paths.
+ * El caller decide qué campos escribir (status, url_*, timestamps, etc.).
+ */
+async function generateAndUploadCancelacionDocs(
+  // deno-lint-ignore no-explicit-any
+  supabaseService: any,
+  cancelacionId: string,
+  data: CancelacionData,
+  prosaApoderadoOverride: ProsaApoderadoOverride | null,
+): Promise<{ minutaPath: string; certPath: string }> {
+  const vars = buildDocxVars(data, prosaApoderadoOverride);
+  const minutaTemplate = selectMinutaTemplate(data);
+  const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
+  const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
+
+  const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
+  const certPath = `cancelaciones/${cancelacionId}/certificado.docx`;
+  const { error: upMinErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaPath, minuta, {
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    upsert: true,
+  });
+  if (upMinErr) throw new Error(`Upload minuta: ${upMinErr.message}`);
+  const { error: upCertErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(certPath, certificado, {
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    upsert: true,
+  });
+  if (upCertErr) throw new Error(`Upload certificado: ${upCertErr.message}`);
+  return { minutaPath, certPath };
+}
+
+/**
+ * Detector NO_LEGIBLE post-merge. Inspecciona los 6 paths donde el prompt v7
+ * puede emitir el centinela y decide si la cancelación debe frenar antes de
+ * generar la minuta (Fase E — bloqueo duro con override manual).
+ */
+function detectRequiereRevisionManual(extracted: CancelacionData): {
+  requiere: boolean;
+  paths: string[];
+} {
+  const pb = (extracted.poder_banco || {}) as Record<string, unknown>;
+  const apo = (pb.apoderado || {}) as Record<string, unknown>;
+  const ins = (pb.instrumento_poder || {}) as Record<string, unknown>;
+  const candidates: Array<[string, unknown]> = [
+    ["poder_banco.apoderado_cedula", pb.apoderado_cedula],
+    ["poder_banco.apoderado_escritura", pb.apoderado_escritura],
+    ["poder_banco.apoderado_fecha", pb.apoderado_fecha],
+    ["poder_banco.apoderado.cedula", apo.cedula],
+    ["poder_banco.instrumento_poder.escritura_num", ins.escritura_num],
+    ["poder_banco.instrumento_poder.fecha", ins.fecha],
+  ];
+  const paths = candidates.filter(([, v]) => v === "NO_LEGIBLE").map(([p]) => p);
+  return { requiere: paths.length > 0, paths };
+}
+
 async function createSignedStorageUrl(
+
   // deno-lint-ignore no-explicit-any
   supabase: any,
   path: string,
