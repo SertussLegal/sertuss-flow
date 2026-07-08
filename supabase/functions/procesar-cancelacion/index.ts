@@ -2002,6 +2002,73 @@ if (import.meta.main) serve(async (req) => {
 
   try {
     // ─────────────────────────────────────────────────────────────
+    // ACCIÓN CONFIRM_MANUAL_REVIEW (Fase E — desbloqueo tras NO_LEGIBLE)
+    // Exige que el row esté en 'requiere_revision_manual'. Marca el
+    // timestamp/usuario de confirmación y dispara la generación de docs
+    // usando data_final (que el usuario pudo editar). NO cobra créditos:
+    // ya se cobró GENERACION_DOCX en el intento inicial que se bloqueó.
+    // ─────────────────────────────────────────────────────────────
+    if (action === "confirm_manual_review") {
+      if (cancRow.status !== "requiere_revision_manual") {
+        return biz(
+          "not_pending_review",
+          `La cancelación no está pendiente de revisión manual (status actual: ${cancRow.status}).`,
+        );
+      }
+      const data = (cancRow.data_final ?? cancRow.data_ia) as CancelacionData | null;
+      if (!data) {
+        return biz("no_data", "No hay datos persistidos para generar el documento.");
+      }
+      try {
+        const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
+        const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
+          supabaseService, cancelacionId, data, prosaOv,
+        );
+        const nowIso = new Date().toISOString();
+        const { error: updErr } = await supabaseService.from("cancelaciones").update({
+          status: "completed",
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+          revision_manual_confirmada_at: nowIso,
+          revision_manual_confirmada_por: userId,
+          updated_at: nowIso,
+        }).eq("id", cancelacionId);
+        if (updErr) throw new Error(`Persist(confirm_manual_review): ${updErr.message}`);
+
+        void supabaseService.from("activity_logs").insert({
+          organization_id: orgId,
+          user_id: userId,
+          action: "MANUAL_REVIEW_CONFIRMED",
+          entity_type: "cancelacion",
+          entity_id: cancelacionId,
+          metadata: { confirmed_at: nowIso },
+        }).then(() => {}, () => {});
+        void supabaseService.from("system_events").insert({
+          organization_id: orgId,
+          tramite_id: cancelacionId,
+          user_id: userId,
+          evento: "procesar-cancelacion.revision_manual",
+          resultado: "desbloqueado",
+          categoria: "PODER_NO_LEGIBLE",
+          detalle: { confirmed_by: userId },
+        }).then(() => {}, () => {});
+
+        return new Response(JSON.stringify({
+          ok: true,
+          unlocked: true,
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+        }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (genErr) {
+        const msg = genErr instanceof Error ? genErr.message : String(genErr);
+        console.error("[procesar-cancelacion.confirm_manual_review] error:", msg);
+        return biz("generation_error", `No se pudo generar el documento: ${msg.slice(0, 300)}`);
+      }
+    }
+
+
     // MODO REPROCESS_PODER: re-extrae solo el Poder con OCR dedicado.
     // Idempotente: limpia data_ia.poder_banco antes de re-inyectar.
     // No cobra créditos adicionales: el costo de generación ya fue cubierto
