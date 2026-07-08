@@ -2687,6 +2687,11 @@ if (import.meta.main) serve(async (req) => {
             mergedPoder as unknown as Record<string, unknown>,
             { orgId, cancelacionId, userId, trigger: "live_pipeline" },
           );
+          await runPoderCrossChecks(
+            supabaseService,
+            mergedPoder as unknown as Record<string, unknown>,
+            { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+          );
           extracted.poder_banco = mergedPoder;
         } else if (poderUrls.length === 0) {
           // No se adjuntó poder → no debe existir el objeto.
