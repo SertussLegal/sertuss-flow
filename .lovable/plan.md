@@ -1,150 +1,183 @@
 
-# Plan — Canal formal de "no legible" para campos críticos del poder bancario
+# Plan — Parche `merge.ts` + Fase E (bloqueo duro con override manual)
 
-## Contexto y causa raíz
+## Parte 1 — Parche `merge.ts` (NO_LEGIBLE fuerza al plano)
 
-Caso real (Ana María, cancelación `2fb6ba16-…`, 08-jul-2026 00:47 UTC):
-- Cédula OCR: `41525143` — Cédula real: `41.939.243` → **alucinada**.
-- Escritura plano: `8354` / profundo: `7304` → Parte 2 la detectó (`escritura_num_incoherente`).
-- La cédula pasó porque cumple formato colombiano y no colisiona con RL del banco.
+### Diagnóstico confirmado
+Cuando `deepV6.apoderado_cedula` (o `apoderado.cedula`) llega como `"NO_LEGIBLE"`, `classifyApoderado` interpreta la cédula como no válida y degrada `tipoEfectivo` a `null`. El bloque V6-wins (líneas 145–157 de `merge.ts`) exige `cls.tipoEfectivo !== null` para sobrescribir, así que el `finalFlat.apoderado_cedula` conserva el valor del monolítico (potencialmente alucinado). El banner ámbar sí se dispara porque `validate.ts` inspecciona el bloque profundo, pero el plano que usa la minuta queda con basura.
 
-Causa: el schema V6 y el prompt obligan a devolver *siempre* un string en `apoderado.cedula`, `apoderado_cedula` (plano), `instrumento_poder.escritura_num`, `apoderado_escritura`, `instrumento_poder.fecha`, `apoderado_fecha`. Cuando la imagen está borrosa, el modelo prefiere inventar antes que declarar incertidumbre — el prompt lo permite implícitamente porque solo hay `confianza: "baja"` (ignorada rio abajo) y `null` documentado para campos ausentes, no para campos ilegibles.
+### Cambio (archivo único)
+`supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts`
 
-Alcance del plan: los **3 campos críticos** del apoderado natural / instrumento del poder:
-1. `apoderado.cedula` + `apoderado_cedula` (legacy plano)
-2. `instrumento_poder.escritura_num` + `apoderado_escritura` (legacy plano)
-3. `instrumento_poder.fecha` + `instrumento_poder.fecha_texto` + `apoderado_fecha` (legacy plano)
+Después del bloque "V6-wins override" y el "Fallback legacy" (línea ~169), añadir un **override incondicional NO_LEGIBLE** que corre siempre que exista `deepV6`, independiente de `tipoEfectivo`:
 
-No se tocan: sociedad apoderada (jurídica), representantes, poderdante, facultades, vigencia, anexos. Reduce superficie de regresión y esos campos ya tienen fallback cruzado (`representantes[]`, `poderdante.*`).
-
-## Parte 1 — Schema: canal formal `"NO_LEGIBLE"`
-
-**Decisión de forma:** no cambiar tipos (mantener `type: "string"`). Introducir centinela textual `"NO_LEGIBLE"` reservado. Alternativa (nullable) rechazada porque:
-- El JSON schema del gateway ya trata `null` como "no lo pongas", y hoy el modelo lo interpreta como "no aparece en el documento" (ausencia legítima) vs. lo que necesitamos ("aparece pero no puedo leerlo con certeza"). Son estados semánticamente distintos.
-- Un centinela textual sobrevive al passthrough del gateway y al merge V6 (`merge.ts`) sin cambios de tipo.
-- `validate.ts` puede detectarlo con un `=== "NO_LEGIBLE"` trivial.
-
-**Cambios en `tool.ts` (descriptions, no estructura):**
-- `apoderado_cedula` (legacy): añadir `"Si el número aparece pero está borroso / tachado / cortado y no puedes leerlo con certeza total, devuelve exactamente 'NO_LEGIBLE' (no inventes dígitos plausibles)."`
-- `apoderado.cedula` (profundo, línea 89): idem.
-- `instrumento_poder.escritura_num` (137) y `apoderado_escritura` NO existe como legacy — usar `escritura_poder_num` (39): idem.
-- `instrumento_poder.fecha` (138), `instrumento_poder.fecha_texto` (139), `fecha_poder` (40): idem.
-
-No se cambia `required`, no se cambia `enum`, no se cambia `additionalProperties`. `has_apoderado_banco_v3` sigue igual.
-
-## Parte 2 — Prompt: guardar contra sobre-uso de NO_LEGIBLE
-
-**Añadir bloque nuevo al final del prompt, antes de "ANTI-ALUCINACIÓN":**
-
-```
-═══════════════════════════════════════════════════════════════════════════════
-CANAL "NO_LEGIBLE" (SOLO 3 CAMPOS CRÍTICOS — usar con parsimonia)
-═══════════════════════════════════════════════════════════════════════════════
-
-APLICA EXCLUSIVAMENTE a estos 3 campos y sus equivalentes planos:
-  - Cédula del apoderado (apoderado.cedula + apoderado_cedula)
-  - Número de escritura del poder (instrumento_poder.escritura_num + escritura_poder_num)
-  - Fecha del poder (instrumento_poder.fecha + fecha_poder + fecha_texto)
-
-REGLA: si el campo APARECE en el documento pero está borroso, tachado,
-cortado por el margen, tapado por un sello o con dígitos ambiguos que
-NO puedes resolver con certeza, devuelve LITERALMENTE la cadena
-"NO_LEGIBLE" (sin comillas, mayúsculas exactas) en el campo, con
-confianza "baja".
-
-NO uses NO_LEGIBLE cuando:
-  - El campo simplemente no aparece en las páginas → usa null como siempre.
-  - Puedes leer el valor con confianza "alta" o "media" → devuelve el valor.
-  - Solo tienes DUDA MENOR sobre 1 dígito de la cédula pero contexto
-    (nombre, expedición, firma) confirma la identidad → devuelve el valor
-    con confianza "baja". NO_LEGIBLE es para ilegibilidad, no para duda leve.
-
-FILOSOFÍA: preferimos que la UI pida verificación humana a que firmes
-una cancelación con una cédula inventada. Pero abusar de NO_LEGIBLE
-degrada la utilidad del sistema — úsalo solo cuando genuinamente no
-puedas leer.
-```
-
-**Ajuste al bloque ANTI-ALUCINACIÓN existente:** añadir línea `- Para los 3 campos críticos, ver bloque "CANAL NO_LEGIBLE" arriba — NO_LEGIBLE reemplaza a null cuando el texto aparece pero es ilegible.`
-
-## Parte 3 — `validate.ts`: 3 warnings nuevos
-
-Añadir a `WARNING_LABELS`:
 ```ts
-apoderado_cedula_no_legible:
-  "El OCR marcó la cédula del apoderado como no legible — verifícala manualmente contra el documento original antes de firmar.",
-escritura_poder_no_legible:
-  "El OCR marcó el número de escritura del poder como no legible — verifícalo manualmente.",
-fecha_poder_no_legible:
-  "El OCR marcó la fecha del poder como no legible — verifícala manualmente.",
+// NO_LEGIBLE override: si el bloque profundo declaró explícitamente que un
+// campo crítico es ilegible, esa señal SIEMPRE gana sobre el plano monolítico.
+// Corre incluso cuando el classifier degradó tipoEfectivo a null (ese es
+// justamente el caso donde el monolítico podría estar alucinando).
+if (deepV6) {
+  const deepCedula = unwrapConf(deepV6.apoderado_cedula) 
+    ?? (apoderadoIn?.cedula ? String(apoderadoIn.cedula) : null);
+  const deepEscritura = unwrapConf(deepV6.escritura_poder_num)
+    ?? (deepV6.instrumento_poder?.escritura_num 
+        ? String(deepV6.instrumento_poder.escritura_num) 
+        : null);
+  const deepFecha = unwrapConf(deepV6.fecha_poder)
+    ?? (deepV6.instrumento_poder?.fecha 
+        ? String(deepV6.instrumento_poder.fecha) 
+        : null);
+
+  if (deepCedula === "NO_LEGIBLE") finalFlat.apoderado_cedula = "NO_LEGIBLE";
+  if (deepEscritura === "NO_LEGIBLE") finalFlat.apoderado_escritura = "NO_LEGIBLE";
+  if (deepFecha === "NO_LEGIBLE") finalFlat.apoderado_fecha = "NO_LEGIBLE";
+}
 ```
 
-Añadir función `isNoLegible(v)` → `v === "NO_LEGIBLE"`.
+Nota: `sanitizeString(pick(...))` en `mergePoderBancoFlat` NO filtra `"NO_LEGIBLE"` (auditado en la ronda anterior); pero como el ganador del `pick` es siempre el monolítico si existe, sin este bypass el plano nunca ve el `NO_LEGIBLE` profundo. Este parche es el bypass.
 
-Añadir al final de `validatePoderBancoCoherencia`, antes del `return`:
+### Test nuevo en `src/shared/poderBancoValidate.test.ts` (o crear `merge.test.ts` en el mismo folder si no existe uno)
+Marcar el test que hoy documenta la limitación con `it("...")` y actualizar la aserción:
+
 ```ts
-// Regla 3 — Campos críticos marcados como no legibles por el OCR.
-const noLegibleChecks: Array<[string, string[], string]> = [
-  ["apoderado_cedula_no_legible",
-    ["apoderado_cedula", "apoderado.cedula"],
-    [apoderadoCedulaPlano, apoderadoCedulaDeep]],
-  ["escritura_poder_no_legible",
-    ["escritura_poder_num", "instrumento_poder.escritura_num", "apoderado_escritura"],
-    [merged.escritura_poder_num, instrEscritura, apoderadoEscritura]],
-  ["fecha_poder_no_legible",
-    ["fecha_poder", "instrumento_poder.fecha", "instrumento_poder.fecha_texto", "apoderado_fecha"],
-    [merged.fecha_poder, instrFecha, instr?.fecha_texto, apoderadoFecha]],
+// ANTES documentaba: finalFlat.apoderado_cedula === "1234567" (monolítico gana)
+// AHORA debe ser:   finalFlat.apoderado_cedula === "NO_LEGIBLE"
+```
+
+Fixture: monolítico con cédula `"41525143"` (valor alucinado), `deepV6.apoderado.cedula = "NO_LEGIBLE"`, `deepV6.apoderado.tipo = "natural"` sin datos suficientes para que el classifier devuelva un tipo firme. Assertion: `merged.apoderado_cedula === "NO_LEGIBLE"`.
+
+Añadir un test paralelo por campo (escritura y fecha) y un test **de no-regresión**: cuando profundo NO trae `NO_LEGIBLE`, el comportamiento V6-wins/fallback previo se mantiene idéntico.
+
+---
+
+## Parte 2 — Fase E: bloqueo duro con override manual
+
+### 2.a Migración SQL (esquema)
+
+Patrón existente auditado: `cancelaciones` usa `created_by uuid` sin `_por` explícito. No hay columnas de "confirmado_por/fecha" en ninguna tabla del dominio. Propongo el patrón mínimo:
+
+```sql
+ALTER TABLE public.cancelaciones
+  ADD COLUMN revision_manual_requerida boolean NOT NULL DEFAULT false,
+  ADD COLUMN revision_manual_confirmada_at timestamp with time zone,
+  ADD COLUMN revision_manual_confirmada_por uuid REFERENCES auth.users(id);
+
+-- Ampliar el CHECK de status para admitir el nuevo valor.
+ALTER TABLE public.cancelaciones
+  DROP CONSTRAINT IF EXISTS cancelaciones_status_check;
+ALTER TABLE public.cancelaciones
+  ADD CONSTRAINT cancelaciones_status_check
+  CHECK (status IN ('draft','processing','completed','error','requiere_revision_manual'));
+
+-- Índice parcial: acelera "cancelaciones pendientes de revisión manual" en Admin.
+CREATE INDEX IF NOT EXISTS cancelaciones_pend_revision_idx
+  ON public.cancelaciones (organization_id, updated_at DESC)
+  WHERE status = 'requiere_revision_manual';
+```
+
+Sin nuevos GRANTs (tabla existente, ya tiene RLS/GRANT). Sin nueva RLS (las políticas actuales aplican por `organization_id`).
+
+**Semántica:**
+- `revision_manual_requerida = true` cuando el pipeline detectó `NO_LEGIBLE` en post-merge.
+- `revision_manual_confirmada_at` NULL hasta que el usuario aprieta "Confirmar revisión manual". A partir de ese momento se dispara la generación de minuta.
+- `revision_manual_confirmada_por` para trazabilidad Ley 1581 (queda además espejo en `activity_logs`).
+
+### 2.b Cambios en `procesar-cancelacion/index.ts`
+
+**Detector (post-merge, antes de generar docx, ~línea 2517):**
+
+```ts
+const NO_LEGIBLE_PATHS = [
+  extracted.apoderado_cedula,
+  extracted.apoderado_escritura,
+  extracted.apoderado_fecha,
+  (extracted as any)?.apoderado?.cedula,
+  (extracted as any)?.instrumento_poder?.escritura_num,
+  (extracted as any)?.instrumento_poder?.fecha,
 ];
-// (marca warning si CUALQUIER path contiene NO_LEGIBLE; añade solo los paths afectados a suspicious)
+const requiereRevision = NO_LEGIBLE_PATHS.some(v => v === "NO_LEGIBLE");
 ```
 
-Añadir labels correspondientes a `SUSPICIOUS_FIELD_LABELS`.
+**Bifurcación:**
 
-## Parte 4 — `PoderBannersV5.tsx`: mensajes humanos
+- **Caso normal (`requiereRevision === false`):** cero cambio de comportamiento. Genera minuta+cert, sube al bucket, `status='completed'`, `url_minuta_generada` poblado. Idéntico al flujo actual.
 
-Ya existe el banner ámbar de `_coherencia_warnings` (implementado en la ronda anterior). Solo requiere:
-- Confirmar que los 3 nuevos códigos aparecen en `WARNING_LABELS` (arriba) para que el banner los renderice con texto humano automáticamente.
-- Opcional (min. incremento): dar prioridad visual al mensaje "no legible" (ícono ⚠️ + texto rojo suave) vs. incoherencia interna (ámbar). **Recomendación: dejar todo ámbar en esta fase** para no reabrir el diseño del banner; los códigos con `_no_legible` ya son suficientemente descriptivos.
+- **Caso NO_LEGIBLE (`requiereRevision === true`):** 
+  - **NO** generar ni subir minuta/certificado (`url_minuta_generada` queda NULL).
+  - Persistir `data_ia`, `data_final`, todos los campos planos (matrícula, deudor, banco, etc.) **igual que hoy**, para que el usuario pueda editar en la pantalla de validación.
+  - `status = 'requiere_revision_manual'`, `revision_manual_requerida = true`.
+  - No restituir créditos (ya se cobró el análisis; la generación posterior no vuelve a cobrar).
+  - Registrar `system_events` con `evento='procesar-cancelacion.revision_manual'`, `resultado='bloqueado'`, `detalle: { paths: [...] }`.
 
-## Parte 5 — Merge V6 (`merge.ts`): pasar NO_LEGIBLE tal cual
+**Nueva acción `confirm_manual_review` (patrón idéntico a `regen` / `reprocess_poder`):**
 
-Auditoría necesaria (no cambios de código todavía): confirmar que `merge.ts` propaga strings arbitrarios sin filtrar `NO_LEGIBLE`. Si `merge.ts` tiene lógica tipo "si plano vacío usar profundo o viceversa", verificar que `NO_LEGIBLE` no se trate como "vacío" y sea sobreescrito por un valor real del otro bloque. **Este es el mayor riesgo silencioso de la Parte 5**: si merge trata `NO_LEGIBLE` como "hay dato", perfecto; si lo trata como "no hay dato" y hace fallback al bloque contrario que sí alucinó, perdimos la señal.
+```ts
+if (bodyAny?.action === "confirm_manual_review") {
+  // 1. Validar sesión + membresía (patrón ya usado en reprocess_poder).
+  // 2. Cargar cancelaciones row; exigir status === 'requiere_revision_manual'.
+  // 3. Marcar: revision_manual_confirmada_at=now(), revision_manual_confirmada_por=userId.
+  // 4. Reusar el mismo bloque que genera minuta+cert (extraer en helper 
+  //    `generateAndUploadDocs(data_final, cancelacionId)` para no duplicar).
+  // 5. UPDATE status='completed', url_minuta_generada, url_certificado_generado.
+  // 6. activity_logs: action='MANUAL_REVIEW_CONFIRMED', entity='cancelacion'.
+  // 7. system_events: evento='procesar-cancelacion.revision_manual', 
+  //    resultado='desbloqueado'.
+  // 8. Responder { ok: true, unlocked: true }.
+}
+```
 
-## Riesgos y mitigaciones
+**Refactor mínimo asociado:** extraer el bloque `buildDocxVars → fillTemplate → upload → update` (líneas 2517–2558) a un helper `generateAndUploadCancelacionDocs(supabaseService, cancelacionId, data)` para que lo reusen (a) el flujo normal, (b) el `regen`, y (c) `confirm_manual_review`. Es el mismo código con tres llamadores.
 
-| Riesgo | Mitigación |
-|---|---|
-| Modelo abusa de NO_LEGIBLE en documentos limpios → banners falsos → fatiga | Prompt tiene 3 "NO uses" explícitos + limitación a 3 campos + fixture de regresión con poder limpio que NO debe generar warnings |
-| Merge V6 filtra `NO_LEGIBLE` como si fuera vacío | Auditar `merge.ts` en Parte 5 antes de implementar; añadir test unitario `merge` con NO_LEGIBLE en plano y valor real en profundo (y viceversa) |
-| Downstream (docx generator, prosa Davivienda, hidratador) recibe "NO_LEGIBLE" como si fuera cédula real → cancelación firmada con texto "NO_LEGIBLE" | **CRÍTICO**: bloquear generación de minuta si algún campo crítico contiene NO_LEGIBLE. Añadir a `cancelacionCriticalFields.ts` o al pre-check de `procesar-cancelacion`. Decisión pendiente de aprobación: ¿bloqueo duro o solo warning ámbar? Recomendación → **warning ámbar + botón "Corregí manualmente, generar de todos modos"** consistente con filosofía "humano gana sobre IA". |
-| Bump de `POWER_PROMPT_VERSION` invalida `ocr_raw_cache` → re-corre todos los OCRs de poderes en próximo procesar-cancelacion | Esperado y deseado: queremos que Ana María se re-procese con el nuevo prompt. Documentar en changelog. |
-| Regresión en tests existentes (`poderBancoValidate.test.ts`, `poderBancoExtractor.test.ts`, `parity.test.ts`, snapshots) | Correr `bunx vitest run` completo; actualizar snapshot solo tras revisar diff |
+### 2.c UI — `PoderBannersV5.tsx` + `CancelacionValidar.tsx`
 
-## Fixtures de prueba
+**`PoderBannersV5.tsx`** (banner ámbar existente):
+- Detectar si algún warning termina en `_no_legible` (`apoderado_cedula_no_legible`, `escritura_poder_no_legible`, `fecha_poder_no_legible`) → variable `hayNoLegible`.
+- Nueva prop opcional `onConfirmManualReview?: () => Promise<void>` y `manualReviewPending?: boolean` (status del row).
+- Si `hayNoLegible && manualReviewPending && onConfirmManualReview`: renderizar dentro del bloque ámbar existente el botón:
+  ```
+  [Confirmar revisión manual y generar documento]
+  ```
+  con `variant="default"`, `disabled` durante la petición, toast de éxito/error.
+- Texto explicativo pequeño: "Al confirmar declaras que verificaste estos datos contra el documento original."
 
-**Nuevos en `src/shared/poderBancoValidate.test.ts`:**
-1. Cédula = `"NO_LEGIBLE"` en plano → warning `apoderado_cedula_no_legible`, suspicious `apoderado_cedula`.
-2. `escritura_poder_num = "NO_LEGIBLE"` en plano, `instrumento_poder.escritura_num = "7304"` en profundo → warning `escritura_poder_no_legible` (paths afectados).
-3. Fecha `NO_LEGIBLE` en `instrumento_poder.fecha_texto` → warning `fecha_poder_no_legible`.
-4. **Caso Ana María (regresión de referencia):** payload con `apoderado_cedula: "41525143"` (formato válido, alucinado) → **sigue sin generar warning `apoderado_cedula_no_legible`** (Parte 2 no lo detecta — lo asumimos y documentamos). La única defensa es que el modelo con el nuevo prompt _decida_ devolver NO_LEGIBLE.
-5. Poder limpio (fixture Bancolombia existente si hay, o sintético): todos los campos con valor real, cero warnings.
+**`CancelacionValidar.tsx`** (línea 1104):
+- Leer `cancelacion.status` y `cancelacion.revision_manual_requerida` del row cargado.
+- Pasar `manualReviewPending={status === 'requiere_revision_manual'}` a `PoderBannersV5`.
+- Handler `onConfirmManualReview` → `supabase.functions.invoke('procesar-cancelacion', { body: { cancelacionId, action: 'confirm_manual_review' } })` → refrescar row → toast.
+- Bloquear (o ocultar) el botón "Generar documento" habitual mientras `status === 'requiere_revision_manual'` para forzar el único camino de confirmación.
 
-**Verificación en vivo (Parte 6):**
-- Re-procesar el poder de Ana María contra la nueva versión del prompt (bump de `POWER_PROMPT_VERSION` invalida caché → se re-llama a Gemini).
-- Verificar en `data_ia.poder_banco`: si Gemini ahora devuelve `NO_LEGIBLE` en cédula → éxito (`_coherencia_warnings` incluye `apoderado_cedula_no_legible`). Si sigue devolviendo `41525143` con confianza alta → el prompt no fue suficiente y necesitamos Parte 3 real (cross-check contra cédula del certificado de tradición u otra fuente independiente — fuera de este plan).
-- Métrica cualitativa a los 3-5 poderes siguientes: contar cuántos disparan `_no_legible`. Si >50% de poderes limpios lo disparan → prompt demasiado agresivo, retroceder.
+### 2.d Análisis de riesgo (path normal)
 
-**Sin ground-truth automatizado:** honestamente, no podemos garantizar que Gemini haga lo correcto. El plan es aceptar que la mejora es probabilística y monitorear las primeras N cancelaciones tras el deploy.
+**Confirmación explícita:** cero cambio para cancelaciones sin `NO_LEGIBLE`.
+- `requiereRevision === false` → rama actual sin modificar (más allá del refactor a helper, que es idempotente).
+- `revision_manual_requerida` default `false`, no rompe rows existentes.
+- `status='completed'` sigue disparándose igual → UI actual no cambia.
+- El nuevo botón sólo se pinta si `hayNoLegible && status==='requiere_revision_manual'`.
+- La ampliación del CHECK de `status` es aditiva; rows existentes (`draft/processing/completed/error`) siguen válidos.
 
-## Fases de implementación (para próxima aprobación)
+**Riesgo residual:** si un poder NO tiene `NO_LEGIBLE` pero el operador quisiera forzar revisión, no hay camino manual para bloquear. Fuera de alcance de esta fase.
 
-| Fase | Contenido | Archivos | Dependencia |
-|---|---|---|---|
-| A | Auditar `merge.ts` + añadir test unitario "NO_LEGIBLE no se degrada a vacío" | `merge.ts` (solo lectura), `poderBancoExtractor.test.ts` | Ninguna |
-| B | Prompt + schema descriptions + bump `POWER_PROMPT_VERSION` a `v7-...` | `prompt.ts`, `tool.ts`, `poderBancoSchemaVersion.ts` | A |
-| C | `validate.ts` nueva regla + labels + tests (incluye fixture Ana María) | `validate.ts`, `poderBancoValidate.test.ts` | A |
-| D | Confirmar banner renderiza los 3 nuevos códigos (probable cero cambios en `PoderBannersV5.tsx`) | `PoderBannersV5.tsx` (verificación) | C |
-| E | Decisión producto: `cancelacionCriticalFields.ts` — ¿bloqueo o warning en generación? Requiere aprobación humana explícita | `cancelacionCriticalFields.ts` | C, D |
-| F | `bunx vitest run`, desplegar `procesar-cancelacion`, re-probar poder Ana María, reportar `_coherencia_warnings` en vivo | — | B, C, D |
+### 2.e Trazabilidad
+- `activity_logs`: dos nuevas acciones — `MANUAL_REVIEW_REQUIRED` (al detectar) y `MANUAL_REVIEW_CONFIRMED` (al confirmar). Metadata: paths NO_LEGIBLE detectados.
+- `system_events`: dos hitos — `resultado='bloqueado'` y `resultado='desbloqueado'`.
+- Cumplimiento Ley 1581 preservado (auditor ve quién confirmó y cuándo).
 
-**Fase E queda fuera de esta ronda** hasta decidir bloqueo vs. warning. Recomiendo aprobar A–D + F y dejar E para conversación separada.
+---
+
+## Orden de ejecución propuesto (una vez apruebes)
+
+1. Migración SQL (columnas + CHECK).
+2. Parche `merge.ts` + test que cierra la limitación documentada.
+3. Refactor `generateAndUploadCancelacionDocs` helper en `procesar-cancelacion`.
+4. Detector `requiereRevision` + bifurcación de status.
+5. Action `confirm_manual_review`.
+6. Props + botón en `PoderBannersV5.tsx`.
+7. Wire-up en `CancelacionValidar.tsx`.
+8. `bunx vitest run` (esperar 165+ tests en verde).
+9. Redespliegue de `procesar-cancelacion`.
+10. Reporte con evidencia (diffs, tests, log de despliegue).
+
+## Fuera de alcance (confirmado por ti)
+- Ninguna modificación a `classifyApoderado` (el classifier sigue igual, el bypass va en merge).
+- Ningún cambio en flujo cuando no hay `NO_LEGIBLE`.
+- No se reintroduce Claude ni sugerencias automáticas de coherencia adicionales.
