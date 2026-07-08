@@ -305,10 +305,10 @@ describe("Fixture poder limpio — cero warnings", () => {
   it("payload sin NO_LEGIBLE ni incoherencias no dispara ningún warning", () => {
     const { warnings } = validatePoderBancoCoherencia({
       apoderado_nombre: "JUAN PEREZ",
-      apoderado_cedula: "79123456",
+      apoderado_cedula: "80456789",
       apoderado_escritura: "MIL DOSCIENTOS TREINTA Y CUATRO (1234)",
       apoderado_fecha: "QUINCE (15) DE ENERO DE DOS MIL VEINTICUATRO (2024)",
-      apoderado: { tipo: "natural", nombre: "JUAN PEREZ", cedula: "79123456" },
+      apoderado: { tipo: "natural", nombre: "JUAN PEREZ", cedula: "80456789" },
       instrumento_poder: { escritura_num: "1234", fecha: "2024-01-15" },
       poderdante: { representante_legal_cedula: "52219803" },
     });
