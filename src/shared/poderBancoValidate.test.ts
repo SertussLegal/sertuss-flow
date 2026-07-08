@@ -195,6 +195,9 @@ describe("Labels", () => {
       "fecha_incoherente",
       "cedula_formato_invalido",
       "apoderado_coincide_con_rl_banco",
+      "apoderado_cedula_no_legible",
+      "escritura_poder_no_legible",
+      "fecha_poder_no_legible",
     ]) {
       expect(WARNING_LABELS[w]).toBeTruthy();
     }
@@ -203,5 +206,159 @@ describe("Labels", () => {
     expect(SUSPICIOUS_FIELD_LABELS["apoderado_cedula"]).toBeTruthy();
     expect(SUSPICIOUS_FIELD_LABELS["apoderado.cedula"]).toBeTruthy();
     expect(SUSPICIOUS_FIELD_LABELS["instrumento_poder.escritura_num"]).toBeTruthy();
+    expect(SUSPICIOUS_FIELD_LABELS["escritura_poder_num"]).toBeTruthy();
+    expect(SUSPICIOUS_FIELD_LABELS["fecha_poder"]).toBeTruthy();
+    expect(SUSPICIOUS_FIELD_LABELS["instrumento_poder.fecha_texto"]).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// Fase C — Canal NO_LEGIBLE (v7-2026-07-08)
+// ============================================================================
+
+describe("isNoLegible", () => {
+  it("detecta el centinela literal", () => {
+    expect(isNoLegible("NO_LEGIBLE")).toBe(true);
+    expect(isNoLegible("  NO_LEGIBLE  ")).toBe(true);
+  });
+  it("rechaza variantes case/lowercase y valores normales", () => {
+    expect(isNoLegible("no_legible")).toBe(false);
+    expect(isNoLegible("No_Legible")).toBe(false);
+    expect(isNoLegible("41525143")).toBe(false);
+    expect(isNoLegible(null)).toBe(false);
+    expect(isNoLegible(undefined)).toBe(false);
+    expect(isNoLegible("")).toBe(false);
+  });
+});
+
+describe("Regla 5 — NO_LEGIBLE en cédula del apoderado", () => {
+  it("dispara warning cuando el plano viene NO_LEGIBLE", () => {
+    const { warnings, suspicious } = validatePoderBancoCoherencia({
+      apoderado_cedula: "NO_LEGIBLE",
+    });
+    expect(warnings).toContain("apoderado_cedula_no_legible");
+    expect(suspicious.has("apoderado_cedula")).toBe(true);
+  });
+  it("dispara warning cuando el profundo viene NO_LEGIBLE", () => {
+    const { warnings, suspicious } = validatePoderBancoCoherencia({
+      apoderado: { tipo: "natural", cedula: "NO_LEGIBLE" },
+    });
+    expect(warnings).toContain("apoderado_cedula_no_legible");
+    expect(suspicious.has("apoderado.cedula")).toBe(true);
+    expect(suspicious.has("apoderado_cedula")).toBe(false);
+  });
+});
+
+describe("Regla 5 — NO_LEGIBLE en número de escritura del poder", () => {
+  it("dispara warning en escritura_poder_num plano legacy", () => {
+    const { warnings, suspicious } = validatePoderBancoCoherencia({
+      escritura_poder_num: "NO_LEGIBLE",
+      instrumento_poder: { escritura_num: "7304" },
+    });
+    expect(warnings).toContain("escritura_poder_no_legible");
+    expect(suspicious.has("escritura_poder_num")).toBe(true);
+    expect(suspicious.has("instrumento_poder.escritura_num")).toBe(false);
+  });
+  it("dispara warning en instrumento_poder.escritura_num", () => {
+    const { warnings, suspicious } = validatePoderBancoCoherencia({
+      instrumento_poder: { escritura_num: "NO_LEGIBLE" },
+    });
+    expect(warnings).toContain("escritura_poder_no_legible");
+    expect(suspicious.has("instrumento_poder.escritura_num")).toBe(true);
+  });
+});
+
+describe("Regla 5 — NO_LEGIBLE en fecha del poder", () => {
+  it("dispara en instrumento_poder.fecha_texto", () => {
+    const { warnings, suspicious } = validatePoderBancoCoherencia({
+      instrumento_poder: { fecha_texto: "NO_LEGIBLE" },
+    });
+    expect(warnings).toContain("fecha_poder_no_legible");
+    expect(suspicious.has("instrumento_poder.fecha_texto")).toBe(true);
+  });
+  it("dispara en fecha_poder plano legacy", () => {
+    const { warnings, suspicious } = validatePoderBancoCoherencia({
+      fecha_poder: "NO_LEGIBLE",
+    });
+    expect(warnings).toContain("fecha_poder_no_legible");
+    expect(suspicious.has("fecha_poder")).toBe(true);
+  });
+});
+
+describe("Fixture Ana María — cédula alucinada con formato válido NO dispara Regla 5", () => {
+  // Caso real (cancelación 2fb6ba16-…, 08-jul-2026):
+  //   cédula OCR: "41525143" (alucinada) vs cédula real: "41.939.243".
+  // Regla 5 solo detecta NO_LEGIBLE emitido por el propio modelo — NO puede
+  // detectar una alucinación con formato válido. La única defensa contra este
+  // caso es que Gemini con el nuevo prompt DECIDA devolver "NO_LEGIBLE" en vez
+  // de inventar los dígitos. Este test documenta ese límite de forma explícita.
+  it("valor alucinado con formato válido NO genera warning de no legible", () => {
+    const { warnings } = validatePoderBancoCoherencia({
+      apoderado_cedula: "41525143",
+      apoderado: { tipo: "natural", cedula: "41525143" },
+    });
+    expect(warnings).not.toContain("apoderado_cedula_no_legible");
+  });
+});
+
+describe("Fixture poder limpio — cero warnings", () => {
+  it("payload sin NO_LEGIBLE ni incoherencias no dispara ningún warning", () => {
+    const { warnings } = validatePoderBancoCoherencia({
+      apoderado_nombre: "JUAN PEREZ",
+      apoderado_cedula: "79123456",
+      apoderado_escritura: "MIL DOSCIENTOS TREINTA Y CUATRO (1234)",
+      apoderado_fecha: "QUINCE (15) DE ENERO DE DOS MIL VEINTICUATRO (2024)",
+      apoderado: { tipo: "natural", nombre: "JUAN PEREZ", cedula: "79123456" },
+      instrumento_poder: { escritura_num: "1234", fecha: "2024-01-15" },
+      poderdante: { representante_legal_cedula: "52219803" },
+    });
+    expect(warnings).toEqual([]);
+  });
+});
+
+// ============================================================================
+// Fase A — Auditoría de merge V6 con NO_LEGIBLE
+// Confirma que el centinela NO se sanea como vacío y sobrevive al pipeline.
+// ============================================================================
+
+describe("mergePoderBancoV6 preserva NO_LEGIBLE", () => {
+  it("NO_LEGIBLE en apoderado.cedula profundo sobrescribe cédula plana (V6-wins)", () => {
+    const merged = mergePoderBancoV6(
+      { apoderado_cedula: "79123456" },
+      null,
+      {
+        apoderado: { tipo: "natural", nombre: "JUAN PEREZ", cedula: "NO_LEGIBLE" },
+        apoderado_nombre: { valor: "JUAN PEREZ", confianza: "alta" },
+        apoderado_cedula: { valor: "NO_LEGIBLE", confianza: "baja" },
+        has_apoderado_banco_v3: "true",
+      } as any,
+    );
+    expect(merged?.apoderado_cedula).toBe("NO_LEGIBLE");
+    expect((merged as any)?.apoderado?.cedula).toBe("NO_LEGIBLE");
+  });
+
+  it("NO_LEGIBLE en plano monolítico NO se degrada a undefined (pasa por sanitizeString intacto)", () => {
+    const merged = mergePoderBancoV6(
+      { apoderado_cedula: "NO_LEGIBLE" },
+      { apoderado_cedula: "79123456" },
+      null,
+    );
+    // Sin deepV6, mergePoderBancoFlat toma el plano monolítico primero.
+    expect(merged?.apoderado_cedula).toBe("NO_LEGIBLE");
+  });
+
+  it("payload validado tras merge dispara apoderado_cedula_no_legible", () => {
+    const merged = mergePoderBancoV6(
+      undefined,
+      null,
+      {
+        apoderado: { tipo: "natural", nombre: "X", cedula: "NO_LEGIBLE" },
+        apoderado_nombre: { valor: "X", confianza: "alta" },
+        apoderado_cedula: { valor: "NO_LEGIBLE", confianza: "baja" },
+        has_apoderado_banco_v3: "true",
+      } as any,
+    );
+    const { warnings } = validatePoderBancoCoherencia(merged as Record<string, unknown>);
+    expect(warnings).toContain("apoderado_cedula_no_legible");
   });
 });
