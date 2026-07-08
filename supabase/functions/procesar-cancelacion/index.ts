@@ -2264,27 +2264,17 @@ if (import.meta.main) serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const vars = buildDocxVars(data, (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null);
-      const minutaTemplate = selectMinutaTemplate(data);
-      const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
-      const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
-
-      const minutaPath = `cancelaciones/${cancelacionId}/minuta.docx`;
-      const certPath = `cancelaciones/${cancelacionId}/certificado.docx`;
-      await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaPath, minuta, {
-        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        upsert: true,
-      });
-      await supabaseService.storage.from(BUCKET_OUTPUT).upload(certPath, certificado, {
-        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        upsert: true,
-      });
+      const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
+      const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
+        supabaseService, cancelacionId, data, prosaOv,
+      );
       await supabaseService.from("cancelaciones").update({
         data_final: data,
         url_minuta_generada: minutaPath,
         url_certificado_generado: certPath,
         updated_at: new Date().toISOString(),
       }).eq("id", cancelacionId);
+
 
       return new Response(JSON.stringify({ ok: true, regenerated: true }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
