@@ -1243,7 +1243,7 @@ export async function generateAndUploadCancelacionDocs(
  * Decide si la cancelación debe frenar antes de generar la minuta
  * (Fase E — bloqueo duro con override manual).
  */
-function detectRequiereRevisionManual(extracted: CancelacionData): {
+export function detectRequiereRevisionManual(extracted: CancelacionData): {
   requiere: boolean;
   paths: string[];
   motivos: string[];
