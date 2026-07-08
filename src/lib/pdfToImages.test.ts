@@ -52,7 +52,7 @@ function installCanvasMocks(opts: {
   uniform?: boolean;
   sizePerPage?: (n: number) => number;
 }) {
-  const sizePerPage = opts.sizePerPage ?? ((n: number) => 20_000 + n * 3_000);
+  const sizePerPage = opts.sizePerPage ?? ((n: number) => 40_000 + n * 3_000);
 
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
     this: HTMLCanvasElement,
