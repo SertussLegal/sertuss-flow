@@ -195,11 +195,19 @@ Deno.serve(async (req) => {
     if (cancErr) return json({ error: `cancelaciones lookup: ${cancErr.message}` }, 500);
     if (!cancRow) return json({ error: "cancelacion no encontrada" }, 404);
 
-    const { data: isMember, error: memberErr } = await userClient.rpc("is_org_member", {
-      p_org_id: cancRow.organization_id,
-    });
-    if (memberErr) return json({ error: `membership check: ${memberErr.message}` }, 500);
-    if (!isMember) return json({ error: "Forbidden: no membership" }, 403);
+    if (!smokeMode) {
+      const userClientForRpc = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: req.headers.get("Authorization")! } },
+      });
+      const { data: isMember, error: memberErr } = await userClientForRpc.rpc("is_org_member", {
+        p_org_id: cancRow.organization_id,
+      });
+      if (memberErr) return json({ error: `membership check: ${memberErr.message}` }, 500);
+      if (!isMember) return json({ error: "Forbidden: no membership" }, 403);
+    }
+    // En smoke_mode saltamos la verificación de membresía; el aislamiento por
+    // organization_id se conserva porque el token smoke solo puede correrlo el
+    // sandbox de Lovable (secret VERIFICAR_CLAUDE_SMOKE_TOKEN).
 
     // ─── 4. Extraer datos ya OCReados por Gemini ────────────────────────────
     const dataIa = (cancRow.data_ia ?? {}) as Record<string, unknown>;
