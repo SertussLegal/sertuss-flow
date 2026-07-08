@@ -2404,6 +2404,11 @@ if (import.meta.main) serve(async (req) => {
           ? mergePoderBancoV6(extracted.poder_banco, dedicatedResult, v6Result)
           : mergePoderBanco(extracted.poder_banco, dedicatedResult);
         if (mergedPoder) {
+          await annotatePoderCoherencia(
+            supabaseService,
+            mergedPoder as unknown as Record<string, unknown>,
+            { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+          );
           extracted.poder_banco = mergedPoder;
         } else if (poderUrls.length === 0) {
           // No se adjuntó poder → no debe existir el objeto.
