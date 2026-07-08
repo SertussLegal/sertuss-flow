@@ -1213,13 +1213,18 @@ async function generateAndUploadCancelacionDocs(
 }
 
 /**
- * Detector NO_LEGIBLE post-merge. Inspecciona los 6 paths donde el prompt v7
- * puede emitir el centinela y decide si la cancelación debe frenar antes de
- * generar la minuta (Fase E — bloqueo duro con override manual).
+ * Detector NO_LEGIBLE + coherencia post-merge. Inspecciona:
+ *  1) los 6 paths del prompt v7 con centinela textual "NO_LEGIBLE".
+ *  2) `_coherencia_warnings` que fueron marcados como hard-block (por
+ *     `validate.ts::isHardBlockCoherenciaWarning` — sufijos _no_legible,
+ *     _incoherente, _placeholder, _duplicidad_cruzada).
+ * Decide si la cancelación debe frenar antes de generar la minuta
+ * (Fase E — bloqueo duro con override manual).
  */
 function detectRequiereRevisionManual(extracted: CancelacionData): {
   requiere: boolean;
   paths: string[];
+  motivos: string[];
 } {
   const pb = (extracted.poder_banco || {}) as Record<string, unknown>;
   const apo = (pb.apoderado || {}) as Record<string, unknown>;
@@ -1233,7 +1238,17 @@ function detectRequiereRevisionManual(extracted: CancelacionData): {
     ["poder_banco.instrumento_poder.fecha", ins.fecha],
   ];
   const paths = candidates.filter(([, v]) => v === "NO_LEGIBLE").map(([p]) => p);
-  return { requiere: paths.length > 0, paths };
+
+  const warnings = Array.isArray(pb._coherencia_warnings)
+    ? (pb._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+    : [];
+  const motivos = warnings.filter(isHardBlockCoherenciaWarning);
+
+  return {
+    requiere: paths.length > 0 || motivos.length > 0,
+    paths,
+    motivos,
+  };
 }
 
 async function createSignedStorageUrl(
