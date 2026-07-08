@@ -1,45 +1,88 @@
-# Auditoría — 9 cancelaciones duplicadas matrícula 50C-2025538
+# Fix pdfjs-dist: pasar `wasmUrl` para decodificar CCITTFaxDecode/JBIG2
 
-**Nota previa importante:** la organización dueña de las 9 cancelaciones NO es `9610aa6c…` (Alejandra Arciniegas) como decía el brief, sino **`614a4a8d-1d5b-4c84-be92-d09152fd2e21`**. Las 9 fueron creadas por un solo usuario (`created_by = 875e66dc-9841-4ad8-8367-17be8c84cd19`). Vale la pena que el PO confirme de qué notaría es esta org antes de tomar acción.
+## Diagnóstico confirmado
 
-## Tabla de las 9 filas
+- `pdfjs-dist@^5.7.284` instalado.
+- `node_modules/pdfjs-dist/wasm/` existe con los assets esperados: `jbig2.wasm`, `openjpeg.wasm`, `qcms_bg.wasm`, `quickjs-eval.wasm` + sus `_nowasm_fallback.js` / `quickjs-eval.js`.
+- La API tipada del `DocumentInitParameters` acepta `wasmUrl?: string` (verificado en `types/src/display/api.d.ts` líneas 92/97).
+- Hoy `src/lib/pdfToImages.ts` solo configura `GlobalWorkerOptions.workerSrc` — nunca pasa `wasmUrl` a `getDocument`. Esa es exactamente la ruta de fallo del render silencioso a blanco en PDFs con imágenes bilevel (CCITTFaxDecode / JBIG2), que son el 100% del mercado notarial escaneado.
 
-| # | id (8) | created_at (UTC) | status | rmr | apoderado_nombre (data_ia) | apoderado_cedula (data_ia) | minuta | cert |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 290fd66a | 2026-07-06 00:20 | completed | **false** | FELIX REUZE CAÑAS | 19.345.545 | sí | sí |
-| 2 | 2bef1db3 | 2026-07-07 16:48 | requiere_revision_manual | true | FELIX DE JESUS CAGUA | 79.123.456 | sí | sí |
-| 3 | 0443d2f1 | 2026-07-07 21:09 | completed | true (retroactivo) | *null* | *null* | sí | sí |
-| 4 | 32f5317e | 2026-07-07 21:55 | completed | **false** | *null* | *null* | sí | sí |
-| 5 | 15582708 | 2026-07-07 23:02 | requiere_revision_manual | true | ANA MARIA MONTOYA ECHEVERRY | 79.123.456 | sí | sí |
-| 6 | 9a78aebb | 2026-07-07 23:32 | requiere_revision_manual | true | ANA MARIA MONTOYA ECHEVERRY | 521639-4 | sí | sí |
-| 7 | 2fb6ba16 | 2026-07-08 00:47 | requiere_revision_manual | true | ANA MARIA MONTOYA ECHEVERRY | 41525143 | sí | sí |
-| 8 | c506d69b | 2026-07-08 01:40 | requiere_revision_manual | true | ANA MARIA MONTOYA ECHEVERRY | 41944755 | sí | sí |
-| 9 | 2b8ea638 | 2026-07-08 13:47 | requiere_revision_manual | true | ANA MARIA MONTOYA ECHEVERRY | NO_LEGIBLE | sí | sí |
+## Estrategia de bundling elegida
 
-`data_final` coincide con `data_ia` en las 9 (el usuario no editó manualmente el apoderado en ninguna). Todas con `poder_adjuntado=true` y `escritura_antecedente_adjunta=true`.
+**Servir los `.wasm` desde `public/pdfjs-wasm/` + apuntar `wasmUrl` a `/pdfjs-wasm/` en runtime.**
 
-## Respuestas puntuales
+Comparativa evaluada:
 
-1. **¿Cuántas completadas vs a medias?** Las 9 se generaron end-to-end (minuta + certificado presentes). **4 con `status='completed'`** (290fd66a, 0443d2f1, 32f5317e, y el resto 5 quedaron en `requiere_revision_manual`). Ninguna quedó a medias por error — todas produjeron docx.
+| Opción | Encaje con este proyecto |
+|---|---|
+| `?url` por archivo | Requeriría 4 imports y pdfjs internamente construye rutas por nombre → no funciona (necesita un directorio base, no URLs individuales). |
+| `import.meta.glob('.../wasm/*', { as: 'url' })` | Funciona técnicamente pero fragiliza el hash de nombres y no da un prefijo estable. |
+| `vite-plugin-static-copy` | Dependencia nueva solo para 4 archivos. Innecesaria. |
+| **`public/pdfjs-wasm/` + copia en `postinstall`** | Vite ya sirve `public/` verbatim en dev y lo copia a `dist/` en build. `wasmUrl` queda como string constante `"/pdfjs-wasm/"`, sin lógica runtime. Es el patrón más simple y ya coincide con cómo `public/template_venta_hipoteca.docx` se sirve hoy. |
 
-2. **Consistencia del apoderado en 9 corridas sobre el MISMO PDF de poder:**
-   - **7 identidades distintas** de apoderado desde el mismo input:
-     - FELIX REUZE CAÑAS / 19.345.545
-     - FELIX DE JESUS CAGUA / 79.123.456
-     - *null* / *null* (×2)
-     - ANA MARIA MONTOYA ECHEVERRY con **5 cédulas diferentes**: `79.123.456`, `521639-4`, `41525143`, `41944755`, `NO_LEGIBLE`
-   - Confirmación fortísima del patrón de **alucinación no determinista**: mismo PDF, resultados incompatibles entre sí, incluso cambiando el género (Félix vs Ana María). La cédula `79.123.456` es un placeholder típico de dataset de prueba de Gemini (secuencia trivial), y `41525143`/`41944755` no tienen dígito de verificación coherente entre corridas.
+Los `.wasm` de `pdfjs-dist` se versionan con el paquete, así que se copian una vez en `postinstall` — no se commitean binarios en el repo.
 
-3. **Diferencias entre las 9 más allá de la fecha:** mismo `created_by`, misma org, misma matrícula, mismo deudor, mismo poder subido. La única variable observable es la ventana temporal (2 días) y el resultado de la extracción. `notaria_style_id` no existe en la tabla `cancelaciones` (los estilos viven a otro nivel), así que no aplica. No hay marca de versión del extractor por fila para comparar.
+## Cambios propuestos
 
-4. **`revision_manual_requerida`:** 6 de las 9 ya están en `true` (5 por status `requiere_revision_manual` en vivo + `0443d2f1` marcada retroactivamente en la limpieza de hoy). Tres quedaron completed sin marcar retroactivamente: `290fd66a`, `32f5317e` (con `data_ia` en null → probablemente parche manual o pipeline muy temprano) y las que no cayeron dentro del criterio del gate. Del batch confirmado con imagen corrupta 12192 B ya sabíamos que `0443d2f1` era una de las 3 que marcamos retroactivamente hoy.
+### 1. `package.json` — script `postinstall`
 
-5. **Hipótesis:** el usuario **reprocesó manualmente ~9 veces creando una cancelación NUEVA cada vez**, no reprocesando la existente. Muy probablemente porque al ver que el nombre/cédula del apoderado quedaba mal (o vacío), asumió que "volver a intentar" implicaba crear un caso nuevo. Cada intento produjo una identidad de apoderado incompatible con las demás — comportamiento clásico de alucinación no determinista sobre input ilegible (los JPGs de 12192 B / baja resolución ya identificados). Coincide en tiempo con el momento en que aún no existía ni el gate de calidad ni el aumento de resolución que implementamos hoy.
+Agregar un script que copie `node_modules/pdfjs-dist/wasm/` a `public/pdfjs-wasm/` tras cada `bun install`. Cross-platform con `node -e`:
 
-## Decisiones pendientes del Product Owner (nada se toca hasta que las confirme)
+```json
+"scripts": {
+  ...
+  "postinstall": "node -e \"require('fs').cpSync('node_modules/pdfjs-dist/wasm','public/pdfjs-wasm',{recursive:true})\""
+}
+```
 
-- **A.** ¿Consolidar las 9 en 1 sola cancelación válida + archivar las 8 restantes? ¿O marcar las 8 como `duplicada_de → id_final` y dejar rastro?
-- **B.** ¿Marcar retroactivamente las 3 sin `rmr=true` (290fd66a, 32f5317e y cualquier otra completed sin flag) para forzar revisión humana antes de que sus docx se usen en la notaría?
-- **C.** ¿Necesitamos un gate de UX que detecte "misma matrícula + mismo deudor + misma org en <7 días" y avise "¿estás seguro que no querías reprocesar la existente?" antes de dejar crear otra?
+### 2. `.gitignore` — ignorar el directorio copiado
 
-Si el PO aprueba alguna, la implementación es acotada (SELECT/UPDATE en las filas listadas + eventualmente un check en `CancelacionNueva.tsx`). Nada se ejecuta hasta que responda.
+Agregar `public/pdfjs-wasm/` para no commitear los binarios (se regeneran en cada instalación / build).
+
+### 3. `src/lib/pdfToImages.ts` — diff mínimo
+
+Único cambio: pasar `wasmUrl` a `getDocument`. **No se toca** `isCanvasUniform`, `EmptyCanvasError`, `UniformDocumentError`, `HEALTHY_JPEG_BYTES`, `MIN_JPEG_BYTES`, `UNIFORM_DOC_*`, ni el bucle de render. El gate de calidad queda íntegro — sigue siendo la última línea de defensa por si algún otro decoder falla.
+
+```diff
+ pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+
++/**
++ * URL base (con slash final) desde la que pdfjs descarga los módulos WASM
++ * de decoders bilevel (JBIG2, CCITTFaxDecode) y de color/JPEG2000. Sin esto,
++ * pdfjs 5.x falla silenciosamente al render de imágenes bilevel — el canvas
++ * queda 100% blanco (std=0). Muy común en escaneos notariales (RICOH → fax
++ * Group 4). Los .wasm se copian a public/pdfjs-wasm/ vía postinstall.
++ */
++const PDFJS_WASM_URL = "/pdfjs-wasm/";
++
+ ...
+   const buf = await file.arrayBuffer();
+-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf) });
++  const loadingTask = pdfjs.getDocument({
++    data: new Uint8Array(buf),
++    wasmUrl: PDFJS_WASM_URL,
++  });
+```
+
+## Riesgos e incompatibilidades
+
+1. **Worker vs. main thread.** El decode JBIG2/CCITT ocurre dentro del Web Worker de pdfjs, no en el hilo principal. `wasmUrl` se pasa por `DocumentInitParameters` y pdfjs lo propaga al worker por su handshake interno — es el mecanismo documentado, no requiere config adicional del worker.
+2. **CORS / origen.** `/pdfjs-wasm/` es same-origin (servido por Vite en dev y por el hosting en prod). No hay `crossOriginIsolated` ni SharedArrayBuffer involucrados.
+3. **MIME de `.wasm`.** Vite dev server y el hosting de Lovable ya sirven `.wasm` con `application/wasm`. Sin acción.
+4. **Rutas no root.** Si algún día la app se sirve bajo un subpath (`/app/...`), `wasmUrl: "/pdfjs-wasm/"` seguiría funcionando porque `public/` se copia a la raíz del build; solo se rompería si Vite se configurara con `base` distinto de `/`. Hoy `vite.config.ts` no define `base`, así que no aplica.
+5. **Tests (Vitest, jsdom).** `pdfToImages.test.ts` mockea `pdfjs-dist` entero — nunca ejecuta el getDocument real. Agregar `wasmUrl` no altera el mock. Los 203 tests seguirán en verde.
+6. **Fallback JS puro.** Si por cualquier razón el `.wasm` no carga (404, MIME roto), pdfjs cae al `*_nowasm_fallback.js` — decodifica igual, más lento. No hay regresión de "silencioso a blanco".
+7. **Regeneración en CI/despliegue.** El hosting de Lovable ejecuta `bun install`, disparando `postinstall` → `public/pdfjs-wasm/` existe antes del `vite build`. Confirmado mentalmente contra el pipeline estándar.
+
+## Fuera de alcance
+
+- No se toca el gate de calidad (`HEALTHY_JPEG_BYTES`, uniform detection, etc.).
+- No se toca `maxDimension`, `jpegQuality`, ni `MAX_UPSCALE`.
+- No hay migración de DB.
+- No se re-procesan retroactivamente cancelaciones históricas que fueron rechazadas por este bug — decisión de producto separada.
+
+## Validación post-implementación (para el turno de Build)
+
+1. `ls public/pdfjs-wasm/jbig2.wasm` tras `bun install`.
+2. `bunx vitest run` → seguir en 203/203.
+3. Smoke manual: subir el poder de Escritura 16.390 (CCITT Group 4) — debe pasar el gate y OCR extraer texto legible.
