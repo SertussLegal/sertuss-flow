@@ -43,6 +43,12 @@ export function isCedulaValida(c: string | undefined | null): boolean {
   return CEDULA_RE.test(norm);
 }
 
+/** Detecta el centinela textual "NO_LEGIBLE" emitido por el OCR cuando el
+ *  campo aparece en el documento pero no se puede leer con certeza. */
+export function isNoLegible(v: unknown): boolean {
+  return typeof v === "string" && v.trim() === "NO_LEGIBLE";
+}
+
 /** Labels humanos para los warnings. Persistidos en `system_events` (los IDs
  *  son estables — no cambiar sin migración). */
 export const WARNING_LABELS: Record<string, string> = {
@@ -54,6 +60,12 @@ export const WARNING_LABELS: Record<string, string> = {
     "Una cédula extraída no cumple el formato colombiano (6 a 10 dígitos, sin guiones ni letras)",
   apoderado_coincide_con_rl_banco:
     "La cédula del apoderado coincide con la del representante legal del banco — probable confusión del OCR",
+  apoderado_cedula_no_legible:
+    "El OCR marcó la cédula del apoderado como no legible — verifícala manualmente contra el documento original antes de firmar",
+  escritura_poder_no_legible:
+    "El OCR marcó el número de escritura del poder como no legible — verifícalo manualmente contra el documento original",
+  fecha_poder_no_legible:
+    "El OCR marcó la fecha del poder como no legible — verifícala manualmente contra el documento original",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -61,8 +73,11 @@ export const WARNING_LABELS: Record<string, string> = {
 export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "apoderado_escritura": "Número de escritura (plano)",
   "instrumento_poder.escritura_num": "Número de escritura (detalle profundo)",
+  "escritura_poder_num": "Número de escritura (plano legacy)",
   "apoderado_fecha": "Fecha del poder (plano)",
   "instrumento_poder.fecha": "Fecha del poder (detalle profundo)",
+  "instrumento_poder.fecha_texto": "Fecha del poder (texto literal)",
+  "fecha_poder": "Fecha del poder (plano legacy)",
   "apoderado_cedula": "Cédula del apoderado (plano)",
   "apoderado.cedula": "Cédula del apoderado (detalle profundo)",
   "poderdante.representante_legal_cedula": "Cédula del representante legal del banco",
@@ -140,6 +155,42 @@ export function validatePoderBancoCoherencia(
     suspicious.add("apoderado_cedula");
     suspicious.add("apoderado.cedula");
     suspicious.add("poderdante.representante_legal_cedula");
+  }
+
+  // Regla 3 — Campos críticos marcados como NO_LEGIBLE por el OCR (v7-2026-07-08).
+  // Cuando el modelo declara honestamente que no puede leer un campo, marcamos
+  // warning explícito para que la UI pida verificación humana en vez de dejar
+  // pasar un valor alucinado con apariencia de certeza.
+  const escrituraPlanoLegacy = merged.escritura_poder_num as string | undefined;
+  const fechaPlanoLegacy = merged.fecha_poder as string | undefined;
+  const instrFechaTexto = instr?.fecha_texto as string | undefined;
+
+  const noLegibleChecks: Array<[string, Array<[string, unknown]>]> = [
+    ["apoderado_cedula_no_legible", [
+      ["apoderado_cedula", apoderadoCedulaPlano],
+      ["apoderado.cedula", apoderadoCedulaDeep],
+    ]],
+    ["escritura_poder_no_legible", [
+      ["escritura_poder_num", escrituraPlanoLegacy],
+      ["apoderado_escritura", apoderadoEscritura],
+      ["instrumento_poder.escritura_num", instrEscritura],
+    ]],
+    ["fecha_poder_no_legible", [
+      ["fecha_poder", fechaPlanoLegacy],
+      ["apoderado_fecha", apoderadoFecha],
+      ["instrumento_poder.fecha", instrFecha],
+      ["instrumento_poder.fecha_texto", instrFechaTexto],
+    ]],
+  ];
+  for (const [warningCode, paths] of noLegibleChecks) {
+    let triggered = false;
+    for (const [path, val] of paths) {
+      if (isNoLegible(val)) {
+        suspicious.add(path);
+        triggered = true;
+      }
+    }
+    if (triggered) warnings.push(warningCode);
   }
 
   return { warnings, suspicious };

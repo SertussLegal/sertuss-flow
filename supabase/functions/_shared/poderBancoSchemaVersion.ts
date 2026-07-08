@@ -5,7 +5,7 @@
 // actualizada.
 // ============================================================================
 
-export const POWER_PROMPT_VERSION = "v6-2026-07-03";
+export const POWER_PROMPT_VERSION = "v7-2026-07-08-no-legible";
 export const POWER_SCHEMA_VERSION = "poder_banco_v6";
 export const POWER_GEMINI_MODEL = "google/gemini-2.5-flash";
 

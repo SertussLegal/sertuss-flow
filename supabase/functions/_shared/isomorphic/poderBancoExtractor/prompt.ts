@@ -100,11 +100,40 @@ PUREZA DE DÍGITOS Y NIT (estricto)
   9 dígitos sin DV, devuelve los 9 sin guion. NUNCA inventes DV.
 
 ═══════════════════════════════════════════════════════════════════════════════
+CANAL "NO_LEGIBLE" (SOLO 3 CAMPOS CRÍTICOS — usar con parsimonia)
+═══════════════════════════════════════════════════════════════════════════════
+
+APLICA EXCLUSIVAMENTE a estos 3 campos y sus equivalentes planos:
+  - Cédula del apoderado (apoderado.cedula + apoderado_cedula)
+  - Número de escritura del poder (instrumento_poder.escritura_num + escritura_poder_num)
+  - Fecha del poder (instrumento_poder.fecha + instrumento_poder.fecha_texto + fecha_poder)
+
+REGLA: si el campo APARECE en el documento pero está borroso, tachado,
+cortado por el margen, tapado por un sello o con dígitos ambiguos que
+NO puedes resolver con certeza, devuelve LITERALMENTE la cadena
+"NO_LEGIBLE" (sin comillas adicionales, mayúsculas exactas) en el campo,
+con confianza "baja".
+
+NO uses NO_LEGIBLE cuando:
+  - El campo simplemente no aparece en las páginas → usa \`null\` como siempre.
+  - Puedes leer el valor con confianza "alta" o "media" → devuelve el valor.
+  - Solo tienes DUDA MENOR sobre 1 dígito de la cédula pero el contexto
+    (nombre, expedición, firma) confirma la identidad → devuelve el valor
+    con confianza "baja". NO_LEGIBLE es para ilegibilidad, no para duda leve.
+
+FILOSOFÍA: preferimos que la UI pida verificación humana a que firmes
+una cancelación con una cédula inventada. Pero abusar de NO_LEGIBLE
+degrada la utilidad del sistema — úsalo solo cuando genuinamente no
+puedas leer.
+
+═══════════════════════════════════════════════════════════════════════════════
 ANTI-ALUCINACIÓN (estricto)
 ═══════════════════════════════════════════════════════════════════════════════
 
 - Campo individual ilegible → \`null\` JSON (NO la cadena vacía "") con
   confianza "baja". Ej: "apoderado_email": { "valor": null, "confianza": "baja" }.
+- Para los 3 campos críticos, ver bloque "CANAL NO_LEGIBLE" arriba —
+  NO_LEGIBLE reemplaza a \`null\` cuando el texto aparece pero es ilegible.
 - DEVUELVE SIEMPRE el objeto principal con TODOS los campos confirmables.
   Nunca lo omitas. Si solo ves el nombre del apoderado, devuelve la
   herramienta con los datos disponibles y \`null\` en los demás.
