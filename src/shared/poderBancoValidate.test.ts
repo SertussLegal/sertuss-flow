@@ -380,29 +380,3 @@ describe("mergePoderBancoV6 preserva NO_LEGIBLE", () => {
     expect(warnings).toContain("apoderado_cedula_no_legible");
   });
 });
-
-  it("NO_LEGIBLE en plano monolítico NO se degrada a undefined (pasa por sanitizeString intacto)", () => {
-    const merged = mergePoderBancoV6(
-      { apoderado_cedula: "NO_LEGIBLE" },
-      { apoderado_cedula: "79123456" },
-      null,
-    );
-    // Sin deepV6, mergePoderBancoFlat toma el plano monolítico primero.
-    expect(merged?.apoderado_cedula).toBe("NO_LEGIBLE");
-  });
-
-  it("payload validado tras merge dispara apoderado_cedula_no_legible", () => {
-    const merged = mergePoderBancoV6(
-      undefined,
-      null,
-      {
-        apoderado: { tipo: "natural", nombre: "X", cedula: "NO_LEGIBLE" },
-        apoderado_nombre: { valor: "X", confianza: "alta" },
-        apoderado_cedula: { valor: "NO_LEGIBLE", confianza: "baja" },
-        has_apoderado_banco_v3: "true",
-      } as any,
-    );
-    const { warnings } = validatePoderBancoCoherencia(merged as Record<string, unknown>);
-    expect(warnings).toContain("apoderado_cedula_no_legible");
-  });
-});
