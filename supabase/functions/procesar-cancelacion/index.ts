@@ -2283,25 +2283,41 @@ if (import.meta.main) serve(async (req) => {
       const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
       const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
+      const dedicadaIndet = dedicada?.valor_hipoteca_es_indeterminada === true
+        || dedicada?.motivo_null === "escritura_declara_abierta";
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
-      //    valor vacío (o si el certificado estaba indeterminado y el humano
-      //    no ha intervenido). Nunca pisamos un monto manual.
+      //    valor vacío, marcado indeterminado, o basura ("null"/"undefined"/"nan").
+      //    Nunca pisamos un monto manual real.
       const finalHA = { ...((prevDataFinal.hipoteca_anterior ?? cleanedIaHA) as Record<string, unknown>) };
       const finalMontoActual = String((finalHA as { valor_hipoteca_original?: string }).valor_hipoteca_original ?? "").trim();
       const finalIndet = (finalHA as { valor_hipoteca_es_indeterminada?: boolean }).valor_hipoteca_es_indeterminada === true;
+      const finalMontoBasura = /^(null|undefined|nan)$/i.test(finalMontoActual);
+      const finalVacioOSustituible = finalMontoActual === "" || finalIndet || finalMontoBasura;
       let aplicado = false;
-      if (dedicadaMonto && (finalMontoActual === "" || finalIndet)) {
+      let aplicadoIndet = false;
+      if (dedicadaMonto && finalVacioOSustituible) {
         (finalHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
         (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
         (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
         aplicado = true;
+      } else if (dedicadaIndet && finalVacioOSustituible) {
+        // Propagación explícita de indeterminada confirmada por el extractor dedicado.
+        (finalHA as Record<string, unknown>).valor_hipoteca_original = "";
+        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
+        (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
+        aplicado = true;
+        aplicadoIndet = true;
       }
 
       const newDataIaHA = { ...cleanedIaHA };
       if (dedicadaMonto) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
+      } else if (dedicadaIndet) {
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = "";
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
       }
       const newDataIa = { ...cleanedIa, hipoteca_anterior: newDataIaHA };
@@ -2313,8 +2329,11 @@ if (import.meta.main) serve(async (req) => {
         updated_at: new Date().toISOString(),
       };
       // Espejo en columna plana — solo si efectivamente aplicamos el nuevo valor.
-      if (aplicado) {
+      if (aplicado && !aplicadoIndet) {
         updatePayload.valor_hipoteca_original = dedicadaMonto;
+      } else if (aplicadoIndet) {
+        // Limpiamos el espejo plano cuando confirmamos indeterminada; jamás dejar basura.
+        updatePayload.valor_hipoteca_original = null;
       }
       await supabaseService.from("cancelaciones").update(updatePayload).eq("id", cancelacionId);
 
