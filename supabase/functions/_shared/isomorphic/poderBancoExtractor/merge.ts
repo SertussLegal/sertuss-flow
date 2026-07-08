@@ -168,6 +168,33 @@ export function mergePoderBancoV6(
     if (apoderadoOut.cedula && !finalFlat.apoderado_cedula) finalFlat.apoderado_cedula = String(apoderadoOut.cedula);
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // NO_LEGIBLE override (incondicional): si el bloque profundo declaró
+  // explícitamente que un campo crítico es ilegible, esa señal SIEMPRE gana
+  // sobre el plano monolítico. Corre incluso cuando el classifier degradó
+  // `tipoEfectivo` a null — ese es justamente el caso donde el monolítico
+  // podría estar alucinando (Ana María: cedula plano "41525143" mientras
+  // el profundo marcó NO_LEGIBLE porque la imagen del PDF era mala).
+  // ─────────────────────────────────────────────────────────────
+  {
+    const deepCedula = unwrapConf(deepV6.apoderado_cedula)
+      ?? (apoderadoIn?.cedula ? String(apoderadoIn.cedula) : undefined);
+    const deepEscritura = unwrapConf(deepV6.escritura_poder_num)
+      ?? (deepV6.instrumento_poder?.escritura_num
+        ? String(deepV6.instrumento_poder.escritura_num)
+        : undefined);
+    const deepFecha = unwrapConf(deepV6.fecha_poder)
+      ?? (deepV6.instrumento_poder?.fecha
+        ? String(deepV6.instrumento_poder.fecha)
+        : undefined);
+
+    if (deepCedula === "NO_LEGIBLE") finalFlat.apoderado_cedula = "NO_LEGIBLE";
+    if (deepEscritura === "NO_LEGIBLE") finalFlat.apoderado_escritura = "NO_LEGIBLE";
+    if (deepFecha === "NO_LEGIBLE") finalFlat.apoderado_fecha = "NO_LEGIBLE";
+  }
+
+
+
 
   const out: Record<string, unknown> = {
     ...finalFlat,
