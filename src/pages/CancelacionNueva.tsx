@@ -61,9 +61,9 @@ export const CancelacionNueva = () => {
     const basePath = `${cancelacionId}/cancelaciones/soportes/${kind}`;
     const paths: string[] = [];
     for (const p of pages) {
-      const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.jpg`;
+      const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.png`;
       const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, p.blob, {
-        contentType: "image/jpeg",
+        contentType: "image/png",
         upsert: true,
       });
       if (error) throw new Error(`Subiendo página ${p.pageNumber} de ${kind}: ${error.message}`);
