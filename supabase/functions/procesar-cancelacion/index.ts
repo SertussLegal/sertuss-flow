@@ -1297,6 +1297,37 @@ function mergePoderBanco(
 // (el archivo actual tiene imports Deno + errores TS preexistentes que
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
+import { validatePoderBancoCoherencia } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
+
+/** Anota `_coherencia_warnings` y `_coherencia_suspicious` en el poder mergeado.
+ *  Nunca bloquea; si hay warnings emite un system_event no bloqueante. */
+async function annotatePoderCoherencia(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  merged: Record<string, unknown> | undefined | null,
+  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
+): Promise<void> {
+  if (!merged) return;
+  const { warnings, suspicious } = validatePoderBancoCoherencia(merged);
+  (merged as Record<string, unknown>)._coherencia_warnings = warnings;
+  (merged as Record<string, unknown>)._coherencia_suspicious = Array.from(suspicious);
+  if (warnings.length === 0) return;
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: ctx.orgId,
+      tramite_id: ctx.cancelacionId,
+      user_id: ctx.userId,
+      evento: "procesar-cancelacion.poder.coherencia",
+      resultado: "warnings",
+      categoria: "ocr_poder_banco",
+      detalle: {
+        trigger: ctx.trigger,
+        warnings,
+        suspicious: Array.from(suspicious),
+      },
+    });
+  } catch (_) { /* no bloqueante */ }
+}
 
 /**
  * Ejecuta el OCR v6 (schema profundo) usando el módulo isomórfico. Se llama
