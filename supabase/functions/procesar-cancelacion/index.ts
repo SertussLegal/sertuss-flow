@@ -1339,10 +1339,9 @@ function mergePoderBanco(
 ): PoderBanco | undefined {
   if (!monolitico && !dedicado) return undefined;
   const pick = (m?: string | null, d?: string | null): string | undefined => {
-    // Dedicado pisa monolítico si el monolítico es null/empty.
-    if (m && m.trim()) return m;
-    if (d && d.trim()) return d;
-    return undefined;
+    // Dedicado pisa monolítico si el monolítico es null/empty/"null"/"undefined"/"nan".
+    // Delegamos a `sanitizeString` (fuente única) para no reintroducir la basura literal.
+    return sanitizeString(m) ?? sanitizeString(d);
   };
   const merged: PoderBanco = {
     apoderado_nombre: pick(monolitico?.apoderado_nombre, dedicado?.apoderado_nombre),
