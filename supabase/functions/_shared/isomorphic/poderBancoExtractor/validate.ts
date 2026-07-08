@@ -43,10 +43,42 @@ export function isCedulaValida(c: string | undefined | null): boolean {
   return CEDULA_RE.test(norm);
 }
 
+/** Normaliza una cédula/NIT quitando puntos, espacios y guiones — retorna
+ *  solo dígitos o cadena vacía. Fuente única para comparaciones de identidad
+ *  a lo largo del extractor (validate + crossCheck). */
+export function normalizeCedula(c: string | undefined | null): string {
+  if (!c || typeof c !== "string") return "";
+  return c.replace(/[.\s-]/g, "").replace(/\D/g, "");
+}
+
+/** Cédulas "placeholder" observadas empíricamente como alucinaciones
+ *  recurrentes del OCR (patrones tipo "79.123.456"). Se comparan tras
+ *  normalizar (`normalizeCedula`). Ampliable sin migración — mantener
+ *  ordenado y con comentario del caso que motivó la inclusión. */
+export const PODER_CEDULAS_PLACEHOLDER: ReadonlySet<string> = new Set([
+  "79123456", // 5 cancelaciones con nombres distintos (auditoría 2026-07-08).
+  "41939243", // Repetida como "cédula real" en dos poderes fabricados distintos.
+]);
+
 /** Detecta el centinela textual "NO_LEGIBLE" emitido por el OCR cuando el
  *  campo aparece en el documento pero no se puede leer con certeza. */
 export function isNoLegible(v: unknown): boolean {
   return typeof v === "string" && v.trim() === "NO_LEGIBLE";
+}
+
+/** Sufijos de warning que deben forzar `revision_manual_requerida = true`.
+ *  Fuente única de verdad — consumida por el edge (Fase E) y por la UI
+ *  (broadening del CTA de "Confirmar revisión manual"). */
+export const HARD_BLOCK_WARNING_SUFFIXES = [
+  "_no_legible",
+  "_incoherente",
+  "_placeholder",
+  "_duplicidad_cruzada",
+] as const;
+
+export function isHardBlockCoherenciaWarning(w: string | undefined | null): boolean {
+  if (!w || typeof w !== "string") return false;
+  return HARD_BLOCK_WARNING_SUFFIXES.some((suf) => w.endsWith(suf));
 }
 
 /** Labels humanos para los warnings. Persistidos en `system_events` (los IDs
@@ -66,6 +98,12 @@ export const WARNING_LABELS: Record<string, string> = {
     "El OCR marcó el número de escritura del poder como no legible — verifícalo manualmente contra el documento original",
   fecha_poder_no_legible:
     "El OCR marcó la fecha del poder como no legible — verifícala manualmente contra el documento original",
+  apoderado_cedula_placeholder:
+    "La cédula del apoderado coincide con un patrón placeholder conocido (alucinación recurrente del OCR) — verifica contra el documento original",
+  apoderado_nombre_duplicidad_cruzada:
+    "Este nombre de apoderado ya aparece en otra cancelación con una cédula distinta — probable alucinación cruzada, requiere verificación manual",
+  apoderado_cedula_duplicidad_cruzada:
+    "Esta cédula ya está asociada a un nombre de apoderado distinto en otra cancelación — probable alucinación cruzada, requiere verificación manual",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -80,6 +118,7 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "fecha_poder": "Fecha del poder (plano legacy)",
   "apoderado_cedula": "Cédula del apoderado (plano)",
   "apoderado.cedula": "Cédula del apoderado (detalle profundo)",
+  "apoderado_nombre": "Nombre del apoderado (plano)",
   "poderdante.representante_legal_cedula": "Cédula del representante legal del banco",
 };
 
@@ -192,6 +231,22 @@ export function validatePoderBancoCoherencia(
     }
     if (triggered) warnings.push(warningCode);
   }
+
+  // Regla 4 — Cédula del apoderado coincide con un placeholder alucinado
+  //           conocido (auditoría 2026-07-08).
+  const cedulaCandidates: Array<[string, string | undefined]> = [
+    ["apoderado_cedula", apoderadoCedulaPlano],
+    ["apoderado.cedula", apoderadoCedulaDeep],
+  ];
+  let hitPlaceholder = false;
+  for (const [path, val] of cedulaCandidates) {
+    const norm = normalizeCedula(val);
+    if (norm && PODER_CEDULAS_PLACEHOLDER.has(norm)) {
+      suspicious.add(path);
+      hitPlaceholder = true;
+    }
+  }
+  if (hitPlaceholder) warnings.push("apoderado_cedula_placeholder");
 
   return { warnings, suspicious };
 }

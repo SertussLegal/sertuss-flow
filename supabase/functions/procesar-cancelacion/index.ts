@@ -1213,13 +1213,18 @@ async function generateAndUploadCancelacionDocs(
 }
 
 /**
- * Detector NO_LEGIBLE post-merge. Inspecciona los 6 paths donde el prompt v7
- * puede emitir el centinela y decide si la cancelación debe frenar antes de
- * generar la minuta (Fase E — bloqueo duro con override manual).
+ * Detector NO_LEGIBLE + coherencia post-merge. Inspecciona:
+ *  1) los 6 paths del prompt v7 con centinela textual "NO_LEGIBLE".
+ *  2) `_coherencia_warnings` que fueron marcados como hard-block (por
+ *     `validate.ts::isHardBlockCoherenciaWarning` — sufijos _no_legible,
+ *     _incoherente, _placeholder, _duplicidad_cruzada).
+ * Decide si la cancelación debe frenar antes de generar la minuta
+ * (Fase E — bloqueo duro con override manual).
  */
 function detectRequiereRevisionManual(extracted: CancelacionData): {
   requiere: boolean;
   paths: string[];
+  motivos: string[];
 } {
   const pb = (extracted.poder_banco || {}) as Record<string, unknown>;
   const apo = (pb.apoderado || {}) as Record<string, unknown>;
@@ -1233,7 +1238,17 @@ function detectRequiereRevisionManual(extracted: CancelacionData): {
     ["poder_banco.instrumento_poder.fecha", ins.fecha],
   ];
   const paths = candidates.filter(([, v]) => v === "NO_LEGIBLE").map(([p]) => p);
-  return { requiere: paths.length > 0, paths };
+
+  const warnings = Array.isArray(pb._coherencia_warnings)
+    ? (pb._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+    : [];
+  const motivos = warnings.filter(isHardBlockCoherenciaWarning);
+
+  return {
+    requiere: paths.length > 0 || motivos.length > 0,
+    paths,
+    motivos,
+  };
 }
 
 async function createSignedStorageUrl(
@@ -1369,7 +1384,8 @@ function mergePoderBanco(
 // (el archivo actual tiene imports Deno + errores TS preexistentes que
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
-import { validatePoderBancoCoherencia } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
+import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
+import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 
 /** Anota `_coherencia_warnings` y `_coherencia_suspicious` en el poder mergeado.
  *  Nunca bloquea; si hay warnings emite un system_event no bloqueante. */
@@ -1397,6 +1413,90 @@ async function annotatePoderCoherencia(
         warnings,
         suspicious: Array.from(suspicious),
       },
+    });
+  } catch (_) { /* no bloqueante */ }
+}
+
+/** Ejecuta el chequeo de duplicidad cruzada contra el histórico de
+ *  cancelaciones de la MISMA organización. Consulta hasta 500 filas más
+ *  recientes (excluyendo la actual), extrae nombre+cédula del apoderado
+ *  desde `data_final` (o `data_ia` como fallback), y **acumula** los
+ *  warnings/suspicious en el poder ya anotado por `annotatePoderCoherencia`.
+ *  Nunca lanza; en caso de error registra system_event y sale silencioso. */
+async function runPoderCrossChecks(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  merged: Record<string, unknown> | undefined | null,
+  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
+): Promise<void> {
+  if (!merged) return;
+  const current = {
+    apoderado_nombre: merged.apoderado_nombre as string | undefined,
+    apoderado_cedula: merged.apoderado_cedula as string | undefined,
+  };
+  if (!current.apoderado_nombre && !current.apoderado_cedula) return;
+
+  let existing: ExistingPoderRow[] = [];
+  try {
+    const { data, error } = await supabase
+      .from("cancelaciones")
+      .select("id, data_ia, data_final")
+      .eq("organization_id", ctx.orgId)
+      .neq("id", ctx.cancelacionId)
+      .not("data_ia", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    existing = (data ?? []).map((row: Record<string, unknown>) => {
+      const df = (row.data_final ?? {}) as Record<string, unknown>;
+      const di = (row.data_ia ?? {}) as Record<string, unknown>;
+      const pbF = (df.poder_banco ?? {}) as Record<string, unknown>;
+      const pbI = (di.poder_banco ?? {}) as Record<string, unknown>;
+      return {
+        id: String(row.id),
+        apoderado_nombre: (pbF.apoderado_nombre ?? pbI.apoderado_nombre) as string | undefined,
+        apoderado_cedula: (pbF.apoderado_cedula ?? pbI.apoderado_cedula) as string | undefined,
+      };
+    });
+  } catch (e) {
+    try {
+      await supabase.from("system_events").insert({
+        organization_id: ctx.orgId,
+        tramite_id: ctx.cancelacionId,
+        user_id: ctx.userId,
+        evento: "procesar-cancelacion.poder.crosscheck",
+        resultado: "fallo",
+        categoria: "ocr_poder_banco",
+        detalle: { trigger: ctx.trigger, error: String(e).slice(0, 200) },
+      });
+    } catch (_) { /* no bloqueante */ }
+    return;
+  }
+
+  const { warnings, suspicious, matches } = detectDuplicidadCruzada(current, existing);
+  if (warnings.length === 0) return;
+
+  // Acumula sobre lo que ya escribió `annotatePoderCoherencia`.
+  const prevW = Array.isArray(merged._coherencia_warnings)
+    ? (merged._coherencia_warnings as string[]).filter((s) => typeof s === "string")
+    : [];
+  const prevS = Array.isArray(merged._coherencia_suspicious)
+    ? (merged._coherencia_suspicious as string[]).filter((s) => typeof s === "string")
+    : [];
+  (merged as Record<string, unknown>)._coherencia_warnings = Array.from(new Set([...prevW, ...warnings]));
+  (merged as Record<string, unknown>)._coherencia_suspicious = Array.from(
+    new Set<string>([...prevS, ...Array.from(suspicious)]),
+  );
+
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: ctx.orgId,
+      tramite_id: ctx.cancelacionId,
+      user_id: ctx.userId,
+      evento: "procesar-cancelacion.poder.crosscheck",
+      resultado: "warnings",
+      categoria: "ocr_poder_banco",
+      detalle: { trigger: ctx.trigger, warnings, suspicious: Array.from(suspicious), matches, examined: existing.length },
     });
   } catch (_) { /* no bloqueante */ }
 }
@@ -2182,6 +2282,11 @@ if (import.meta.main) serve(async (req) => {
           finalPoder as unknown as Record<string, unknown>,
           { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
         );
+        await runPoderCrossChecks(
+          supabaseService,
+          finalPoder as unknown as Record<string, unknown>,
+          { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
+        );
       }
       const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
       const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
@@ -2582,6 +2687,11 @@ if (import.meta.main) serve(async (req) => {
             mergedPoder as unknown as Record<string, unknown>,
             { orgId, cancelacionId, userId, trigger: "live_pipeline" },
           );
+          await runPoderCrossChecks(
+            supabaseService,
+            mergedPoder as unknown as Record<string, unknown>,
+            { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+          );
           extracted.poder_banco = mergedPoder;
         } else if (poderUrls.length === 0) {
           // No se adjuntó poder → no debe existir el objeto.
@@ -2724,8 +2834,8 @@ if (import.meta.main) serve(async (req) => {
             user_id: userId,
             evento: "procesar-cancelacion.revision_manual",
             resultado: "bloqueado",
-            categoria: "PODER_NO_LEGIBLE",
-            detalle: { paths: revision.paths },
+            categoria: revision.paths.length > 0 ? "PODER_NO_LEGIBLE" : "PODER_COHERENCIA_HARD_BLOCK",
+            detalle: { paths: revision.paths, motivos: revision.motivos },
           }).then(() => {}, () => {});
 
           void supabaseService.from("activity_logs").insert({
@@ -2734,7 +2844,7 @@ if (import.meta.main) serve(async (req) => {
             action: "MANUAL_REVIEW_REQUIRED",
             entity_type: "cancelacion",
             entity_id: cancelacionId,
-            metadata: { paths: revision.paths },
+            metadata: { paths: revision.paths, motivos: revision.motivos },
           }).then(() => {}, () => {});
         } else {
           // Path normal — genera minuta+certificado y marca completed.

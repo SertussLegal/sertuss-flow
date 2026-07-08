@@ -15,7 +15,7 @@
 // ============================================================================
 
 import { AlertTriangle, CheckCircle2, ShieldQuestion, UserRoundCog, ShieldAlert } from "lucide-react";
-import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS } from "@shared/poderBancoExtractor/validate";
+import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS, isHardBlockCoherenciaWarning } from "@shared/poderBancoExtractor/validate";
 import { Button } from "@/components/ui/button";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import {
@@ -85,10 +85,10 @@ export function PoderBannersV5({
   const suspicious = (coherenciaSuspicious || []).filter(Boolean);
   const showCoherencia = warnings.length > 0 || suspicious.length > 0;
 
-  // Fase E — Bloqueo duro por NO_LEGIBLE.
-  const hayNoLegible = warnings.some((w) => w.endsWith("_no_legible"));
+  // Fase E — Bloqueo duro: NO_LEGIBLE + incoherencias + placeholder + duplicidad cruzada.
+  const hayHardBlock = warnings.some(isHardBlockCoherenciaWarning);
   const showManualReviewCta =
-    hayNoLegible && !!manualReviewPending && typeof onConfirmManualReview === "function";
+    hayHardBlock && !!manualReviewPending && typeof onConfirmManualReview === "function";
 
 
   return (
