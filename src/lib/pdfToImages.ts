@@ -198,6 +198,24 @@ function isCanvasUniform(ctx: CanvasRenderingContext2D, w: number, h: number): b
   return maxSame / sampled >= 0.8;
 }
 
+/**
+ * Binariza `imageData` in-place: cada píxel se convierte en blanco puro
+ * (255,255,255,255) o negro puro (0,0,0,255) según su luma Rec. 601
+ * (Y = 0.299·R + 0.587·G + 0.114·B) comparada contra `threshold`.
+ * Función pura sobre el buffer; no reasigna `imageData.data`.
+ */
+function binarizeImageData(imageData: ImageData, threshold: number): void {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const v = luma >= threshold ? 255 : 0;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+    data[i + 3] = 255;
+  }
+}
+
 export async function pdfToImages(
   file: File,
   opts: PdfToImagesOptions = {},
