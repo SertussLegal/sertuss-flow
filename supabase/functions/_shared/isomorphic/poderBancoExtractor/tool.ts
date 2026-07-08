@@ -34,10 +34,10 @@ export const poderBancoTool = {
         // ── Legacy plano (back-compat) ──────────────────────────────────
         entidad_bancaria: confField("Nombre de la entidad bancaria"),
         apoderado_nombre: confField("Nombre completo del apoderado del banco (persona natural firmante)"),
-        apoderado_cedula: confField("Número de cédula del apoderado del banco"),
+        apoderado_cedula: confField("Número de cédula del apoderado del banco. Si el número aparece pero está borroso/tachado/cortado y no puedes leerlo con certeza, devuelve exactamente 'NO_LEGIBLE' (no inventes dígitos plausibles)."),
         apoderado_expedida_en: confField("Lugar de expedición de la cédula del apoderado"),
-        escritura_poder_num: confField("Número de la escritura pública del poder"),
-        fecha_poder: confField("Fecha de otorgamiento del poder (DD-MM-AAAA)"),
+        escritura_poder_num: confField("Número de la escritura pública del poder. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'."),
+        fecha_poder: confField("Fecha de otorgamiento del poder (DD-MM-AAAA). Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'."),
         notaria_poder: confField("Nombre o número de la notaría donde se otorgó el poder"),
         notaria_poder_ciudad: confField("Ciudad de la notaría donde se otorgó el poder"),
         apoderado_email: confField("Correo electrónico del apoderado, si aparece"),
