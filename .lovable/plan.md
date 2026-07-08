@@ -1,162 +1,311 @@
 
-# Fix: priorizar V6 profundo sobre monolítico para `apoderado_nombre` / `apoderado_cedula`
+# Endurecimiento V6 — Anti-alucinación en poder bancario
 
-## 1. Diagnóstico — de dónde viene "79.123.456"
+Objetivo: cerrar el hueco donde el schema profundo permite a Gemini rellenar campos críticos con contenido fabricado cuando la imagen es ruidosa. Tres capas defensivas independientes (schema, validación, UI) para que ninguna sola sea el único punto de falla.
 
-Ruta actual en `mergePoderBancoV6` (`supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts`):
+Todo el diseño se implementa **detrás de un feature flag** (`POWER_V6_STRICT_CONF_ENABLED`, default `false` en el primer merge), para desacoplar despliegue de activación y permitir A/B contra los casos de Ana María.
+
+---
+
+## PARTE 1 — Confianza explícita en el schema profundo
+
+### 1.1 Rediseño de `tool.ts` (schema V6)
+
+Archivo: `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts`
+
+Introducir helper `confStrField` (paralelo al `confField` legacy, misma forma) y aplicarlo a los campos donde hoy vive la alucinación silenciosa:
+
+```text
+apoderado:
+  nombre                        → confStrField
+  cedula                        → confStrField
+  sociedad_razon_social         → confStrField
+  sociedad_nit                  → confStrField
+  sociedad_constitucion.numero  → confStrField
+  sociedad_constitucion.fecha   → confStrField
+  sociedad_constitucion.camara_comercio_numero → confStrField
+  representantes[].nombre       → confStrField
+  representantes[].cedula       → confStrField
+  representantes[].cargo        → confStrField (media/baja tolerable)
+
+poderdante:
+  entidad_nombre                → confStrField
+  entidad_nit                   → confStrField
+  representante_legal_nombre    → confStrField
+  representante_legal_cedula    → confStrField
+  representante_legal_cargo     → confStrField
+
+instrumento_poder:
+  escritura_num                 → confStrField
+  fecha                         → confStrField
+  fecha_texto                   → confStrField
+  notaria_numero                → confStrField
+  notaria_ciudad                → confStrField
+  notario_titular_nombre        → confStrField
+```
+
+Campos sin cambio (categóricos, booleans, enums, texto libre): `apoderado.tipo`, `has_apoderado_banco_v3`, `facultades.*`, `vigencia.*`, `anexos[]`, todos los legacy planos (`apoderado_nombre`, `apoderado_cedula`, etc. — ya usan `confField`).
+
+`confStrField(desc)` = `{ valor: string|null, confianza: "alta"|"media"|"baja" }` con `additionalProperties: false`. Idéntico al `confField` legacy actual salvo que `valor` puede ser `null` (para que "ilegible → null baja" tenga forma canónica).
+
+### 1.2 Prompt reforzado (`prompt.ts`)
+
+Añadir bloque al final:
 
 ```
-v6Flat  ──┐
-          ├──► combinedDedicado ──┐
-dedicado ─┘                       ├──► mergePoderBancoFlat(monolitico, combinedDedicado)
-                                  │
-monolitico ───────────────────────┘
+═══════════════════════════════════════════
+CONFIANZA POR CAMPO (obligatorio en schema profundo)
+═══════════════════════════════════════════
+
+Cada campo del bloque profundo devuelve {valor, confianza}. Reglas:
+  - "alta"  → leíste el valor NÍTIDO en el documento, sin dudas.
+  - "media" → leíste el valor pero hay ruido/tachones/formato ambiguo.
+  - "baja"  → NO pudiste leer con certeza. valor DEBE ser null.
+
+PROHIBIDO: confianza "alta" con valor deducido/probable.
+PROHIBIDO: confianza "media"/"baja" con valor NO nulo si no lo VISTE.
+Si dudas entre "media" y "baja", elige "baja" y valor=null. El backend
+determinista degradará y pedirá captura humana — es el comportamiento
+correcto, NO un error tuyo.
 ```
 
-- Líneas 116-124 combinan `v6Flat` con `dedicadoFlat` priorizando V6 (`v6Flat?.x ?? dedicadoFlat?.x`). OK.
-- Línea 126 llama `mergePoderBancoFlat(monolitico, combinedDedicado)`, y `mergePoderBancoFlat` prioriza **monolítico > dedicado** (línea 82, `pick(m, d) = sanitize(m) ?? sanitize(d)`).
-- Neto: **monolítico gana sobre V6**. Por eso `apoderado_cedula = "79.123.456"` (formato con puntos + 8 dígitos, típico de un firmante del banco) proviene del extractor **monolítico** (Gemini 2.5 Pro, prompt genérico que ve todo el trámite), mientras que V6 —con schema profundo dedicado a un solo instrumento— extrajo la real `52219803` y el classifier ya la validó como `tipo="natural"`.
+Adicionalmente: agregar párrafo pidiendo **auto-verificación de coherencia interna** antes de responder:
+```
+Antes de emitir el JSON, verifica que estos pares coincidan:
+  - instrumento_poder.escritura_num == apoderado_escritura (misma escritura)
+  - instrumento_poder.fecha ↔ apoderado_fecha (mismo día)
+  - apoderado.cedula == apoderado_cedula (misma cédula)
+Si NO coinciden, marca confianza "baja" en TODOS los campos del par y valor=null.
+```
 
-El bloque de líneas 141-150 sólo actúa si `finalFlat.apoderado_nombre` está vacío; como monolítico llenó nombre y cédula, ese fallback no se dispara.
+Esto es prompting defensivo — la garantía real viene de la validación determinista (Parte 2).
 
-**Conclusión:** V6 tiene más contexto (ve `instrumento_poder` completo, distingue apoderado del banco de firmantes internos) y pasa por `classifyApoderado`. Cuando el classifier no degrada, V6 debe ganar.
+### 1.3 Merge V6-wins condicional (`merge.ts`)
 
-## 2. Fix propuesto — patch quirúrgico en `mergePoderBancoV6`
+Archivo: `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts` (líneas 140-150, el override recién construido)
 
-Después de calcular `cls` y `apoderadoOut`, y antes de construir `finalFlat`, sobrescribir con V6 cuando `cls.tipoEfectivo !== null`.
-
+Estado actual:
 ```ts
-// merge.ts — reemplazo de líneas 140-150
-
-const finalFlat: PoderBancoFlat = { ...(flatMerged || {}) };
-
-// 🎯 V6-wins: cuando el classifier NO degradó (tipo natural|juridica confirmado),
-// V6 profundo es más confiable que el monolítico para identificar al apoderado.
-// El monolítico a veces confunde al apoderado del banco con firmantes internos
-// mencionados en el mismo documento.
-if (cls.tipoEfectivo !== null && apoderadoOut) {
+if (apoderadoOut && cls.tipoEfectivo !== null) {
   if (cls.tipoEfectivo === "natural") {
-    const v6Nombre = sanitizeString(apoderadoOut.nombre);
-    const v6Cedula = sanitizeString(apoderadoOut.cedula);
-    if (v6Nombre) finalFlat.apoderado_nombre = v6Nombre;
-    if (v6Cedula) finalFlat.apoderado_cedula = v6Cedula;
-  } else if (cls.tipoEfectivo === "juridica") {
-    const reps = apoderadoOut.representantes || [];
-    const firmante = reps.find((r) => r?.es_firmante && r?.nombre)
-      || reps.find((r) => r?.nombre)
-      || reps[0];
-    const v6Nombre = sanitizeString(firmante?.nombre);
-    const v6Cedula = sanitizeString(firmante?.cedula);
-    if (v6Nombre) finalFlat.apoderado_nombre = v6Nombre;
-    if (v6Cedula) finalFlat.apoderado_cedula = v6Cedula;
+    if (apoderadoOut.nombre) finalFlat.apoderado_nombre = String(apoderadoOut.nombre);
+    if (apoderadoOut.cedula) finalFlat.apoderado_cedula = String(apoderadoOut.cedula);
   }
-}
-
-// Fallback preexistente: si aún no hay nombre, rellenar desde V6 aunque
-// tipo esté degradado (para no perder señal). Sin cambios de semántica.
-if (!finalFlat.apoderado_nombre && apoderadoOut?.tipo === "juridica") {
-  const reps = apoderadoOut.representantes || [];
-  const primer = reps.find((r) => r?.nombre) || reps[0];
-  if (primer?.nombre) finalFlat.apoderado_nombre = String(primer.nombre);
-  if (primer?.cedula && !finalFlat.apoderado_cedula) finalFlat.apoderado_cedula = String(primer.cedula);
-}
-if (!finalFlat.apoderado_nombre && apoderadoOut?.tipo === "natural" && apoderadoOut.nombre) {
-  finalFlat.apoderado_nombre = String(apoderadoOut.nombre);
-  if (apoderadoOut.cedula && !finalFlat.apoderado_cedula) finalFlat.apoderado_cedula = String(apoderadoOut.cedula);
+  ...
 }
 ```
 
-**Bonus para "jurídica":** además del override de nombre/cédula, se selecciona preferentemente el representante marcado `es_firmante=true` (más semánticamente preciso que "el primero con nombre").
-
-## 3. Compatibilidad con V6 apagado
-
-- `POWER_V6_EXTRACTOR_ENABLED=false` → `deepV6 = null` → línea 128 hace `early return` con `flatMerged` puro. **El bloque nuevo nunca se ejecuta.** Comportamiento legacy intacto.
-- `deepV6` presente pero sin `apoderado` → `apoderadoOut = null` → guard `cls.tipoEfectivo !== null && apoderadoOut` falla. Sin cambios.
-- `deepV6.apoderado.tipo` degradado a `null` por el classifier → `cls.tipoEfectivo = null` → no override. Se mantiene monolítico > dedicado como fallback conservador.
-
-## 4. Tests nuevos en `src/shared/poderBancoExtractor.test.ts`
-
-Dentro de `describe("mergePoderBancoV6", ...)`:
+Nuevo (compatible con schema viejo Y nuevo):
 
 ```ts
-it("V6-wins: tipo='natural' no degradado, cédula de V6 sobrescribe la del monolítico", () => {
-  const mono = { apoderado_nombre: "PERSONA EQUIVOCADA", apoderado_cedula: "79.123.456" };
-  const deep: PoderBancoDeepPayload = {
-    has_apoderado_banco_v3: "true",
-    apoderado: { tipo: "natural", nombre: "ANA MARIA MONTOYA", cedula: "52219803" },
-    instrumento_poder: {
-      escritura_num: "2415",
-      fecha: "2025-08-19",
-      notaria_numero: "32",
-      notaria_ciudad: "BOGOTA D.C.",
-    },
-  };
-  const merged = mergePoderBancoV6(mono, null, deep);
-  expect(merged?.apoderado_nombre).toBe("ANA MARIA MONTOYA");
-  expect(merged?.apoderado_cedula).toBe("52219803");
-});
+// Helper: si el campo es {valor, confianza}, solo aceptar alta|media.
+// Si es string plano legacy, aceptar siempre (back-compat).
+function acceptable(field: unknown): string | undefined {
+  if (typeof field === "string") return sanitizeString(field);
+  if (field && typeof field === "object" && "valor" in field) {
+    const { valor, confianza } = field as { valor?: unknown; confianza?: string };
+    if (confianza === "baja") return undefined;
+    return sanitizeString(valor);
+  }
+  return undefined;
+}
 
-it("V6-wins: tipo='juridica' no degradado prefiere representante firmante", () => {
-  const mono = { apoderado_nombre: "OTRO NOMBRE", apoderado_cedula: "111" };
-  const deep: PoderBancoDeepPayload = {
-    has_apoderado_banco_v3: "true",
-    apoderado: {
-      tipo: "juridica",
-      sociedad_razon_social: "SOC S.A.S.",
-      sociedad_nit: "900123456-7",
-      sociedad_constitucion: { camara_comercio_numero: "999" },
-      representantes: [
-        { nombre: "SUPLENTE", cedula: "222", cargo: "SUPLENTE", es_firmante: false },
-        { nombre: "TITULAR FIRMANTE", cedula: "333", cargo: "REP LEGAL", es_firmante: true },
-      ],
-    },
-  };
-  const merged = mergePoderBancoV6(mono, null, deep);
-  expect(merged?.apoderado_nombre).toBe("TITULAR FIRMANTE");
-  expect(merged?.apoderado_cedula).toBe("333");
-});
-
-it("V6 degradado (tipo=null por falta de datos): NO override, mantiene monolítico", () => {
-  const mono = { apoderado_nombre: "NOMBRE MONO", apoderado_cedula: "111" };
-  const deep: PoderBancoDeepPayload = {
-    has_apoderado_banco_v3: "true",
-    // Sin instrumento_poder ni escritura_poder_* → classifier degrada
-    apoderado: { tipo: "natural", nombre: "IA NOMBRE", cedula: "222" },
-  };
-  const merged = mergePoderBancoV6(mono, null, deep);
-  // classifier degradó → mono gana (comportamiento legacy)
-  expect(merged?.apoderado_nombre).toBe("NOMBRE MONO");
-  expect(merged?.apoderado_cedula).toBe("111");
-  expect((merged?.apoderado as { tipo?: string | null })?.tipo).toBeNull();
-});
-
-it("V6 apagado (deepV6=null): comportamiento legacy sin cambios", () => {
-  const mono = { apoderado_nombre: "MONO", apoderado_cedula: "999" };
-  const merged = mergePoderBancoV6(mono, null, null);
-  expect(merged?.apoderado_nombre).toBe("MONO");
-  expect(merged?.apoderado_cedula).toBe("999");
-});
+if (apoderadoOut && cls.tipoEfectivo !== null) {
+  if (cls.tipoEfectivo === "natural") {
+    const n = acceptable(apoderadoOut.nombre);
+    const c = acceptable(apoderadoOut.cedula);
+    if (n) finalFlat.apoderado_nombre = n;
+    if (c) finalFlat.apoderado_cedula = c;
+    // Trazabilidad para UI: qué campos se rechazaron por baja confianza.
+    if (!c && apoderadoOut.cedula) baja_confianza.push("apoderado_cedula");
+    if (!n && apoderadoOut.nombre) baja_confianza.push("apoderado_nombre");
+  }
+  // jurídica: aplicar acceptable() a firmante.nombre/cedula igual.
+}
 ```
 
-También revisar que el test preexistente **"Humano/monolítico gana sobre v6 profundo en campos planos legacy"** siga verde. Debería: ese test no envía `instrumento_poder` ni datos de sustitución, por lo que el classifier lo degradará a `null` y el override no aplicará → monolítico sigue ganando. ✅
+Nuevo campo de salida en el bloque merged: `_baja_confianza: string[]` (lista de paths marcados por V6 como baja confianza y por eso NO promovidos). Consumido por UI (Parte 3).
 
-## 5. Plan de validación en vivo
+Nota: el shape de `apoderado.nombre/cedula` cambia de `string` a `{valor,confianza}` cuando el flag está ON. `mergePoderBancoV6` debe re-emitir `apoderado` con estructura plana desenvuelta (`{tipo, nombre: string|null, cedula: string|null, _confianza: {nombre, cedula}}`) para que consumidores existentes (`PoderViewerTab`, `buildProsaContext`, `docxConsolidation`) no rompan.
 
-1. Correr `bunx vitest run` — esperar 122 preexistentes + 4 nuevos = **126 verdes**.
-2. Redesplegar `procesar-cancelacion`.
-3. Pedir al usuario que reprocese el mismo poder de Ana María una vez más.
-4. Verificar en BD sobre el nuevo `id`:
-   ```sql
-   SELECT data_ia->'poder_banco'->>'apoderado_nombre' AS nom_plano,
-          data_ia->'poder_banco'->>'apoderado_cedula' AS ced_plana,
-          data_ia->'poder_banco'->'apoderado'->>'cedula' AS ced_v6
-   FROM cancelaciones WHERE id = '<nuevo_id>';
-   ```
-   **Esperado:** `nom_plano="ANA MARIA MONTOYA ECHEVERRY"`, `ced_plana="52219803"` == `ced_v6`.
-5. Confirmar que el `.docx` renderiza la cédula correcta.
+---
 
-## 6. Riesgos / consideraciones
+## PARTE 2 — Validación determinista de coherencia interna
 
-- **Regresión posible:** casos donde el humano editó manualmente `apoderado_cedula` en el monolítico y V6 se equivoca. Mitigación: la edición manual **no pasa por este merge** — vive en `data_final`, que siempre gana sobre `data_ia` en el pipeline downstream (regla "Read-then-Merge, Manual > OCR > BD"). Este merge sólo afecta `data_ia`.
-- **Formato de cédula:** V6 devuelve dígitos limpios (`52219803`), monolítico a veces con puntos (`79.123.456`). El nuevo output será sin puntos — consistente con el formato canónico de la app.
-- **Cambio de contrato observable:** consumidores que leyeran `data_ia.poder_banco.apoderado_cedula` esperando el valor del monolítico verán ahora el de V6 cuando el classifier valida. Es el comportamiento deseado.
+Archivo nuevo: `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts`
+
+Exporta `validatePoderBancoCoherencia(merged): { warnings: string[], suspicious: Set<string> }`.
+
+### 2.1 Cross-check `escritura_num` ↔ `apoderado_escritura`
+
+```ts
+function normalizaEscritura(s: string | undefined): string | undefined {
+  // "TRESCIENTOS SESENTA Y CUATRO (364)" → "364"
+  // "2814" → "2814"
+  // Extrae dígitos del paréntesis final si existe; sino dígitos crudos.
+  const m = s?.match(/\((\d+)\)\s*$/);
+  return m ? m[1] : s?.replace(/\D/g, "") || undefined;
+}
+```
+
+Si `normalizaEscritura(apoderado_escritura) !== instrumento_poder.escritura_num` **y ambos existen** → añadir `"apoderado_escritura"` e `"instrumento_poder.escritura_num"` a `suspicious`, y warning `"escritura_num_incoherente"`.
+
+Mismo tratamiento para `apoderado_fecha` ↔ `instrumento_poder.fecha` (comparar año extraído).
+
+### 2.2 Formato de cédula colombiana
+
+```ts
+const CEDULA_RE = /^\d{6,10}$/;
+function isCedulaValida(c: string | undefined): boolean {
+  if (!c) return true; // ausencia ≠ inválida
+  const norm = c.replace(/[.\s]/g, "");
+  return CEDULA_RE.test(norm);
+}
+```
+
+Aplicar a: `apoderado_cedula` (plano), `apoderado.cedula` (V6), `poderdante.representante_legal_cedula`, `representantes[].cedula`.
+
+Si NO cumple → marcar path en `suspicious` **sin importar la confianza que reportó Gemini** (`521639-4` habría caído aquí aunque Gemini lo reporte con confianza "alta"). Warning: `"cedula_formato_invalido:<path>"`.
+
+### 2.3 Cross-check identidad apoderado vs poderdante
+
+Si `apoderado.cedula === poderdante.representante_legal_cedula` **con ambos no vacíos** → warning `"apoderado_coincide_con_rl_banco"` y ambos paths a `suspicious`. Cubre el caso `9a78aebb` donde Gemini colapsó ambos en Ana María.
+
+### 2.4 Integración en el pipeline
+
+En `procesar-cancelacion/index.ts`, después del merge V6 y antes de persistir `data_ia.poder_banco`:
+
+```ts
+const coherencia = validatePoderBancoCoherencia(mergedPoderBanco);
+mergedPoderBanco._coherencia_warnings = coherencia.warnings;
+mergedPoderBanco._coherencia_suspicious = Array.from(coherencia.suspicious);
+// Emitir system_event si hay algo
+if (coherencia.warnings.length > 0) {
+  await logSystemEvent({
+    evento: "procesar-cancelacion.poder.coherencia",
+    resultado: "warnings",
+    detalle: { cancelacion_id, warnings: coherencia.warnings, suspicious: [...] }
+  });
+}
+```
+
+Nunca bloquea la persistencia — solo anota. Filosofía Sertuss: código mide, humano decide.
+
+---
+
+## PARTE 3 — Superficie de alerta al usuario
+
+Archivo: `src/components/cancelaciones/PoderBannersV5.tsx` (reutilizar patrón ámbar existente L112-125).
+
+### 3.1 Nuevo banner "Datos de baja confianza"
+
+Se activa si `poder_banco._baja_confianza.length > 0` OR `poder_banco._coherencia_suspicious.length > 0`.
+
+Contenido:
+```
+⚠ Revisa manualmente estos datos del poder
+La IA no pudo leer con certeza:
+  • Cédula del apoderado (baja confianza)
+  • Número de escritura (incoherente entre bloques)
+Estos campos NO se copiaron al borrador. Ábrelo, verifica contra el PDF
+y edita el campo antes de generar el documento final.
+[Ver campos afectados ▾]
+```
+
+Estilo: reusar `rounded-lg border border-amber-500/40 bg-amber-500/5 p-3` con `AlertTriangle` (mismo componente iconográfico usado en L167-171).
+
+### 3.2 Marca visible en el campo mismo
+
+Archivo: `src/pages/CancelacionValidar.tsx` (componente `<Field>` local, L1163-1180).
+
+Si el path del campo está en `_baja_confianza` o `_coherencia_suspicious`:
+- Border del input pasa a `border-amber-500` (ya existe patrón rojo para faltantes críticos en `cancelacionCriticalFields.ts` — este es el hermano ámbar).
+- Ícono pequeño `AlertTriangle` amber a la derecha del label con tooltip: "IA leyó con baja confianza — verifica contra el PDF antes de generar".
+
+Wiring: pasar `suspicious: Set<string>` como prop a `<Field>`. Cero cambio en `docxConsolidation` (los valores sospechosos siguen fluyendo — el usuario los ve marcados; si no los toca, el documento sale igual que hoy).
+
+### 3.3 Bloqueo suave en "Generar documento"
+
+Botón principal de generación: si hay `suspicious.length > 0` no editados manualmente, mostrar confirmación modal **una vez**:
+```
+Hay 3 campos que la IA marcó como baja confianza y no has revisado.
+¿Generar el documento igualmente? [Revisar antes] [Generar de todas formas]
+```
+
+No bloquea (respeta filosofía "humano decide"), pero fuerza consciencia.
+
+---
+
+## Archivos tocados
+
+| Archivo | Parte | Tipo de cambio |
+|---|---|---|
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` | 1.1 | Schema: envolver ~20 campos en `confStrField` |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts` | 1.2 | Añadir bloque "CONFIANZA POR CAMPO" y auto-verificación |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts` | 1.3 | `acceptable()`, output `_baja_confianza`, desenvolver campos profundos |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts` | 2 | **Nuevo**. Coherencia + formato cédula |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/index.ts` | 1 | Exponer tipos nuevos |
+| `supabase/functions/procesar-cancelacion/index.ts` | 2.4 | Llamar `validatePoderBancoCoherencia`, adjuntar warnings, log |
+| `src/components/cancelaciones/PoderBannersV5.tsx` | 3.1 | Nuevo banner "baja confianza" |
+| `src/pages/CancelacionValidar.tsx` | 3.2, 3.3 | Marca ámbar por campo + confirmación pre-generación |
+| `src/lib/featureFlags.ts` | todo | Flag `POWER_V6_STRICT_CONF_ENABLED` |
+| `src/shared/poderBancoExtractor.test.ts` | 1, 2 | Casos: baja confianza → no override; cédula "521639-4" → suspicious; escritura incoherente → suspicious; back-compat legacy string |
+| `src/shared/poderBancoValidate.test.ts` | 2 | **Nuevo**. Unit tests de cada regla de validación |
+
+---
+
+## Riesgos de regresión
+
+**Alto:**
+- **Consumidores del bloque profundo** (`PoderViewerTab`, `buildProsaContext`, `docxConsolidation.ts` L509-512) esperan `apoderado.nombre: string`. El nuevo shape sería `{valor, confianza}` — hay que desenvolver en `merge.ts` antes de exponer al frontend (mantener `apoderado.nombre` como `string|null` desenvuelto, y añadir `apoderado._confianza: {nombre, cedula, ...}` en paralelo). **Sin este cuidado, el visor V2 rompe.**
+- **`apoderadoClassifier.ts`** (recién editado) lee `apoderado.nombre/cedula`. Su lógica de "hay identidad" debe seguir funcionando; después del desenvolvido no cambia. Sí hay que testear que el classifier no vea `{valor:null, confianza:"baja"}` como "identidad presente".
+
+**Medio:**
+- **Gemini con schema más rico**: el schema V6 con `confStrField` en ~20 lugares es más grande. Gemini 2.5 Flash puede degradar latencia (~5-10% probable) o rechazar por complejidad. Flag OFF si latencia supera 1.5x baseline.
+- **Prompt más largo** (~30 líneas extra): riesgo bajo — Gemini maneja 500-line prompts sin problema, pero validar que el prompt sigue < 8k tokens.
+- **Cambio de contrato en `data_ia.poder_banco`**: registros históricos siguen con schema viejo. Las funciones downstream deben tolerar AMBOS shapes (con y sin envoltorio de confianza). Test explícito de un payload viejo re-leído.
+
+**Bajo:**
+- **Tests actuales (126 verdes)**: los 4 tests V6-wins que acabamos de agregar usan strings planos → siguen pasando (path back-compat en `acceptable()`). No hay regresión.
+- **Banner nuevo en UI**: independiente, solo se muestra si hay warnings. Sin warnings, invisible.
+
+---
+
+## Plan de verificación
+
+### Fase 1 (schema + merge, flag OFF):
+1. `bunx vitest run` → 126 tests verdes + nuevos tests unitarios de `acceptable()` y desenvolvido.
+2. Deploy `procesar-cancelacion` con flag OFF → comportamiento idéntico al de hoy.
+3. Reprocesar los 5 trámites históricos más recientes → confirmar `data_ia.poder_banco` idéntico bit-a-bit.
+
+### Fase 2 (validate.ts, flag OFF, solo mide):
+4. Deploy con `validatePoderBancoCoherencia` corriendo pero sin propagar a UI.
+5. Reprocesar Ana María (`15582708`, `9a78aebb`) → confirmar que `system_events` registra warnings:
+   - `15582708`: `escritura_num_incoherente` (2814 vs 364), `cedula_formato_invalido:apoderado_cedula` (79.123.456 tiene puntos → normaliza OK; pero VALIDAR contra 79.123.456 tal cual también).
+   - `9a78aebb`: `cedula_formato_invalido:apoderado.cedula` (521639-4), `apoderado_coincide_con_rl_banco`, `escritura_num_incoherente` (2161 vs 2384), `fecha_incoherente` (2023 vs 2024).
+6. Recolectar warnings de 20 trámites históricos aleatorios → estimar tasa de falsos positivos.
+
+### Fase 3 (schema strict ON, ambiente staging):
+7. Activar `POWER_V6_STRICT_CONF_ENABLED=true`.
+8. Re-subir el mismo PDF de Ana María 3 veces → medir consistencia:
+   - Esperado: al menos algunos campos ahora salen con `confianza: "baja"` y `valor: null` (papel notarial rosado ilegible).
+   - Confirmar que `_baja_confianza` y `_coherencia_suspicious` no están vacíos.
+   - Confirmar que el banner ámbar aparece en `CancelacionValidar.tsx`.
+9. Medir latencia p95 antes/después → si > 1.5x, flag OFF y iterar schema.
+
+### Fase 4 (UI, con flag ON):
+10. Manual QA con dueño del producto: subir Ana María, ver banner, ver bordes ámbar, editar cédula a `41.939.243`, generar documento → confirmar que sale con el valor editado.
+11. Regresión: subir un poder bien escaneado (bucket de referencia Davivienda) → confirmar que banner NO aparece.
+
+### Fase 5 (rollout):
+12. Flag ON por default en producción, monitor semanal de tasa de banners `_baja_confianza` en `system_events`.
+
+---
+
+## Cronograma sugerido
+
+- **Sprint 1 (esta semana):** Partes 1.1, 1.2, 1.3 + tests unitarios. Deploy con flag OFF. Fase 1 de verificación.
+- **Sprint 2 (siguiente semana):** Parte 2 completa. Fase 2 (solo mide). Análisis de tasa de warnings sobre histórico.
+- **Sprint 3:** Parte 3 UI + activación gradual (Fase 3, 4). Rollout general (Fase 5) tras 1 semana estable en staging.
+
+Priorización: Parte 2 sola ya cubre ~70% del daño hoy (los dos casos de Ana María se detectan sin necesidad del schema strict). Si hay que soltar solo una fase primero, es la Parte 2 con Parte 3 mínima (banner). Parte 1 (schema strict) es lo caro/riesgoso y va al final.
