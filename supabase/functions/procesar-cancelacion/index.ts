@@ -771,7 +771,7 @@ function normalizeDeudores(partes: CancelacionData["partes"]) {
     const ident = onlyDigits(d?.identificacion);
     const tipoIn = String(d?.tipo_id ?? "").toUpperCase().trim();
     const tipo_id = VALID_TIPO_ID.has(tipoIn) ? tipoIn : "CEDULA DE CIUDADANIA";
-    const genero = (d?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(nombre) || "";
+    const genero: "M" | "F" | "" = ((d?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(nombre) || "") as "M" | "F" | "";
     return {
       nombre,
       identificacion: ident,
