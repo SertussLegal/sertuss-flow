@@ -157,5 +157,41 @@ export function validatePoderBancoCoherencia(
     suspicious.add("poderdante.representante_legal_cedula");
   }
 
+  // Regla 3 — Campos críticos marcados como NO_LEGIBLE por el OCR (v7-2026-07-08).
+  // Cuando el modelo declara honestamente que no puede leer un campo, marcamos
+  // warning explícito para que la UI pida verificación humana en vez de dejar
+  // pasar un valor alucinado con apariencia de certeza.
+  const escrituraPlanoLegacy = merged.escritura_poder_num as string | undefined;
+  const fechaPlanoLegacy = merged.fecha_poder as string | undefined;
+  const instrFechaTexto = instr?.fecha_texto as string | undefined;
+
+  const noLegibleChecks: Array<[string, Array<[string, unknown]>]> = [
+    ["apoderado_cedula_no_legible", [
+      ["apoderado_cedula", apoderadoCedulaPlano],
+      ["apoderado.cedula", apoderadoCedulaDeep],
+    ]],
+    ["escritura_poder_no_legible", [
+      ["escritura_poder_num", escrituraPlanoLegacy],
+      ["apoderado_escritura", apoderadoEscritura],
+      ["instrumento_poder.escritura_num", instrEscritura],
+    ]],
+    ["fecha_poder_no_legible", [
+      ["fecha_poder", fechaPlanoLegacy],
+      ["apoderado_fecha", apoderadoFecha],
+      ["instrumento_poder.fecha", instrFecha],
+      ["instrumento_poder.fecha_texto", instrFechaTexto],
+    ]],
+  ];
+  for (const [warningCode, paths] of noLegibleChecks) {
+    let triggered = false;
+    for (const [path, val] of paths) {
+      if (isNoLegible(val)) {
+        suspicious.add(path);
+        triggered = true;
+      }
+    }
+    if (triggered) warnings.push(warningCode);
+  }
+
   return { warnings, suspicious };
 }
