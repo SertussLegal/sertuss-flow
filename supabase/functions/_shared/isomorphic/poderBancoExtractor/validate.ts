@@ -73,8 +73,11 @@ export const WARNING_LABELS: Record<string, string> = {
 export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "apoderado_escritura": "Número de escritura (plano)",
   "instrumento_poder.escritura_num": "Número de escritura (detalle profundo)",
+  "escritura_poder_num": "Número de escritura (plano legacy)",
   "apoderado_fecha": "Fecha del poder (plano)",
   "instrumento_poder.fecha": "Fecha del poder (detalle profundo)",
+  "instrumento_poder.fecha_texto": "Fecha del poder (texto literal)",
+  "fecha_poder": "Fecha del poder (plano legacy)",
   "apoderado_cedula": "Cédula del apoderado (plano)",
   "apoderado.cedula": "Cédula del apoderado (detalle profundo)",
   "poderdante.representante_legal_cedula": "Cédula del representante legal del banco",
