@@ -123,10 +123,30 @@ export function PoderBannersV5({
                     .join(" · ")}
                 </p>
               )}
+              {showManualReviewCta && (
+                <div className="pt-2 space-y-1.5 border-t border-amber-500/30">
+                  <p className="text-[11px] text-foreground/75">
+                    Al confirmar declaras que verificaste estos datos contra el documento original.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    className="h-8 text-[12px]"
+                    disabled={manualReviewConfirming}
+                    onClick={() => { void onConfirmManualReview?.(); }}
+                  >
+                    {manualReviewConfirming
+                      ? "Generando documento…"
+                      : "Confirmar revisión manual y generar documento"}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
+
 
       {showK3 && (
         <div
