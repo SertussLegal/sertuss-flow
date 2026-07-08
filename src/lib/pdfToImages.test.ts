@@ -16,16 +16,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock de pdfjs-dist ─────────────────────────────────────────────────
+// El baseViewport (scale=1) se lee de __basePt para poder simular tamaños
+// reales de página (Carta 612×792, Oficio 612×936, etc.) en los tests de
+// calibración de DPI. Default 800×1000 para no romper tests preexistentes.
 vi.mock("pdfjs-dist", () => {
   const makePage = (n: number) => ({
-    getViewport: ({ scale }: { scale: number }) => ({
-      width: 800 * scale,
-      height: 1000 * scale,
-    }),
+    getViewport: ({ scale }: { scale: number }) => {
+      const base = (globalThis as any).__basePt ?? { w: 800, h: 1000 };
+      return { width: base.w * scale, height: base.h * scale };
+    },
     render: () => ({
       promise: (async () => {
-        // Emula "pintar" cambiando el color de fondo del canvas actual.
-        // El test controla qué píxeles devolvería getImageData vía __setPagePixel.
         (globalThis as any).__lastRenderedPage = n;
       })(),
     }),
@@ -44,6 +45,7 @@ vi.mock("pdfjs-dist", () => {
     }),
   };
 });
+
 
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "" }));
 
@@ -73,10 +75,15 @@ function installCanvasMocks(opts: {
     cb: BlobCallback,
   ) {
     const n = (globalThis as any).__lastRenderedPage ?? 1;
+    // Capturamos las dimensiones reales del canvas por página para permitir
+    // aserciones sobre la resolución efectiva (DPI) en los tests.
+    const dims = ((globalThis as any).__canvasDims ??= [] as Array<{ w: number; h: number }>);
+    dims.push({ w: this.width, h: this.height });
     const bytes = new Uint8Array(sizePerPage(n));
     cb(new Blob([bytes], { type: "image/jpeg" }));
   });
 }
+
 
 function makeFile(): File {
   // jsdom no implementa Blob.arrayBuffer; parcheamos en el prototipo una vez.
@@ -95,7 +102,10 @@ describe("pdfToImages", () => {
     vi.restoreAllMocks();
     (globalThis as any).__mockNumPages = 3;
     (globalThis as any).__lastRenderedPage = 0;
+    (globalThis as any).__basePt = { w: 800, h: 1000 };
+    (globalThis as any).__canvasDims = [];
   });
+
 
   it("produce un blob por página con tamaños dispares (>5% variación pico-valle)", async () => {
     installCanvasMocks({});
@@ -195,5 +205,43 @@ describe("pdfToImages", () => {
     const pages = await pdfToImages(makeFile(), { maxPages: 2 });
     expect(pages).toHaveLength(2);
   });
+
+  // ── Calibración de resolución (~200 DPI para OCR legal) ────────────────
+
+  it("Carta (612×792 pt): produce canvas >= 2200 px lado mayor (>=200 DPI)", async () => {
+    installCanvasMocks({ sizePerPage: () => 400_000 });
+    (globalThis as any).__basePt = { w: 612, h: 792 };
+    (globalThis as any).__mockNumPages = 1;
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    const dims = (globalThis as any).__canvasDims as Array<{ w: number; h: number }>;
+    const longest = Math.max(dims[0].w, dims[0].h);
+    expect(longest).toBeGreaterThanOrEqual(2200);
+    expect((longest / 792) * 72).toBeGreaterThanOrEqual(200);
+  });
+
+  it("Oficio colombiano (612x936 pt): produce canvas >= 2500 px lado mayor", async () => {
+    installCanvasMocks({ sizePerPage: () => 500_000 });
+    (globalThis as any).__basePt = { w: 612, h: 936 };
+    (globalThis as any).__mockNumPages = 1;
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    const dims = (globalThis as any).__canvasDims as Array<{ w: number; h: number }>;
+    const longest = Math.max(dims[0].w, dims[0].h);
+    expect(longest).toBeGreaterThanOrEqual(2500);
+    expect((longest / 936) * 72).toBeGreaterThanOrEqual(190);
+  });
+
+  it("PDF digital pequeno (400x500 pt): upscala hasta MAX_UPSCALE=3 en vez de quedar pixelado", async () => {
+    installCanvasMocks({ sizePerPage: () => 200_000 });
+    (globalThis as any).__basePt = { w: 400, h: 500 };
+    (globalThis as any).__mockNumPages = 1;
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    const dims = (globalThis as any).__canvasDims as Array<{ w: number; h: number }>;
+    const longest = Math.max(dims[0].w, dims[0].h);
+    expect(longest).toBe(1500);
+  });
 });
+
 

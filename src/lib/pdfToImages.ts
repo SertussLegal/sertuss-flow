@@ -25,11 +25,29 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 export interface PdfToImagesOptions {
   /** Máximo de páginas a renderizar (default 10). Configurable: 3 certificados, 10 escrituras. */
   maxPages?: number;
-  /** Lado mayor del canvas, en pixeles (default 1600). */
+  /**
+   * Lado mayor del canvas, en pixeles (default 2600).
+   * Calibrado para ~200 DPI efectivo sobre Oficio colombiano (612×936 pt):
+   *   936 pt × (200/72) = 2600 px. Carta (792 pt) queda en 2200 px (200 DPI),
+   *   A4 (842 pt) queda en 2339 px (200 DPI). 200 DPI es el piso estándar
+   *   para OCR fiable de texto legal pequeño (cédulas, escrituras, firmas).
+   */
   maxDimension?: number;
-  /** Calidad JPEG entre 0 y 1 (default 0.75). */
+  /**
+   * Calidad JPEG entre 0 y 1 (default 0.82). Subida desde 0.75 para preservar
+   * los bordes de glifos pequeños que Gemini/Claude tokenizan; costo marginal
+   * en bytes (~+10%).
+   */
   jpegQuality?: number;
 }
+
+/**
+ * Tope de upscaling. Un PDF originalmente pequeño (p. ej. digital de 400 pt de
+ * lado mayor) se sube hasta 3× para alcanzar el objetivo de 200 DPI en vez de
+ * quedarse pixelado. 3× = 200/72 × margen (2.78 real).
+ */
+const MAX_UPSCALE = 3;
+
 
 export interface RenderedPage {
   pageNumber: number;
@@ -85,15 +103,17 @@ export class UniformDocumentError extends Error {
 const MIN_JPEG_BYTES = 1500;
 
 /**
- * Umbral "sano" por página a 1600px lado mayor.
- * Datos reales observados en producción (auditoría 2026-07):
+ * Umbral "sano" por página al `maxDimension` por defecto (2600 px).
+ * Datos reales observados en producción (auditoría 2026-07, entonces a 1600 px):
  *   - Poderes/escrituras legítimas: 158 KB – 358 KB por página.
  *   - Placeholder bug: 12192 bytes exactos en todas las páginas.
- * A 30000 bytes atrapamos el caso 12192 con margen amplio (>2×) sin
- * arriesgar falsos positivos contra la página más liviana vista en
- * documentos reales (158 KB).
+ * A 2600 px + q0.82 los tamaños suben aún más (400 KB – 950 KB densos), por
+ * lo que 30000 bytes sigue siendo un piso conservador que atrapa el caso
+ * 12192 con >2× de margen sin generar falsos positivos contra páginas
+ * legítimamente ligeras.
  */
 const HEALTHY_JPEG_BYTES = 30_000;
+
 
 /**
  * Umbral para "documento uniforme": si ≥90% de páginas tienen el mismo tamaño
@@ -140,7 +160,7 @@ export async function pdfToImages(
   file: File,
   opts: PdfToImagesOptions = {},
 ): Promise<RenderedPage[]> {
-  const { maxPages = 10, maxDimension = 1600, jpegQuality = 0.75 } = opts;
+  const { maxPages = 10, maxDimension = 2600, jpegQuality = 0.82 } = opts;
 
   const buf = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf) });
@@ -155,8 +175,9 @@ export async function pdfToImages(
       const page = await pdf.getPage(i);
       const baseViewport = page.getViewport({ scale: 1 });
       const longest = Math.max(baseViewport.width, baseViewport.height);
-      const scale = Math.min(2, maxDimension / longest);
+      const scale = Math.min(MAX_UPSCALE, maxDimension / longest);
       const viewport = page.getViewport({ scale });
+
 
       canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width);
