@@ -85,10 +85,10 @@ export function PoderBannersV5({
   const suspicious = (coherenciaSuspicious || []).filter(Boolean);
   const showCoherencia = warnings.length > 0 || suspicious.length > 0;
 
-  // Fase E — Bloqueo duro por NO_LEGIBLE.
-  const hayNoLegible = warnings.some((w) => w.endsWith("_no_legible"));
+  // Fase E — Bloqueo duro: NO_LEGIBLE + incoherencias + placeholder + duplicidad cruzada.
+  const hayHardBlock = warnings.some(isHardBlockCoherenciaWarning);
   const showManualReviewCta =
-    hayNoLegible && !!manualReviewPending && typeof onConfirmManualReview === "function";
+    hayHardBlock && !!manualReviewPending && typeof onConfirmManualReview === "function";
 
 
   return (
