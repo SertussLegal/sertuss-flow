@@ -515,6 +515,16 @@ export const CancelacionValidar = () => {
     isRegenInFlightRef.current = false;
     if (error) {
       setPreviewStale(true);
+      const parsed = await parseManualReviewError(error);
+      if (parsed) {
+        const pendientes = [...parsed.paths, ...parsed.motivos].join(", ");
+        toast.info("Revisión manual pendiente", {
+          description: pendientes
+            ? `Aún hay campos por corregir: ${pendientes}`
+            : "Hay campos del poder marcados como no legibles. Corrígelos antes de regenerar.",
+        });
+        return;
+      }
       toast.error("No se pudo regenerar", { description: error.message });
       return;
     }
