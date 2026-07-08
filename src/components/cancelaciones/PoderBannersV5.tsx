@@ -43,6 +43,12 @@ export interface PoderBannersV5Props {
   coherenciaWarnings?: string[] | null;
   /** Paths de campos sospechosos (para explicar cuáles revisar). */
   coherenciaSuspicious?: string[] | null;
+  /** Fase E: la cancelación está en status 'requiere_revision_manual'. */
+  manualReviewPending?: boolean;
+  /** Fase E: callback que dispara la acción `confirm_manual_review`. */
+  onConfirmManualReview?: () => Promise<void> | void;
+  /** Fase E: la acción de confirmación está en vuelo. */
+  manualReviewConfirming?: boolean;
 }
 
 export function PoderBannersV5({
@@ -55,6 +61,9 @@ export function PoderBannersV5({
   onSetTipoOverride,
   coherenciaWarnings,
   coherenciaSuspicious,
+  manualReviewPending,
+  onConfirmManualReview,
+  manualReviewConfirming,
 }: PoderBannersV5Props) {
   if (!poderAdjuntado) return null;
 
@@ -75,6 +84,12 @@ export function PoderBannersV5({
   const warnings = (coherenciaWarnings || []).filter(Boolean);
   const suspicious = (coherenciaSuspicious || []).filter(Boolean);
   const showCoherencia = warnings.length > 0 || suspicious.length > 0;
+
+  // Fase E — Bloqueo duro por NO_LEGIBLE.
+  const hayNoLegible = warnings.some((w) => w.endsWith("_no_legible"));
+  const showManualReviewCta =
+    hayNoLegible && !!manualReviewPending && typeof onConfirmManualReview === "function";
+
 
   return (
     <div className="space-y-2">
