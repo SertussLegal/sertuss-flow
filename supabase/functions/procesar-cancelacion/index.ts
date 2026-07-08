@@ -1185,13 +1185,35 @@ async function fillTemplate(
  * NO actualiza el row de `cancelaciones`. Solo genera+sube y devuelve paths.
  * El caller decide qué campos escribir (status, url_*, timestamps, etc.).
  */
-async function generateAndUploadCancelacionDocs(
+export class ManualReviewRequiredError extends Error {
+  readonly code = "MANUAL_REVIEW_REQUIRED";
+  constructor(
+    public readonly paths: string[],
+    public readonly motivos: string[],
+  ) {
+    super(
+      `Generación bloqueada: ${paths.length} campo(s) NO_LEGIBLE, ` +
+      `${motivos.length} hard-block de coherencia.`,
+    );
+    this.name = "ManualReviewRequiredError";
+  }
+}
+
+export async function generateAndUploadCancelacionDocs(
   // deno-lint-ignore no-explicit-any
   supabaseService: any,
   cancelacionId: string,
   data: CancelacionData,
   prosaApoderadoOverride: ProsaApoderadoOverride | null,
 ): Promise<{ minutaPath: string; certPath: string }> {
+  // Fail-safe por construcción: bloquear si persiste NO_LEGIBLE o hard-block.
+  // Cubre los 3 call sites (flujo normal, confirm_manual_review, regen)
+  // y cualquier call site futuro.
+  const revision = detectRequiereRevisionManual(data);
+  if (revision.requiere) {
+    throw new ManualReviewRequiredError(revision.paths, revision.motivos);
+  }
+
   const vars = buildDocxVars(data, prosaApoderadoOverride);
   const minutaTemplate = selectMinutaTemplate(data);
   const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
