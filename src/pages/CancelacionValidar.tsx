@@ -544,6 +544,43 @@ export const CancelacionValidar = () => {
     }
   };
 
+  // Fase E — Confirmar revisión manual: desbloquea la generación de la minuta
+  // cuando el pipeline marcó `NO_LEGIBLE` en algún campo crítico del poder.
+  // Persiste antes cualquier edición pendiente para que `data_final` refleje
+  // lo que el usuario acaba de corregir contra el PDF original.
+  const handleConfirmManualReview = async () => {
+    if (!id) return;
+    if (isConfirmingReviewRef.current) return;
+    if (isDirty) {
+      await persistData({ silent: true });
+    }
+    isConfirmingReviewRef.current = true;
+    setConfirmingReview(true);
+    try {
+      const { data: resp, error } = await monitored.invoke<{
+        ok?: boolean; code?: string; message?: string; unlocked?: boolean;
+      }>("procesar-cancelacion", { cancelacionId: id, action: "confirm_manual_review" });
+      if (error) {
+        toast.error("No se pudo confirmar la revisión", { description: error.message });
+        return;
+      }
+      if (resp && resp.ok === false) {
+        toast.error("No se pudo generar el documento", { description: resp.message ?? "Intenta de nuevo." });
+        return;
+      }
+      toast.success("Documento generado", {
+        description: "La cancelación quedó completada tras tu confirmación.",
+      });
+      setViewerKey((k) => k + 1);
+      await queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+    } finally {
+      isConfirmingReviewRef.current = false;
+      setConfirmingReview(false);
+    }
+  };
+
+
+
   // Re-procesar SOLO la cuantía del crédito con OCR dedicado sobre la
   // escritura antecedente. Caso típico: el certificado registró la hipoteca
   // como "CUANTÍA INDETERMINADA" y el monolítico dejó el campo vacío. No
