@@ -345,7 +345,7 @@ PODER GENERAL DEL BANCO (cuando se adjunte):
 - ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
 - Palabras clave para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
 - Devuelve la fecha del poder en formato notarial completo: 'DIECINUEVE (19) DE AGOSTO DE DOS MIL VEINTICINCO (2025)'.
-- Si SE ADJUNTÓ el Poder: DEVUELVE el objeto 'poder_banco' con TODOS los campos que puedas confirmar y usa **\`null\` (JSON null, NO cadena vacía '')** en cada campo individual ilegible. Si encuentras al menos el nombre del apoderado, devuelve el objeto.
+- Si SE ADJUNTÓ el Poder: DEVUELVE el objeto 'poder_banco' con TODOS los campos que puedas confirmar y **OMITE cada campo individual ilegible** (no lo incluyas en el JSON; NO uses la cadena \`"null"\` ni cadena vacía \`""\`). Si encuentras al menos el nombre del apoderado, devuelve el objeto.
 - Solo OMITE 'poder_banco' completamente si NO se adjuntó poder en absoluto.
 
 
