@@ -2205,6 +2205,26 @@ if (import.meta.main) serve(async (req) => {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (genErr) {
+        if (genErr instanceof ManualReviewRequiredError) {
+          // El usuario intentó confirmar sin resolver los campos NO_LEGIBLE /
+          // hard-blocks de coherencia. NO cambiamos status (sigue en
+          // 'requiere_revision_manual') y logueamos el intento.
+          void supabaseService.from("system_events").insert({
+            organization_id: orgId,
+            tramite_id: cancelacionId,
+            user_id: userId,
+            evento: "procesar-cancelacion.confirm_manual_review",
+            resultado: "rechazado",
+            categoria: "PODER_NO_LEGIBLE_PERSISTE",
+            detalle: { paths: genErr.paths, motivos: genErr.motivos },
+          }).then(() => {}, () => {});
+          const pendientes = [...genErr.paths, ...genErr.motivos].join(", ");
+          return biz(
+            "manual_review_not_resolved",
+            `Aún hay campos sin resolver: ${pendientes}. Corrígelos antes de confirmar.`,
+            { paths: genErr.paths, motivos: genErr.motivos },
+          );
+        }
         const msg = genErr instanceof Error ? genErr.message : String(genErr);
         console.error("[procesar-cancelacion.confirm_manual_review] error:", msg);
         return biz("generation_error", `No se pudo generar el documento: ${msg.slice(0, 300)}`);
