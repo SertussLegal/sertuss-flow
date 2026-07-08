@@ -1157,7 +1157,11 @@ export const CancelacionValidar = () => {
                       }}
                       coherenciaWarnings={(pb as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings}
                       coherenciaSuspicious={(pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious}
+                      manualReviewPending={row?.status === "requiere_revision_manual"}
+                      manualReviewConfirming={confirmingReview}
+                      onConfirmManualReview={handleConfirmManualReview}
                     />
+
 
                     {empty && !poderAdjuntado && (
                       <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-500">
