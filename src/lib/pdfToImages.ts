@@ -158,7 +158,7 @@ export async function pdfToImages(
   file: File,
   opts: PdfToImagesOptions = {},
 ): Promise<RenderedPage[]> {
-  const { maxPages = 10, maxDimension = 1600, jpegQuality = 0.75 } = opts;
+  const { maxPages = 10, maxDimension = 2600, jpegQuality = 0.82 } = opts;
 
   const buf = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf) });
@@ -173,8 +173,9 @@ export async function pdfToImages(
       const page = await pdf.getPage(i);
       const baseViewport = page.getViewport({ scale: 1 });
       const longest = Math.max(baseViewport.width, baseViewport.height);
-      const scale = Math.min(2, maxDimension / longest);
+      const scale = Math.min(MAX_UPSCALE, maxDimension / longest);
       const viewport = page.getViewport({ scale });
+
 
       canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width);
