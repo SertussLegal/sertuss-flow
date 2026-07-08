@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node -e \"require('fs').cpSync('node_modules/pdfjs-dist/wasm','public/pdfjs-wasm',{recursive:true})\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

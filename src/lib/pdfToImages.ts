@@ -22,6 +22,15 @@ import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
+/**
+ * URL base (con slash final) desde la que pdfjs descarga los módulos WASM
+ * de decoders bilevel (JBIG2, CCITTFaxDecode) y de color/JPEG2000. Sin esto,
+ * pdfjs 5.x falla silenciosamente al render de imágenes bilevel — el canvas
+ * queda 100% blanco (std=0). Muy común en escaneos notariales (RICOH → fax
+ * Group 4). Los .wasm se copian a public/pdfjs-wasm/ vía postinstall.
+ */
+const PDFJS_WASM_URL = "/pdfjs-wasm/";
+
 export interface PdfToImagesOptions {
   /** Máximo de páginas a renderizar (default 10). Configurable: 3 certificados, 10 escrituras. */
   maxPages?: number;
@@ -163,7 +172,10 @@ export async function pdfToImages(
   const { maxPages = 10, maxDimension = 2600, jpegQuality = 0.82 } = opts;
 
   const buf = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf) });
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buf),
+    wasmUrl: PDFJS_WASM_URL,
+  });
   const pdf = await loadingTask.promise;
   const total = Math.min(pdf.numPages, maxPages);
 
