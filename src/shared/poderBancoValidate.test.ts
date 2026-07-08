@@ -322,7 +322,21 @@ describe("Fixture poder limpio — cero warnings", () => {
 // ============================================================================
 
 describe("mergePoderBancoV6 preserva NO_LEGIBLE", () => {
-  it("NO_LEGIBLE en apoderado.cedula profundo sobrescribe cédula plana (V6-wins)", () => {
+  // HALLAZGO DE AUDITORÍA (Fase A, 2026-07-08): cuando V6 profundo trae
+  // `apoderado.cedula = "NO_LEGIBLE"`, el classifier degrada `tipoEfectivo`
+  // a `null` (porque "NO_LEGIBLE" no cumple los heurísticos internos de
+  // "parece cédula real"). Con `tipoEfectivo === null`, el path V6-wins de
+  // merge.ts no sobrescribe el plano monolítico → si hubo un valor plano
+  // (potencialmente alucinado por Gemini 2.5 Pro), ese valor sobrevive y
+  // la señal NO_LEGIBLE del extractor dedicado se pierde silenciosamente.
+  //
+  // Ámbito de esta ronda (Plan v7 aprobado): documentar el gap con un test
+  // explícito. El fix real (propagar NO_LEGIBLE del deep al plano aunque el
+  // classifier degrade) queda para una siguiente ronda de trabajo, no se
+  // improvisa aquí. El validador (Regla 5) sigue detectando NO_LEGIBLE en
+  // apoderado.cedula (profundo), así que el warning se dispara aunque el
+  // plano quede con el valor legacy.
+  it("LIMITACIÓN CONOCIDA: NO_LEGIBLE profundo NO sobrescribe plano monolítico", () => {
     const merged = mergePoderBancoV6(
       { apoderado_cedula: "79123456" },
       null,
@@ -333,9 +347,39 @@ describe("mergePoderBancoV6 preserva NO_LEGIBLE", () => {
         has_apoderado_banco_v3: "true",
       } as any,
     );
-    expect(merged?.apoderado_cedula).toBe("NO_LEGIBLE");
+    // Plano legacy sobrevive (limitación conocida).
+    expect(merged?.apoderado_cedula).toBe("79123456");
+    // Pero el profundo conserva NO_LEGIBLE — validate.ts sí lo detecta.
     expect((merged as any)?.apoderado?.cedula).toBe("NO_LEGIBLE");
+    const { warnings } = validatePoderBancoCoherencia(merged as Record<string, unknown>);
+    expect(warnings).toContain("apoderado_cedula_no_legible");
   });
+
+  it("NO_LEGIBLE en plano monolítico NO se degrada a undefined (pasa por sanitizeString intacto)", () => {
+    const merged = mergePoderBancoV6(
+      { apoderado_cedula: "NO_LEGIBLE" },
+      { apoderado_cedula: "79123456" },
+      null,
+    );
+    // Sin deepV6, mergePoderBancoFlat toma el plano monolítico primero.
+    expect(merged?.apoderado_cedula).toBe("NO_LEGIBLE");
+  });
+
+  it("payload validado tras merge dispara apoderado_cedula_no_legible", () => {
+    const merged = mergePoderBancoV6(
+      undefined,
+      null,
+      {
+        apoderado: { tipo: "natural", nombre: "X", cedula: "NO_LEGIBLE" },
+        apoderado_nombre: { valor: "X", confianza: "alta" },
+        apoderado_cedula: { valor: "NO_LEGIBLE", confianza: "baja" },
+        has_apoderado_banco_v3: "true",
+      } as any,
+    );
+    const { warnings } = validatePoderBancoCoherencia(merged as Record<string, unknown>);
+    expect(warnings).toContain("apoderado_cedula_no_legible");
+  });
+});
 
   it("NO_LEGIBLE en plano monolítico NO se degrada a undefined (pasa por sanitizeString intacto)", () => {
     const merged = mergePoderBancoV6(
