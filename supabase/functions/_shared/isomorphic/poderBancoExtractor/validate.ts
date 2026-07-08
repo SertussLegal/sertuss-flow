@@ -232,5 +232,21 @@ export function validatePoderBancoCoherencia(
     if (triggered) warnings.push(warningCode);
   }
 
+  // Regla 4 — Cédula del apoderado coincide con un placeholder alucinado
+  //           conocido (auditoría 2026-07-08).
+  const cedulaCandidates: Array<[string, string | undefined]> = [
+    ["apoderado_cedula", apoderadoCedulaPlano],
+    ["apoderado.cedula", apoderadoCedulaDeep],
+  ];
+  let hitPlaceholder = false;
+  for (const [path, val] of cedulaCandidates) {
+    const norm = normalizeCedula(val);
+    if (norm && PODER_CEDULAS_PLACEHOLDER.has(norm)) {
+      suspicious.add(path);
+      hitPlaceholder = true;
+    }
+  }
+  if (hitPlaceholder) warnings.push("apoderado_cedula_placeholder");
+
   return { warnings, suspicious };
 }
