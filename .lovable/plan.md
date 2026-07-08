@@ -1,100 +1,159 @@
-# Plan v2 (calibración corregida): PNG binarizado en `pdfToImages`
+# Plan: Bloquear generación de docx cuando persiste `NO_LEGIBLE`
 
-Cambio respecto a v1: **umbrales `HEALTHY_IMAGE_BYTES` y `MIN_IMAGE_BYTES` recalibrados con evidencia empírica real**, no asumidos. El resto del plan v1 se mantiene idéntico.
+## Problema (bug confirmado)
 
-## Evidencia empírica (medida en este turno)
+`generateAndUploadCancelacionDocs()` en `supabase/functions/procesar-cancelacion/index.ts:1188` **no** valida `detectRequiereRevisionManual()` antes de renderizar. Se llama desde 3 sitios:
 
-Canvas de 1836×2376 px (equivalente a `maxDimension=2600` sobre Carta), codificado como PNG en modo RGBA (que es lo que produce `HTMLCanvasElement.toBlob("image/png")` en el navegador — no PNG 1-bit indexed, que sería ~2 KB):
+| Call site | Línea | ¿Protegido hoy? | Riesgo |
+|---|---|---|---|
+| Flujo normal (heavyWork) | ~2852 | Sí — `if (revision.requiere) { ... } else { generar }` en L2799–L2862 | OK |
+| `action: "confirm_manual_review"` | ~2145 | **No** | Si `data_final` sigue con `NO_LEGIBLE` en cualquiera de los 6 paths críticos, se emite docx con el literal impreso |
+| `regen: true` | ~2485 | **No** | Si `manualOverrides` (SSOT del frontend) o `data_final` conservan `NO_LEGIBLE` (autosave silencioso re-dispara regen tras cada tecla), se emite docx contaminado |
 
-| Escenario | Bytes PNG reales |
-|---|---|
-| Blanco puro (placeholder canvas vacío) | **22,234** |
-| Negro puro (placeholder canvas vacío) | **22,234** |
-| Portada escueta: título grande + 3 líneas + firma | **28,646** |
-| Página de firmas (5 renglones dispersos) | **33,062** |
-| Página densa de texto (60 líneas Lorem-notarial) | **135,112** |
-| Página densa real (dato owner, Escritura 16.390) | ~223,000 promedio |
+Un documento notarial con "NO_LEGIBLE" en cédula, número de escritura o fecha del poder es un fallo crítico: sale del sistema y puede llegar a firma.
 
-Ventana entre placeholder blanco (22 KB) y sparse legítimo mínimo (28.6 KB) = solo **~6 KB de margen**.
+## Sobre "vaciar campos intencionalmente" en regen
 
-## Umbrales corregidos
+Revisado `src/pages/CancelacionValidar.tsx` (L400–L506): el comentario "SSOT: frontend payload manda. Permite vaciar campos intencionalmente" se refiere a strings vacíos / `null` — el UI presenta inputs de texto editables sobre `data_final`. **No hay flujo en que el usuario elija dejar el literal `"NO_LEGIBLE"` a propósito**: el detector se dispara únicamente en los 6 paths (cédula, escritura, fecha del apoderado; cédula, escritura, fecha del instrumento) y son campos requeridos por la plantilla. La plantilla los renderiza como texto directo. Conclusión: bloquear cuando aparezca `NO_LEGIBLE` es seguro y correcto para las 3 rutas.
 
-### `HEALTHY_IMAGE_BYTES = 40_000` (antes 8_000 en v1, 30_000 en JPEG)
+Nota: strings vacíos siguen permitidos (la plantilla los mapea a `___________` por `nullgetter`). El bloqueo es exclusivamente contra el centinela textual `"NO_LEGIBLE"` y los `_coherencia_warnings` hard-block ya cubiertos por `detectRequiereRevisionManual`.
 
-Racionalidad:
-- **Piso**: cualquier blob por debajo de este umbral **combinado con `isCanvasUniform=true`** dispara `EmptyCanvasError`. Debe estar cómodamente por encima del placeholder blanco/negro puro (22.2 KB) para atrapar el bug reincidente sin falsos positivos.
-- **Techo**: debe estar por debajo del contenido legítimo mínimo esperado. Sparse portada real ≈ 28.6 KB, página de firmas ≈ 33 KB.
-- **40,000 B** da:
-  - Margen de +17.8 KB sobre placeholder blanco (80% headroom): atrapa con holgura al placeholder aunque futuras versiones de pdfjs lo hagan un poco distinto.
-  - Combinado con la condición `isCanvasUniform` (≥80% de 25 muestras del mismo color), un sparse legítimo de 28–33 KB **no cae aquí porque no es uniforme** — su título + firma quiebran el muestreo. La conjunción `uniform && size < 40_000` sigue siendo específica del caso patológico.
-  - Página densa (135–223 KB) queda claramente arriba.
+## Diseño
 
-### `MIN_IMAGE_BYTES = 5_000` (antes 800 en v1, 1_500 en JPEG)
+### 1. Fold del chequeo dentro de `generateAndUploadCancelacionDocs`
 
-Racionalidad:
-- Este umbral es **independiente de `isCanvasUniform`**: aborta la página si el blob es tan pequeño que el stream está corrupto/truncado, sin necesidad de más señales.
-- El piso absoluto físico observado es 22.2 KB (blanco puro RGBA a 2600 px). Cualquier salida <5 KB es imposible bajo funcionamiento normal — indica que `toBlob` devolvió un stream truncado o que el canvas quedó en dimensiones cero.
-- **800 B (v1) era demasiado laxo**: quedaba órdenes de magnitud por debajo del mínimo físico y no aportaba señal útil. **5 KB** sigue siendo conservador (4.4× por debajo del blanco puro real) pero atrapa truncamiento real.
-- No confundir con `HEALTHY_IMAGE_BYTES`: son propósitos distintos. `MIN` es "corrupto seguro"; `HEALTHY` es "placeholder blanco disfrazado".
+Primer paso de la función, antes de `buildDocxVars`:
 
-### `UNIFORM_DOC_THRESHOLD = 0.9` y `UNIFORM_DOC_MIN_PAGES = 3`: se mantienen
+```ts
+class ManualReviewRequiredError extends Error {
+  readonly code = "MANUAL_REVIEW_REQUIRED";
+  constructor(
+    public readonly paths: string[],
+    public readonly motivos: string[],
+  ) {
+    super(
+      `Generación bloqueada: ${paths.length} campo(s) NO_LEGIBLE, ` +
+      `${motivos.length} hard-block de coherencia.`,
+    );
+    this.name = "ManualReviewRequiredError";
+  }
+}
 
-PNG deflate es determinista bit-a-bit — dos páginas realmente distintas jamás producen el mismo tamaño exacto. Detector aún más confiable que en JPEG.
-
-## Actualización de tests en `pdfToImages.test.ts`
-
-Impacto por cada test (líneas aproximadas del archivo actual):
-
-| Test (línea) | Cambio |
-|---|---|
-| `installCanvasMocks` (L64–86) | Blob type `"image/jpeg"` → `"image/png"` |
-| L131 "uniform=true con blob sano (>=30 KB) NO lanza en 1a página" | Renombrar a `">=40 KB"`; `sizePerPage` default (40k + n*3k) sigue sirviendo, pero verificar que valores en la 1a página quedan `>= 40_000` — ajustar a `40_000 + n*5_000` para holgura. |
-| L139 "uniform=true con blob pequeño (<30 KB) SÍ lanza EmptyCanvasError" | Renombrar a `"<40 KB"`; `sizePerPage: () => 20_000` sigue válido (20k < 40k) — sin cambios funcionales, solo actualizar título/comentario. |
-| L147 "JPEG sospechosamente pequeño (1.5 KB)" | Renombrar a `"imagen sospechosamente pequeña (<5 KB)"`; `sizePerPage: () => 500` sigue < 5_000, válido. Actualizar regex `/sospechosamente pequeño/` → `/sospechosamente pequeña/`. |
-| L156 "caso 12192 bytes reproducido" | 12,192 < 40,000 + `uniform=true` → sigue lanzando `EmptyCanvasError`. **Sin cambios** — el fingerprint histórico sigue atrapado, ahora con más margen. Actualizar solo el comentario para explicar los nuevos umbrales. |
-| L172 "uniforme por encima del piso pero se repite en ≥90%" | `sizePerPage: () => 50_000` (uniforme + tamaño idéntico) — 50k > 40k así que **no cae por EmptyCanvasError individual**, pero sí por `UniformDocumentError` (90%+ mismo tamaño). Sigue válido, comportamiento preservado. |
-| L184 "tamaños variados normales (real 20 páginas 158-282 KB)" | Los tamaños reales bajo PNG binarizado ≈ 200–300 KB, banda 158–282 KB sigue representativa. **Sin cambios.** |
-| L198 "no aplica detector con <3 páginas" | Sin cambios. |
-| Tests de calibración de DPI (L211+) | Sin cambios (validan dimensiones canvas, no formato). |
-
-Ningún test necesita rehacerse conceptualmente; solo re-etiquetado y (en un caso) ajuste de `sizePerPage` para mantener holgura.
-
-## Alcance sin cambios respecto a v1
-
-- `src/lib/pdfToImages.ts`: binarización con `BINARIZATION_THRESHOLD = 180` (Rec. 601 luma), `toBlob("image/png")` sin `jpegQuality`, mantener firma pública con `jpegQuality` `@deprecated`.
-- `src/pages/CancelacionNueva.tsx`: `.jpg`→`.png`, `contentType: "image/jpeg"`→`"image/png"`.
-- `supabase/functions/_shared/pdfSha256.ts`: comentario `p01.jpg` → `p01.png`.
-- Riesgos evaluados (sellos claros, fotos, Gemini PNG-vs-JPEG, memoria canvas, Safari, `ocr_raw_cache`): idénticos a v1, todos bajos/nulos.
-
-## Diff propuesto (resumen numérico corregido)
-
-```text
-src/lib/pdfToImages.ts
-- MIN_JPEG_BYTES = 1500                → MIN_IMAGE_BYTES = 5_000
-- HEALTHY_JPEG_BYTES = 30_000          → HEALTHY_IMAGE_BYTES = 40_000
-+ BINARIZATION_THRESHOLD = 180
-+ function binarizeImageData(id, threshold)  // Rec. 601 luma → 0 o 255
-  render loop:
-+   ctx.putImageData(binarizeImageData(ctx.getImageData(...)), 0, 0)
--   canvas.toBlob(cb, "image/jpeg", jpegQuality)
-+   canvas.toBlob(cb, "image/png")
-  PdfToImagesOptions.jpegQuality: @deprecated (ignorado)
-  Mensajes/JSDoc "JPEG" → "imagen"
-
-src/lib/pdfToImages.test.ts
-  Blob type "image/jpeg" → "image/png"
-  Títulos "30 KB"/"1.5 KB" → "40 KB"/"5 KB"
-  sizePerPage del test L131 elevado a 40k + n*5k para holgura
-
-src/pages/CancelacionNueva.tsx
-  ".jpg" → ".png";  "image/jpeg" → "image/png"
-
-supabase/functions/_shared/pdfSha256.ts
-  comentario "p01.jpg" → "p01.png"
+async function generateAndUploadCancelacionDocs(...) {
+  const revision = detectRequiereRevisionManual(data);
+  if (revision.requiere) {
+    throw new ManualReviewRequiredError(revision.paths, revision.motivos);
+  }
+  // ...resto igual
+}
 ```
 
-## Validación post-implementación (sin cambios respecto a v1)
+Ventaja: **fail-safe por construcción**. Cualquier futuro call site queda protegido automáticamente.
 
-1. `bunx vitest run src/lib/pdfToImages.test.ts` → 12 tests en verde.
-2. `bunx vitest run` → suite completa 203/203 verde.
-3. Smoke manual Escritura 16.390: subidas `.png`/`image/png`, payload total <30 MB, OCR legible.
+### 2. Cada call site captura y traduce
+
+**Flujo normal (L2799–L2862):** ya hace el chequeo antes. Se conserva tal cual (defensa en profundidad). El `try/catch` de `bgErr` mantiene el comportamiento existente.
+
+**`confirm_manual_review` (L2143–L2189):** el `try/catch` interno captura `ManualReviewRequiredError` específicamente:
+
+```ts
+} catch (genErr) {
+  if (genErr instanceof ManualReviewRequiredError) {
+    // Persistir revisita: el usuario confirmó sin corregir los 6 paths.
+    // NO cambiamos status (sigue en 'requiere_revision_manual').
+    void supabaseService.from("system_events").insert({
+      organization_id: orgId, tramite_id: cancelacionId, user_id: userId,
+      evento: "procesar-cancelacion.confirm_manual_review",
+      resultado: "rechazado",
+      categoria: "PODER_NO_LEGIBLE_PERSISTE",
+      detalle: { paths: genErr.paths, motivos: genErr.motivos },
+    }).then(() => {}, () => {});
+    return biz(
+      "manual_review_not_resolved",
+      `Aún hay campos sin resolver: ${[...genErr.paths, ...genErr.motivos].join(", ")}. ` +
+      `Corrígelos antes de confirmar.`,
+    );
+  }
+  // resto igual (generation_error)
+}
+```
+
+**`regen: true` (L2475–L2499):** capturar antes del `update` y devolver 409 de negocio:
+
+```ts
+try {
+  const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(...);
+  // ...update + response ok
+} catch (genErr) {
+  if (genErr instanceof ManualReviewRequiredError) {
+    // Persistir manualOverrides recibidos (el usuario está editando) pero
+    // NO tocar url_minuta_generada — el docx previo (si existe) queda intacto.
+    await supabaseService.from("cancelaciones").update({
+      data_final: data, updated_at: new Date().toISOString(),
+    }).eq("id", cancelacionId);
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "manual_review_required",
+      paths: genErr.paths,
+      motivos: genErr.motivos,
+    }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  throw genErr;
+}
+```
+
+Detalle importante para regen: hoy el autosave silencioso (`CancelacionValidar.tsx` L439) invoca `procesar-cancelacion` tras cada edit relevante. Si el usuario aún no ha corregido `NO_LEGIBLE`, el 409 debe ser silencioso en UI (no toast destructivo). Se debe actualizar el manejo del error en `CancelacionValidar.tsx` para diferenciar 409 `manual_review_required` de errores duros: en el path silencioso solo loguear a consola; en el path manual (`handleRegenerar`, L494) mostrar toast informativo con los paths pendientes.
+
+### 3. Tests de regresión
+
+Nuevo archivo `supabase/functions/procesar-cancelacion/index_manualReview_test.ts` (Deno test, sigue el patrón de `index_test.ts`):
+
+- **Test 1 — flujo normal, caso limpio:** `data` sin `NO_LEGIBLE` y sin warnings → `generateAndUploadCancelacionDocs` retorna `{minutaPath, certPath}` sin lanzar.
+- **Test 2 — flujo normal, `NO_LEGIBLE` en `poder_banco.apoderado_cedula`:** lanza `ManualReviewRequiredError` con `paths` que incluye ese path.
+- **Tests 3-7 — un test por cada uno de los otros 5 paths críticos** (`apoderado_escritura`, `apoderado_fecha`, `apoderado.cedula`, `instrumento_poder.escritura_num`, `instrumento_poder.fecha`) → todos lanzan.
+- **Test 8 — hard-block por coherencia:** `_coherencia_warnings: ["apoderado_cedula_no_legible"]` sin `NO_LEGIBLE` textual → lanza con `motivos.length > 0`.
+- **Test 9 — combinación:** `NO_LEGIBLE` + warning → `paths` y `motivos` no vacíos.
+- **Test 10 (integración, opcional stub HTTP):** simular request `action=confirm_manual_review` con `data_final` sucio → response `manual_review_not_resolved`.
+- **Test 11 (integración):** simular request `regen=true` con `manualOverrides` sucios → response 409 `manual_review_required`, `url_minuta_generada` no se sobreescribe.
+
+Los tests 1–9 son puros contra la función exportada; requiere agregar `export` a `generateAndUploadCancelacionDocs`, `detectRequiereRevisionManual` y `ManualReviewRequiredError`. Los tests 10–11 usan el patrón de mock existente en `index_test.ts`.
+
+## Diff propuesto (resumen)
+
+```text
+supabase/functions/procesar-cancelacion/index.ts
++ class ManualReviewRequiredError extends Error { code, paths, motivos }
++ export { ManualReviewRequiredError, generateAndUploadCancelacionDocs, detectRequiereRevisionManual }
+  generateAndUploadCancelacionDocs:
++   const revision = detectRequiereRevisionManual(data);
++   if (revision.requiere) throw new ManualReviewRequiredError(revision.paths, revision.motivos);
+  confirm_manual_review catch:
++   if (genErr instanceof ManualReviewRequiredError) → biz("manual_review_not_resolved", ...) + system_events
+  regen block:
++   try { generateAndUpload... } catch (genErr) {
++     if (ManualReviewRequiredError) → persist data_final only, return 409
++   }
+  Flujo normal (L2799-L2862): sin cambios (ya protegido, se conserva defensa en profundidad).
+
+supabase/functions/procesar-cancelacion/index_manualReview_test.ts   (NUEVO)
+  11 casos descritos arriba.
+
+src/pages/CancelacionValidar.tsx
+  Manejo diferenciado de error 409 { error: "manual_review_required" }:
+  - path silencioso (L439): swallow + console.warn
+  - path manual (L501): toast.info con paths/motivos, sin toast.error
+```
+
+## Fuera de alcance (explícito)
+
+- No se cambia el detector `detectRequiereRevisionManual`.
+- No se cambia el prompt v7 ni `validate.ts`.
+- No se toca la plantilla docx ni `buildDocxVars`.
+- No se cambia el flujo normal (ya está protegido) — solo se agrega defensa en profundidad implícita al foldear el chequeo dentro de la función.
+
+## Riesgos y mitigaciones
+
+1. **Autosave silencioso spam de 409:** mitigado en el patch de `CancelacionValidar.tsx` (swallow en path silencioso). Alternativa si se quiere ser aún más quirúrgico: enviar un flag `silent: true` en el payload y no bloquear en regen silencioso — descartado por seguridad (mejor ser estricto: el 409 impide sobreescribir el docx previo con uno contaminado).
+2. **Docx previo intacto tras regen bloqueado:** intencional. Si el usuario ya tenía una minuta válida y ahora edita y mete `NO_LEGIBLE`, preferimos conservar la vieja a emitir una nueva rota.
+3. **Backfill/estados legacy:** filas ya en `completed` con `NO_LEGIBLE` histórico no se tocan; el bloqueo solo aplica en el momento de generar.
+
