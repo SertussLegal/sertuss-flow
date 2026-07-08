@@ -1,114 +1,74 @@
 
-# Compilación granular — 19 puntos de retroalimentación de Alejandra Arciniegas
+# Auditoría A5 — Tabla "DATOS DE LA ESCRITURA PÚBLICA" (hipoteca anterior vs escritura nueva)
 
-Fuente: revisión de índices #213, #215, #1245, #1271, #1291, #1665, #1667, #1677, #1701, #1771 del historial de chat. La compilación previa (#1964, 2026-07-07) resumió estos mismos 19 puntos como "14 Cancelaciones + 5 Poder"; abajo se listan uno por uno con su origen y fix real.
+## 1. Código actual en `buildDocxVars` — `supabase/functions/procesar-cancelacion/index.ts`
 
-## 🟦 CANCELACIONES (14)
+**Bloque `_v2Overrides` (L974–L982)** — los tags que rellenan la tabla SNR se construyen desde variables `snr*` que a su vez leen **exclusivamente** de `data.hipoteca_anterior`:
 
-### A1 — Audio fundacional: escanear cédula, domicilio ≠ dirección, actúa por apoderado
-- **Fecha:** 2026-03-09 (audios `WhatsApp Audio 2026-03-08 at 20.32.06.opus`, #213/#215).
-- **Problema:** En Vendedor/Comprador el formulario pedía "dirección" cuando la escritura pide *domicilio* (ciudad/municipio). Faltaba flag "actúa en nombre propio / apoderado" con subformulario de datos del apoderado.
-- **Arreglo:** OCR de cédula en `scan-document/core/cedula/*`; campos `ciudad_domicilio` separados de dirección postal en `PersonaForm.tsx`; flag apoderado con bloque de datos anidado.
+```ts
+// L940-L949
+const haAtom = data.hipoteca_anterior as Record<string, unknown>;
+const fechaAtom = (haAtom.fecha_escritura as {...} | undefined) || {};
+const notariaAtom = (haAtom.notaria as {...} | undefined) || {};
+const numeroEscrituraAtom = typeof haAtom.numero_escritura === "string" ? haAtom.numero_escritura : "";
+const snrNumeroEscritura = numeroEscrituraAtom || extractCorto(data.hipoteca_anterior.numero_escritura_hipoteca || "");
+const snrFechaDia = (fechaAtom.dia || fp.dia || "")...
+const snrFechaMes = (fechaAtom.mes || fp.mes || "")...
+const snrFechaAno = (fechaAtom.ano || fp.ano || extractAno(data.hipoteca_anterior.fecha_escritura_hipoteca)...)
+const snrNotariaNumero = (notariaAtom.numero || notariaOrigenNum || "")...
+const snrNotariaCiudad = (notariaAtom.ciudad || ciudadHipoteca || "")...
 
-### A2 — Audio fundacional: CHIP vs Cédula Catastral, oficina registral, paz y salvo predial
-- **Fecha:** 2026-03-09 (#215).
-- **Problema:** "Número predial nacional" era ambiguo. Bogotá usa CHIP (AAA…), resto del país usa Cédula Catastral numérica; el avalúo sale del paz y salvo, no del certificado.
-- **Arreglo:** Skill `identificador-predial-CHIP-vs-catastral`, memoria `mem://legal/requisitos-inmuebles`, extracción OCR dedicada en `scan-document/core/predial/*`.
+// L976-L982
+numero_escritura_hipoteca_corto: pad4(snrNumeroEscritura) || undefined,
+fecha_escritura_hipoteca_dia:     snrFechaDia || undefined,
+fecha_escritura_hipoteca_mes:     snrFechaMes || undefined,
+fecha_escritura_hipoteca_ano:     snrFechaAno || undefined,
+notaria_hipoteca_numero:          pad4(snrNotariaNumero) || undefined,
+ciudad_hipoteca:                  snrNotariaCiudad || undefined,
+```
 
-### A3 — Audio fundacional: linderos generales + PH desde escritura antecedente
-- **Fecha:** 2026-03-09 (#215).
-- **Problema:** No se cargaba escritura antecedente para linderos especiales, ni se cruzaban las escrituras de constitución/aclaración/adición del reglamento de PH desde el certificado.
-- **Arreglo:** `scan-document/core/escrituraAntecedente/*` + reconciliación multi-documento (`src/lib/reconcileData.ts`, memoria `mem://legal/reconciliacion-multidocumento`).
+Cero referencias a `escritura_nueva.*` en este bloque. La única mención a la escritura nueva en `buildDocxVars` es aparte (L932, L1097–L1099, L1115), como tags **independientes** (`numero_escritura_nueva`, `numero_escritura_nueva_corto`, `escritura_nueva_numero_letras`) — es decir, los tags de la escritura nueva viven en su propio conjunto y NO invaden la tabla SNR.
 
-### A4 — Auditoría minuta mayo (1/7): Tabla "DATOS DE LA ESCRITURA PÚBLICA" con `X X` y fechas sin desglosar
-- **Fecha:** 2026-05-20 (#1245, capturas de `minuta_2.docx`).
-- **Problema:** La tabla mostraba `4165, X X, X X, X 2020` porque el OCR guardaba la fecha completa en una variable pero la plantilla exigía `{fecha_dia}/{fecha_mes}/{fecha_ano}/{notaria_numero}` atómicos.
-- **Arreglo:** `parseFechaNotarial`, `extractNotariaNumero`, `formatMonedaColombiana` en `supabase/functions/procesar-cancelacion/index.ts` → `buildDocxVars` inyecta `fecha_escritura_hipoteca_dia/_mes/_ano` + `notaria_hipoteca_numero`.
+**Veredicto de código:** ✅ correcto. Los tags de la tabla SNR (`*_hipoteca_*`) leen todos de `hipoteca_anterior`.
 
-### A5 — Auditoría minuta mayo (2/7): Confusión escritura nueva vs hipoteca anterior
-- **Fecha:** 2026-05-21 (#1271, punto 1).
-- **Problema:** Lovable interpretó que la tabla "DATOS DE LA ESCRITURA PÚBLICA" era la escritura *nueva* y la dejó vacía; en realidad Davivienda exige que ahí vayan los datos de la **hipoteca anterior** (para que la ORIP sepa qué gravamen levantar). Sólo el encabezado superior debe ir en blanco.
-- **Arreglo:** Reasignación de tags en `buildDocxVars`: los campos de la hipoteca vieja se mapean a la tabla; sólo el número/fecha de la nueva quedan como `___________`. Confirmado en tests `procesar-cancelacion/index_test.ts` (SNR atómico, pad4).
+## 2. Plantilla docx — tags esperados
 
-### A6 — Auditoría minuta mayo (3/7): "UBICACIÓN DEL PREDIO" y "NOMBRE O DIRECCIÓN" duplicaban texto y `(DIRECCION CATASTRAL)` salía dos veces
-- **Fecha:** 2026-05-21 (#1271, punto 2).
-- **Problema:** Ambos campos recibían el mismo bloque, con `(DIRECCION CATASTRAL) (DIRECCION CATASTRAL)` pegado. Legalmente `UBICACIÓN` = descripción arquitectónica; `NOMBRE O DIRECCIÓN` = nomenclatura urbana + sufijo único.
-- **Arreglo:** `descripcion_predio` vs `nomenclatura_predio` en el tool schema de Gemini; `buildDireccionCompletaSaneada()` inyecta el sufijo catastral una sola vez y sólo en Bogotá (tests #1 y #6 del `index_test.ts`).
+El fix depende de que la plantilla (bucket `cancelaciones-plantillas`) siga usando los tags `{numero_escritura_hipoteca_corto}`, `{fecha_escritura_hipoteca_dia/_mes/_ano}`, `{notaria_hipoteca_numero}`, `{ciudad_hipoteca}` en la tabla superior, y `{numero_escritura_nueva*}` sólo en el encabezado. Esto no se pudo inspeccionar directamente en esta auditoría (la plantilla es un binario en storage privado, no en el repo). **La evidencia indirecta** es que la lista blanca `SNR_ATOMIC_TAGS` (L1152-L1159 del mismo archivo) declara explícitamente los 6 tags de hipoteca_anterior como "atómicos SNR", lo que confirma el contrato de plantilla.
 
-### A7 — Auditoría minuta mayo (4/7): Linderos técnicos invadían el encabezado SNR
-- **Fecha:** 2026-05-22 (#1291).
-- **Problema:** Los linderos, medidas y coeficientes se colaban en las casillas superiores de calificación SNR (que deben ir cortas) porque el schema no los segregaba.
-- **Arreglo:** Regla "cancelaciones sin linderos/áreas/coeficientes" (memoria `mem://features/cancelaciones-reglas-inmueble`), plantilla v2 sin bloque de linderos, prompt de `procesar-cancelacion` prohíbe emitir linderos en `descripcion_predio`.
+**Nota honesta:** no verifiqué byte a byte el XML de la plantilla v3 subida el 2026-07-04 (#1771). Si un usuario sube una plantilla nueva con tags renombrados, este fix se rompe silenciosamente.
 
-### A8 — Auditoría minuta mayo (5/7): Formato `TEXTO (NÚMERO)` en cláusula segunda
-- **Fecha:** 2026-05-22 (#1291, sección 1.3).
-- **Problema:** Números de escritura, notaría y fecha salían en dígitos crudos ("5924", "13", "29/11/2024") en vez del estándar notarial "CINCO MIL NOVECIENTOS VEINTICUATRO (5924)".
-- **Arreglo:** Skill `formato-texto-numero-notarial` + `concordancia-genero-minutas`, helpers en `src/lib/legalFormatters.ts`, aplicados en `buildDocxVars` y `legalProse`.
+## 3. Evidencia en cancelaciones reales
 
-### A9 — Auditoría minuta mayo (6/7): Cuantía hardcodeada / "null" impreso en minuta (bug H2)
-- **Fecha:** 2026-05-24 (#1307–#1310) → reincidencia detectada 2026-07-08.
-- **Problema:** `valor_hipoteca_original` a veces salía como el string literal `"null"`, o como monto fijo copiado de otro trámite, cuando la escritura declaraba cuantía indeterminada.
-- **Arreglo:** Extracción semántica (skill `extraccion-cuantia-semantica`), `mergeCuantiaIntoExtracted` + `buildClausulaPagoHipoteca` con leyenda "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA"; guard `sanitizeString`/`NULLY_STRINGS` (2026-07-08). Tests H2-1..H2-5 verdes.
+Query sobre las 5 cancelaciones más recientes con `data_final`:
 
-### A10 — Auditoría minuta mayo (7/7): Datos del apoderado del banco hardcodeados (APODERADO_FIJO)
-- **Fecha:** 2026-05-21 (#1271, sección 3).
-- **Problema:** El apoderado del banco venía de un objeto estático, no del OCR del poder. Si el poder no se adjuntaba, aparecía un apoderado inventado.
-- **Arreglo:** Nuevo `FileDropzone` "Poder General del Banco" no obligatorio en `CancelacionNueva.tsx`; extractor dedicado `scan-document/core/poderBanco/*`; sección "Apoderado del Banco" editable en `CancelacionValidar.tsx`; `nullGetter` pinta `___________` si vacío.
+| id | `numero_escritura_hipoteca` | `notaria_hipoteca` | `fecha_escritura_hipoteca` | `numero_escritura_nueva` |
+|---|---|---|---|---|
+| `c506d69b…` (2026-07-08 01:40) | QUINIENTOS CINCUENTA Y NUEVE (559) | VEINTIUNO (21) DE BOGOTA D.C. | QUINCE (15) DE FEBRERO DE DOS MIL DIECINUEVE (2019) | `null` |
+| `2fb6ba16…` (2026-07-08 00:47) | idem 559 | idem N21 | idem 2019 | `null` |
+| `9a78aebb…` (2026-07-07 23:32) | idem | idem | idem | `null` |
+| `15582708…` (2026-07-07 23:02) | idem | idem | idem | `null` |
+| `32f5317e…` (2026-07-07 21:55) | idem | idem | idem | `null` |
 
-### A11 — Variabilidad nacional: separador de placa `-` (nunca palabra "GUION")
-- **Fecha:** 2026-06-21 (#1701, punto derivado).
-- **Problema:** Direcciones urbanas escritas con la palabra "GUION" ("60 GUION 65") en lugar del símbolo `-`.
-- **Arreglo:** Regla core en memoria (`Direcciones urbanas: separador = "-"`), prompt de `procesar-cancelacion` explícito; test #10 del `index_test.ts` valida las 5 sub-reglas de nomenclatura.
+**Interpretación:**
+- Los 5 casos tienen `hipoteca_anterior` con datos reales (escritura 559, Notaría 21 de Bogotá, fecha 15-feb-2019). ✅ La tabla SNR recibiría estos valores, no vacío.
+- Los 5 casos tienen `numero_escritura_nueva = null` — comportamiento esperado: la escritura nueva se numera al radicar en notaría, no al generar la minuta. ✅ El encabezado superior queda en blanco como pide Alejandra.
 
-### A12 — Sanitización de cédulas y soporte CE/Pasaporte
-- **Fecha:** 2026-06-21 (#1701, puntos 1 y 3).
-- **Problema:** Cédulas guardadas con puntos rompían edición manual e impedían cruce determinista. `tipo_id` asumía siempre CC, generando error sustancial si el deudor era extranjero.
-- **Arreglo:** OCR guarda dígitos limpios; máscara visual sólo en UI; `tipo_id` como enum abierto (CC/CE/PA) en el schema de Gemini; `normalizeCC` en `src/lib/reconcileData.ts`.
+## 4. Tests automatizados
 
-### A13 — Orden de firmas independiente del orden del certificado
-- **Fecha:** 2026-06-21 (#1701, punto 2).
-- **Problema:** El array de deudores respetaba el orden del certificado, pero algunas notarías exigen orden alfabético o agrupado por género en el bloque de firmas.
-- **Arreglo:** `normalizeDeudores` (L758–L783 de `procesar-cancelacion/index.ts`) mantiene el orden original + genera copia ordenable; género inferido por `inferGeneroFromNombre` con narrowing `"M"|"F"|""` (fix 2026-07-08).
+`rg "Deno.test.*(SNR|hipoteca_anterior|tabla|escritura)" supabase/functions/procesar-cancelacion/index_test.ts` → **1 hit**:
 
-### A14 — Plantilla v3 en storage + duplicados "blanqueado"
-- **Fecha:** 2026-07-04 (#1771).
-- **Problema:** Alejandra subió `formato cancelacion hipoteca v3` al bucket `cancelaciones-plantillas` pero coexistían dos archivos "blanqueado" duplicados; había que validar tags y limpiar.
-- **Arreglo:** Auditoría de tags contra `docxTagCatalog.ts`; runtime download singleton (`loadTemplateOnce` en `DocxPreview.tsx`); memoria `mem://blindaje-cancelaciones-v2` con contrato de plantilla v2/v3.
+- Test #2 (L47): `"SNR atómico: pad4 produce 4 dígitos (escritura, notaría, anotaciones)"` — valida el formato de padding, no la fuente semántica del dato.
 
----
+**No existe un test que aserte específicamente:** "los tags `numero_escritura_hipoteca_corto`, `notaria_hipoteca_numero`, `fecha_escritura_hipoteca_dia/_mes/_ano` se poblan desde `data.hipoteca_anterior` y no desde `escritura_nueva`". La ausencia es honesta: el contrato hoy se sostiene por convención de naming (`*_hipoteca_*` → hipoteca_anterior) y por revisión visual de la minuta.
 
-## 🟧 PODER (Especial/General del Banco) — 5 puntos
+## 5. Veredicto
 
-### B1 — Audio fundacional: escanear poder del banco y carta de crédito
-- **Fecha:** 2026-03-09 (#213/#215).
-- **Problema:** Los datos del apoderado y del valor del crédito se digitaban a mano; Alejandra pidió que se extrajeran del PDF del poder y de la carta de crédito.
-- **Arreglo:** Extractores dedicados `scan-document/core/poderBanco/*` y `scan-document/core/cartaCredito/*`, con handler/prompt/tool separados.
+**Resuelto con evidencia real, con una brecha de cobertura de tests.**
 
-### B2 — Sección "Apoderado del Banco" en Cancelaciones
-- **Fecha:** 2026-05-21 (#1271, sección 3).
-- **Problema:** No existía en la UI una sección dedicada al apoderado del banco: los 5 campos (nombre, cédula, escritura, fecha, notaría) se perdían o se llenaban con datos de otras partes.
-- **Arreglo:** `PoderViewerTab.tsx`, `PoderBannersV5.tsx`, `ProsaApoderadoModal.tsx`, `ProsaApoderadoPreviewCard.tsx`; `nullGetter` con `___________` cuando el poder no se cargó.
+- ✅ Código en `buildDocxVars` mapea correctamente los 6 tags de la tabla SNR desde `hipoteca_anterior`.
+- ✅ Cero fuga: no hay ningún tag `*_hipoteca_*` que lea de `escritura_nueva.*`.
+- ✅ 5/5 cancelaciones reales recientes muestran datos poblados de hipoteca anterior (escritura 559, Notaría 21, 2019) y `numero_escritura_nueva = null` — comportamiento esperado.
+- ⚠️ **Brecha:** no hay test unitario que blinde la separación semántica. Si alguien en el futuro renombra un tag o cruza los campos, el bug histórico puede volver sin señal.
+- ⚠️ **No verificado:** el XML de la plantilla v3 en storage — el contrato depende de que los tags de la plantilla coincidan con los del código.
 
-### B3 — Poder adjuntado pero NO leído (páginas 25+ truncadas) — el "punto grave" ya auditado hoy
-- **Fecha:** 2026-06-21 (#1665, #1667 — caso Alejandra Arciniegas Abogada).
-- **Problema:** BD confirmó 5/5 casos con `poder_banco` vacío pese a que el PDF estaba en storage. Causa: `PODER_MAX_PAGES` truncaba poderes largos y el schema legacy no capturaba la nota de vigencia (que suele estar en las últimas páginas).
-- **Arreglo:** Fix v5/v6 (2026-06-21): `validatePoderSuficiencia`, `classifyApoderado`, `poder_banco_v6` schema con `POWER_SCHEMA_VERSION`, `PoderBannersV5`, extractor profundo isomórfico en `supabase/functions/_shared/isomorphic/poderBancoExtractor/*`.
-
-### B4 — Valor de la hipoteca no se cargó (OCR no lo encontró en el poder/carta)
-- **Fecha:** 2026-06-21 (#1677, adjuntó `50S-40394832.pdf` y `05700323000291276_Escritura.pdf`).
-- **Problema:** Alejandra tuvo que digitar a mano el valor porque el OCR no lo detectó. Requería confirmar si el extractor podía haberlo encontrado.
-- **Arreglo:** Extracción semántica jerárquica (Mutuo > Pago > Liquidación) documentada en memoria `mem://legal/valor-credito-hipotecario-cancelacion` y skill `extraccion-cuantia-semantica`; fallback a cuantía indeterminada explícita en lugar de string vacío ambiguo.
-
-### B5 — Guard `null` string en campos planos del apoderado (bug categórico hermano de H2)
-- **Fecha:** 2026-07-08 (detectado y arreglado hoy en la misma sesión H2).
-- **Problema:** `apoderado_nombre`/`apoderado_cedula` recibían el string literal `"null"` cuando el bloque profundo v6 traía valores nully sin sanear.
-- **Arreglo:** `sanitizeString` + `NULLY_STRINGS` aplicados en `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts` (`mergePoderBancoFlat`, `mergePoderBancoV6`, `unwrapConf`). Tests PODER-1..PODER-4 verdes.
-
----
-
-## Observaciones
-
-- Fuente de compilación previa: mensaje #1964 (2026-07-07), verificado hoy re-leyendo #213–#1771.
-- Los 19 puntos están marcados como *resueltos* en el sistema; B3 fue re-auditado hoy (poder cancelación `32f5317e…`) y confirmado como caso pre-v6 (corrida 2026-07-07 21:55).
-- Ningún punto es puramente cosmético: todos tocan lógica de OCR, prompt, `buildDocxVars` o el schema de extracción.
-- No hay implementación en este entregable — es compilación de lectura.
+**No se implementa nada en esta auditoría.**
