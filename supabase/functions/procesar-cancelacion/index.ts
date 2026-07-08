@@ -1875,11 +1875,14 @@ if (import.meta.main) serve(async (req) => {
     poderImagePaths?: string[];
     regen?: boolean;
     manualOverrides?: CancelacionData;
-    /** "reprocess_poder"   → re-extrae solo el Poder con OCR dedicado.
-     *  "reprocess_cuantia" → re-extrae solo la cuantía del crédito a partir
-     *                        de la escritura antecedente (cuando el certificado
-     *                        vino como indeterminado). Ninguno cobra créditos. */
-    action?: "reprocess_poder" | "reprocess_cuantia";
+    /** "reprocess_poder"      → re-extrae solo el Poder con OCR dedicado.
+     *  "reprocess_cuantia"    → re-extrae solo la cuantía del crédito a partir
+     *                           de la escritura antecedente (cuando el certificado
+     *                           vino como indeterminado). Ninguno cobra créditos.
+     *  "confirm_manual_review" → desbloqueo Fase E: confirma revisión humana
+     *                           tras NO_LEGIBLE y dispara generación de minuta. */
+    action?: "reprocess_poder" | "reprocess_cuantia" | "confirm_manual_review";
+
   };
   try {
     body = await req.json();
