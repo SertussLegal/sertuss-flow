@@ -254,11 +254,12 @@ export const CancelacionNueva = () => {
       // No redirigimos al validador porque no hay input procesable.
       if (err instanceof UniformDocumentError || err instanceof EmptyCanvasError) {
         try {
-          await supabase.from("activity_logs").insert({
+          await supabase.from("activity_logs").insert([{
             organization_id: activeOrgId,
+            user_id: user?.id ?? "00000000-0000-0000-0000-000000000000",
             action: "pdf_quality_rejected",
             entity_type: "cancelacion",
-            entity_id: cancelacionId,
+            entity_id: cancelacionId ?? undefined,
             metadata: {
               error_name: err.name,
               message: msg,
@@ -267,7 +268,7 @@ export const CancelacionNueva = () => {
               sample_size: err instanceof UniformDocumentError ? err.sampleSize : undefined,
               page_number: err instanceof EmptyCanvasError ? err.pageNumber : undefined,
             },
-          });
+          }]);
         } catch (logErr) {
           console.error("[CancelacionNueva] Falló activity_logs de pdf_quality_rejected", logErr);
         }
