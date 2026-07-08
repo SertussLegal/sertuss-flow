@@ -53,9 +53,9 @@ export interface PdfToImagesOptions {
    */
   maxDimension?: number;
   /**
-   * Calidad JPEG entre 0 y 1 (default 0.82). Subida desde 0.75 para preservar
-   * los bordes de glifos pequeños que Gemini/Claude tokenizan; costo marginal
-   * en bytes (~+10%).
+   * @deprecated 2026-07 — La ruta activa codifica PNG lossless binarizado
+   * (blanco/negro puro) y ya no acepta parámetro de calidad. Se mantiene en
+   * la firma pública para no romper callers; su valor se ignora.
    */
   jpegQuality?: number;
 }
