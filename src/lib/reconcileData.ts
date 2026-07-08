@@ -3,6 +3,7 @@
 // using normalized CC as the ONLY matching key.
 
 import type { Persona, Inmueble } from "@/lib/types";
+import { sanitizeString } from "@shared/poderBancoExtractor/merge";
 
 export interface ReconcileAlert {
   tipo: "discrepancia" | "dato_faltante";
