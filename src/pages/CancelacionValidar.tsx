@@ -291,7 +291,11 @@ export const CancelacionValidar = () => {
   // Re-proceso de cuantía (escritura antecedente) — mutex independiente.
   const isReprocessingCuantiaRef = useRef(false);
   const [reprocessingCuantia, setReprocessingCuantia] = useState(false);
+  // Fase E — confirmación de revisión manual (desbloqueo NO_LEGIBLE).
+  const isConfirmingReviewRef = useRef(false);
+  const [confirmingReview, setConfirmingReview] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
+
 
 
 
@@ -540,6 +544,43 @@ export const CancelacionValidar = () => {
     }
   };
 
+  // Fase E — Confirmar revisión manual: desbloquea la generación de la minuta
+  // cuando el pipeline marcó `NO_LEGIBLE` en algún campo crítico del poder.
+  // Persiste antes cualquier edición pendiente para que `data_final` refleje
+  // lo que el usuario acaba de corregir contra el PDF original.
+  const handleConfirmManualReview = async () => {
+    if (!id) return;
+    if (isConfirmingReviewRef.current) return;
+    if (isDirty) {
+      await persistData({ silent: true });
+    }
+    isConfirmingReviewRef.current = true;
+    setConfirmingReview(true);
+    try {
+      const { data: resp, error } = await monitored.invoke<{
+        ok?: boolean; code?: string; message?: string; unlocked?: boolean;
+      }>("procesar-cancelacion", { cancelacionId: id, action: "confirm_manual_review" });
+      if (error) {
+        toast.error("No se pudo confirmar la revisión", { description: error.message });
+        return;
+      }
+      if (resp && resp.ok === false) {
+        toast.error("No se pudo generar el documento", { description: resp.message ?? "Intenta de nuevo." });
+        return;
+      }
+      toast.success("Documento generado", {
+        description: "La cancelación quedó completada tras tu confirmación.",
+      });
+      setViewerKey((k) => k + 1);
+      await queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+    } finally {
+      isConfirmingReviewRef.current = false;
+      setConfirmingReview(false);
+    }
+  };
+
+
+
   // Re-procesar SOLO la cuantía del crédito con OCR dedicado sobre la
   // escritura antecedente. Caso típico: el certificado registró la hipoteca
   // como "CUANTÍA INDETERMINADA" y el monolítico dejó el campo vacío. No
@@ -733,15 +774,18 @@ export const CancelacionValidar = () => {
                 <AlertTriangle className="h-3 w-3" /> Vista desactualizada
               </span>
             )}
-            <Button
-              size="sm"
-              variant={previewStale ? "default" : "outline"}
-              onClick={handleManualRegen}
-              disabled={previewRefreshing || saving}
-              className="gap-1.5 text-xs"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Regenerar
-            </Button>
+            {row?.status !== "requiere_revision_manual" && (
+              <Button
+                size="sm"
+                variant={previewStale ? "default" : "outline"}
+                onClick={handleManualRegen}
+                disabled={previewRefreshing || saving}
+                className="gap-1.5 text-xs"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Regenerar
+              </Button>
+            )}
+
             <SaveStatusChip
               isDirty={isDirty}
               saving={saving}
@@ -1116,7 +1160,11 @@ export const CancelacionValidar = () => {
                       }}
                       coherenciaWarnings={(pb as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings}
                       coherenciaSuspicious={(pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious}
+                      manualReviewPending={row?.status === "requiere_revision_manual"}
+                      manualReviewConfirming={confirmingReview}
+                      onConfirmManualReview={handleConfirmManualReview}
                     />
+
 
                     {empty && !poderAdjuntado && (
                       <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-amber-500">
