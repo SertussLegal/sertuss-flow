@@ -1,53 +1,87 @@
 
-# Diagnóstico `valor_hipoteca` NULL en cancelaciones completadas (SOLO LECTURA)
+# Auditoría H2: impacto real en el docx generado (SOLO LECTURA — límite técnico + veredicto por trazado de código)
 
-Sin cambios propuestos. Solo evidencia.
+## TL;DR
+**No pude descargar el binario del docx** — el bucket `expediente-files` es privado, la firma requiere `service_role_key` que no está expuesta al sandbox y `LOVABLE_BROWSER_AUTH_STATUS=signed_out` bloquea también el path autenticado del navegador. **Sin embargo el rastro DB → `buildDocxVars` → plantilla es determinista y suficiente para dar veredicto con alta confianza** (evidencia textual reproducible sin correr el docx). Al final del plan propongo un paso mínimo de verificación binaria si quieres cerrar el círculo.
 
-## Universo auditado
-11 filas `completed` de Sertuss (`ORDER BY created_at DESC LIMIT 20` devolvió 11). Campos relevantes en JSON: `valor_hipoteca_original` y `valor_hipoteca_es_indeterminada`, tanto a nivel top como dentro de `hipoteca_anterior` (no existe `cuantia_valor`; ese nombre asumido en la query original no está en el schema).
+## Fila auditada
+`2fb6ba16-b258-479b-b1b9-0a1baf35ebc7` (Grupo C, `status=completed`, minuta subida a `expediente-files/cancelaciones/2fb6ba16.../minuta.docx`, 282.885 bytes — mismo orden de magnitud que la plantilla `formato cancelacion hipoteca blanqueado v2.docx` de 282.317 bytes → renderizó, no falló).
 
-## 1. Filas con `valor_hipoteca` NULL en la columna
-**11 / 11 (100 %).** La columna `cancelaciones.valor_hipoteca` está vacía en **todas** las completadas de la muestra, incluyendo las que sí tienen monto real en el JSON.
+## Evidencia 1 — Estado exacto de `data_final.hipoteca_anterior`
+Extraído directamente por psql:
 
-## 2. ¿El dato vive en el JSON aunque la columna esté NULL?
+```json
+{
+  "notaria": {"ciudad":"BOGOTA D.C.","numero":"21"},
+  "cuantia_origen": "escritura",
+  "fecha_escritura": {"ano":"2019","dia":"15","mes":"02"},
+  "notaria_hipoteca": "VEINTIUNO (21) DE BOGOTA D.C.",
+  "numero_escritura": "559",
+  "valor_hipoteca_original": "null",          ← STRING literal "null", NO json null
+  "fecha_escritura_hipoteca": "QUINCE (15) DE FEBRERO DE DOS MIL DIECINUEVE (2019)",
+  "numero_escritura_hipoteca": "QUINIENTOS CINCUENTA Y NUEVE (559)",
+  "valor_hipoteca_es_indeterminada": false    ← flag NO propagado
+}
+```
 
-Tres grupos claros:
+Esto es el input **exacto** que recibió `buildDocxVars` en el momento de generar la minuta.
 
-| Grupo | Filas | JSON `hipoteca_anterior.valor_hipoteca_original` | JSON `..._es_indeterminada` | `valor_hipoteca_original` (columna) | system_event |
-|---|---|---|---|---|---|
-| **A. Monto real en JSON** | 3 filas (mayo 2026: `498c0215`, `1e2069b7`, `a21ae265`) | `"CUARENTA Y OCHO MILLONES DOSCIENTOS MIL PESOS ($48.200.000)"` | `null` | Igual al JSON | (fuera de ventana de events) |
-| **B. Indeterminada marcada en JSON** | 3 filas (`c506d69b`, `2bef1db3`, `290fd66a`) | `null` / vacío | `"true"` | vacío | `indeterminada_confirmada` o `fallo_ambiguo` + `cert_indeterminada:true` |
-| **C. Indeterminada según event pero JSON dice `false`** | 5 filas (`2fb6ba16`, `9a78aebb`, `15582708`, `32f5317e`, `0443d2f1`) | `null` string | `"false"` | literal `"null"` string | `indeterminada_confirmada, aplicado:true, cert_indeterminada:true` |
+## Evidencia 2 — Qué hace `buildDocxVars` con ese input
+`supabase/functions/procesar-cancelacion/index.ts:786-795`:
 
-Detalles adicionales:
-- En el Grupo A la columna `valor_hipoteca_original` **sí quedó poblada** con el monto formateado, pero la columna numérica `valor_hipoteca` sigue NULL — indica que el mapeo a la columna legacy `valor_hipoteca` (numérica) nunca se cierra, mientras que `valor_hipoteca_original` (texto) sí.
-- En Grupos B/C la columna `valor_hipoteca_original` está vacía o literal `"null"` (string), consistente con no haber monto.
+```ts
+const valorRaw = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
+const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
+const esIndeterminadaLegacy = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
+const esCuantiaIndeterminada = esIndeterminadaIA || esIndeterminadaLegacy;
+const valor = esCuantiaIndeterminada ? { letras: "", numeros: "" } : splitValor(valorRaw);
+const valorHipotecaMonto: string | undefined = esCuantiaIndeterminada ? undefined : (valorRaw || undefined);
+```
 
-## 3. ¿Estado legítimo "indeterminada" vs bug?
+Traza con `valor_hipoteca_original="null"` (string) + `es_indeterminada=false`:
+- `valorRaw = "null"` (trim no lo vacía; no es whitespace)
+- `esIndeterminadaIA = false`
+- `esIndeterminadaLegacy = /HIPOTECA…/.test("null") = false`
+- `esCuantiaIndeterminada = false`
+- `valorHipotecaMonto = "null"` (rama `valorRaw || undefined`, string truthy)
+- `splitValor("null")` → devuelve letras/números vacíos o basura (no matchea el regex `<letras> DE PESOS ($<números>)`).
 
-De los 8 registros recientes (jul 2026), **todos** los `system_events` de `procesar-cancelacion.cuantia` reportan `cert_indeterminada:true` con `motivo_null:"escritura_declara_abierta"` y fragmentos que dicen literalmente **"HIPOTECA ABIERTA SIN LÍMITE EN LA CUANTÍA"**. Esto es un estado de negocio legítimo (skill `cuantia-indeterminada-cancelacion`): no debe haber monto en la columna `valor_hipoteca`.
+**Consecuencia inequívoca:** la variable `valor_hipoteca_original` que llega al Docxtemplater es el literal string `"null"`. No es undefined (no cae en nullgetter), no dispara `{^valor_hipoteca_es_indeterminada}` como indet.
 
-Contradicción interna en Grupo C: el system_event dice `indeterminada_confirmada, aplicado:true`, pero el JSON persistido tiene `hipoteca_anterior.valor_hipoteca_es_indeterminada = "false"`. El flag detectado por el extractor **no se propagó al `data_final` persistido**, o fue sobrescrito por una edición manual/merge posterior que puso `false` por defecto.
+## Evidencia 3 — Qué hace la plantilla v2 con `valor_hipoteca_original="null"`
+Skill `cuantia-indeterminada-cancelacion` documenta el condicional:
+```
+{#valor_hipoteca_es_indeterminada}HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA{/}
+{^valor_hipoteca_es_indeterminada}{valor_hipoteca_original}{/}
+```
+Con `es_indeterminada=false` renderiza la rama inversa → **imprime la palabra `null` literal en la prosa notarial** donde debería ir la cifra o la leyenda "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA".
 
-## 4. Veredicto
+Y `clausula_pago_hipoteca` (línea 949, `buildClausulaPagoHipoteca({ esCuantiaIndeterminada:false, valorRaw:"null" })`) tomará la rama determinada, intentando redactar prosa `"POR VALOR DE null"` o cayendo en fallback dependiendo del helper — en cualquiera de los dos casos **NO** produce el texto "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA" que sí correspondía (el system_event confirmó `cert_indeterminada:true`, `motivo_null:"escritura_declara_abierta"`, fragmento OCR: `"HIPOTECA ABIERTA SIN LÍMITE EN LA CUANTÍA"`).
 
-Hay **dos hallazgos distintos, ambos reales**, ninguno urgente hasta confirmar impacto:
+## Evidencia 4 — ¿de dónde vino el string `"null"`?
+`index.ts:1785-1791` (fallback dedicado de cuantía cuando el monolítico no tenía nada):
+```ts
+extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
+extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
+```
+Cuando el extractor dedicado devuelve monto `null` (indeterminada) y la rama de "indeterminada aplicada" NO se ejecuta correctamente en el path de `data_final`, el valor `null` termina serializado por algún paso intermedio como string `"null"` (probablemente via `JSON.stringify` de un `String(null)` en un merge del cliente, o por un fallback tipo `x ?? "null"`). Esto es lo que se persiste — coincide con lo que veo en las 5 filas del Grupo C.
 
-**H1 — Bug de sincronización columna↔JSON (columna `valor_hipoteca` numérica muerta).**
-En el Grupo A el JSON tiene monto real `$48.200.000` y `valor_hipoteca_original` (texto) sí se pobló, pero la columna numérica `valor_hipoteca` quedó NULL. Sugiere que el pipeline dejó de mapear a esa columna en algún refactor, o que nunca se mapeó y solo `valor_hipoteca_original` (string) es la fuente canónica actual. Hay que decidir si `valor_hipoteca` (numeric) es columna viva o legacy a deprecar.
+## Veredicto (con alta confianza, pendiente confirmación binaria)
 
-**H2 — Flag `_es_indeterminada` no se persiste consistentemente en `data_final`.**
-En Grupo C (5 filas) el extractor detectó indeterminada y el event dice `aplicado:true`, pero el JSON guardado tiene `false`. Solo Grupo B (3 filas) refleja `true`. Esto es un desalineamiento real entre lo que el extractor decide y lo que sobrevive en `data_final.hipoteca_anterior` — probable colisión con el `Read-then-Merge` (edición manual dejando `false` por defecto sobrescribe la señal del extractor) o con la precedencia manual > OCR cuando el humano no marcó nada.
+**Bug REAL con impacto legal, no cosmético.** El texto del documento entregado al notario contiene, con certeza determinista según el código:
+- La palabra literal `null` inyectada donde debería ir "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA" (o el monto en letras).
+- O prosa mal formada del helper `buildClausulaPagoHipoteca` cuando intenta interpretar `"null"` como monto.
 
-**No es "un solo bug de mapeo".** Es la combinación:
-- Columna numérica `valor_hipoteca` **nunca** se pobla (bug o legacy).
-- Estado "indeterminada" es negocio legítimo para las 8 recientes, pero el flag JSON no se persiste igual en todas.
-- Ninguna fila reciente tenía un monto que debía haberse copiado y se perdió — el extractor está haciendo su trabajo, el hueco es en la persistencia del flag y en la columna numérica muerta.
+En ninguno de los dos casos hay fallback que rescate el texto correcto: `buildDocxVars` lee **únicamente** el flag `valor_hipoteca_es_indeterminada` del `data_final` y ese está en `false`. No consulta el system_event, no reintenta el extractor dedicado, no mira `cuantia_origen`. Es lectura directa del JSON persistido.
 
-## Próximos pasos sugeridos (no ejecutados)
+**Alcance del bug:** las 5 filas Grupo C (`2fb6ba16`, `9a78aebb`, `15582708`, `32f5317e`, `0443d2f1`) muy probablemente tienen la misma cadena `"null"` incrustada en el docx entregado. El Grupo B (3 filas con flag `true` en JSON) sí renderizó correctamente.
 
-Antes de proponer fix, hace falta confirmar con el dueño de producto:
-1. ¿La columna `valor_hipoteca` (numeric) sigue viva o se deprecó a favor de `valor_hipoteca_original` (text) + flag? Si viva, hay que mapearla desde el extractor.
-2. ¿Por qué Grupo C persiste `_es_indeterminada:false` cuando el event dice `aplicado:true`? Revisar el path de escritura de `data_final.hipoteca_anterior` en `procesar-cancelacion` vs merge cliente. Sospecha alta: `mergeOverride` o el auto-save del formulario está reponiendo `false` como default.
+## Verificación binaria propuesta (opcional, para cerrar el círculo)
 
-Sin aprobación explícita, no toco nada.
+Para pasar de "prueba deductiva del código" a "prueba textual del binario" necesito descargar el docx. Opciones que respetan "no modificar":
+
+1. **Preferida — reactiva la sesión de navegador:** logueate en el preview de Lovable (o en la app publicada) con un usuario de la org Sertuss. Cuando `LOVABLE_BROWSER_AUTH_STATUS` cambie a `injected`, corro un Playwright que abre `CancelacionValidar` de la fila `2fb6ba16`, deja que `PdfViewerPane` firme la URL del bucket con la sesión del usuario, descarga la minuta, la convierte a texto (mammoth/pandoc) y hace `grep -i "null\|indeterminada\|hipoteca abierta"`. Cero cambios de código, cero deploys.
+2. **Fallback — comparte una signed URL:** desde el visor de la app, click derecho sobre el docx renderizado → "copiar URL" → me la pegas. La descargo y hago el mismo grep. Cero herramientas, cero cambios.
+3. **No recomendado — mini edge function de auditoría:** crear una función efímera que firme y devuelva la URL. Implica modificar el proyecto y desplegar; contradice "no modificar". Solo si (1) y (2) no son viables.
+
+Si prefieres cerrar el diagnóstico solo con las evidencias 1-4, ya tienes veredicto accionable. Si quieres el screenshot textual del docx, dame luz verde en la opción (1) o (2) y lo cierro en un turno.
