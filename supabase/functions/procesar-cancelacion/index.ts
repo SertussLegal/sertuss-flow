@@ -2834,8 +2834,8 @@ if (import.meta.main) serve(async (req) => {
             user_id: userId,
             evento: "procesar-cancelacion.revision_manual",
             resultado: "bloqueado",
-            categoria: "PODER_NO_LEGIBLE",
-            detalle: { paths: revision.paths },
+            categoria: revision.paths.length > 0 ? "PODER_NO_LEGIBLE" : "PODER_COHERENCIA_HARD_BLOCK",
+            detalle: { paths: revision.paths, motivos: revision.motivos },
           }).then(() => {}, () => {});
 
           void supabaseService.from("activity_logs").insert({
@@ -2844,7 +2844,7 @@ if (import.meta.main) serve(async (req) => {
             action: "MANUAL_REVIEW_REQUIRED",
             entity_type: "cancelacion",
             entity_id: cancelacionId,
-            metadata: { paths: revision.paths },
+            metadata: { paths: revision.paths, motivos: revision.motivos },
           }).then(() => {}, () => {});
         } else {
           // Path normal — genera minuta+certificado y marca completed.
