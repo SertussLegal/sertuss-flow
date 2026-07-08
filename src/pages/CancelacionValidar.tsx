@@ -291,7 +291,11 @@ export const CancelacionValidar = () => {
   // Re-proceso de cuantía (escritura antecedente) — mutex independiente.
   const isReprocessingCuantiaRef = useRef(false);
   const [reprocessingCuantia, setReprocessingCuantia] = useState(false);
+  // Fase E — confirmación de revisión manual (desbloqueo NO_LEGIBLE).
+  const isConfirmingReviewRef = useRef(false);
+  const [confirmingReview, setConfirmingReview] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
+
 
 
 
