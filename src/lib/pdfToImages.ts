@@ -59,16 +59,52 @@ export class EmptyCanvasError extends Error {
   }
 }
 
-/** Umbral mínimo razonable para un JPEG con contenido real a 1600px lado mayor. */
+/**
+ * Se lanza cuando el documento completo huele a placeholder: todas (o casi
+ * todas) las páginas producen JPEGs de tamaño idéntico. Es el fingerprint
+ * exacto del incidente 748f3220 (28 páginas × 12192 bytes) y de los 3
+ * casos históricos (0443d2f1, 0e80553d, 4b05d210). Un poder real de 20+
+ * páginas tiene siempre variación de tamaño ≥ ±10% entre páginas.
+ */
+export class UniformDocumentError extends Error {
+  constructor(
+    public totalPages: number,
+    public duplicatedPages: number,
+    public sampleSize: number,
+  ) {
+    super(
+      `Documento sospechoso: ${duplicatedPages}/${totalPages} páginas comparten el mismo ` +
+        `tamaño exacto (~${sampleSize} bytes). Probable render fallido/placeholder. ` +
+        `Vuelve a intentar la carga o usa un escáner distinto.`,
+    );
+    this.name = "UniformDocumentError";
+  }
+}
+
+/** Piso absoluto por página. Cualquier JPEG por debajo es basura garantizada. */
 const MIN_JPEG_BYTES = 1500;
 
 /**
- * Por encima de este tamaño consideramos que el render sí pintó contenido
- * "sustancial", aunque el muestreo dé uniforme. El bug histórico producía
- * ~12 KB en TODAS las páginas por igual; una página escueta legítima
- * (encabezado, firma) queda por debajo. Ver detección de duplicados abajo.
+ * Umbral "sano" por página a 1600px lado mayor.
+ * Datos reales observados en producción (auditoría 2026-07):
+ *   - Poderes/escrituras legítimas: 158 KB – 358 KB por página.
+ *   - Placeholder bug: 12192 bytes exactos en todas las páginas.
+ * A 30000 bytes atrapamos el caso 12192 con margen amplio (>2×) sin
+ * arriesgar falsos positivos contra la página más liviana vista en
+ * documentos reales (158 KB).
  */
-const HEALTHY_JPEG_BYTES = 8000;
+const HEALTHY_JPEG_BYTES = 30_000;
+
+/**
+ * Umbral para "documento uniforme": si ≥90% de páginas tienen el mismo tamaño
+ * EXACTO en bytes, es placeholder. Un PDF real jamás produce esto — hasta
+ * dos páginas visualmente casi idénticas difieren por metadatos JPEG.
+ * Solo se aplica si el documento tiene ≥3 páginas (con 1-2 páginas la
+ * coincidencia no es señal).
+ */
+const UNIFORM_DOC_MIN_PAGES = 3;
+const UNIFORM_DOC_THRESHOLD = 0.9;
+
 
 /**
  * Muestrea una grilla de 5x5 (25 puntos). Devuelve `true` si ≥80% comparten
