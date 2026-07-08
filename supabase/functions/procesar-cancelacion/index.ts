@@ -2192,11 +2192,13 @@ if (import.meta.main) serve(async (req) => {
       const finalPoderExt = (finalPoder ?? undefined) as (Record<string, unknown> | undefined);
       const mergedFinalPoder: PoderBanco | undefined = finalPoder
         ? ({
-            apoderado_nombre: existingFinalPoder.apoderado_nombre || finalPoder.apoderado_nombre,
-            apoderado_cedula: existingFinalPoder.apoderado_cedula || finalPoder.apoderado_cedula,
-            apoderado_escritura: existingFinalPoder.apoderado_escritura || finalPoder.apoderado_escritura,
-            apoderado_fecha: existingFinalPoder.apoderado_fecha || finalPoder.apoderado_fecha,
-            apoderado_notaria_poder: existingFinalPoder.apoderado_notaria_poder || finalPoder.apoderado_notaria_poder,
+            // sanitizeString aplica al lado humano ANTES de decidir si gana o cede al dedicado.
+            // Previene el mismo patrón H2: humano con "null"/"undefined" como string ganaba por truthy.
+            apoderado_nombre: sanitizeString(existingFinalPoder.apoderado_nombre) ?? finalPoder.apoderado_nombre,
+            apoderado_cedula: sanitizeString(existingFinalPoder.apoderado_cedula) ?? finalPoder.apoderado_cedula,
+            apoderado_escritura: sanitizeString(existingFinalPoder.apoderado_escritura) ?? finalPoder.apoderado_escritura,
+            apoderado_fecha: sanitizeString(existingFinalPoder.apoderado_fecha) ?? finalPoder.apoderado_fecha,
+            apoderado_notaria_poder: sanitizeString(existingFinalPoder.apoderado_notaria_poder) ?? finalPoder.apoderado_notaria_poder,
             apoderado_fecha_dia: existingFinalPoder.apoderado_fecha_dia,
             apoderado_fecha_mes: existingFinalPoder.apoderado_fecha_mes,
             apoderado_fecha_anio: existingFinalPoder.apoderado_fecha_anio,
