@@ -135,16 +135,17 @@ describe("pdfToImages", () => {
     expect(pages).toHaveLength(4);
   });
 
-  it("uniform=true con blob sano (>=30 KB) NO lanza en la 1a página escueta", async () => {
+  it("uniform=true con blob sano (>=40 KB) NO lanza en la 1a página escueta", async () => {
     // Solo 1 página → no aplica el detector de documento uniforme.
-    installCanvasMocks({ uniform: true });
+    // Default sizePerPage = 40_000 + n*3_000 → página 1 = 43_000 B ≥ HEALTHY_IMAGE_BYTES.
+    installCanvasMocks({ uniform: true, sizePerPage: (n) => 40_000 + n * 5_000 });
     (globalThis as any).__mockNumPages = 1;
     const { pdfToImages } = await import("./pdfToImages");
     const pages = await pdfToImages(makeFile(), { maxPages: 1 });
     expect(pages).toHaveLength(1);
   });
 
-  it("uniform=true con blob pequeño (<30 KB) SÍ lanza EmptyCanvasError", async () => {
+  it("uniform=true con blob pequeño (<40 KB) SÍ lanza EmptyCanvasError", async () => {
     installCanvasMocks({ uniform: true, sizePerPage: () => 20_000 });
     const { pdfToImages, EmptyCanvasError } = await import("./pdfToImages");
     await expect(pdfToImages(makeFile(), { maxPages: 1 })).rejects.toBeInstanceOf(
@@ -152,11 +153,11 @@ describe("pdfToImages", () => {
     );
   });
 
-  it("lanza error explícito si el JPEG sale por debajo del umbral mínimo (1.5 KB)", async () => {
+  it("lanza error explícito si la imagen sale por debajo del umbral mínimo (5 KB)", async () => {
     installCanvasMocks({ sizePerPage: () => 500 });
     const { pdfToImages } = await import("./pdfToImages");
     await expect(pdfToImages(makeFile(), { maxPages: 1 })).rejects.toThrow(
-      /sospechosamente pequeño/,
+      /sospechosamente pequeña/,
     );
   });
 
@@ -164,10 +165,11 @@ describe("pdfToImages", () => {
 
   it("rechaza documento con TODAS las páginas del mismo tamaño exacto (caso 12192 bytes reproducido)", async () => {
     // Fingerprint exacto del incidente 748f3220: N páginas × 12192 bytes.
-    // 12192 > MIN_JPEG_BYTES (1500) → no cae por el piso absoluto.
-    // 12192 < HEALTHY_JPEG_BYTES (30000) + canvas uniforme → cae ANTES por
-    // EmptyCanvasError en la 1a página. Ese comportamiento es correcto y
-    // suficiente: nunca se llega a subir un solo JPEG placeholder.
+    // Bajo PNG binarizado los umbrales son MIN_IMAGE_BYTES=5_000 y
+    // HEALTHY_IMAGE_BYTES=40_000. 12192 > 5000 → no cae por el piso absoluto.
+    // 12192 < 40000 + canvas uniforme → cae ANTES por EmptyCanvasError en la
+    // 1a página. Ese comportamiento es correcto y suficiente: nunca se llega
+    // a subir una sola imagen placeholder.
     installCanvasMocks({ uniform: true, sizePerPage: () => 12_192 });
     (globalThis as any).__mockNumPages = 28;
     const { pdfToImages, EmptyCanvasError } = await import("./pdfToImages");
