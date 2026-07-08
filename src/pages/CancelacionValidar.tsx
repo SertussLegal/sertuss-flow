@@ -33,6 +33,29 @@ import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/Pros
 import { getProsaBanco } from "@shared/prosaBancos";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
+// Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
+// cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
+// El SDK entrega `FunctionsHttpError` con `.context: Response`; leemos el body
+// una sola vez y devolvemos `{paths, motivos}` o `null` si es otro tipo de error.
+async function parseManualReviewError(
+  err: unknown,
+): Promise<{ paths: string[]; motivos: string[] } | null> {
+  const ctx = (err as { context?: Response } | null)?.context;
+  if (!ctx || typeof ctx.clone !== "function") return null;
+  try {
+    const body = await ctx.clone().json();
+    if (body && body.error === "manual_review_required") {
+      return {
+        paths: Array.isArray(body.paths) ? body.paths : [],
+        motivos: Array.isArray(body.motivos) ? body.motivos : [],
+      };
+    }
+  } catch {
+    // body no-JSON o ya consumido — no es el 409 esperado.
+  }
+  return null;
+}
+
 type NotariaEmisora = {
   notario_nombre?: string;
   notaria_emisora_titulo?: string;
