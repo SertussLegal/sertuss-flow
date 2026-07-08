@@ -43,6 +43,12 @@ export function isCedulaValida(c: string | undefined | null): boolean {
   return CEDULA_RE.test(norm);
 }
 
+/** Detecta el centinela textual "NO_LEGIBLE" emitido por el OCR cuando el
+ *  campo aparece en el documento pero no se puede leer con certeza. */
+export function isNoLegible(v: unknown): boolean {
+  return typeof v === "string" && v.trim() === "NO_LEGIBLE";
+}
+
 /** Labels humanos para los warnings. Persistidos en `system_events` (los IDs
  *  son estables — no cambiar sin migración). */
 export const WARNING_LABELS: Record<string, string> = {
@@ -54,6 +60,12 @@ export const WARNING_LABELS: Record<string, string> = {
     "Una cédula extraída no cumple el formato colombiano (6 a 10 dígitos, sin guiones ni letras)",
   apoderado_coincide_con_rl_banco:
     "La cédula del apoderado coincide con la del representante legal del banco — probable confusión del OCR",
+  apoderado_cedula_no_legible:
+    "El OCR marcó la cédula del apoderado como no legible — verifícala manualmente contra el documento original antes de firmar",
+  escritura_poder_no_legible:
+    "El OCR marcó el número de escritura del poder como no legible — verifícalo manualmente contra el documento original",
+  fecha_poder_no_legible:
+    "El OCR marcó la fecha del poder como no legible — verifícala manualmente contra el documento original",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
