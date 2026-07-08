@@ -2524,20 +2524,41 @@ if (import.meta.main) serve(async (req) => {
         });
       }
       const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
-      const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-        supabaseService, cancelacionId, data, prosaOv,
-      );
-      await supabaseService.from("cancelaciones").update({
-        data_final: data,
-        url_minuta_generada: minutaPath,
-        url_certificado_generado: certPath,
-        updated_at: new Date().toISOString(),
-      }).eq("id", cancelacionId);
+      try {
+        const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
+          supabaseService, cancelacionId, data, prosaOv,
+        );
+        await supabaseService.from("cancelaciones").update({
+          data_final: data,
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+          updated_at: new Date().toISOString(),
+        }).eq("id", cancelacionId);
 
-
-      return new Response(JSON.stringify({ ok: true, regenerated: true }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+        return new Response(JSON.stringify({ ok: true, regenerated: true }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (genErr) {
+        if (genErr instanceof ManualReviewRequiredError) {
+          // Persistir SOLO data_final (el usuario sigue editando) y NO tocar
+          // url_minuta_generada/url_certificado_generado — el docx previo (si
+          // existe) queda intacto en vez de sobrescribirlo con uno contaminado.
+          await supabaseService.from("cancelaciones").update({
+            data_final: data,
+            updated_at: new Date().toISOString(),
+          }).eq("id", cancelacionId);
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "manual_review_required",
+            paths: genErr.paths,
+            motivos: genErr.motivos,
+          }), {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        throw genErr;
+      }
     }
 
     // ─────────────────────────────────────────────────────────────
