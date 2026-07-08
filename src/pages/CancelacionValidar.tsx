@@ -1114,6 +1114,8 @@ export const CancelacionValidar = () => {
                           apoderado: { ...currApo, tipo_override: value ?? undefined },
                         } as never);
                       }}
+                      coherenciaWarnings={(pb as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings}
+                      coherenciaSuspicious={(pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious}
                     />
 
                     {empty && !poderAdjuntado && (
