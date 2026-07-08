@@ -103,15 +103,17 @@ export class UniformDocumentError extends Error {
 const MIN_JPEG_BYTES = 1500;
 
 /**
- * Umbral "sano" por página a 1600px lado mayor.
- * Datos reales observados en producción (auditoría 2026-07):
+ * Umbral "sano" por página al `maxDimension` por defecto (2600 px).
+ * Datos reales observados en producción (auditoría 2026-07, entonces a 1600 px):
  *   - Poderes/escrituras legítimas: 158 KB – 358 KB por página.
  *   - Placeholder bug: 12192 bytes exactos en todas las páginas.
- * A 30000 bytes atrapamos el caso 12192 con margen amplio (>2×) sin
- * arriesgar falsos positivos contra la página más liviana vista en
- * documentos reales (158 KB).
+ * A 2600 px + q0.82 los tamaños suben aún más (400 KB – 950 KB densos), por
+ * lo que 30000 bytes sigue siendo un piso conservador que atrapa el caso
+ * 12192 con >2× de margen sin generar falsos positivos contra páginas
+ * legítimamente ligeras.
  */
 const HEALTHY_JPEG_BYTES = 30_000;
+
 
 /**
  * Umbral para "documento uniforme": si ≥90% de páginas tienen el mismo tamaño
