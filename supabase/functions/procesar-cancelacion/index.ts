@@ -1788,14 +1788,27 @@ function mergeCuantiaIntoExtracted(
   if (!dedicada) return { applied: false, monto: null };
   const monoMonto = (extracted.hipoteca_anterior.valor_hipoteca_original ?? "").trim();
   const monoIndet = extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
-  const certVacio = monoMonto === "" || monoIndet;
-  const dedicadaMonto = (dedicada.valor_hipoteca_original ?? "").trim();
+  const certVacio = monoMonto === "" || monoIndet || /^(null|undefined|nan)$/i.test(monoMonto);
   if (!certVacio) return { applied: false, monto: null };
-  if (!dedicadaMonto) return { applied: false, monto: null };
-  extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
-  extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
-  extracted.hipoteca_anterior.cuantia_origen = "escritura";
-  return { applied: true, monto: dedicadaMonto };
+  const dedicadaMonto = (dedicada.valor_hipoteca_original ?? "").trim();
+  const dedicadaIndet = dedicada.valor_hipoteca_es_indeterminada === true
+    || dedicada.motivo_null === "escritura_declara_abierta";
+  if (dedicadaMonto) {
+    extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
+    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
+    extracted.hipoteca_anterior.cuantia_origen = "escritura";
+    return { applied: true, monto: dedicadaMonto };
+  }
+  if (dedicadaIndet) {
+    // Propagación explícita: el extractor dedicado confirmó HIPOTECA ABIERTA.
+    // Escribimos vacío REAL (no "null"), flag=true, origen=escritura. Sin esto,
+    // el estado basura del monolítico sobrevive y termina en la prosa.
+    extracted.hipoteca_anterior.valor_hipoteca_original = "";
+    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = true;
+    extracted.hipoteca_anterior.cuantia_origen = "escritura";
+    return { applied: true, monto: null };
+  }
+  return { applied: false, monto: null };
 }
 
 // Telemetría no bloqueante.
