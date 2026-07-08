@@ -57,7 +57,8 @@ export function normalizeCedula(c: string | undefined | null): string {
  *  ordenado y con comentario del caso que motivó la inclusión. */
 export const PODER_CEDULAS_PLACEHOLDER: ReadonlySet<string> = new Set([
   "79123456", // 5 cancelaciones con nombres distintos (auditoría 2026-07-08).
-  "41939243", // Repetida como "cédula real" en dos poderes fabricados distintos.
+  // NOTA: 41939243 fue removido (2026-07-08) — es cédula real confirmada del
+  // caso Armenia (Ana María Montoya Echeverry), no un placeholder alucinado.
 ]);
 
 /** Detecta el centinela textual "NO_LEGIBLE" emitido por el OCR cuando el
