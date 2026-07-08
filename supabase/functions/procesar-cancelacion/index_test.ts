@@ -144,3 +144,69 @@ Deno.test("11) Segregación: TORRE/APARTAMENTO se reubican en descripcion_predio
   assertStringIncludes(SRC, "reubícalos en su campo correspondiente");
 });
 
+
+// ─────────────────────────────────────────────────────────────────────
+// Fix H2 — bug legal "null" en minuta de cancelaciones
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("H2-1) mergeCuantiaIntoExtracted: dedicado confirma indeterminada → flag=true, monto vacío real", () => {
+  const extracted = minimalData();
+  const res = mergeCuantiaIntoExtracted(extracted, {
+    valor_hipoteca_original: null,
+    valor_hipoteca_es_indeterminada: true,
+    motivo_null: "escritura_declara_abierta",
+    // deno-lint-ignore no-explicit-any
+  } as any);
+  assertEquals(res.applied, true);
+  assertEquals(res.monto, null);
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_original, "");
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, true);
+  assertEquals(extracted.hipoteca_anterior.cuantia_origen, "escritura");
+});
+
+Deno.test("H2-2) buildDocxVars: basura 'null' + flag false → jamás emite la palabra 'null'", () => {
+  const vars = buildDocxVars(minimalData({ valor_hipoteca_original: "null", valor_hipoteca_es_indeterminada: false }));
+  assertEquals(vars.valor_hipoteca_original, undefined);
+  // deno-lint-ignore no-explicit-any
+  const clausula = String((vars as any).clausula_pago_hipoteca ?? "");
+  assert(!/\bnull\b/i.test(clausula), `clausula no debe contener "null": ${clausula}`);
+});
+
+Deno.test("H2-3) buildDocxVars: basura 'null' + flag true → leyenda indeterminada, sin '$' ni 'null'", () => {
+  const vars = buildDocxVars(minimalData({ valor_hipoteca_original: "null", valor_hipoteca_es_indeterminada: true }));
+  assertEquals(vars.valor_hipoteca_original, undefined);
+  assertEquals(vars.valor_hipoteca_es_indeterminada, true);
+  // deno-lint-ignore no-explicit-any
+  const clausula = String((vars as any).clausula_pago_hipoteca ?? "");
+  assertStringIncludes(clausula, "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA");
+  assert(!clausula.includes("$"), "no debe contener '$'");
+  assert(!/\bnull\b/i.test(clausula), "no debe contener 'null'");
+});
+
+Deno.test("H2-4) buildDocxVars: monto real determinado → prosa incluye el monto (no regresión)", () => {
+  const vars = buildDocxVars(minimalData({
+    valor_hipoteca_original: "CIENTO VEINTE MILLONES DE PESOS ($120.000.000)",
+    valor_hipoteca_es_indeterminada: false,
+  }));
+  assertEquals(vars.valor_hipoteca_original, "CIENTO VEINTE MILLONES DE PESOS ($120.000.000)");
+  // deno-lint-ignore no-explicit-any
+  const clausula = String((vars as any).clausula_pago_hipoteca ?? "");
+  assertStringIncludes(clausula, "120.000.000");
+  assert(!/INDETERMINADA/i.test(clausula), "no debe hablar de indeterminada");
+});
+
+Deno.test("H2-5) mergeCuantiaIntoExtracted: humano con monto real NO se pisa por indeterminada dedicada", () => {
+  const extracted = minimalData({
+    valor_hipoteca_original: "OCHENTA MILLONES DE PESOS ($80.000.000)",
+    valor_hipoteca_es_indeterminada: false,
+  });
+  const res = mergeCuantiaIntoExtracted(extracted, {
+    valor_hipoteca_original: null,
+    valor_hipoteca_es_indeterminada: true,
+    motivo_null: "escritura_declara_abierta",
+    // deno-lint-ignore no-explicit-any
+  } as any);
+  assertEquals(res.applied, false);
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_original, "OCHENTA MILLONES DE PESOS ($80.000.000)");
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, false);
+});
