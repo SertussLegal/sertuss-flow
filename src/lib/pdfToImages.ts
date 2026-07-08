@@ -238,33 +238,44 @@ export async function pdfToImages(
 
       const uniform = isCanvasUniform(ctx, canvas.width, canvas.height);
 
+      // Binarización in-place: luma Rec. 601 → blanco/negro puro antes de
+      // codificar PNG. Reduce el peso 5–10× frente a JPEG q0.82 en escaneos
+      // notariales bitonales y elimina ringing de compresión en bordes de
+      // glifos pequeños (cédulas, matrículas, firmas).
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      binarizeImageData(imageData, BINARIZATION_THRESHOLD);
+      ctx.putImageData(imageData, 0, 0);
+
+      // `jpegQuality` se ignora deliberadamente: PNG es lossless (ver
+      // JSDoc @deprecated en PdfToImagesOptions).
+      void jpegQuality;
+
       const blob: Blob = await new Promise((resolve, reject) => {
         canvas!.toBlob(
           (b) => (b ? resolve(b) : reject(new Error(`Página ${i}: toBlob falló`))),
-          "image/jpeg",
-          jpegQuality,
+          "image/png",
         );
       });
 
-      if (blob.size < MIN_JPEG_BYTES) {
+      if (blob.size < MIN_IMAGE_BYTES) {
         throw new Error(
-          `Página ${i}: JPEG sospechosamente pequeño (${blob.size} bytes < ${MIN_JPEG_BYTES}). ` +
-            `Probable placeholder blanco.`,
+          `Página ${i}: imagen sospechosamente pequeña (${blob.size} bytes < ${MIN_IMAGE_BYTES}). ` +
+            `Probable stream truncado o canvas de dimensiones cero.`,
         );
       }
 
-      // Solo abortamos por uniforme si además el JPEG es liviano. El bug
+      // Solo abortamos por uniforme si además el blob es liviano. El bug
       // histórico de placeholders producía canvases uniformes Y pequeños
       // simultáneamente. Una página escueta pero legítima (poco contenido,
-      // márgenes amplios) genera JPEG por encima de HEALTHY_JPEG_BYTES y
+      // márgenes amplios) genera PNG por encima de HEALTHY_IMAGE_BYTES y
       // debe pasar aunque el muestreo la marque como "uniforme".
-      if (uniform && blob.size < HEALTHY_JPEG_BYTES) {
+      if (uniform && blob.size < HEALTHY_IMAGE_BYTES) {
         throw new EmptyCanvasError(i);
       }
       if (uniform) {
         console.warn(
           `[pdfToImages] Página ${i}: muestreo uniforme pero blob de ${blob.size} bytes ` +
-            `(≥ ${HEALTHY_JPEG_BYTES}); se acepta como página escueta legítima.`,
+            `(≥ ${HEALTHY_IMAGE_BYTES}); se acepta como página escueta legítima.`,
         );
       }
 
