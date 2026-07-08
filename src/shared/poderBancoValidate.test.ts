@@ -7,9 +7,11 @@ import {
   extractEscrituraDigits,
   extractYear,
   isCedulaValida,
+  isNoLegible,
   WARNING_LABELS,
   SUSPICIOUS_FIELD_LABELS,
 } from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/validate";
+import { mergePoderBancoV6 } from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/merge";
 
 describe("extractEscrituraDigits", () => {
   it("extrae del paréntesis final", () => {
