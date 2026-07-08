@@ -62,11 +62,18 @@ function installCanvasMocks(opts: {
   ) {
     return {
       // Píxel: uniforme=todo negro; no-uniforme=varía con el punto Y+página.
+      // Nota: la implementación real llama getImageData(0,0,w,h) para
+      // binarizar y también (x,y,1,1) desde isCanvasUniform; el mock ignora
+      // ancho/alto y devuelve siempre un único píxel — suficiente porque
+      // binarizeImageData recorre `data` por longitud, y aquí longitud=4.
       getImageData: (x: number, y: number) => {
         const n = (globalThis as any).__lastRenderedPage ?? 1;
         const val = opts.uniform ? 0 : (x + y + n * 17) % 255;
         return { data: new Uint8ClampedArray([val, val, val, 255]) };
       },
+      // No-op: la binarización in-place es lo único que llama putImageData
+      // en producción; el mock no necesita persistir píxeles.
+      putImageData: () => {},
     } as unknown as CanvasRenderingContext2D;
   });
 
@@ -80,7 +87,7 @@ function installCanvasMocks(opts: {
     const dims = ((globalThis as any).__canvasDims ??= [] as Array<{ w: number; h: number }>);
     dims.push({ w: this.width, h: this.height });
     const bytes = new Uint8Array(sizePerPage(n));
-    cb(new Blob([bytes], { type: "image/jpeg" }));
+    cb(new Blob([bytes], { type: "image/png" }));
   });
 }
 
