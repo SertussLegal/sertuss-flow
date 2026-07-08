@@ -118,16 +118,17 @@ describe("pdfToImages", () => {
     expect(pages).toHaveLength(4);
   });
 
-  it("uniform=true con blob sano (>=8 KB) NO lanza — página escueta legítima", async () => {
-    // Default sizePerPage = 20_000 + n*3_000 → siempre >= HEALTHY_JPEG_BYTES.
+  it("uniform=true con blob sano (>=30 KB) NO lanza en la 1a página escueta", async () => {
+    // Solo 1 página → no aplica el detector de documento uniforme.
     installCanvasMocks({ uniform: true });
+    (globalThis as any).__mockNumPages = 1;
     const { pdfToImages } = await import("./pdfToImages");
     const pages = await pdfToImages(makeFile(), { maxPages: 1 });
     expect(pages).toHaveLength(1);
   });
 
-  it("uniform=true con blob pequeño (<8 KB) SÍ lanza EmptyCanvasError", async () => {
-    installCanvasMocks({ uniform: true, sizePerPage: () => 4_000 });
+  it("uniform=true con blob pequeño (<30 KB) SÍ lanza EmptyCanvasError", async () => {
+    installCanvasMocks({ uniform: true, sizePerPage: () => 20_000 });
     const { pdfToImages, EmptyCanvasError } = await import("./pdfToImages");
     await expect(pdfToImages(makeFile(), { maxPages: 1 })).rejects.toBeInstanceOf(
       EmptyCanvasError,
@@ -141,4 +142,58 @@ describe("pdfToImages", () => {
       /sospechosamente pequeño/,
     );
   });
+
+  // ── Detector de "documento uniforme" (P1 — gate de calidad) ────────────
+
+  it("rechaza documento con TODAS las páginas del mismo tamaño exacto (caso 12192 bytes reproducido)", async () => {
+    // Fingerprint exacto del incidente 748f3220: N páginas × 12192 bytes.
+    // 12192 > MIN_JPEG_BYTES (1500) → no cae por el piso absoluto.
+    // 12192 < HEALTHY_JPEG_BYTES (30000) + canvas uniforme → cae ANTES por
+    // EmptyCanvasError en la 1a página. Ese comportamiento es correcto y
+    // suficiente: nunca se llega a subir un solo JPEG placeholder.
+    installCanvasMocks({ uniform: true, sizePerPage: () => 12_192 });
+    (globalThis as any).__mockNumPages = 28;
+    const { pdfToImages, EmptyCanvasError } = await import("./pdfToImages");
+    await expect(pdfToImages(makeFile(), { maxPages: 28 })).rejects.toBeInstanceOf(
+      EmptyCanvasError,
+    );
+  });
+
+  it("rechaza documento uniforme donde el tamaño está por encima del piso individual pero se repite en ≥90% de páginas", async () => {
+    // Escenario adversarial: un futuro bug de render produce placeholders
+    // "gordos" (>30 KB) pero idénticos entre sí. El detector individual
+    // (uniform+small) no los atrapa; el detector de documento sí.
+    installCanvasMocks({ uniform: false, sizePerPage: () => 50_000 });
+    (globalThis as any).__mockNumPages = 10;
+    const { pdfToImages, UniformDocumentError } = await import("./pdfToImages");
+    await expect(pdfToImages(makeFile(), { maxPages: 10 })).rejects.toBeInstanceOf(
+      UniformDocumentError,
+    );
+  });
+
+  it("acepta documento con tamaños variados normales (caso real 20 páginas 158-282 KB)", async () => {
+    // Sizes reales observados en producción para el poder de Maya Montoya.
+    const realSizes = [
+      274568, 261839, 282180, 263855, 274219, 268162, 272661, 265700,
+      267373, 249491, 235624, 252790, 278806, 258872, 263750, 254338,
+      271087, 249323, 253624, 158867,
+    ];
+    installCanvasMocks({ sizePerPage: (n) => realSizes[n - 1] ?? 200_000 });
+    (globalThis as any).__mockNumPages = 20;
+    const { pdfToImages } = await import("./pdfToImages");
+    const pages = await pdfToImages(makeFile(), { maxPages: 20 });
+    expect(pages).toHaveLength(20);
+  });
+
+  it("no aplica el detector de documento uniforme con <3 páginas (evita falso positivo en docs cortos)", async () => {
+    // Documento de 2 páginas del mismo tamaño exacto: es raro pero puede
+    // darse (portada + firma casi idénticas). Con solo 2 páginas la señal
+    // es demasiado débil para bloquear.
+    installCanvasMocks({ uniform: false, sizePerPage: () => 60_000 });
+    (globalThis as any).__mockNumPages = 2;
+    const { pdfToImages } = await import("./pdfToImages");
+    const pages = await pdfToImages(makeFile(), { maxPages: 2 });
+    expect(pages).toHaveLength(2);
+  });
 });
+
