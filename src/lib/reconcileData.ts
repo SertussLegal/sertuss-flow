@@ -301,21 +301,23 @@ export function reconcileInmueble(
   const result = { ...inmueble };
   const isDirty = (field: string) => dirtyFields.has(field);
 
-  // Guard defensivo mismo patrón H2: `sanitizeString` descarta "null"/"undefined"/"nan"
-  // literales del OCR antes de persistirlos como String(...) al modelo.
-  const avaluoClean = sanitizeString(predialData.avaluo_catastral);
+  // Guard defensivo mismo patrón H2: normaliza a string y descarta basura literal
+  // ("null"/"undefined"/"nan"/"") vía `sanitizeString` antes de persistir al modelo.
+  const coerce = (v: unknown): string | undefined =>
+    v == null ? undefined : sanitizeString(typeof v === "string" ? v : String(v));
+  const avaluoClean = coerce(predialData.avaluo_catastral);
   if (avaluoClean && !result.avaluo_catastral && !isDirty("avaluo_catastral")) {
     result.avaluo_catastral = avaluoClean;
   }
-  const estratoClean = sanitizeString(predialData.estrato);
+  const estratoClean = coerce(predialData.estrato);
   if (estratoClean && !result.estrato && !isDirty("estrato")) {
     result.estrato = estratoClean;
   }
-  const areaClean = sanitizeString(predialData.area);
+  const areaClean = coerce(predialData.area);
   if (areaClean && !result.area && !isDirty("area")) {
     result.area = areaClean;
   }
-  const direccionClean = sanitizeString(predialData.direccion);
+  const direccionClean = coerce(predialData.direccion);
   if (direccionClean && !result.direccion && !isDirty("direccion")) {
     result.direccion = direccionClean;
   }
