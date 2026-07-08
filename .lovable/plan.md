@@ -1,123 +1,78 @@
-# Fix H2 — bug legal `null` incrustado en minuta de cancelaciones
 
-## Causa raíz (confirmada por trazado + screenshot en producción)
+# Inventario de datos de prueba — Sertuss (SOLO LECTURA, nada borrado)
 
-Ruta del bug (`procesar-cancelacion/index.ts`):
+**Organización:** `Sertuss Notaría Central` — NIT `748585969-8` — id `614a4a8d-1d5b-4c84-be92-d09152fd2e21`.
 
-1. **Extractor dedicado de cuantía** (~L1641-1750) puede devolver tres estados:
-   - Monto real → `valor_hipoteca_original="<letras> ($N)"`, `es_indeterminada=false`, `motivo_null=null`.
-   - **Indeterminada confirmada** → `valor_hipoteca_original=null`, `es_indeterminada=true`, `motivo_null="escritura_declara_abierta"`.
-   - Ambigua / sin evidencia → `valor_hipoteca_original=null`, `es_indeterminada=false`, `motivo_null="ambigua_multiple"|"sin_evidencia"`.
+## 1. Cancelaciones (14 filas totales)
 
-2. **`mergeCuantiaIntoExtracted`** (L1778-1793) y su gemelo del reproceso (L2266-2287) solo actúan cuando `dedicadaMonto` **no está vacío**. Cuando el dedicado confirmó indeterminada, `dedicadaMonto=""` y el merge **retorna sin tocar nada** → el estado del monolítico sobrevive tal cual quedó en `data_final`.
+| status | count |
+|---|---|
+| completed | 11 |
+| draft | 2 |
+| error | 1 |
 
-3. Si en algún paso previo (merge cliente / `?? "null"` / JSON round-trip) `valor_hipoteca_original` acabó como el **string literal `"null"`** y `es_indeterminada=false`, ese estado se persiste. Es exactamente lo que vemos en las 5 filas del Grupo C.
+Rango: **2026-05-20 17:03** → **2026-07-08 01:40** (~7 semanas).
 
-4. **`buildDocxVars`** (L786-795) lee `valorRaw = "null"`, no matchea el regex legacy `HIPOTECA…INDETERMINADA`, `esCuantiaIndeterminada=false`, y pasa `valor_hipoteca_original="null"` a la plantilla → sale la palabra **`null`** en la prosa notarial (confirmado por screenshot).
+## 2. ¿Prueba vs cliente real?
 
-## Fix propuesto — dos capas de defensa + normalización
+Todas las filas parecen datos de prueba internos. Evidencia:
 
-### Capa 1 — Propagar indeterminada confirmada desde el extractor dedicado
+- **11 de las 14 filas** usan un único deudor repetido: `MAYA MONTOYA JOHN MIGUEL` + matrícula `50C-2025538` + variando el banco (Davivienda casi siempre, una vez Caja Social). Es el fixture que hemos venido usando para probar NO_LEGIBLE, Fase E y el bug de cuantía null.
+- **3 filas de mayo** (`498c0215`, `1e2069b7`, `a21ae265`) usan otro fixture repetido: `LIZETH VANESSA GARCIA GARCIA` + matrícula `50C-2085432`. También patrón de prueba (3 corridas contra el mismo caso).
+- **3 borradores/error** sin datos.
+- **No hay marcador "test"** en el nombre de la organización ni en un campo dedicado. La única forma honesta de distinguir prueba de real es reconocer los dos fixtures repetidos; no hay señal automática. Si el dueño confirma que **nada** de esta org salió a notaría real, todo es descartable.
 
-En **ambos** puntos de merge (`mergeCuantiaIntoExtracted` L1778-1793 y el bloque de reproceso L2266-2287), añadir rama simétrica: cuando `dedicada?.valor_hipoteca_es_indeterminada === true` **o** `dedicada?.motivo_null === "escritura_declara_abierta"`, escribir en el destino (respetando humano igual que hoy):
+## 3. Tablas relacionadas con conteo real
 
-```ts
-// pseudo-diff L1778-1793
-function mergeCuantiaIntoExtracted(extracted, dedicada) {
-  if (!dedicada) return { applied: false, monto: null };
-  const monoMonto = (extracted.hipoteca_anterior.valor_hipoteca_original ?? "").trim();
-  const monoIndet = extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
-  const certVacio = monoMonto === "" || monoIndet;
-  if (!certVacio) return { applied: false, monto: null };
+Filtradas por `organization_id = Sertuss` (o joins equivalentes):
 
-  const dedicadaMonto = (dedicada.valor_hipoteca_original ?? "").trim();
-  const dedicadaIndet = dedicada.valor_hipoteca_es_indeterminada === true
-    || dedicada.motivo_null === "escritura_declara_abierta";
+| tabla | filas | relación / cascada |
+|---|---|---|
+| `cancelaciones` | 14 | FK org → **ON DELETE CASCADE** |
+| `tramites` | 8 | FK org → **sin ON DELETE** (bloquea si borras org; borrado por id sí funciona) |
+| `personas` | 16 | FK tramite_id → **CASCADE** desde tramites |
+| `inmuebles` | 8 | FK tramite_id → **CASCADE** |
+| `actos` | 8 | FK tramite_id → **CASCADE** |
+| `logs_extraccion` | 11 | FK org **CASCADE** + FK tramite_id **CASCADE** |
+| `historial_validaciones` | 22 | FK org → **ON DELETE SET NULL** (quedan huérfanos, no se borran) |
+| `activity_logs` | 48 | FK org → **sin ON DELETE** (bloquea borrado de org) |
+| `credit_consumption` | 24 | FK org → **CASCADE** |
+| `system_events` | 313 | sin FK detectada — hay que borrar por `organization_id` a mano |
+| `ocr_raw_cache` | 0 | — |
 
-  if (dedicadaMonto) {
-    extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
-    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
-    extracted.hipoteca_anterior.cuantia_origen = "escritura";
-    return { applied: true, monto: dedicadaMonto };
-  }
-  if (dedicadaIndet) {
-    extracted.hipoteca_anterior.valor_hipoteca_original = "";           // vacío real, no "null"
-    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = true; // flag correcto
-    extracted.hipoteca_anterior.cuantia_origen = "escritura";
-    return { applied: true, monto: null };
-  }
-  return { applied: false, monto: null };
-}
-```
+Ninguna otra tabla apunta a `cancelaciones.id`; el borrado directo de esas 14 filas no está bloqueado por FKs.
 
-Cambio equivalente en el reproceso manual (L2266-2287): si `dedicadaIndet` y `(finalMontoActual === "" || finalIndet)`, escribir `original=""`, `es_indeterminada=true`, `cuantia_origen="escritura"`, `aplicado=true`. También limpiar el espejo plano (`updatePayload.valor_hipoteca_original = null`).
+## 4. Storage (bucket `expediente-files`)
 
-### Capa 2 — Red de seguridad en `buildDocxVars`
+**366 objetos, ~95 MB** con prefijos vinculados a Sertuss:
 
-En L786-795, normalizar valores basura antes de decidir la rama:
+- 11 prefijos `<cancelacion_id>/…` (33-41 archivos cada uno) para las 11 cancelaciones con archivos subidos.
+- Prefijo compartido `cancelaciones/` con 40 archivos (soportes comunes — revisar si son de Sertuss o compartidos globales antes de tocar).
+- 8 prefijos `<tramite_id>/…` con 13 archivos cada uno.
 
-```ts
-const rawIn = (data.hipoteca_anterior.valor_hipoteca_original || "").trim();
-const isTrash = /^(null|undefined|nan)$/i.test(rawIn);
-const valorRaw = isTrash ? "" : rawIn;
+Storage **no tiene FK** — no se borra por cascada, hay que hacerlo con `storage.objects` DELETE por prefijo. Bucket `cancelaciones-plantillas` no tiene objetos de esta org.
 
-const esIndeterminadaIA = data.hipoteca_anterior.valor_hipoteca_es_indeterminada === true;
-const esIndeterminadaLegacy = /HIPOTECA\s+DE\s+CUANT[IÍ]A\s+INDETERMINADA/i.test(valorRaw);
-// Guard defensivo: valor basura + certificado marcado indeterminada en OCR → tratar como indet.
-// Sin señal, degrada a "vacío" (la plantilla pinta ______ y el notario completa).
-const esCuantiaIndeterminada = esIndeterminadaIA || esIndeterminadaLegacy || (isTrash && esIndeterminadaIA);
-// Resto igual — nunca puede llegar "null" literal al Docxtemplater.
-```
+## 5. Restricciones que bloquearían un borrado
 
-Efecto: aunque llegue basura por cualquier ruta futura, **la palabra `null` nunca puede imprimirse**. Si además el flag decía `true`, sale la leyenda correcta; si no, sale línea en blanco (no palabra tóxica).
+- **Borrar `cancelaciones` (14 filas) por id:** ✅ sin bloqueos, ninguna tabla las referencia.
+- **Borrar `tramites` (8 filas) por id:** ✅ hijas (`personas`/`inmuebles`/`actos`/`logs_extraccion`) caen por CASCADE.
+- **Borrar `organizations` entera:** ❌ bloquea por `activity_logs.organization_id` (48 filas, sin ON DELETE) y `tramites.organization_id` (sin ON DELETE). Habría que borrar/nulear esos primero. No recomiendo esta ruta salvo que el dueño quiera eliminar la org completa.
+- **`system_events` (313):** no tiene FK, no se ve afectado por cascadas — decisión aparte si conservar como telemetría histórica o borrar también.
+- **`historial_validaciones` (22):** al borrar la org solo se nulea `organization_id`; permanecen las filas. Si se quiere limpieza total, borrar explícitamente.
 
-### Sin cambios en la plantilla ni en el helper `buildClausulaPagoHipoteca`
-El helper ya se rige por `esCuantiaIndeterminada` calculado arriba, así que corrige automáticamente.
+## Pregunta pendiente para el dueño antes de autorizar cualquier DELETE
 
-## Tests nuevos (Deno, `procesar-cancelacion/index_test.ts` + `_regression_cuantia.ts`)
+El alcance no está definido todavía. Necesito que confirme una de estas 4 opciones (o combine):
 
-1. **Extractor dedicado confirma indeterminada** (`mergeCuantiaIntoExtracted` con `{valor_hipoteca_original:null, valor_hipoteca_es_indeterminada:true, motivo_null:"escritura_declara_abierta"}` sobre monolítico vacío) → flag queda `true`, original queda `""`, `cuantia_origen="escritura"`, `applied=true`.
-2. **`buildDocxVars` con basura**: input `valor_hipoteca_original="null"`, flag `false` → `esCuantiaIndeterminada=false` (no hay señal positiva) pero el campo `valor_hipoteca_original` que llega a la plantilla es `undefined`, nunca `"null"`. Verificar que `buildClausulaPagoHipoteca` no incluye la palabra `null`.
-3. **`buildDocxVars` basura + flag `true`** → sale leyenda "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA", no `$`, no `null`.
-4. **Regresión monto real**: mono con `"CIENTO VEINTE MILLONES … ($120.000.000)"` y flag `false` → sale prosa determinada con el monto (idéntica a hoy).
-5. **Regresión merge cliente/humano**: `data_final.hipoteca_anterior.valor_hipoteca_original="OCHENTA MILLONES ($80.000.000)"` — el reproceso NO lo pisa.
+1. **Solo cancelaciones + su storage** (14 filas + ~11 prefijos + `logs_extraccion`/`credit_consumption`/`system_events` relacionados). Conserva `tramites`, `activity_logs`, `historial_validaciones`, la org.
+2. **Cancelaciones + tramites** (todo lo transaccional). Conserva org + logs + memberships + config notaría.
+3. **Todo lo transaccional + telemetría** (agrega `activity_logs`, `system_events`, `historial_validaciones`, `credit_consumption`). Conserva org, memberships, `configuracion_notaria`, `notaria_styles`.
+4. **Wipe total incluyendo la org** (requiere primero borrar `activity_logs` de esa org y otras tablas sin cascada; deja huérfanos a los usuarios de esa org, hay que reasignar contexto activo).
 
-## Remediación de datos existentes (SOLO LECTURA, NO ejecutar)
+También necesito confirmación explícita sobre:
+- ¿El prefijo compartido `cancelaciones/` (40 archivos) en el bucket es de Sertuss o compartido globalmente? Si hay duda, NO tocarlo en esta ronda.
+- ¿Restablecer `credit_balance` de la org tras la limpieza, o dejarlo como está?
 
-Query de diagnóstico para dimensionar alcance histórico completo:
+## Regla firme
 
-```sql
-SELECT
-  id,
-  status,
-  created_at,
-  data_final->'hipoteca_anterior'->>'valor_hipoteca_original'  AS vh_original,
-  data_final->'hipoteca_anterior'->>'valor_hipoteca_es_indeterminada' AS vh_flag,
-  data_final->'hipoteca_anterior'->>'cuantia_origen' AS origen,
-  valor_hipoteca_original AS espejo_plano
-FROM cancelaciones
-WHERE
-  LOWER(TRIM(COALESCE(data_final->'hipoteca_anterior'->>'valor_hipoteca_original',''))) IN ('null','undefined','nan')
-  OR LOWER(TRIM(COALESCE(valor_hipoteca_original,''))) IN ('null','undefined','nan')
-ORDER BY created_at DESC;
-```
-
-Salida esperada: conteo real de filas afectadas (mínimo las 5 conocidas del Grupo C). Con base en ese conteo decidiremos remediación (UPDATE por lotes o re-ejecutar reproceso manual pieza por pieza) — **no incluido en este plan**, se define después de ver alcance.
-
-## Archivos a modificar (fase build, tras aprobación)
-
-- `supabase/functions/procesar-cancelacion/index.ts` — rama indeterminada en `mergeCuantiaIntoExtracted` (L1778-1793) + gemela en reproceso (L2266-2287) + guard basura en `buildDocxVars` (L786-795).
-- `supabase/functions/procesar-cancelacion/index_test.ts` — 5 tests nuevos descritos arriba.
-- `supabase/functions/procesar-cancelacion/_regression_cuantia.ts` — sumar caso "dedicado confirma indeterminada".
-
-## Riesgos y no-cambios
-
-- **Cero cambios en la plantilla docx**, en el schema del extractor, en los prompts o en el frontend.
-- Flujo normal (monto real detectado por monolítico) recorre exactamente las mismas líneas de hoy — el guard `isTrash` solo actúa sobre strings basura.
-- Ambigua/sin_evidencia sigue degradando a línea en blanco (comportamiento actual preservado); solo `escritura_declara_abierta` se convierte en flag `true`, que es semánticamente correcto.
-- Redespliegue de `procesar-cancelacion` requerido; sin migración SQL.
-
-## Pendiente explícito (fuera de este plan)
-
-- Ejecución de la query de auditoría histórica y decisión de remediación de datos.
-- Fase E de bloqueo duro previa a generación cuando la cuantía siga en estado dudoso tras el fix (conversación separada, igual que Fase E de NO_LEGIBLE).
+Este plan es **inventario únicamente**. Ningún DELETE se ejecutará hasta que el dueño elija opción (1/2/3/4) + resuelva las dos preguntas de arriba. En ese punto redacto un plan de ejecución explícito con las queries exactas (en orden: storage → hijas → padres) y espero segunda aprobación antes de tocar nada.
