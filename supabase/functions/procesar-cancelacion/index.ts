@@ -2568,27 +2568,14 @@ if (import.meta.main) serve(async (req) => {
           console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
         }
 
-        const vars = buildDocxVars(extracted, (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null);
-
-        const minutaTemplate = selectMinutaTemplate(extracted);
-        const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
-        const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
-
-        const minutaOutputPath = `cancelaciones/${cancelacionId}/minuta.docx`;
-        const certOutputPath = `cancelaciones/${cancelacionId}/certificado.docx`;
-        const { error: upMinErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(minutaOutputPath, minuta, {
-          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          upsert: true,
-        });
-        if (upMinErr) throw new Error(`Upload minuta: ${upMinErr.message}`);
-        const { error: upCertErr } = await supabaseService.storage.from(BUCKET_OUTPUT).upload(certOutputPath, certificado, {
-          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          upsert: true,
-        });
-        if (upCertErr) throw new Error(`Upload certificado: ${upCertErr.message}`);
-
-        const { error: updErr } = await supabaseService.from("cancelaciones").update({
-          status: "completed",
+        // ── Fase E — Bloqueo duro con override manual ──
+        // Si el prompt v7 emitió "NO_LEGIBLE" en algún campo crítico del poder,
+        // NO generamos minuta/certificado. Persistimos data_ia/data_final para
+        // que el usuario pueda revisar/editar en la pantalla de validación y
+        // dejamos status='requiere_revision_manual'. El desbloqueo ocurre por
+        // la acción `confirm_manual_review` (misma edge function).
+        const revision = detectRequiereRevisionManual(extracted);
+        const commonUpdate = {
           data_ia: extracted,
           data_final: extracted,
           numero_escritura_hipoteca: extracted.hipoteca_anterior.numero_escritura_hipoteca,
@@ -2605,11 +2592,53 @@ if (import.meta.main) serve(async (req) => {
           banco_nit: extracted.partes.banco_nit,
           aplica_ley_546: extracted.analisis_legal.aplica_ley_546,
           explicacion_ley: extracted.analisis_legal.explicacion_ley,
-          url_minuta_generada: minutaOutputPath,
-          url_certificado_generado: certOutputPath,
           updated_at: new Date().toISOString(),
-        }).eq("id", cancelacionId);
-        if (updErr) throw new Error(`Persist: ${updErr.message}`);
+        };
+
+        if (revision.requiere) {
+          // NO generamos docs. Marcamos status y logueamos.
+          const { error: updErr } = await supabaseService.from("cancelaciones").update({
+            ...commonUpdate,
+            status: "requiere_revision_manual",
+            revision_manual_requerida: true,
+            revision_manual_confirmada_at: null,
+            revision_manual_confirmada_por: null,
+          }).eq("id", cancelacionId);
+          if (updErr) throw new Error(`Persist(requiere_revision_manual): ${updErr.message}`);
+
+          void supabaseService.from("system_events").insert({
+            organization_id: orgId,
+            tramite_id: cancelacionId,
+            user_id: userId,
+            evento: "procesar-cancelacion.revision_manual",
+            resultado: "bloqueado",
+            categoria: "PODER_NO_LEGIBLE",
+            detalle: { paths: revision.paths },
+          }).then(() => {}, () => {});
+
+          void supabaseService.from("activity_logs").insert({
+            organization_id: orgId,
+            user_id: userId,
+            action: "MANUAL_REVIEW_REQUIRED",
+            entity_type: "cancelacion",
+            entity_id: cancelacionId,
+            metadata: { paths: revision.paths },
+          }).then(() => {}, () => {});
+        } else {
+          // Path normal — genera minuta+certificado y marca completed.
+          const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
+          const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
+            supabaseService, cancelacionId, extracted, prosaOv,
+          );
+          const { error: updErr } = await supabaseService.from("cancelaciones").update({
+            ...commonUpdate,
+            status: "completed",
+            url_minuta_generada: minutaPath,
+            url_certificado_generado: certPath,
+          }).eq("id", cancelacionId);
+          if (updErr) throw new Error(`Persist: ${updErr.message}`);
+        }
+
       } catch (bgErr) {
         const rawMsg = bgErr instanceof Error ? bgErr.message : String(bgErr);
         const isAiErr = bgErr instanceof AiGatewayError;
