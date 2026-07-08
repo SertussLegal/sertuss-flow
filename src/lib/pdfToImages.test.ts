@@ -205,5 +205,43 @@ describe("pdfToImages", () => {
     const pages = await pdfToImages(makeFile(), { maxPages: 2 });
     expect(pages).toHaveLength(2);
   });
+
+  // ── Calibración de resolución (~200 DPI para OCR legal) ────────────────
+
+  it("Carta (612×792 pt): produce canvas >= 2200 px lado mayor (>=200 DPI)", async () => {
+    installCanvasMocks({ sizePerPage: () => 400_000 });
+    (globalThis as any).__basePt = { w: 612, h: 792 };
+    (globalThis as any).__mockNumPages = 1;
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    const dims = (globalThis as any).__canvasDims as Array<{ w: number; h: number }>;
+    const longest = Math.max(dims[0].w, dims[0].h);
+    expect(longest).toBeGreaterThanOrEqual(2200);
+    expect((longest / 792) * 72).toBeGreaterThanOrEqual(200);
+  });
+
+  it("Oficio colombiano (612x936 pt): produce canvas >= 2500 px lado mayor", async () => {
+    installCanvasMocks({ sizePerPage: () => 500_000 });
+    (globalThis as any).__basePt = { w: 612, h: 936 };
+    (globalThis as any).__mockNumPages = 1;
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    const dims = (globalThis as any).__canvasDims as Array<{ w: number; h: number }>;
+    const longest = Math.max(dims[0].w, dims[0].h);
+    expect(longest).toBeGreaterThanOrEqual(2500);
+    expect((longest / 936) * 72).toBeGreaterThanOrEqual(190);
+  });
+
+  it("PDF digital pequeno (400x500 pt): upscala hasta MAX_UPSCALE=3 en vez de quedar pixelado", async () => {
+    installCanvasMocks({ sizePerPage: () => 200_000 });
+    (globalThis as any).__basePt = { w: 400, h: 500 };
+    (globalThis as any).__mockNumPages = 1;
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    const dims = (globalThis as any).__canvasDims as Array<{ w: number; h: number }>;
+    const longest = Math.max(dims[0].w, dims[0].h);
+    expect(longest).toBe(1500);
+  });
 });
+
 
