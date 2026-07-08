@@ -449,6 +449,18 @@ export const CancelacionValidar = () => {
             toast.success("Cambios guardados");
           }
         } else {
+          // Hallazgo NO_LEGIBLE: si el 409 llega por `manual_review_required`,
+          // el autosave silencioso NO debe generar toast — el usuario está
+          // en pleno flujo de edición corrigiendo los campos.
+          const parsed = await parseManualReviewError(regenErr);
+          if (parsed) {
+            console.warn(
+              "[persistData] regen bloqueado por manual_review_required:",
+              { paths: parsed.paths, motivos: parsed.motivos },
+            );
+            setPreviewStale(true);
+            return true;
+          }
           // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
           // actualizó. Mostrar chip persistente "vista desactualizada".
           setPreviewStale(true);
