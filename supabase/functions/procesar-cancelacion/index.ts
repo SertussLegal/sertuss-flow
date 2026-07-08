@@ -1781,7 +1781,7 @@ export async function extractCuantiaDedicada(
  *  - Edición manual (data_final) SIEMPRE gana — este merge solo aplica
  *    sobre el resultado fresco del monolítico, no sobrescribe humano.
  */
-function mergeCuantiaIntoExtracted(
+export function mergeCuantiaIntoExtracted(
   extracted: CancelacionData,
   dedicada: CuantiaDedicadaResult | null,
 ): { applied: boolean; monto: string | null } {
