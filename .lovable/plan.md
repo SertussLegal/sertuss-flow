@@ -1,78 +1,88 @@
 
-# Inventario de datos de prueba — Sertuss (SOLO LECTURA, nada borrado)
+# Auditoría del fix "poder no adjuntado" — verificación independiente
 
-**Organización:** `Sertuss Notaría Central` — NIT `748585969-8` — id `614a4a8d-1d5b-4c84-be92-d09152fd2e21`.
+Verificado hoy sobre código desplegado + datos reales, no sobre el changelog.
 
-## 1. Cancelaciones (14 filas totales)
+## 1) Límite de páginas del Poder — resuelto (50, no 25)
 
-| status | count |
-|---|---|
-| completed | 11 |
-| draft | 2 |
-| error | 1 |
+- `src/pages/CancelacionNueva.tsx:26` → `const PODER_MAX_PAGES = 50;`
+- Se usa dos veces en el mismo archivo:
+  - Línea 112: pre-check antes de rasterizar (`if (numPages > PODER_MAX_PAGES) toast.error(...)`).
+  - Línea 145: `uploadPdfAsImages(cancelacionId, poder, "poder", PODER_MAX_PAGES)`.
+- Consistente con el prompt del extractor: `supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts:5` — "el usuario puede enviarte hasta 50 páginas".
+- No queda ningún `25` residual en la ruta del Poder. El `25` que aparece en `procesar-cancelacion/index.ts:1713` es `MAX_CUANTIA_PAGES` (extractor de cuantía de la escritura, no del poder). ✅
 
-Rango: **2026-05-20 17:03** → **2026-07-08 01:40** (~7 semanas).
+## 2) `POWER_V6_EXTRACTOR_ENABLED` — activo en producción hoy
 
-## 2. ¿Prueba vs cliente real?
+- El secret existe en el proyecto (confirmado vía secrets).
+- Evidencia dura: eventos `procesar-cancelacion.poder` en `system_events` de las últimas 5 corridas registran explícitamente `detalle->>'v6_enabled' = 'true'`:
 
-Todas las filas parecen datos de prueba internos. Evidencia:
+```
+2026-07-08 01:41  c506d69b… v6=true  paginas_enviadas=20
+2026-07-08 00:49  2fb6ba16… v6=true  paginas_enviadas=20
+2026-07-07 23:33  9a78aebb… v6=true  paginas_enviadas=20
+2026-07-07 23:04  15582708… v6=true  paginas_enviadas=20
+2026-07-07 21:57  32f5317e… v6=true  paginas_enviadas=20
+2026-07-07 21:11  0443d2f1… v6=""    paginas_enviadas=28   ← corrida previa al flip
+2026-07-07 16:51  2bef1db3… v6=""    paginas_enviadas=20
+2026-07-06 00:23  290fd66a… v6=""    paginas_enviadas=20
+```
 
-- **11 de las 14 filas** usan un único deudor repetido: `MAYA MONTOYA JOHN MIGUEL` + matrícula `50C-2025538` + variando el banco (Davivienda casi siempre, una vez Caja Social). Es el fixture que hemos venido usando para probar NO_LEGIBLE, Fase E y el bug de cuantía null.
-- **3 filas de mayo** (`498c0215`, `1e2069b7`, `a21ae265`) usan otro fixture repetido: `LIZETH VANESSA GARCIA GARCIA` + matrícula `50C-2085432`. También patrón de prueba (3 corridas contra el mismo caso).
-- **3 borradores/error** sin datos.
-- **No hay marcador "test"** en el nombre de la organización ni en un campo dedicado. La única forma honesta de distinguir prueba de real es reconocer los dos fixtures repetidos; no hay señal automática. Si el dueño confirma que **nada** de esta org salió a notaría real, todo es descartable.
+El flag se encendió aproximadamente entre `2026-07-07 21:11` y `2026-07-07 21:57`. Desde entonces, las 5 corridas subsiguientes reportan `v6_enabled=true`. ✅
 
-## 3. Tablas relacionadas con conteo real
+## 3) Estado real del campo `poder_banco` en las 14 cancelaciones existentes
 
-Filtradas por `organization_id = Sertuss` (o joins equivalentes):
+`data_ia.poder_banco` en las 11 filas `completed` (las 3 `draft/error` no aplican):
 
-| tabla | filas | relación / cascada |
-|---|---|---|
-| `cancelaciones` | 14 | FK org → **ON DELETE CASCADE** |
-| `tramites` | 8 | FK org → **sin ON DELETE** (bloquea si borras org; borrado por id sí funciona) |
-| `personas` | 16 | FK tramite_id → **CASCADE** desde tramites |
-| `inmuebles` | 8 | FK tramite_id → **CASCADE** |
-| `actos` | 8 | FK tramite_id → **CASCADE** |
-| `logs_extraccion` | 11 | FK org **CASCADE** + FK tramite_id **CASCADE** |
-| `historial_validaciones` | 22 | FK org → **ON DELETE SET NULL** (quedan huérfanos, no se borran) |
-| `activity_logs` | 48 | FK org → **sin ON DELETE** (bloquea borrado de org) |
-| `credit_consumption` | 24 | FK org → **CASCADE** |
-| `system_events` | 313 | sin FK detectada — hay que borrar por `organization_id` a mano |
-| `ocr_raw_cache` | 0 | — |
+```
+id              fecha              has_v3  motivos  apo.tipo  nombre_plano
+c506d69b        2026-07-08 01:40   true    0        natural   ANA MARIA MONTOYA ECHEVERRY
+2fb6ba16        2026-07-08 00:47   true    0        natural   ANA MARIA MONTOYA ECHEVERRY
+9a78aebb        2026-07-07 23:32   true    0        natural   ANA MARIA MONTOYA ECHEVERRY
+15582708        2026-07-07 23:02   true    0        natural   ANA MARIA MONTOYA ECHEVERRY
+32f5317e        2026-07-07 21:55   true    0        (vacío)   null            ← ver §4
+0443d2f1        2026-07-07 21:09   null    1        (vacío)   null            ← ver §4
+2bef1db3        2026-07-07 16:48   (∅)     0        (vacío)   FELIX CAGUA     ← pre-v6, legacy ok
+290fd66a        2026-07-06 00:20   (∅)     0        (vacío)   FELIX REUZE     ← pre-v6, legacy ok
+498c0215        2026-05-20 18:56   (∅)     0        (vacío)   (vacío)         ← histórico pre-fix
+1e2069b7        2026-05-20 17:40   (∅)     0        (vacío)   (vacío)         ← histórico pre-fix
+a21ae265        2026-05-20 17:03   (∅)     0        (vacío)   (vacío)         ← histórico pre-fix
+```
 
-Ninguna otra tabla apunta a `cancelaciones.id`; el borrado directo de esas 14 filas no está bloqueado por FKs.
+**Filas vacías hoy:** 5 (`32f5317e`, `0443d2f1`, y las 3 de mayo).
 
-## 4. Storage (bucket `expediente-files`)
+## 4) Por qué las que aparecen vacías están vacías (no es el bug histórico)
 
-**366 objetos, ~95 MB** con prefijos vinculados a Sertuss:
+- **3 filas de 2026-05-20** (`498c0215`, `1e2069b7`, `a21ae265`): son las cancelaciones más antiguas del sistema, generadas semanas antes del rediseño P1–P5. Ni el schema profundo ni v6 existían en su corrida. Es residuo histórico irrecuperable sin reprocesar, no es el bug de página 25.
+- **`0443d2f1`** (2026-07-07 21:09): `has_v3=null` con `motivos_incompletitud=1`. Corrió justo **antes** de flipear el flag (v6_enabled vacío en el evento) y aun así el schema devolvió "no concluyente" con motivo explícito — comportamiento correcto del nuevo pipeline (bloquea por revisión manual en vez de inventar). 28 páginas enviadas, dentro del nuevo límite de 50.
+- **`32f5317e`** (2026-07-07 21:55): esta sí es anómala. `has_v3=true` pero `apo_tipo` y `apoderado_nombre` vacíos, con v6 ya encendido. Vale la pena que el dueño verifique manualmente si esta cancelación traía poder adjunto o no; si lo traía, es un caso de precisión del extractor v6 que amerita una segunda mirada (no el bug de página 25, porque solo se enviaron 20 páginas).
 
-- 11 prefijos `<cancelacion_id>/…` (33-41 archivos cada uno) para las 11 cancelaciones con archivos subidos.
-- Prefijo compartido `cancelaciones/` con 40 archivos (soportes comunes — revisar si son de Sertuss o compartidos globales antes de tocar).
-- 8 prefijos `<tramite_id>/…` con 13 archivos cada uno.
+**Ninguna de las corridas post-flip repite el patrón que reportó Alejandra** (poder adjunto + campo completamente vacío + `has_v3` en blanco). Las 4 corridas de Ana María posteriores al flip devolvieron nombre + tipo + `has_v3=true` de manera consistente.
 
-Storage **no tiene FK** — no se borra por cascada, hay que hacerlo con `storage.objects` DELETE por prefijo. Bucket `cancelaciones-plantillas` no tiene objetos de esta org.
+## 5) Cobertura de tests para "firma después de la página 25" — hueco real
 
-## 5. Restricciones que bloquearían un borrado
+Búsqueda exhaustiva en `src/` y `supabase/functions/` de patrones `pagina.*25`, `page.*25`, `firma.*sustituto`, `poder.*larg`, `test.*poder.*25`: **no existe ni un test que ejercite un poder de >25 páginas ni que valide que la firma del apoderado sustituto llegue al extractor.**
 
-- **Borrar `cancelaciones` (14 filas) por id:** ✅ sin bloqueos, ninguna tabla las referencia.
-- **Borrar `tramites` (8 filas) por id:** ✅ hijas (`personas`/`inmuebles`/`actos`/`logs_extraccion`) caen por CASCADE.
-- **Borrar `organizations` entera:** ❌ bloquea por `activity_logs.organization_id` (48 filas, sin ON DELETE) y `tramites.organization_id` (sin ON DELETE). Habría que borrar/nulear esos primero. No recomiendo esta ruta salvo que el dueño quiera eliminar la org completa.
-- **`system_events` (313):** no tiene FK, no se ve afectado por cascadas — decisión aparte si conservar como telemetría histórica o borrar también.
-- **`historial_validaciones` (22):** al borrar la org solo se nulea `organization_id`; permanecen las filas. Si se quiere limpieza total, borrar explícitamente.
+Lo que sí existe:
+- `src/lib/pdfToImages.test.ts` valida `maxPages` genérico (3, 4, 1).
+- `src/shared/poderBancoExtractor.test.ts`, `poderBancoValidate.test.ts`, `apoderadoClassifier.test.ts` validan el schema y la lógica de merge sobre payloads sintéticos, sin cruzar la frontera de páginas.
+- El pre-check de `PODER_MAX_PAGES = 50` no tiene test que garantice que rechaza 51 y acepta 50.
 
-## Pregunta pendiente para el dueño antes de autorizar cualquier DELETE
+Es un hueco de regresión: si mañana alguien vuelve a bajar la constante a 25, ningún test rojo lo detendría.
 
-El alcance no está definido todavía. Necesito que confirme una de estas 4 opciones (o combine):
+## Veredicto honesto
 
-1. **Solo cancelaciones + su storage** (14 filas + ~11 prefijos + `logs_extraccion`/`credit_consumption`/`system_events` relacionados). Conserva `tramites`, `activity_logs`, `historial_validaciones`, la org.
-2. **Cancelaciones + tramites** (todo lo transaccional). Conserva org + logs + memberships + config notaría.
-3. **Todo lo transaccional + telemetría** (agrega `activity_logs`, `system_events`, `historial_validaciones`, `credit_consumption`). Conserva org, memberships, `configuracion_notaria`, `notaria_styles`.
-4. **Wipe total incluyendo la org** (requiere primero borrar `activity_logs` de esa org y otras tablas sin cascada; deja huérfanos a los usuarios de esa org, hay que reasignar contexto activo).
+**Parcialmente resuelto — con confianza alta en el pipeline y confianza baja en la red de seguridad.**
 
-También necesito confirmación explícita sobre:
-- ¿El prefijo compartido `cancelaciones/` (40 archivos) en el bucket es de Sertuss o compartido globalmente? Si hay duda, NO tocarlo en esta ronda.
-- ¿Restablecer `credit_balance` de la org tras la limpieza, o dejarlo como está?
+- ✅ El bug estructural (límite 25) está corregido y desplegado: constante = 50, prompt = 50, pipeline v6 activo, 4 corridas reales consecutivas con poder poblado correctamente.
+- ⚠️ El fix nunca fue re-validado por Alejandra en su cuenta con su documento original. Todas las corridas verdes son de fixtures internos (Ana María, Felix). No hay evidencia empírica del caso exacto que ella reportó.
+- ⚠️ La fila `32f5317e` (v6 activo, poder aparentemente sin datos) merece confirmar manualmente si traía o no poder adjunto antes de descartar como "sin poder".
+- ❌ Cero cobertura automatizada contra la regresión específica del bug. El pipeline está sano hoy, pero nada impide reintroducirlo.
 
-## Regla firme
+## Trabajo opcional que puedo proponer (requiere aprobación)
 
-Este plan es **inventario únicamente**. Ningún DELETE se ejecutará hasta que el dueño elija opción (1/2/3/4) + resuelva las dos preguntas de arriba. En ese punto redacto un plan de ejecución explícito con las queries exactas (en orden: storage → hijas → padres) y espero segunda aprobación antes de tocar nada.
+1. Test unitario que fije `PODER_MAX_PAGES ≥ 50` como contrato.
+2. Test de integración con un PDF sintético de 30 páginas cuya última página lleva el bloque de firma, verificando que `handle`/`buildPoderBancoRequest` recibe las 30 imágenes y no se trunca.
+3. Coordinar con Alejandra una re-corrida real con su documento original para cerrar el reporte.
+
+Confirma si quieres que arme el plan de estos 3 puntos o de un subconjunto.
