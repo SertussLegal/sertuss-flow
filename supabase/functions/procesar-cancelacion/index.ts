@@ -850,7 +850,7 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     .map((d) => `${d.nombre}\nC.C. ${d.identificacion_formateada}`)
     .join("\n\n");
 
-  const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(pb.apoderado_nombre || "") || "";
+  const generoApoderado = pb.apoderado_genero || inferGeneroFromNombre(sanitizeString(pb.apoderado_nombre) || "") || "";
   const tratamientoBanco = data.partes.tratamiento_entidad || "";
   const tokensApoderado = apoderadoTokens(generoApoderado);
   const tokensBanco = bancoTokens(tratamientoBanco);
