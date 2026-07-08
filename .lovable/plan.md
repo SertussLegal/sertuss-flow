@@ -1,103 +1,81 @@
-# Plan: PNG binarizado en `pdfToImages`
+# Plan v2 (calibración corregida): PNG binarizado en `pdfToImages`
 
-Migrar la codificación de páginas renderizadas de **JPEG q0.82** a **PNG 1-bit (binarizado por umbral)** manteniendo `maxDimension=2600` (~200 DPI). Objetivo: bajar 37.86 MB → ~6.26 MB en el PDF de referencia (Escritura 16.390, 28 pág.) sin sacrificar DPI, eliminando 413 del AI Gateway y mejorando bordes de texto pequeño.
+Cambio respecto a v1: **umbrales `HEALTHY_IMAGE_BYTES` y `MIN_IMAGE_BYTES` recalibrados con evidencia empírica real**, no asumidos. El resto del plan v1 se mantiene idéntico.
 
-## Alcance
+## Evidencia empírica (medida en este turno)
 
-3 archivos de código + 0 migraciones + 0 secretos.
+Canvas de 1836×2376 px (equivalente a `maxDimension=2600` sobre Carta), codificado como PNG en modo RGBA (que es lo que produce `HTMLCanvasElement.toBlob("image/png")` en el navegador — no PNG 1-bit indexed, que sería ~2 KB):
 
-1. `src/lib/pdfToImages.ts` — pipeline de codificación + umbrales.
-2. `src/lib/pdfToImages.test.ts` — mocks + asserciones recalibradas.
-3. `src/pages/CancelacionNueva.tsx` — extensión y `contentType` de subida.
+| Escenario | Bytes PNG reales |
+|---|---|
+| Blanco puro (placeholder canvas vacío) | **22,234** |
+| Negro puro (placeholder canvas vacío) | **22,234** |
+| Portada escueta: título grande + 3 líneas + firma | **28,646** |
+| Página de firmas (5 renglones dispersos) | **33,062** |
+| Página densa de texto (60 líneas Lorem-notarial) | **135,112** |
+| Página densa real (dato owner, Escritura 16.390) | ~223,000 promedio |
 
-`supabase/functions/_shared/pdfSha256.ts` solo tiene un comentario mencionando `.jpg`; se actualiza el comentario para reflejar `.png`. No hay cambios de comportamiento en edge functions: `runGemini`/`procesar-cancelacion` consumen **signed URLs** desde el bucket, y Gemini infiere el MIME de la URL/headers — no hay ruta de base64 activa que dependa de `image/jpeg` para las páginas del poder/cert/escritura (verificado con `rg`).
+Ventana entre placeholder blanco (22 KB) y sparse legítimo mínimo (28.6 KB) = solo **~6 KB de margen**.
 
-## Cambios detallados
+## Umbrales corregidos
 
-### 1) `src/lib/pdfToImages.ts`
+### `HEALTHY_IMAGE_BYTES = 40_000` (antes 8_000 en v1, 30_000 en JPEG)
 
-**a. Nueva constante `BINARIZATION_THRESHOLD = 180`**  
-Umbral en escala 0–255 sobre luma. Valor validado empíricamente por el owner en el PDF real. Documentar como ajustable con comentario que explique: subir → más agresivo (pierde grises tenues, sellos claros); bajar → conserva grises pero infla PNG y puede introducir ruido de fondo.
+Racionalidad:
+- **Piso**: cualquier blob por debajo de este umbral **combinado con `isCanvasUniform=true`** dispara `EmptyCanvasError`. Debe estar cómodamente por encima del placeholder blanco/negro puro (22.2 KB) para atrapar el bug reincidente sin falsos positivos.
+- **Techo**: debe estar por debajo del contenido legítimo mínimo esperado. Sparse portada real ≈ 28.6 KB, página de firmas ≈ 33 KB.
+- **40,000 B** da:
+  - Margen de +17.8 KB sobre placeholder blanco (80% headroom): atrapa con holgura al placeholder aunque futuras versiones de pdfjs lo hagan un poco distinto.
+  - Combinado con la condición `isCanvasUniform` (≥80% de 25 muestras del mismo color), un sparse legítimo de 28–33 KB **no cae aquí porque no es uniforme** — su título + firma quiebran el muestreo. La conjunción `uniform && size < 40_000` sigue siendo específica del caso patológico.
+  - Página densa (135–223 KB) queda claramente arriba.
 
-**b. Función pura `binarizeImageData(imageData, threshold)`**  
-Recorre `ImageData.data` en pasos de 4 (RGBA). Para cada píxel:
-- `luma = 0.299*R + 0.587*G + 0.114*B` (Rec. 601).
-- Si `luma >= threshold` → escribe `(255,255,255,255)`; si no → `(0,0,0,255)`.
+### `MIN_IMAGE_BYTES = 5_000` (antes 800 en v1, 1_500 en JPEG)
 
-Se aplica **in-place** sobre el `ImageData` obtenido con `ctx.getImageData(0,0,w,h)`, y luego `ctx.putImageData(...)` para que `toBlob` codifique ya binarizado. PNG con solo 2 colores + filtros PNG deflate → compresión altísima (validado ~223 KB/pág. denso).
+Racionalidad:
+- Este umbral es **independiente de `isCanvasUniform`**: aborta la página si el blob es tan pequeño que el stream está corrupto/truncado, sin necesidad de más señales.
+- El piso absoluto físico observado es 22.2 KB (blanco puro RGBA a 2600 px). Cualquier salida <5 KB es imposible bajo funcionamiento normal — indica que `toBlob` devolvió un stream truncado o que el canvas quedó en dimensiones cero.
+- **800 B (v1) era demasiado laxo**: quedaba órdenes de magnitud por debajo del mínimo físico y no aportaba señal útil. **5 KB** sigue siendo conservador (4.4× por debajo del blanco puro real) pero atrapa truncamiento real.
+- No confundir con `HEALTHY_IMAGE_BYTES`: son propósitos distintos. `MIN` es "corrupto seguro"; `HEALTHY` es "placeholder blanco disfrazado".
 
-**c. Cambiar `toBlob` a PNG**  
-```ts
-canvas.toBlob(cb, "image/png"); // sin quality param
-```
-Eliminar el argumento `jpegQuality` de la llamada. **Mantener la propiedad `jpegQuality` en `PdfToImagesOptions`** por compat de firma pública, marcarla `@deprecated` con JSDoc explicando que la ruta actual es PNG lossless y el parámetro se ignora. No romper callers.
+### `UNIFORM_DOC_THRESHOLD = 0.9` y `UNIFORM_DOC_MIN_PAGES = 3`: se mantienen
 
-**d. Renombrar semánticamente lo estrictamente necesario**  
-- `MIN_JPEG_BYTES` → `MIN_IMAGE_BYTES` (mantener alias export si fuera público — no lo es, solo interno).
-- `HEALTHY_JPEG_BYTES` → `HEALTHY_IMAGE_BYTES`.
-- Actualizar mensajes de error de "JPEG" a "imagen".
-- Actualizar comentario top-of-file y JSDoc.
+PNG deflate es determinista bit-a-bit — dos páginas realmente distintas jamás producen el mismo tamaño exacto. Detector aún más confiable que en JPEG.
 
-**e. Recalibración de umbrales del gate de calidad**
+## Actualización de tests en `pdfToImages.test.ts`
 
-Distribución esperada de PNG binarizado a 2600 px:
-- Página densa de texto notarial: ~200–350 KB.
-- Página escueta legítima (portada, firmas): ~30–120 KB.
-- Página realmente en blanco / placeholder blanco puro: **<5 KB** (PNG con un solo color comprime a casi nada).
-- Placeholder negro puro: también <5 KB.
+Impacto por cada test (líneas aproximadas del archivo actual):
 
-Nuevos valores propuestos:
-- `MIN_IMAGE_BYTES = 800` (antes 1500). PNG binarizado uniforme comprime muchísimo más que JPEG; bajar el piso evita falso positivo en portadas legítimas casi vacías, pero sigue atrapando el caso "0 bytes / stream vacío".
-- `HEALTHY_IMAGE_BYTES = 8_000` (antes 30_000). Umbral bajo el cual, **combinado con muestreo uniforme**, se declara `EmptyCanvasError`. En PNG binarizado, cualquier página con contenido real de texto supera 30 KB con holgura; 8 KB deja margen para páginas escuetas legítimas.
-- `UNIFORM_DOC_THRESHOLD = 0.9` **se mantiene**. La detección "≥90% páginas con tamaño idéntico exacto" sigue siendo una firma válida de placeholder — de hecho **más confiable** que en JPEG porque PNG deflate es determinista bit-a-bit para contenido idéntico (dos páginas realmente distintas jamás producen el mismo tamaño exacto).
-- `UNIFORM_DOC_MIN_PAGES = 3` se mantiene.
+| Test (línea) | Cambio |
+|---|---|
+| `installCanvasMocks` (L64–86) | Blob type `"image/jpeg"` → `"image/png"` |
+| L131 "uniform=true con blob sano (>=30 KB) NO lanza en 1a página" | Renombrar a `">=40 KB"`; `sizePerPage` default (40k + n*3k) sigue sirviendo, pero verificar que valores en la 1a página quedan `>= 40_000` — ajustar a `40_000 + n*5_000` para holgura. |
+| L139 "uniform=true con blob pequeño (<30 KB) SÍ lanza EmptyCanvasError" | Renombrar a `"<40 KB"`; `sizePerPage: () => 20_000` sigue válido (20k < 40k) — sin cambios funcionales, solo actualizar título/comentario. |
+| L147 "JPEG sospechosamente pequeño (1.5 KB)" | Renombrar a `"imagen sospechosamente pequeña (<5 KB)"`; `sizePerPage: () => 500` sigue < 5_000, válido. Actualizar regex `/sospechosamente pequeño/` → `/sospechosamente pequeña/`. |
+| L156 "caso 12192 bytes reproducido" | 12,192 < 40,000 + `uniform=true` → sigue lanzando `EmptyCanvasError`. **Sin cambios** — el fingerprint histórico sigue atrapado, ahora con más margen. Actualizar solo el comentario para explicar los nuevos umbrales. |
+| L172 "uniforme por encima del piso pero se repite en ≥90%" | `sizePerPage: () => 50_000` (uniforme + tamaño idéntico) — 50k > 40k así que **no cae por EmptyCanvasError individual**, pero sí por `UniformDocumentError` (90%+ mismo tamaño). Sigue válido, comportamiento preservado. |
+| L184 "tamaños variados normales (real 20 páginas 158-282 KB)" | Los tamaños reales bajo PNG binarizado ≈ 200–300 KB, banda 158–282 KB sigue representativa. **Sin cambios.** |
+| L198 "no aplica detector con <3 páginas" | Sin cambios. |
+| Tests de calibración de DPI (L211+) | Sin cambios (validan dimensiones canvas, no formato). |
 
-**f. `isCanvasUniform` se mantiene tal cual.** Sigue muestreando 25 puntos con umbral 80% del mismo color. Con contenido ya binarizado, la métrica es todavía más limpia (solo hay 2 valores posibles).
+Ningún test necesita rehacerse conceptualmente; solo re-etiquetado y (en un caso) ajuste de `sizePerPage` para mantener holgura.
 
-**g. `wasmUrl` / `MAX_UPSCALE` / `maxDimension` / render loop / cleanup / `PdfPageRenderError` / `EmptyCanvasError` / `UniformDocumentError`: sin cambios.**
+## Alcance sin cambios respecto a v1
 
-### 2) `src/lib/pdfToImages.test.ts`
+- `src/lib/pdfToImages.ts`: binarización con `BINARIZATION_THRESHOLD = 180` (Rec. 601 luma), `toBlob("image/png")` sin `jpegQuality`, mantener firma pública con `jpegQuality` `@deprecated`.
+- `src/pages/CancelacionNueva.tsx`: `.jpg`→`.png`, `contentType: "image/jpeg"`→`"image/png"`.
+- `supabase/functions/_shared/pdfSha256.ts`: comentario `p01.jpg` → `p01.png`.
+- Riesgos evaluados (sellos claros, fotos, Gemini PNG-vs-JPEG, memoria canvas, Safari, `ocr_raw_cache`): idénticos a v1, todos bajos/nulos.
 
-Los mocks de `HTMLCanvasElement.prototype.toBlob` producen blobs de tamaño arbitrario que no dependen del formato real. Cambios mínimos:
-
-- `installCanvasMocks`: cambiar `type: "image/jpeg"` → `"image/png"` en el `new Blob(...)`.
-- Test **"uniform=true con blob sano (>=30 KB)"**: renombrar a `">=8 KB"` y bajar `sizePerPage` acorde (no romper el propósito: blob por encima del umbral sano no debe lanzar aunque muestreo sea uniforme).
-- Test **"uniform=true con blob pequeño (<30 KB)"** → `"<8 KB"`, cambiar `sizePerPage: () => 20_000` a algo < 8000, p. ej. `5_000`.
-- Test **"JPEG sospechosamente pequeño (1.5 KB)"** → `"imagen sospechosamente pequeña (<800 B)"`, cambiar `sizePerPage: () => 500` a `() => 400` y ajustar regex `/sospechosamente/`.
-- Test **"caso 12192 bytes"**: 12192 seguirá cayendo por el nuevo `HEALTHY_IMAGE_BYTES=8000`? No — **12192 > 8000, ya no caería por EmptyCanvasError individual**. Reajustar el mock para reproducir el fingerprint del incidente **bajo la nueva escala**: `sizePerPage: () => 3_000` (uniforme + <8 KB → `EmptyCanvasError`). Documentar en el comentario del test que 12192 era el fingerprint bajo JPEG; el equivalente bajo PNG binarizado sería <8 KB.
-- Test **"uniforme por encima del piso pero se repite en ≥90%"**: se mantiene (mock a 50_000 bytes uniforme entre páginas → `UniformDocumentError`). Válido tal cual.
-- Test **"tamaños variados normales (real 20 páginas 158-282 KB)"**: los tamaños reales bajo PNG binarizado observados por el owner son ~223 KB promedio — la banda 158–282 KB es representativa también. Se mantiene.
-- Tests de **calibración de DPI** (Carta / Oficio / PDF pequeño): validan dimensiones del canvas, no formato. **Sin cambios.**
-- Test **"no aplica detector con <3 páginas"**: sin cambios.
-
-### 3) `src/pages/CancelacionNueva.tsx` (líneas 64 y 66)
-
-```ts
-const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.png`;
-const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, p.blob, {
-  contentType: "image/png",
-  upsert: true,
-});
-```
-
-Es el único caller de `pdfToImages` en la app (verificado con `rg`). No hay que tocar otros lugares del código de subida.
-
-### 4) `supabase/functions/_shared/pdfSha256.ts` (comentario)
-
-Actualizar comentario en línea 31: `(p01.jpg, p02.jpg, ...)` → `(p01.png, p02.png, ...)`. Solo docstring, no afecta el hash (el hash es sobre el binario del PDF crudo, no las páginas).
-
-## Diff propuesto (resumido)
+## Diff propuesto (resumen numérico corregido)
 
 ```text
 src/lib/pdfToImages.ts
-- MIN_JPEG_BYTES = 1500                → MIN_IMAGE_BYTES = 800
-- HEALTHY_JPEG_BYTES = 30_000          → HEALTHY_IMAGE_BYTES = 8_000
+- MIN_JPEG_BYTES = 1500                → MIN_IMAGE_BYTES = 5_000
+- HEALTHY_JPEG_BYTES = 30_000          → HEALTHY_IMAGE_BYTES = 40_000
 + BINARIZATION_THRESHOLD = 180
-+ function binarizeImageData(id, threshold)
++ function binarizeImageData(id, threshold)  // Rec. 601 luma → 0 o 255
   render loop:
-+   const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-+   binarizeImageData(id, BINARIZATION_THRESHOLD);
-+   ctx.putImageData(id, 0, 0);
++   ctx.putImageData(binarizeImageData(ctx.getImageData(...)), 0, 0)
 -   canvas.toBlob(cb, "image/jpeg", jpegQuality)
 +   canvas.toBlob(cb, "image/png")
   PdfToImagesOptions.jpegQuality: @deprecated (ignorado)
@@ -105,31 +83,18 @@ src/lib/pdfToImages.ts
 
 src/lib/pdfToImages.test.ts
   Blob type "image/jpeg" → "image/png"
-  sizePerPage recalibrados a la nueva escala PNG binarizado
-  Tests de DPI/uniform-document intactos en propósito
+  Títulos "30 KB"/"1.5 KB" → "40 KB"/"5 KB"
+  sizePerPage del test L131 elevado a 40k + n*5k para holgura
 
 src/pages/CancelacionNueva.tsx
-  ".jpg"        → ".png"
-  "image/jpeg"  → "image/png"
+  ".jpg" → ".png";  "image/jpeg" → "image/png"
 
 supabase/functions/_shared/pdfSha256.ts
   comentario "p01.jpg" → "p01.png"
 ```
 
-## Riesgos y mitigaciones
+## Validación post-implementación (sin cambios respecto a v1)
 
-1. **Pérdida de sellos claros / marcas de agua tenues.** Threshold=180 elimina píxeles con luma ≥180 (grises muy claros). Sellos rojos, azules oscuros y firmas negras: OK. Marcas de agua muy tenues: se pierden. Ningún consumidor actual (`crossCheck.ts`, `poderBancoValidate.ts`, prosaBancos) usa color/gris — todo es OCR de texto, que es exactamente lo que la binarización refuerza. **Riesgo bajo.**
-2. **PDFs con imágenes fotográficas legítimas** (ej. foto de cédula anexa). Binarización destruye tonos medios. Casos reales en cancelaciones Davivienda: los soportes son escaneos bitonales de fábrica; el poder/cert/escritura son texto notarial. **Riesgo bajo pero real** — si aparece un caso, se puede introducir un modo `preserveGrayscale?: boolean` sin romper la ruta actual.
-3. **Gemini con PNG vs JPEG.** Gemini 2.5 Flash soporta PNG oficialmente (documentado por Google) al mismo nivel que JPEG. No hay preferencia conocida por JPEG. **Riesgo nulo.**
-4. **Tamaño del canvas grande + `getImageData`.** A 2600 px lado mayor un canvas ~2000×2600 = 5.2 M píxeles × 4 bytes = 20.8 MB en RAM por página, transitorio. Ya vivíamos con eso (pdfjs pintaba lo mismo). El paso extra es un bucle O(N) sobre esos 20 MB — coste marginal (<50 ms/página en dispositivos típicos). **Riesgo nulo.**
-5. **HTMLCanvasElement.toBlob("image/png") en Safari.** Soporte universal desde hace años. **Riesgo nulo.**
-6. **Cache `ocr_raw_cache` por `sha256Hex(PDF crudo)`.** El hash es sobre el PDF binario, no las páginas. Cambiar el formato de salida **no invalida** entradas cacheadas: si un PDF ya se procesó, se sigue reutilizando su resultado OCR. Los PDFs nuevos usarán PNG. Consistente.
-
-## Validación post-implementación
-
-1. `bunx vitest run src/lib/pdfToImages.test.ts` → 12 tests en verde con los mocks actualizados.
-2. `bunx vitest run` → suite completa 203/203 en verde (los otros no tocan este módulo).
-3. Smoke manual con Escritura 16.390 en preview: cargar cert + escritura + poder, confirmar que:
-   - Los blobs subidos al bucket son `.png` con `contentType: image/png`.
-   - El total del payload que Gemini descarga cae por debajo de 30 MB (no más 413).
-   - El OCR produce texto legible (comparar campos extraídos vs. corridas anteriores en JPEG cuando el gate no rechazaba).
+1. `bunx vitest run src/lib/pdfToImages.test.ts` → 12 tests en verde.
+2. `bunx vitest run` → suite completa 203/203 verde.
+3. Smoke manual Escritura 16.390: subidas `.png`/`image/png`, payload total <30 MB, OCR legible.
