@@ -1,88 +1,135 @@
-# Fix pdfjs-dist: pasar `wasmUrl` para decodificar CCITTFaxDecode/JBIG2
+# Plan: PNG binarizado en `pdfToImages`
 
-## Diagnóstico confirmado
+Migrar la codificación de páginas renderizadas de **JPEG q0.82** a **PNG 1-bit (binarizado por umbral)** manteniendo `maxDimension=2600` (~200 DPI). Objetivo: bajar 37.86 MB → ~6.26 MB en el PDF de referencia (Escritura 16.390, 28 pág.) sin sacrificar DPI, eliminando 413 del AI Gateway y mejorando bordes de texto pequeño.
 
-- `pdfjs-dist@^5.7.284` instalado.
-- `node_modules/pdfjs-dist/wasm/` existe con los assets esperados: `jbig2.wasm`, `openjpeg.wasm`, `qcms_bg.wasm`, `quickjs-eval.wasm` + sus `_nowasm_fallback.js` / `quickjs-eval.js`.
-- La API tipada del `DocumentInitParameters` acepta `wasmUrl?: string` (verificado en `types/src/display/api.d.ts` líneas 92/97).
-- Hoy `src/lib/pdfToImages.ts` solo configura `GlobalWorkerOptions.workerSrc` — nunca pasa `wasmUrl` a `getDocument`. Esa es exactamente la ruta de fallo del render silencioso a blanco en PDFs con imágenes bilevel (CCITTFaxDecode / JBIG2), que son el 100% del mercado notarial escaneado.
+## Alcance
 
-## Estrategia de bundling elegida
+3 archivos de código + 0 migraciones + 0 secretos.
 
-**Servir los `.wasm` desde `public/pdfjs-wasm/` + apuntar `wasmUrl` a `/pdfjs-wasm/` en runtime.**
+1. `src/lib/pdfToImages.ts` — pipeline de codificación + umbrales.
+2. `src/lib/pdfToImages.test.ts` — mocks + asserciones recalibradas.
+3. `src/pages/CancelacionNueva.tsx` — extensión y `contentType` de subida.
 
-Comparativa evaluada:
+`supabase/functions/_shared/pdfSha256.ts` solo tiene un comentario mencionando `.jpg`; se actualiza el comentario para reflejar `.png`. No hay cambios de comportamiento en edge functions: `runGemini`/`procesar-cancelacion` consumen **signed URLs** desde el bucket, y Gemini infiere el MIME de la URL/headers — no hay ruta de base64 activa que dependa de `image/jpeg` para las páginas del poder/cert/escritura (verificado con `rg`).
 
-| Opción | Encaje con este proyecto |
-|---|---|
-| `?url` por archivo | Requeriría 4 imports y pdfjs internamente construye rutas por nombre → no funciona (necesita un directorio base, no URLs individuales). |
-| `import.meta.glob('.../wasm/*', { as: 'url' })` | Funciona técnicamente pero fragiliza el hash de nombres y no da un prefijo estable. |
-| `vite-plugin-static-copy` | Dependencia nueva solo para 4 archivos. Innecesaria. |
-| **`public/pdfjs-wasm/` + copia en `postinstall`** | Vite ya sirve `public/` verbatim en dev y lo copia a `dist/` en build. `wasmUrl` queda como string constante `"/pdfjs-wasm/"`, sin lógica runtime. Es el patrón más simple y ya coincide con cómo `public/template_venta_hipoteca.docx` se sirve hoy. |
+## Cambios detallados
 
-Los `.wasm` de `pdfjs-dist` se versionan con el paquete, así que se copian una vez en `postinstall` — no se commitean binarios en el repo.
+### 1) `src/lib/pdfToImages.ts`
 
-## Cambios propuestos
+**a. Nueva constante `BINARIZATION_THRESHOLD = 180`**  
+Umbral en escala 0–255 sobre luma. Valor validado empíricamente por el owner en el PDF real. Documentar como ajustable con comentario que explique: subir → más agresivo (pierde grises tenues, sellos claros); bajar → conserva grises pero infla PNG y puede introducir ruido de fondo.
 
-### 1. `package.json` — script `postinstall`
+**b. Función pura `binarizeImageData(imageData, threshold)`**  
+Recorre `ImageData.data` en pasos de 4 (RGBA). Para cada píxel:
+- `luma = 0.299*R + 0.587*G + 0.114*B` (Rec. 601).
+- Si `luma >= threshold` → escribe `(255,255,255,255)`; si no → `(0,0,0,255)`.
 
-Agregar un script que copie `node_modules/pdfjs-dist/wasm/` a `public/pdfjs-wasm/` tras cada `bun install`. Cross-platform con `node -e`:
+Se aplica **in-place** sobre el `ImageData` obtenido con `ctx.getImageData(0,0,w,h)`, y luego `ctx.putImageData(...)` para que `toBlob` codifique ya binarizado. PNG con solo 2 colores + filtros PNG deflate → compresión altísima (validado ~223 KB/pág. denso).
 
-```json
-"scripts": {
-  ...
-  "postinstall": "node -e \"require('fs').cpSync('node_modules/pdfjs-dist/wasm','public/pdfjs-wasm',{recursive:true})\""
-}
+**c. Cambiar `toBlob` a PNG**  
+```ts
+canvas.toBlob(cb, "image/png"); // sin quality param
+```
+Eliminar el argumento `jpegQuality` de la llamada. **Mantener la propiedad `jpegQuality` en `PdfToImagesOptions`** por compat de firma pública, marcarla `@deprecated` con JSDoc explicando que la ruta actual es PNG lossless y el parámetro se ignora. No romper callers.
+
+**d. Renombrar semánticamente lo estrictamente necesario**  
+- `MIN_JPEG_BYTES` → `MIN_IMAGE_BYTES` (mantener alias export si fuera público — no lo es, solo interno).
+- `HEALTHY_JPEG_BYTES` → `HEALTHY_IMAGE_BYTES`.
+- Actualizar mensajes de error de "JPEG" a "imagen".
+- Actualizar comentario top-of-file y JSDoc.
+
+**e. Recalibración de umbrales del gate de calidad**
+
+Distribución esperada de PNG binarizado a 2600 px:
+- Página densa de texto notarial: ~200–350 KB.
+- Página escueta legítima (portada, firmas): ~30–120 KB.
+- Página realmente en blanco / placeholder blanco puro: **<5 KB** (PNG con un solo color comprime a casi nada).
+- Placeholder negro puro: también <5 KB.
+
+Nuevos valores propuestos:
+- `MIN_IMAGE_BYTES = 800` (antes 1500). PNG binarizado uniforme comprime muchísimo más que JPEG; bajar el piso evita falso positivo en portadas legítimas casi vacías, pero sigue atrapando el caso "0 bytes / stream vacío".
+- `HEALTHY_IMAGE_BYTES = 8_000` (antes 30_000). Umbral bajo el cual, **combinado con muestreo uniforme**, se declara `EmptyCanvasError`. En PNG binarizado, cualquier página con contenido real de texto supera 30 KB con holgura; 8 KB deja margen para páginas escuetas legítimas.
+- `UNIFORM_DOC_THRESHOLD = 0.9` **se mantiene**. La detección "≥90% páginas con tamaño idéntico exacto" sigue siendo una firma válida de placeholder — de hecho **más confiable** que en JPEG porque PNG deflate es determinista bit-a-bit para contenido idéntico (dos páginas realmente distintas jamás producen el mismo tamaño exacto).
+- `UNIFORM_DOC_MIN_PAGES = 3` se mantiene.
+
+**f. `isCanvasUniform` se mantiene tal cual.** Sigue muestreando 25 puntos con umbral 80% del mismo color. Con contenido ya binarizado, la métrica es todavía más limpia (solo hay 2 valores posibles).
+
+**g. `wasmUrl` / `MAX_UPSCALE` / `maxDimension` / render loop / cleanup / `PdfPageRenderError` / `EmptyCanvasError` / `UniformDocumentError`: sin cambios.**
+
+### 2) `src/lib/pdfToImages.test.ts`
+
+Los mocks de `HTMLCanvasElement.prototype.toBlob` producen blobs de tamaño arbitrario que no dependen del formato real. Cambios mínimos:
+
+- `installCanvasMocks`: cambiar `type: "image/jpeg"` → `"image/png"` en el `new Blob(...)`.
+- Test **"uniform=true con blob sano (>=30 KB)"**: renombrar a `">=8 KB"` y bajar `sizePerPage` acorde (no romper el propósito: blob por encima del umbral sano no debe lanzar aunque muestreo sea uniforme).
+- Test **"uniform=true con blob pequeño (<30 KB)"** → `"<8 KB"`, cambiar `sizePerPage: () => 20_000` a algo < 8000, p. ej. `5_000`.
+- Test **"JPEG sospechosamente pequeño (1.5 KB)"** → `"imagen sospechosamente pequeña (<800 B)"`, cambiar `sizePerPage: () => 500` a `() => 400` y ajustar regex `/sospechosamente/`.
+- Test **"caso 12192 bytes"**: 12192 seguirá cayendo por el nuevo `HEALTHY_IMAGE_BYTES=8000`? No — **12192 > 8000, ya no caería por EmptyCanvasError individual**. Reajustar el mock para reproducir el fingerprint del incidente **bajo la nueva escala**: `sizePerPage: () => 3_000` (uniforme + <8 KB → `EmptyCanvasError`). Documentar en el comentario del test que 12192 era el fingerprint bajo JPEG; el equivalente bajo PNG binarizado sería <8 KB.
+- Test **"uniforme por encima del piso pero se repite en ≥90%"**: se mantiene (mock a 50_000 bytes uniforme entre páginas → `UniformDocumentError`). Válido tal cual.
+- Test **"tamaños variados normales (real 20 páginas 158-282 KB)"**: los tamaños reales bajo PNG binarizado observados por el owner son ~223 KB promedio — la banda 158–282 KB es representativa también. Se mantiene.
+- Tests de **calibración de DPI** (Carta / Oficio / PDF pequeño): validan dimensiones del canvas, no formato. **Sin cambios.**
+- Test **"no aplica detector con <3 páginas"**: sin cambios.
+
+### 3) `src/pages/CancelacionNueva.tsx` (líneas 64 y 66)
+
+```ts
+const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.png`;
+const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, p.blob, {
+  contentType: "image/png",
+  upsert: true,
+});
 ```
 
-### 2. `.gitignore` — ignorar el directorio copiado
+Es el único caller de `pdfToImages` en la app (verificado con `rg`). No hay que tocar otros lugares del código de subida.
 
-Agregar `public/pdfjs-wasm/` para no commitear los binarios (se regeneran en cada instalación / build).
+### 4) `supabase/functions/_shared/pdfSha256.ts` (comentario)
 
-### 3. `src/lib/pdfToImages.ts` — diff mínimo
+Actualizar comentario en línea 31: `(p01.jpg, p02.jpg, ...)` → `(p01.png, p02.png, ...)`. Solo docstring, no afecta el hash (el hash es sobre el binario del PDF crudo, no las páginas).
 
-Único cambio: pasar `wasmUrl` a `getDocument`. **No se toca** `isCanvasUniform`, `EmptyCanvasError`, `UniformDocumentError`, `HEALTHY_JPEG_BYTES`, `MIN_JPEG_BYTES`, `UNIFORM_DOC_*`, ni el bucle de render. El gate de calidad queda íntegro — sigue siendo la última línea de defensa por si algún otro decoder falla.
+## Diff propuesto (resumido)
 
-```diff
- pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+```text
+src/lib/pdfToImages.ts
+- MIN_JPEG_BYTES = 1500                → MIN_IMAGE_BYTES = 800
+- HEALTHY_JPEG_BYTES = 30_000          → HEALTHY_IMAGE_BYTES = 8_000
++ BINARIZATION_THRESHOLD = 180
++ function binarizeImageData(id, threshold)
+  render loop:
++   const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
++   binarizeImageData(id, BINARIZATION_THRESHOLD);
++   ctx.putImageData(id, 0, 0);
+-   canvas.toBlob(cb, "image/jpeg", jpegQuality)
++   canvas.toBlob(cb, "image/png")
+  PdfToImagesOptions.jpegQuality: @deprecated (ignorado)
+  Mensajes/JSDoc "JPEG" → "imagen"
 
-+/**
-+ * URL base (con slash final) desde la que pdfjs descarga los módulos WASM
-+ * de decoders bilevel (JBIG2, CCITTFaxDecode) y de color/JPEG2000. Sin esto,
-+ * pdfjs 5.x falla silenciosamente al render de imágenes bilevel — el canvas
-+ * queda 100% blanco (std=0). Muy común en escaneos notariales (RICOH → fax
-+ * Group 4). Los .wasm se copian a public/pdfjs-wasm/ vía postinstall.
-+ */
-+const PDFJS_WASM_URL = "/pdfjs-wasm/";
-+
- ...
-   const buf = await file.arrayBuffer();
--  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf) });
-+  const loadingTask = pdfjs.getDocument({
-+    data: new Uint8Array(buf),
-+    wasmUrl: PDFJS_WASM_URL,
-+  });
+src/lib/pdfToImages.test.ts
+  Blob type "image/jpeg" → "image/png"
+  sizePerPage recalibrados a la nueva escala PNG binarizado
+  Tests de DPI/uniform-document intactos en propósito
+
+src/pages/CancelacionNueva.tsx
+  ".jpg"        → ".png"
+  "image/jpeg"  → "image/png"
+
+supabase/functions/_shared/pdfSha256.ts
+  comentario "p01.jpg" → "p01.png"
 ```
 
-## Riesgos e incompatibilidades
+## Riesgos y mitigaciones
 
-1. **Worker vs. main thread.** El decode JBIG2/CCITT ocurre dentro del Web Worker de pdfjs, no en el hilo principal. `wasmUrl` se pasa por `DocumentInitParameters` y pdfjs lo propaga al worker por su handshake interno — es el mecanismo documentado, no requiere config adicional del worker.
-2. **CORS / origen.** `/pdfjs-wasm/` es same-origin (servido por Vite en dev y por el hosting en prod). No hay `crossOriginIsolated` ni SharedArrayBuffer involucrados.
-3. **MIME de `.wasm`.** Vite dev server y el hosting de Lovable ya sirven `.wasm` con `application/wasm`. Sin acción.
-4. **Rutas no root.** Si algún día la app se sirve bajo un subpath (`/app/...`), `wasmUrl: "/pdfjs-wasm/"` seguiría funcionando porque `public/` se copia a la raíz del build; solo se rompería si Vite se configurara con `base` distinto de `/`. Hoy `vite.config.ts` no define `base`, así que no aplica.
-5. **Tests (Vitest, jsdom).** `pdfToImages.test.ts` mockea `pdfjs-dist` entero — nunca ejecuta el getDocument real. Agregar `wasmUrl` no altera el mock. Los 203 tests seguirán en verde.
-6. **Fallback JS puro.** Si por cualquier razón el `.wasm` no carga (404, MIME roto), pdfjs cae al `*_nowasm_fallback.js` — decodifica igual, más lento. No hay regresión de "silencioso a blanco".
-7. **Regeneración en CI/despliegue.** El hosting de Lovable ejecuta `bun install`, disparando `postinstall` → `public/pdfjs-wasm/` existe antes del `vite build`. Confirmado mentalmente contra el pipeline estándar.
+1. **Pérdida de sellos claros / marcas de agua tenues.** Threshold=180 elimina píxeles con luma ≥180 (grises muy claros). Sellos rojos, azules oscuros y firmas negras: OK. Marcas de agua muy tenues: se pierden. Ningún consumidor actual (`crossCheck.ts`, `poderBancoValidate.ts`, prosaBancos) usa color/gris — todo es OCR de texto, que es exactamente lo que la binarización refuerza. **Riesgo bajo.**
+2. **PDFs con imágenes fotográficas legítimas** (ej. foto de cédula anexa). Binarización destruye tonos medios. Casos reales en cancelaciones Davivienda: los soportes son escaneos bitonales de fábrica; el poder/cert/escritura son texto notarial. **Riesgo bajo pero real** — si aparece un caso, se puede introducir un modo `preserveGrayscale?: boolean` sin romper la ruta actual.
+3. **Gemini con PNG vs JPEG.** Gemini 2.5 Flash soporta PNG oficialmente (documentado por Google) al mismo nivel que JPEG. No hay preferencia conocida por JPEG. **Riesgo nulo.**
+4. **Tamaño del canvas grande + `getImageData`.** A 2600 px lado mayor un canvas ~2000×2600 = 5.2 M píxeles × 4 bytes = 20.8 MB en RAM por página, transitorio. Ya vivíamos con eso (pdfjs pintaba lo mismo). El paso extra es un bucle O(N) sobre esos 20 MB — coste marginal (<50 ms/página en dispositivos típicos). **Riesgo nulo.**
+5. **HTMLCanvasElement.toBlob("image/png") en Safari.** Soporte universal desde hace años. **Riesgo nulo.**
+6. **Cache `ocr_raw_cache` por `sha256Hex(PDF crudo)`.** El hash es sobre el PDF binario, no las páginas. Cambiar el formato de salida **no invalida** entradas cacheadas: si un PDF ya se procesó, se sigue reutilizando su resultado OCR. Los PDFs nuevos usarán PNG. Consistente.
 
-## Fuera de alcance
+## Validación post-implementación
 
-- No se toca el gate de calidad (`HEALTHY_JPEG_BYTES`, uniform detection, etc.).
-- No se toca `maxDimension`, `jpegQuality`, ni `MAX_UPSCALE`.
-- No hay migración de DB.
-- No se re-procesan retroactivamente cancelaciones históricas que fueron rechazadas por este bug — decisión de producto separada.
-
-## Validación post-implementación (para el turno de Build)
-
-1. `ls public/pdfjs-wasm/jbig2.wasm` tras `bun install`.
-2. `bunx vitest run` → seguir en 203/203.
-3. Smoke manual: subir el poder de Escritura 16.390 (CCITT Group 4) — debe pasar el gate y OCR extraer texto legible.
+1. `bunx vitest run src/lib/pdfToImages.test.ts` → 12 tests en verde con los mocks actualizados.
+2. `bunx vitest run` → suite completa 203/203 en verde (los otros no tocan este módulo).
+3. Smoke manual con Escritura 16.390 en preview: cargar cert + escritura + poder, confirmar que:
+   - Los blobs subidos al bucket son `.png` con `contentType: image/png`.
+   - El total del payload que Gemini descarga cae por debajo de 30 MB (no más 413).
+   - El OCR produce texto legible (comparar campos extraídos vs. corridas anteriores en JPEG cuando el gate no rechazaba).
