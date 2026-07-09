@@ -83,7 +83,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
         revision_manual_requerida: true,
       }),
     ]);
-    await renderPage("MAT-9dc33048");
+    await renderPage("MAT-BLOCK");
 
     const row = screen.getByText("MAT-BLOCK").closest("tr")!;
     expect(within(row).getByText("Revisión manual bloqueante")).toBeInTheDocument();
