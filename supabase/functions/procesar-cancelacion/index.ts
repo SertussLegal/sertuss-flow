@@ -1408,6 +1408,7 @@ function mergePoderBanco(
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
+import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
 
 /** Anota `_coherencia_warnings` y `_coherencia_suspicious` en el poder mergeado.
  *  Nunca bloquea; si hay warnings emite un system_event no bloqueante. */
