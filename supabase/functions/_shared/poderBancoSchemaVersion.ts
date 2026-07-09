@@ -53,6 +53,13 @@ export const POWER_DEEP_SCHEMA_ENABLED = readBoolEnv(
 /** Alias legacy — mantener 30 días para no romper importadores existentes. */
 export const POWER_V5_ENABLED = POWER_DEEP_SCHEMA_ENABLED;
 
+// ⚠️ RIESGO LATENTE (auditado 2026-07-09, punto A14):
+// Antes de activar POWER_V5_ENABLED / POWER_DEEP_SCHEMA_ENABLED en producción,
+// confirmar que "formato cancelacion hipoteca v3.docx" del bucket
+// cancelaciones-plantillas/davivienda/ está completa — pesa solo 14 KB vs 282 KB
+// de v2, y no tiene ningún test de estructura/tags. Nunca se ha usado en un
+// trámite real.
+
 /**
  * Extractor v6 (schema profundo isomórfico) en procesar-cancelacion.
  * Ortogonal a POWER_DEEP_SCHEMA_ENABLED. Default: OFF (cero regresión).
