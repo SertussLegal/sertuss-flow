@@ -200,3 +200,17 @@ describe("Estado fantasma PH — desactivación obligatoria", () => {
     }
   });
 });
+
+describe("legalProse — montoProsa (A8 M/CTE guard)", () => {
+  it("re-normaliza monto extraído por IA sin M/CTE", () => {
+    expect(montoProsa("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)"))
+      .toBe("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)");
+  });
+  it("respeta MCTE sin barra", () => {
+    const s = "TREINTA MILLONES DE PESOS MCTE ($30.000.000)";
+    expect(montoProsa(s)).toBe(s);
+  });
+  it("no toca literales de cuantía indeterminada", () => {
+    expect(montoProsa("HIPOTECA DE CUANTÍA INDETERMINADA")).toBe("");
+  });
+});
