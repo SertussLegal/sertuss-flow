@@ -4,7 +4,7 @@ import { montoProsa } from "./legalProse.ts";
 Deno.test("A8: re-normaliza monto extraído por IA sin M/CTE", () => {
   assertEquals(
     montoProsa("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)"),
-    "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)",
+    "CINCUENTA Y DOS MILLONES QUINIENTOS MIL DE PESOS M/CTE ($52.500.000)",
   );
 });
 
