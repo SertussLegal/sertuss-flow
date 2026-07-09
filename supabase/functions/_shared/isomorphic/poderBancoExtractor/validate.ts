@@ -124,6 +124,7 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "apoderado.cedula": "Cédula del apoderado (detalle profundo)",
   "apoderado_nombre": "Nombre del apoderado (plano)",
   "poderdante.representante_legal_cedula": "Cédula del representante legal del banco",
+  "poderdante.menciones_rl": "Menciones del representante legal del banco",
 };
 
 export interface CoherenciaResult {
