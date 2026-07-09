@@ -243,7 +243,9 @@ const Cancelaciones = () => {
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={row.status} />
-                      {row.revision_manual_requerida && <ManualReviewChip />}
+                      {row.revision_manual_requerida && row.status !== "requiere_revision_manual" && (
+                        <ManualReviewChip />
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
