@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // --- Mocks ---
 const mockRows: Array<Record<string, unknown>> = [];
@@ -35,9 +36,11 @@ const renderPage = async (waitForText: string) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
-        <Cancelaciones />
-      </MemoryRouter>
+      <TooltipProvider>
+        <MemoryRouter>
+          <Cancelaciones />
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   );
   await screen.findByText(waitForText);
@@ -72,7 +75,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
 
     const row = screen.getByText("MAT-9dc33048").closest("tr")!;
     expect(within(row).getByText("Completada")).toBeInTheDocument();
-    expect(within(row).getByText("Revisión manual")).toBeInTheDocument();
+    expect(within(row).getByText("Con alertas")).toBeInTheDocument();
   });
 
   it("status='requiere_revision_manual' pinta badge rojo distintivo, no fallback 'Borrador'", async () => {
@@ -86,7 +89,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     await renderPage("MAT-BLOCK");
 
     const row = screen.getByText("MAT-BLOCK").closest("tr")!;
-    expect(within(row).getByText("Revisión manual bloqueante")).toBeInTheDocument();
+    expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
     expect(within(row).queryByText("Borrador")).not.toBeInTheDocument();
   });
 
@@ -122,8 +125,8 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     expect(within(screen.getByText("R-DONE").closest("tr")!).getByText("Completada")).toBeInTheDocument();
     expect(within(screen.getByText("R-ERR").closest("tr")!).getByText("Error")).toBeInTheDocument();
 
-    expect(screen.queryByText("Revisión manual")).not.toBeInTheDocument();
-    expect(screen.queryByText("Revisión manual bloqueante")).not.toBeInTheDocument();
+    expect(screen.queryByText("Con alertas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bloqueada")).not.toBeInTheDocument();
   });
 
   it("cuenta con filas pero filtro vacío muestra mensaje de filtro, no mensaje de cuenta vacía", async () => {
@@ -138,5 +141,20 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     expect(screen.queryByText("CLEAN-DONE")).not.toBeInTheDocument();
     expect(screen.getByText("No hay cancelaciones que coincidan con este filtro")).toBeInTheDocument();
     expect(screen.queryByText("No hay cancelaciones registradas aún")).not.toBeInTheDocument();
+  });
+
+  it("cuando status='requiere_revision_manual' y flag=true, no duplica badges (solo 'Bloqueada')", async () => {
+    setRows([
+      baseRow({
+        matricula_inmobiliaria: "MAT-NODUP",
+        status: "requiere_revision_manual",
+        revision_manual_requerida: true,
+      }),
+    ]);
+    await renderPage("MAT-NODUP");
+
+    const row = screen.getByText("MAT-NODUP").closest("tr")!;
+    expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
+    expect(within(row).queryByText("Con alertas")).not.toBeInTheDocument();
   });
 });

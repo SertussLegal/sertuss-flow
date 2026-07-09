@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -61,10 +62,17 @@ const StatusBadge = ({ status }: { status: CancelacionRow["status"] }) => {
   }
   if (status === "requiere_revision_manual") {
     return (
-      <Badge className="gap-1.5 border border-red-300 bg-red-100 text-red-800 hover:bg-red-100">
-        <AlertTriangle className="h-3 w-3" />
-        Revisión manual bloqueante
-      </Badge>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge className="gap-1.5 border border-red-300 bg-red-100 text-red-800 hover:bg-red-100 cursor-help">
+            <AlertTriangle className="h-3 w-3" />
+            Bloqueada
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs leading-snug">
+          La IA no pudo leer con confianza uno o más campos obligatorios. El documento no se puede generar hasta que un humano revise y corrija los datos marcados.
+        </TooltipContent>
+      </Tooltip>
     );
   }
   return (
@@ -75,13 +83,20 @@ const StatusBadge = ({ status }: { status: CancelacionRow["status"] }) => {
 };
 
 const ManualReviewChip = () => (
-  <Badge
-    className="gap-1 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-50"
-    aria-label="Revisión manual"
-  >
-    <AlertTriangle className="h-3 w-3" />
-    Revisión manual
-  </Badge>
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Badge
+        className="gap-1 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-50 cursor-help"
+        aria-label="Con alertas históricas de revisión manual"
+      >
+        <AlertTriangle className="h-3 w-3" />
+        Con alertas
+      </Badge>
+    </TooltipTrigger>
+    <TooltipContent className="max-w-xs text-xs leading-snug">
+      En algún momento uno o más campos quedaron marcados como poco legibles y fueron confirmados manualmente. Esta marca se conserva solo para trazabilidad histórica.
+    </TooltipContent>
+  </Tooltip>
 );
 
 type FilterKey = "all" | "review" | "completed";
@@ -228,7 +243,9 @@ const Cancelaciones = () => {
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={row.status} />
-                      {row.revision_manual_requerida && <ManualReviewChip />}
+                      {row.revision_manual_requerida && row.status !== "requiere_revision_manual" && (
+                        <ManualReviewChip />
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
