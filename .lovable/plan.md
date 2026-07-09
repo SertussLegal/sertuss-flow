@@ -1,285 +1,120 @@
-# Plan Final — Fase 2: coherencia intra-trámite poder ↔ acreedor
 
-Construir un nuevo módulo isomórfico que valide que el `poder_banco.poderdante` corresponde al mismo banco que aparece como acreedor hipotecario en la escritura/certificado del MISMO trámite. HARD_BLOCK, misma gravedad que NO_LEGIBLE.
+# Compilación granular — 19 puntos de retroalimentación de Alejandra Arciniegas
 
----
-
-## Terreno relevante hallado (para no re-inventar)
-
-- **`normalizeNit` ya existe** en `supabase/functions/_shared/isomorphic/prosaBancos/index.ts:29` como función privada de una línea: `nit.replace(/[.\s\-]/g, "")`. No está exportada. Es idéntica a lo que necesitamos.
-- **`normalizeBankName` + fuzzy** ya existen en `src/lib/bankDirectory.ts:37-49` (quita acentos, sufijos comerciales `S.A./S.A.S./LTDA/E.U.`, normaliza espacios). Pero vive en `src/lib/` — **NO importable desde edge functions** (regla del proyecto: código isomórfico solo en `supabase/functions/_shared/isomorphic/`).
-- **`partes.banco_nit`** viene con formato `"860.034.313-7"` (validado por prompt en `procesar-cancelacion/index.ts:239`). **`poderdante.entidad_nit`** viene sin puntos, `"900123456-7"` (validado por prompt en `poderBancoExtractor/tool.ts:66`). Formatos distintos → normalización obligatoria antes de comparar.
-- **Punto de llamada evidente**: `procesar-cancelacion/index.ts:2748-2757` — bloque post-merge donde ya se invocan `annotatePoderCoherencia` y `runPoderCrossChecks`, con `extracted.partes` en scope. Ahí va la tercera llamada.
-
-## Decisión de reutilización
-
-- **Duplicar `normalizeNit`** dentro del nuevo `validateIntraTramite.ts` (una línea, cero costo, evita cambiar la firma pública de `prosaBancos`).
-- **Portar `normalizeBankName`** al nuevo archivo (isomórfico). No mover `bankDirectory.ts` completo — solo replicar los ~15 líneas de la función pura de normalización. El día que se necesite en otro validador isomórfico, se extrae a `_shared/isomorphic/text/`.
-- **Fuzzy match**: la técnica de `bankDirectory.ts` (contención bidireccional sobre nombres normalizados) es suficiente y determinista. No hace falta Levenshtein/dice.
+Solo lectura. Recuperado del historial (mensajes #213 – #2114). Los 3 puntos ya verificados con evidencia real en sesiones previas quedan marcados **[VERIFICADO]**; el resto queda **[PENDIENTE]** de auditoría independiente. Los 7 puntos derivados de la auditoría de la minuta real de mayo (A4 – A10) van marcados con `†`.
 
 ---
 
-## Archivos afectados
+## Bloque A — Cancelaciones (14 puntos)
 
-### 1. NUEVO: `supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts`
+**A1 — Formulario Vendedor/Comprador confunde "dirección" con "domicilio"** *(2026-03-09)*
+- Problema: en el paso de personas, "dirección" pedía domicilio real de habitación, no la del inmueble; además faltaba flag "actúa por apoderado" con subformulario para representantes.
+- Fix aplicado: OCR de cédula, separación de campos "dirección de residencia" vs "dirección del inmueble", bloque anidado para apoderado.
+- Estado: **[PENDIENTE]**
 
-Módulo isomórfico puro (sin Deno, sin fetch). Firma:
+**A2 — "Número predial nacional" es ambiguo (CHIP vs Cédula Catastral); avalúo salía del paz y salvo** *(2026-03-09)*
+- Problema: Bogotá usa CHIP alfanumérico; resto del país Cédula Catastral numérica. El sistema los mezclaba y además tomaba el "avalúo" desde el paz y salvo (dato incorrecto).
+- Fix aplicado: skill dedicado + memoria `mem://legal/requisitos-inmuebles`; normalización según ciudad.
+- Estado: **[PENDIENTE]**
 
-```typescript
-export interface PartesForCoherencia {
-  banco_nit?: string | null;
-  banco_acreedor?: string | null;
-}
+**A3 — No se cargaban escrituras antecedentes para linderos ni se cruzaban entre sí** *(2026-03-09)*
+- Problema: el flujo de compraventa no permitía subir la escritura antecedente para heredar linderos técnicos; tampoco había reconciliación multi-documento.
+- Fix aplicado: `scan-document/core/escrituraAntecedente/*` + `reconcileData.ts` (Reconciliación multi-documento vía `normalizeCC`).
+- Estado: **[PENDIENTE]**
 
-export interface IntraTramiteResult {
-  warnings: string[];
-  suspicious: Set<string>;
-}
+**A4† — Tabla "DATOS DE LA ESCRITURA PÚBLICA" salía con `X X` en la fecha** *(2026-05-20)*
+- Problema: `parseFechaNotarial` no era atómica: día/mes/año llegaban partidos y la plantilla imprimía literales "X X" en las celdas.
+- Fix aplicado: `buildDocxVars` inyecta directamente `{fecha_dia}/{mes}/{ano}/{notaria}` en la tabla SNR.
+- Estado: **[PENDIENTE]**
 
-export function validatePoderVsCancelacion(
-  merged: Record<string, unknown> | null | undefined,
-  partes: PartesForCoherencia | null | undefined,
-): IntraTramiteResult;
-```
+**A5† — Confusión escritura nueva vs. hipoteca anterior en la tabla "DATOS DE LA ESCRITURA PÚBLICA"** *(2026-05-21)*
+- Problema (según Alejandra): esa tabla del formato Davivienda es para la **hipoteca anterior** (la que se cancela). Lovable primero la dejó vacía, luego se sobrecorrigió y llegó a poner los datos en la casilla equivocada.
+- Fix aplicado: reasignación explícita de tags en `buildDocxVars` — tabla SNR ↔ hipoteca anterior; encabezado de escritura nueva ↔ vacío con `___________`.
+- Estado: **[PENDIENTE]** (parcial: existen tests A5-1 / A5-2 en `procesar-cancelacion/index_test.ts` desde 2026-07-08, pero no reauditado hoy contra minuta real).
 
-**Lógica (en este orden estricto):**
+**A6† — Duplicación de `(DIRECCION CATASTRAL)` y de ciudad/notaría (`BOGOTA D.C. DEL BOGOTA D.C.`)** *(2026-05-21)*
+- Problema: `descripcion_predio` y `nomenclatura_predio` se cruzaban; el sufijo `(DIRECCION CATASTRAL)` aparecía dos veces; la notaría se concatenaba con la ciudad ya incluida en el string.
+- Fix aplicado: `buildDireccionCompletaSaneada()` (Bogotá) + condicional de omisión de ciudad cuando la notaría ya la contiene.
+- Estado: **[PENDIENTE]**
 
-```
-poderdanteNit = merged.poderdante.entidad_nit
-poderdanteNom = merged.poderdante.entidad_nombre
-acreedorNit   = partes.banco_nit
-acreedorNom   = partes.banco_acreedor
+**A7† — Linderos técnicos invadían las casillas cortas SNR** *(2026-05-22)*
+- Problema: en cancelaciones no se necesitan linderos (medidas, coordenadas), solo la descripción arquitectónica corta; se estaban metiendo bloques largos y desbordaban celdas.
+- Fix aplicado: regla en `mem://features/cancelaciones-reglas-inmueble`, bloque vacío en plantilla v2.
+- Estado: **[PENDIENTE]**
 
-nNitPoder    = normalizeNit(poderdanteNit)   // "" si null
-nNitAcreedor = normalizeNit(acreedorNit)
+**A8† — Números crudos en las cláusulas (matrícula transcrita a letras, montos sin `M/CTE`, etc.)** *(2026-05-22)*
+- Problema: violación del formato notarial colombiano `TEXTO (NÚMERO)` con concordancia de género; la matrícula `50C-2085432` salía como "CINCUENTA C – DOSCIENTOS…".
+- Fix aplicado: skills `formato-texto-numero-notarial` + `concordancia-genero-minutas`, aplicados en `legalFormatters.ts` / `legalProse.ts` (`montoProsa` conserva `M/CTE`).
+- Estado: **[PENDIENTE]**
 
-// Regla 1 — primaria: NIT vs NIT.
-if (nNitPoder && nNitAcreedor) {
-  if (nNitPoder !== nNitAcreedor) {
-    warnings.push("poder_entidad_nit_incoherente");
-    suspicious.add("poderdante.entidad_nit");
-    suspicious.add("partes.banco_nit");
-  }
-  // ← Sale aquí. NO evalúa Regla 2 aunque los nombres difieran.
-  //   Rationale: NIT es evidencia más fuerte; si NIT coincide,
-  //   asumimos que un desalineamiento textual del nombre es OCR ruido
-  //   (ej. "DAVIVIENDA" vs "BANCO DAVIVIENDA S.A."), no incoherencia real.
-  return { warnings, suspicious };
-}
+**A9† — `valor_hipoteca_original` llegaba con string literal `"null"` a la minuta** *(2026-05-24)*
+- Problema: la cuantía se imprimía literalmente como la palabra "null" cuando la extracción semántica no encontraba Mutuo/Pago/Liquidación.
+- Fix aplicado: `mergeCuantiaIntoExtracted` + `sanitizeString`/`NULLY_STRINGS` (2026-07-08).
+- Estado: **[VERIFICADO]** (auditoría de sesión previa confirmó el fix en vivo).
 
-// Regla 2 — respaldo: nombre fuzzy, SOLO si falta al menos un NIT.
-if (poderdanteNom && acreedorNom) {
-  const nA = normalizeBankName(poderdanteNom);
-  const nB = normalizeBankName(acreedorNom);
-  if (nA && nB) {
-    const match = nA === nB || nA.includes(nB) || nB.includes(nA);
-    if (!match) {
-      warnings.push("poder_entidad_nombre_incoherente");
-      suspicious.add("poderdante.entidad_nombre");
-      suspicious.add("partes.banco_acreedor");
-    }
-  }
-}
+**A10† — Apoderado del banco hardcodeado (`APODERADO_FIJO` = HEIBER HERNAN BELTRAN TORRES)** *(2026-05-21)*
+- Problema: para cualquier trámite se inyectaba siempre el mismo apoderado, sin importar si Alejandra había cargado un poder o no.
+- Fix aplicado: eliminación de `APODERADO_FIJO`, tercer `FileDropzone` no obligatorio, extractor `poderBanco/*`, `nullGetter` que pinta `___________`.
+- Estado: **[PENDIENTE]** (auditoría 2026-07-08 confirmó 0 residuos hardcodeados en `src/` y `supabase/functions/`, pero no está en la lista de los 3 confirmados en vivo por Alejandra).
 
-return { warnings, suspicious };
-```
+**A11 — El texto salía con la palabra "GUION" en direcciones, en lugar del símbolo `-`** *(2026-06-21)*
+- Problema: la IA transcribía "guion" literalmente en la nomenclatura urbana.
+- Fix aplicado: regla explícita en memoria + reforzada en el prompt (matrículas/NIT conservan guion ASCII; direcciones urbanas usan el símbolo).
+- Estado: **[PENDIENTE]**
 
-**Helpers privados (copiados en el archivo):**
+**A12 — Cédulas con puntos rompían edición manual; `tipo_id` siempre venía CC** *(2026-06-21)*
+- Problema: al pegar una cédula formateada "1.234.567" el sistema no reconciliaba con la OCR; el tipo de documento se forzaba a CC.
+- Fix aplicado: `normalizeCC` en `reconcileData.ts`.
+- Estado: **[PENDIENTE]**
 
-```typescript
-function normalizeNit(nit: string | null | undefined): string {
-  if (!nit || typeof nit !== "string") return "";
-  return nit.replace(/[.\s\-]/g, "").replace(/\D/g, "");
-}
+**A13 — Orden de firmas no alfabético en la antefirma** *(2026-06-21)*
+- Problema: cuando había varios deudores, el orden en la antefirma no era el esperado (alfabético para firma; original para el cuerpo).
+- Fix aplicado: `normalizeDeudores` mantiene orden original + expone copia ordenable para la antefirma.
+- Estado: **[PENDIENTE]**
 
-function normalizeBankName(raw: string | null | undefined): string {
-  if (!raw || typeof raw !== "string") return "";
-  let n = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  n = n.replace(/\b(S\.?A\.?S\.?|S\.?A\.?|LTDA\.?|E\.?U\.?)\b\.?/g, "");
-  n = n.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
-  return n;
-}
-```
-
-Nota: el `.replace(/\D/g, "")` extra en `normalizeNit` (respecto al de `prosaBancos`) blinda contra cualquier char no-numérico residual — comparación siempre sobre dígitos puros.
-
-### 2. EDITAR: `validate.ts` — extender registros compartidos
-
-```typescript
-// HARD_BLOCK_WARNING_SUFFIXES: añadir 2 sufijos (ambos son HARD_BLOCK, como los ya existentes)
-export const HARD_BLOCK_WARNING_SUFFIXES = [
-  "_no_legible",
-  "_incoherente",              // ya cubre "poder_entidad_nit_incoherente" y "poder_entidad_nombre_incoherente"
-  "_placeholder",
-  "_duplicidad_cruzada",
-  "_menciones_incoherentes",
-] as const;
-```
-
-**Ojo — decisión clave**: el sufijo `_incoherente` YA está en la lista (lo agregó Fase 1 vía `escritura_num_incoherente` y `fecha_incoherente`). Ambos nuevos warnings terminan en `_incoherente` → **no requieren nuevos sufijos**, ya son HARD_BLOCK por herencia del sufijo existente. Verificar con test explícito (ver §4).
-
-```typescript
-// WARNING_LABELS: añadir 2 entradas
-poder_entidad_nit_incoherente:
-  "El NIT del banco que otorga el poder no coincide con el NIT del acreedor hipotecario extraído de la escritura/certificado — el poder podría no aplicar a esta cancelación.",
-poder_entidad_nombre_incoherente:
-  "El nombre del banco que otorga el poder no coincide con el acreedor hipotecario extraído de la escritura/certificado — verifica que el poder corresponda a esta cancelación.",
-
-// SUSPICIOUS_FIELD_LABELS: añadir 4 entradas
-"poderdante.entidad_nit": "NIT del banco que otorga el poder",
-"poderdante.entidad_nombre": "Nombre del banco que otorga el poder",
-"partes.banco_nit": "NIT del banco acreedor (escritura/certificado)",
-"partes.banco_acreedor": "Nombre del banco acreedor (escritura/certificado)",
-```
-
-### 3. EDITAR: `supabase/functions/procesar-cancelacion/index.ts`
-
-**Import (junto a los existentes en línea 1408-1410):**
-
-```typescript
-import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
-```
-
-**Nueva función wrapper (justo después de `annotatePoderCoherencia`, ~línea 1440):**
-
-```typescript
-async function annotatePoderIntraTramite(
-  supabase: any,
-  merged: Record<string, unknown> | undefined | null,
-  partes: { banco_nit?: string | null; banco_acreedor?: string | null } | null | undefined,
-  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
-): Promise<void> {
-  if (!merged) return;
-  const { warnings, suspicious } = validatePoderVsCancelacion(merged, partes);
-  if (warnings.length === 0) return;
-  // ACUMULAR — no sobrescribir lo que annotatePoderCoherencia ya escribió.
-  const prevW = Array.isArray(merged._coherencia_warnings) ? merged._coherencia_warnings as string[] : [];
-  const prevS = Array.isArray(merged._coherencia_suspicious) ? merged._coherencia_suspicious as string[] : [];
-  merged._coherencia_warnings = [...prevW, ...warnings];
-  merged._coherencia_suspicious = Array.from(new Set([...prevS, ...suspicious]));
-  try {
-    await supabase.from("system_events").insert({
-      organization_id: ctx.orgId,
-      tramite_id: ctx.cancelacionId,
-      user_id: ctx.userId,
-      evento: "procesar-cancelacion.poder.intra_tramite",
-      resultado: "warnings",
-      categoria: "ocr_poder_banco",
-      detalle: { trigger: ctx.trigger, warnings, suspicious: Array.from(suspicious) },
-    });
-  } catch (_) { /* no bloqueante */ }
-}
-```
-
-**Llamada (insertar entre `annotatePoderCoherencia` y `runPoderCrossChecks`, línea ~2753):**
-
-```typescript
-await annotatePoderCoherencia(supabaseService, mergedPoder, { … });
-// NUEVA:
-await annotatePoderIntraTramite(
-  supabaseService,
-  mergedPoder as unknown as Record<string, unknown>,
-  { banco_nit: extracted.partes.banco_nit, banco_acreedor: extracted.partes.banco_acreedor },
-  { orgId, cancelacionId, userId, trigger: "live_pipeline" },
-);
-await runPoderCrossChecks(supabaseService, mergedPoder, { … });
-```
-
-**Orden importa**: primero `annotatePoderCoherencia` (inicializa el array), luego intra-trámite (acumula), luego cross-checks (también acumula — verificar que ya lo hace; si sobrescribe, es bug preexistente fuera de alcance).
-
-### 4. NUEVO: `src/shared/poderBancoValidateIntraTramite.test.ts`
-
-Tests de regresión (7 casos exactos):
-
-```typescript
-import { describe, it, expect } from "vitest";
-import {
-  validatePoderVsCancelacion,
-} from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite";
-import { HARD_BLOCK_WARNING_SUFFIXES, isHardBlockCoherenciaWarning } from "…/validate";
-
-describe("validatePoderVsCancelacion", () => {
-  const poderdante = (extra: Record<string, unknown>) => ({
-    poderdante: { entidad_nit: null, entidad_nombre: null, ...extra },
-  });
-
-  it("Regla 1: NIT distinto → dispara poder_entidad_nit_incoherente", () => {
-    const r = validatePoderVsCancelacion(
-      poderdante({ entidad_nit: "860034313-7", entidad_nombre: "BANCO DAVIVIENDA S.A." }),
-      { banco_nit: "890903938-8", banco_acreedor: "BANCOLOMBIA S.A." },
-    );
-    expect(r.warnings).toContain("poder_entidad_nit_incoherente");
-    expect(r.suspicious.has("poderdante.entidad_nit")).toBe(true);
-    expect(r.suspicious.has("partes.banco_nit")).toBe(true);
-  });
-
-  it("Regla 1: NIT igual (formatos distintos) → NO dispara", () => {
-    const r = validatePoderVsCancelacion(
-      poderdante({ entidad_nit: "860034313-7", entidad_nombre: "DAVIVIENDA" }),
-      { banco_nit: "860.034.313-7", banco_acreedor: "BANCO DAVIVIENDA S.A." },
-    );
-    expect(r.warnings).toHaveLength(0);
-  });
-
-  it("Regla 2: NIT faltante en poder + nombres distintos → dispara fuzzy", () => {
-    const r = validatePoderVsCancelacion(
-      poderdante({ entidad_nombre: "BANCOLOMBIA S.A." }),
-      { banco_nit: "860.034.313-7", banco_acreedor: "BANCO DAVIVIENDA S.A." },
-    );
-    expect(r.warnings).toContain("poder_entidad_nombre_incoherente");
-  });
-
-  it("Regla 2: NIT faltante + nombres similares (DAVIVIENDA vs BANCO DAVIVIENDA S.A.) → NO dispara", () => {
-    const r = validatePoderVsCancelacion(
-      poderdante({ entidad_nombre: "DAVIVIENDA" }),
-      { banco_acreedor: "BANCO DAVIVIENDA S.A." },
-    );
-    expect(r.warnings).toHaveLength(0);
-  });
-
-  it("Ambos NIT presentes + coinciden, nombres diferentes → NO doble-dispara (Regla 2 no corre)", () => {
-    const r = validatePoderVsCancelacion(
-      poderdante({ entidad_nit: "860034313-7", entidad_nombre: "DAVIVIENDA" }),
-      { banco_nit: "860.034.313-7", banco_acreedor: "OTRO NOMBRE COMPLETAMENTE DISTINTO" },
-    );
-    expect(r.warnings).toHaveLength(0);
-  });
-
-  it("Ambos NIT presentes + distintos → dispara Regla 1, ignora Regla 2 aunque nombres también difieran", () => {
-    const r = validatePoderVsCancelacion(
-      poderdante({ entidad_nit: "111", entidad_nombre: "BANCOLOMBIA" }),
-      { banco_nit: "222", banco_acreedor: "DAVIVIENDA" },
-    );
-    expect(r.warnings).toEqual(["poder_entidad_nit_incoherente"]);
-  });
-
-  it("Contrato HARD_BLOCK: ambos warnings terminan en _incoherente y son HARD_BLOCK", () => {
-    expect(HARD_BLOCK_WARNING_SUFFIXES).toContain("_incoherente");
-    expect(isHardBlockCoherenciaWarning("poder_entidad_nit_incoherente")).toBe(true);
-    expect(isHardBlockCoherenciaWarning("poder_entidad_nombre_incoherente")).toBe(true);
-  });
-});
-```
+**A14 — Plantilla v3 duplicada en storage** *(2026-07-04)*
+- Problema: había dos versiones de plantilla conviviendo en el bucket `cancelaciones-plantillas`, generando resultados distintos según cuál cargara el runtime.
+- Fix aplicado: auditoría de tags, singleton `loadTemplateOnce` en `DocxPreview.tsx`, memoria `mem://blindaje-cancelaciones-v2`.
+- Estado: **[PENDIENTE]**
 
 ---
 
-## Fuera de alcance
+## Bloque B — Poder General del Banco (5 puntos)
 
-- No se toca `merge.ts` — los campos ya vienen mergeados.
-- No se toca UI. Los sufijos ya son HARD_BLOCK vía `_incoherente`, y `revision_manual_requerida` se activa en el edge por lógica existente que consume `HARD_BLOCK_WARNING_SUFFIXES`. UI ya renderiza el label desde `WARNING_LABELS`.
-- No se mueve `bankDirectory.ts` completo — solo se replica `normalizeBankName` en el nuevo módulo isomórfico.
-- No se altera `crossCheck.ts` (sigue haciendo inter-trámite).
-- No se altera `annotatePoderCoherencia` — se crea función hermana `annotatePoderIntraTramite`.
-- Fase 3 (backfill retroactivo sobre cancelaciones históricas) sigue en pausa.
+**B1 — Datos del apoderado y valor del crédito no se extraían del PDF** *(2026-03-09)*
+- Problema: no existía flujo específico para el poder ni para la carta de crédito; los campos quedaban vacíos siempre.
+- Fix aplicado: extractores `poderBanco/*` y `cartaCredito/*`.
+- Estado: **[PENDIENTE]**
 
-## Riesgos
+**B2 — Sección "Apoderado del Banco" salía vacía aunque hubiera datos** *(2026-05-21)*
+- Problema: aun con OCR exitoso, la UI no renderizaba los datos ni permitía editarlos; en la minuta salía `___________` en la antefirma.
+- Fix aplicado: `PoderViewerTab.tsx`, `PoderBannersV5.tsx`, `ProsaApoderadoModal.tsx`, `nullGetter` alineado.
+- Estado: **[PENDIENTE]**
 
-- **Nombres bancarios muy cortos** ("BANCO W" normaliza a "W") podrían dar falsos positivos por inclusión bidireccional. Mitigación: la Regla 2 solo corre cuando falta un NIT; el catálogo de bancos colombianos no tiene otro monoletra. Aceptable.
-- **Duplicación de `normalizeBankName`** (existe en `src/lib/bankDirectory.ts`). Aceptable: 15 líneas, pura, sin dependencias. Refactor a `_shared/isomorphic/text/` queda para cuando aparezca el segundo caller isomórfico.
+**B3 — Poder adjuntado pero NO leído (páginas 25+ truncadas)** *(2026-06-21)*
+- Problema: los poderes bancarios superan 25 páginas y los datos del apoderado sustituto están al final; el sistema truncaba y mostraba "No se adjuntó Poder General".
+- Fix aplicado: pipeline v5/v6 con `PODER_MAX_PAGES`, `POWER_SCHEMA_VERSION`, `poderBancoExtractor/*`, `validatePoderSuficiencia`, `classifyApoderado`.
+- Estado: **[VERIFICADO]** (re-auditado 2026-07-08 sobre poder real `32f5317e…`).
 
-## Validación post-implementación
+**B4 — Valor de la hipoteca no encontrado por OCR** *(2026-06-21)*
+- Problema: el certificado de tradición decía "CUANTÍA INDETERMINADA"; el sistema no sabía ir a buscar el monto real a la escritura antecedente (Mutuo/Pago/Liquidación).
+- Fix aplicado: extracción semántica jerárquica documentada en `mem://legal/valor-credito-hipotecario-cancelacion`.
+- Estado: **[PENDIENTE]** (relacionado con A9 pero es la ruta OCR, no la sanitización del literal "null").
 
-1. Correr `poderBancoValidateIntraTramite.test.ts` (7/7 verde).
-2. Correr suite completa Vitest (esperado sin regresiones).
-3. Deploy explícito de `procesar-cancelacion`.
-4. Confirmar en `system_events` que aparecen eventos `procesar-cancelacion.poder.intra_tramite` cuando el escenario dispare.
+**B5 — `apoderado_nombre` / `apoderado_cedula` con string literal `"null"`** *(2026-07-08)*
+- Problema: encontrado en el camino, no era parte de los 19 originales. El campo plano llegaba con la palabra "null" cuando el V6 profundo no producía apoderado.
+- Fix aplicado: `sanitizeString` + `NULLY_STRINGS` en `merge.ts` (mismo patrón que A9).
+- Estado: **[VERIFICADO]**.
+
+---
+
+## Resumen del estado
+
+| Estado | Cantidad | Puntos |
+|---|---|---|
+| **[VERIFICADO]** | 3 | A9, B3, B5 |
+| **[PENDIENTE]** | 16 | A1, A2, A3, A4, A5, A6, A7, A8, A10, A11, A12, A13, A14, B1, B2, B4 |
+
+Los 7 puntos de la auditoría de la minuta real de mayo son **A4 – A10** (marcados `†`).
+
+Solo compilación; ninguna auditoría, verificación o cambio de código se ejecuta con este plan.
