@@ -56,6 +56,14 @@ export const POWER_V5_ENABLED = POWER_DEEP_SCHEMA_ENABLED;
 /**
  * Extractor v6 (schema profundo isomórfico) en procesar-cancelacion.
  * Ortogonal a POWER_DEEP_SCHEMA_ENABLED. Default: OFF (cero regresión).
+ *
+ * ⚠️ RIESGO LATENTE (auditado 2026-07-09, punto B2):
+ * Si se activa este flag y el extractor emite la forma anidada
+ * {apoderado: {nombre, cedula}} en vez de la forma plana v5 actual
+ * (apoderado_nombre, apoderado_cedula), la sección "Apoderado del Banco"
+ * en CancelacionValidar.tsx (~L1160-1272) se verá vacía silenciosamente —
+ * el mapeo hoy solo lee la forma plana. Antes de activar en producción,
+ * actualizar el mapeo o unificar el shape.
  */
 export const POWER_V6_EXTRACTOR_ENABLED =
   (Deno.env.get("POWER_V6_EXTRACTOR_ENABLED") ?? "false") === "true";
