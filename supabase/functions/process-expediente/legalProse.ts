@@ -137,17 +137,21 @@ export function escrituraProsa(data: EscrituraInput): string | null {
   return resultado;
 }
 
+const _M_CTE_RE = /\bM\s*[\/.]?\s*CTE\b/i;
+const _MONTO_TAIL_RE = /\(\$([\d.,]+)\)\s*$/;
 export function montoProsa(valor: string | number): string {
   if (valor === null || valor === undefined || valor === "") return "";
-  // Idempotencia: si ya viene formateado tipo "... ($NNN)" o "... ($NNN,00)", devolverlo.
-  if (typeof valor === "string" && /\(\$[\d.,]+\)\s*$/.test(valor.trim())) {
-    return valor.trim().replace(/,00\)$/, ")");
-  }
   const raw = typeof valor === "number" ? valor.toString() : valor;
-  const formatted = formatMonedaLegal(raw);
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  const tail = trimmed ? trimmed.match(_MONTO_TAIL_RE) : null;
+  if (tail && _M_CTE_RE.test(trimmed)) {
+    // Idempotente: ya trae M/CTE, solo strip ",00".
+    return trimmed.replace(/,00\)$/, ")");
+  }
+  // Si trae "($NNN)" sin M/CTE, re-normaliza extrayendo el número.
+  const source = tail ? tail[1] : raw;
+  const formatted = formatMonedaLegal(source);
   if (!formatted) return "";
-  // formatMonedaLegal → "... DE PESOS M/CTE ($NNN,00)"
-  // Estilo notarial registral colombiano: mantener M/CTE, quitar solo ",00".
   return formatted.replace(/,00\)$/, ")").trim();
 }
 
