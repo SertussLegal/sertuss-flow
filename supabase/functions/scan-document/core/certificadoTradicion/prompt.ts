@@ -23,9 +23,9 @@ b) FORMATO LEGAL OBLIGATORIO TEXTO (NÚMERO) con concordancia colombiana:
    - Complementos: TO/TORRE → "TORRE <letras> (N)"; AP/APTO/APARTAMENTO → "APARTAMENTO <letras> (N)"; INT/INTERIOR → "INTERIOR <letras> (N)"; BL/BLOQUE → "BLOQUE <letras> (N)"; MZ/MANZANA → "MANZANA <letras> (N)"; CS/CASA → "CASA <letras> (N)".
 
 c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número). Si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL. Ejemplos:
-   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
-   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
-   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA" o "DOBLE": la letra/sufijo se transcribe literal en mayúscula.
+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)".
+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (13 BIS No. 85-32)".
+   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA", "DOBLE" o "GUION": la letra/sufijo se transcribe literal en mayúscula y el separador de placa es el símbolo "-".
 
 d) STRIP DE BASURA: NO incluyas el nombre del conjunto/edificio (va en \`nombre_conjunto_edificio\`), NO incluyas la ciudad/municipio (va en \`municipio\`), NO incluyas la coletilla "(DIRECCION CATASTRAL)" (la inyecta el backend). Si la nomenclatura del índice más alto la trae, elimínala del valor devuelto.
 
