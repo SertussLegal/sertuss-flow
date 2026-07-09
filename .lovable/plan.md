@@ -1,141 +1,141 @@
-# Fix B/UI-1.1 — Estados vacíos distintos en listado de Cancelaciones
+# Fix B/UI-1.2 — Rediseño de badges de revisión manual en Cancelaciones
 
 ## Diagnóstico
 
-En `src/pages/Cancelaciones.tsx` (versión desplegada de hoy) hay una sola variable `hasRows = filteredRows.length > 0` (L140). Como se evalúa después del filtro, dos estados distintos se confunden:
+### Bug: doble badge redundante
+Hoy en `src/pages/Cancelaciones.tsx` (L207-210) el render es:
 
-1. **Cuenta 100% vacía** (`rows.length === 0`) → hoy muestra el mensaje correcto: "No hay cancelaciones registradas aún".
-2. **Cuenta con filas, pero el filtro activo no coincide** (`rows.length > 0 && filteredRows.length === 0`) → hoy cae al mismo `!hasRows` y muestra el mensaje genérico de cuenta vacía, lo cual es incorrecto.
+```tsx
+<StatusBadge status={row.status} />
+{row.revision_manual_requerida && <ManualReviewChip />}
+```
 
-Además, los `<Tabs>` se renderizan siempre (L160-166), incluso cuando `counts.all === 0`.
+Cuando `status === 'requiere_revision_manual'`, la fila casi siempre también trae `revision_manual_requerida=true`, así que se pintan **dos badges diciendo lo mismo**:
+- Rojo "Revisión manual bloqueante"
+- Ámbar "Revisión manual"
+
+Es el caso visto en la captura del usuario.
+
+### Terreno de Tooltip
+- `src/components/ui/tooltip.tsx` existe (shadcn estándar) y `TooltipProvider` ya envuelve toda la app en `src/App.tsx` L35 — no hay que agregarlo.
+- Patrón ya en uso en `InlineBadgeDot.tsx`, `PersonaForm.tsx`, `InmuebleForm.tsx`, `Validacion.tsx`, etc. Reutilizable directo.
+- Radix Tooltip: `TooltipTrigger asChild` sobre un `<span>` inline. El evento hover no dispara `onClick` del `<tr>` padre (son eventos distintos: `mouseenter`/`focus` vs `click`). El único cuidado es que si el usuario **hace click sobre el badge**, ese click SÍ burbujea al `<tr>` y navega — comportamiento actual y aceptable (el badge no es interactivo por sí mismo, solo informativo). No requiere `stopPropagation`.
+
+## Propuesta de copy
+
+| Caso | Texto visible | Tooltip |
+|---|---|---|
+| `status='requiere_revision_manual'` (badge rojo, bloqueante) | **"Bloqueada"** | "La IA no pudo leer con confianza uno o más campos obligatorios. El documento no se puede generar hasta que un humano revise y corrija los datos marcados." |
+| `revision_manual_requerida=true` con status ya avanzado (chip ámbar, histórico) | **"Con alertas"** | "En algún momento uno o más campos quedaron marcados como poco legibles y fueron confirmados manualmente. Esta marca se conserva solo para trazabilidad histórica." |
+
+Elección de palabras:
+- **"Bloqueada"** > "Pendiente" porque comunica accionabilidad urgente ("hay algo que impide seguir") sin ambigüedad temporal.
+- **"Con alertas"** > "Revisado" porque "Revisado" suena a estado positivo neutro y borra la señal de que hubo un problema histórico; "Con alertas" mantiene la trazabilidad visible sin alarmar.
 
 ## Cambios propuestos
 
 ### 1. `src/pages/Cancelaciones.tsx`
 
-#### 1.1 Variables de estado
-
-Reemplazar L140:
+**Imports** — agregar `Tooltip`, `TooltipContent`, `TooltipTrigger`:
 
 ```tsx
-const hasRows = filteredRows.length > 0;
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 ```
 
-Por:
+**`StatusBadge`** — cambiar el caso `requiere_revision_manual`:
 
 ```tsx
-const hasAnyRow = rows.length > 0;
-const hasRows = filteredRows.length > 0;
+if (status === "requiere_revision_manual") {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge className="gap-1.5 border border-red-300 bg-red-100 text-red-800 hover:bg-red-100 cursor-help">
+          <AlertTriangle className="h-3 w-3" />
+          Bloqueada
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-xs leading-snug">
+        La IA no pudo leer con confianza uno o más campos obligatorios. El documento no se puede generar hasta que un humano revise y corrija los datos marcados.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 ```
 
-#### 1.2 Renderizado condicional
-
-Reemplazar el bloque de renderizado L158-184:
+**`ManualReviewChip`** — envolver con Tooltip y cambiar texto:
 
 ```tsx
-<div className="flex flex-col gap-3 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-  <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
-  <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
-    <TabsList>
-      <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
-      <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
-      <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
-    </TabsList>
-  </Tabs>
-</div>
-{isInitialLoading ? (
-  <div data-testid="page-skeleton" className="space-y-3 p-6">
-    {Array.from({ length: 4 }).map((_, i) => (
-      <Skeleton key={i} className="h-10 w-full" />
-    ))}
-  </div>
-) : !hasRows ? (
-  <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-      <FileSearch className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h2 className="text-base font-semibold">No hay cancelaciones registradas aún</h2>
-    <p className="max-w-sm text-sm text-muted-foreground">
-      Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
-    </p>
-  </div>
-) : (
+const ManualReviewChip = () => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Badge
+        className="gap-1 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-50 cursor-help"
+        aria-label="Con alertas históricas de revisión manual"
+      >
+        <AlertTriangle className="h-3 w-3" />
+        Con alertas
+      </Badge>
+    </TooltipTrigger>
+    <TooltipContent className="max-w-xs text-xs leading-snug">
+      En algún momento uno o más campos quedaron marcados como poco legibles y fueron confirmados manualmente. Esta marca se conserva solo para trazabilidad histórica.
+    </TooltipContent>
+  </Tooltip>
+);
 ```
 
-Por:
+**Render de la celda de estado** (L204-211) — evitar duplicado:
 
 ```tsx
-<div className="flex flex-col gap-3 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-  <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
-  {hasAnyRow && (
-    <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
-      <TabsList>
-        <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
-        <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
-        <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
-      </TabsList>
-    </Tabs>
-  )}
-</div>
-{isInitialLoading ? (
-  <div data-testid="page-skeleton" className="space-y-3 p-6">
-    {Array.from({ length: 4 }).map((_, i) => (
-      <Skeleton key={i} className="h-10 w-full" />
-    ))}
+<TableCell>
+  <div className="flex items-center gap-1.5">
+    <StatusBadge status={row.status} />
+    {row.revision_manual_requerida && row.status !== "requiere_revision_manual" && (
+      <ManualReviewChip />
+    )}
   </div>
-) : !hasAnyRow ? (
-  <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-      <FileSearch className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h2 className="text-base font-semibold">No hay cancelaciones registradas aún</h2>
-    <p className="max-w-sm text-sm text-muted-foreground">
-      Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
-    </p>
-  </div>
-) : !hasRows ? (
-  <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-      <FileSearch className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h2 className="text-base font-semibold">No hay cancelaciones que coincidan con este filtro</h2>
-    <p className="max-w-sm text-sm text-muted-foreground">
-      Prueba con otro filtro o vuelve a "Todas" para ver el historial completo.
-    </p>
-  </div>
-) : (
+</TableCell>
 ```
 
 ### 2. `src/pages/Cancelaciones.test.tsx`
 
-Agregar un quinto test al final del `describe`:
+Actualizar los tests que dependen del copy viejo:
+
+- Test 1 (`chip 'Revisión manual' junto a badge 'Completada'`): reemplazar `"Revisión manual"` por `"Con alertas"`.
+- Test 2 (`status='requiere_revision_manual' pinta badge rojo distintivo`): reemplazar `"Revisión manual bloqueante"` por `"Bloqueada"`.
+- Test 4 (`estados existentes sin flag renderizan su badge original`): reemplazar los `queryByText("Revisión manual")` / `("Revisión manual bloqueante")` por `("Con alertas")` / `("Bloqueada")`.
+
+Agregar test nuevo (sexto):
 
 ```tsx
-it("cuenta con filas pero filtro vacío muestra mensaje de filtro, no mensaje de cuenta vacía", async () => {
+it("cuando status='requiere_revision_manual' y flag=true, no duplica badges (solo 'Bloqueada')", async () => {
   setRows([
-    baseRow({ matricula_inmobiliaria: "CLEAN-DONE", status: "completed", revision_manual_requerida: false }),
+    baseRow({
+      matricula_inmobiliaria: "MAT-NODUP",
+      status: "requiere_revision_manual",
+      revision_manual_requerida: true,
+    }),
   ]);
-  await renderPage("CLEAN-DONE");
+  await renderPage("MAT-NODUP");
 
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("tab", { name: /Requieren revisión/i }));
-
-  expect(screen.queryByText("CLEAN-DONE")).not.toBeInTheDocument();
-  expect(screen.getByText("No hay cancelaciones que coincidan con este filtro")).toBeInTheDocument();
-  expect(screen.queryByText("No hay cancelaciones registradas aún")).not.toBeInTheDocument();
+  const row = screen.getByText("MAT-NODUP").closest("tr")!;
+  expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
+  expect(within(row).queryByText("Con alertas")).not.toBeInTheDocument();
 });
 ```
 
+Nota: los tests renderizan sin `TooltipProvider` explícito. Radix Tooltip permite `TooltipTrigger` sin provider en el árbol (fallback silencioso) — el `TooltipContent` no se abrirá en test, pero el `TooltipTrigger asChild` sí renderiza al `<Badge>` hijo con su texto, que es lo único que los tests verifican (`getByText("Bloqueada")` / `("Con alertas")`). No hace falta añadir provider al helper.
+
 ## Criterios de aceptación
 
-- [ ] `hasAnyRow` y `hasRows` coexisten como variables separadas.
-- [ ] Los `<Tabs>` no se renderizan cuando `counts.all === 0`.
-- [ ] Cuenta vacía real muestra "No hay cancelaciones registradas aún".
-- [ ] Cuenta con filas pero filtro sin coincidencias muestra "No hay cancelaciones que coincidan con este filtro".
-- [ ] El test nuevo pasa y no rompe los 4 tests existentes.
-- [ ] Vitest sigue en 225/225 y Deno en 66/66.
+- [ ] Fila con `status='requiere_revision_manual'` y `flag=true` muestra **una sola** badge ("Bloqueada"), no dos.
+- [ ] Fila con `status='completed'` y `flag=true` muestra "Completada" + "Con alertas".
+- [ ] Hover sobre "Bloqueada" o "Con alertas" muestra la explicación larga.
+- [ ] Hover del badge no dispara navegación de la fila; click sobre el badge sí navega (comportamiento actual, aceptable).
+- [ ] Los 5 tests existentes se actualizan al copy nuevo y siguen pasando.
+- [ ] Test nuevo (no duplicación) pasa.
+- [ ] Vitest 226/226, Deno 66/66.
 
 ## Fuera de alcance
 
-- Cambios de lógica de negocio, backend, migraciones o comportamiento de filtrado.
-- Modificar mensajes de otros estados de error/carga.
+- Cambios en lógica de filtros, backend, o cualquier otra columna/badge no relacionada con revisión manual.
+- Añadir tests de apertura visual del Tooltip (requeriría user-event hover + jsdom timers; no aporta valor sobre el smoke visible).
