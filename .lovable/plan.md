@@ -1,202 +1,120 @@
+# Fix A11 — `certificadoTradicion/prompt.ts` contradice al tool schema con la palabra "GUION"
 
-# Fix A8 — `montoProsaProtocolo` no reañade M/CTE cuando la IA extrae el monto sin él
+## 1. Texto actual (4 líneas problemáticas)
 
-## Diagnóstico confirmado
+Archivo: `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts`
 
-Tres helpers espejo tienen el MISMO bug de idempotencia:
+- **L22** (regla b, formato de placa):
+  ```
+  - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
+  ```
+- **L26** (ejemplo blindaje alfanumérico):
+  ```
+  - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
+  ```
+- **L27** (ejemplo blindaje alfanumérico):
+  ```
+  - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
+  ```
+- **L40** (ejemplo canónico Bogotá):
+  ```
+  "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
+  ```
 
-| Archivo | Función | Línea |
-|---|---|---|
-| `supabase/functions/procesar-cancelacion/index.ts` | `montoProsaProtocolo` | 638–646 |
-| `src/lib/legalProse.ts` | `montoProsa` | 164–176 |
-| `supabase/functions/process-expediente/legalProse.ts` | `montoProsa` | 140–152 |
+Contradicen a `tool.ts:32` (regla oficial): *"SEPARADOR DE PLACA: se conserva como el SÍMBOLO '-' (guion ASCII rodeado de espacios), NUNCA se verbaliza como la palabra 'GUION'"*. También contradicen a `procesar-cancelacion/index.ts:327,330,333` que ya usan el símbolo "-".
 
-**Guard actual (idéntico en los 3):**
-```ts
-if (typeof raw === "string" && /\(\$[\d.,]+\)\s*$/.test(raw.trim())) return raw.trim();
-```
+## 2. Diff propuesto
 
-Acepta como "ya formateado" **cualquier** cadena que termine en `($NNN)`, aunque falte `M/CTE`. La IA emite justamente eso (`"... PESOS ($8.858.475)"`), el helper lo devuelve intacto y el docx queda sin M/CTE.
-
-Los 3 deben corregirse en sincronía (regla del proyecto: `legalProse.ts` cliente ↔ backend son espejos).
-
-## Diseño del fix
-
-**Nuevo guard:** exigir que la cadena entrante contenga M/CTE **además** del patrón `($NNN)` para considerarse ya formateada. Si trae `($NNN)` sin M/CTE, extraer el número y re-formatear con `formatMonedaLegal` (que sí añade M/CTE), luego strippear `,00`.
-
-**Variantes de M/CTE aceptadas** (regex tolerante case-insensitive):
-- `M/CTE` (canónico)
-- `MCTE`, `M.CTE`, `M CTE` (variantes históricas)
-
-Regex: `/\bM\s*[\/.]?\s*CTE\b/i`
-
-**No toca `esIndetLegacy`:** el literal `"HIPOTECA DE CUANTÍA INDETERMINADA"` no termina en `($NNN)`, no entra al guard nuevo ni al viejo. Además, aguas arriba (`index.ts` L938) `esCuantiaIndeterminada` cortocircuita a `undefined` antes de llamar al helper. Comportamiento preservado.
-
-## Diff propuesto (idéntico en los 3 archivos, adaptado a nombre)
-
-### 1) `supabase/functions/procesar-cancelacion/index.ts` (L636-646)
+Un solo archivo modificado: `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts`
 
 ```diff
--// Monto para protocolo: reusa formatMonedaLegal y elimina ",00)" si decimales = 0.
--// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente.
-+// Monto para protocolo: reusa formatMonedaLegal y elimina ",00)" si decimales = 0.
-+// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente solo
-+// cuando la cadena entrante YA contiene M/CTE (requisito registral colombiano).
-+// Si trae "... ($NNN)" sin M/CTE, re-normaliza extrayendo el número.
-+const _M_CTE_RE = /\bM\s*[\/.]?\s*CTE\b/i;
-+const _MONTO_TAIL_RE = /\(\$([\d.,]+)\)\s*$/;
- function montoProsaProtocolo(valor: string | number | undefined | null): string {
-   if (valor === null || valor === undefined || valor === "") return "";
-   const raw = typeof valor === "number" ? String(valor) : valor;
--  if (typeof raw === "string" && /\(\$[\d.,]+\)\s*$/.test(raw.trim())) return raw.trim();
--  const formateado = formatMonedaLegal(raw);
-+  const trimmed = typeof raw === "string" ? raw.trim() : "";
-+  const tail = trimmed ? trimmed.match(_MONTO_TAIL_RE) : null;
-+  if (tail && _M_CTE_RE.test(trimmed)) {
-+    // Ya formateado con M/CTE: idempotente, solo quita ",00" si existe.
-+    return trimmed.replace(/,00\)$/, ")");
-+  }
-+  // Si trae "($NNN)" pero SIN M/CTE, extraer el número y re-formatear.
-+  const source = tail ? tail[1] : raw;
-+  const formateado = formatMonedaLegal(source);
-   if (!formateado) return "";
--  // Escape correcto del paréntesis de cierre.
-   return formateado.replace(/,00\)$/, ")");
- }
+@@ L22
+-   - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
++   - Placa: literal "NÚMERO" + primer número en letras + " - " (SÍMBOLO GUION ASCII rodeado de espacios, NUNCA la palabra "GUION") + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
+@@ L26-27
+-   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
+-   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
++   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)".
++   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (13 BIS No. 85-32)".
+@@ L28 (misma zona, ya prohíbe "ALFA/BETA/…"; se refuerza)
+-   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA" o "DOBLE": la letra/sufijo se transcribe literal en mayúscula.
++   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA", "DOBLE" o "GUION": la letra/sufijo se transcribe literal en mayúscula y el separador de placa es el símbolo "-".
+@@ L40
+-    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
++    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
 ```
 
-### 2) `src/lib/legalProse.ts` (L164-176) y 3) `supabase/functions/process-expediente/legalProse.ts` (L140-152)
+La edición extra en L28 replica el patrón ya presente en `procesar-cancelacion/index.ts:333` — hace explícito que "GUION" también es palabra prohibida, no solo omisión de ejemplo. Es 1 línea adicional dentro del mismo módulo, mismo alcance.
 
-Cambio equivalente, adaptado al nombre `montoProsa` (misma lógica, mismos regex helpers `_M_CTE_RE` / `_MONTO_TAIL_RE` locales al módulo).
+## 3. Riesgo de tests existentes
 
-## Tests
+Búsqueda global (`rg "GUION|certificadoTradicionPrompt"` en `supabase/` y `src/`, filtrando archivos test):
 
-### Nuevo: `supabase/functions/procesar-cancelacion/montoProsaProtocolo_test.ts`
+- **No existe ningún test de `certificadoTradicion`** (prompt, tool o handler). Cero cobertura previa.
+- Único match: `supabase/functions/procesar-cancelacion/index_test.ts:134` — `assertStringIncludes(SRC, "GUION")` donde `SRC = readTextFile("./index.ts")` de `procesar-cancelacion`, **no** del prompt de scan-document. Ese `index.ts` sigue conteniendo la palabra "GUION" en frases prohibitivas ("NUNCA la palabra 'GUION'", "PROHIBIDO … 'GUION'"). El test sigue verde. **Sin impacto.**
 
-Fixture con los 5 casos reales auditados + legacy + idempotencia + edge cases.
+Conclusión: **cero regresiones esperadas** por la edición del prompt.
+
+## 4. Test de regresión nuevo
+
+Archivo nuevo: `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts`
+
+Objetivo: garantizar que ningún futuro cambio reintroduzca "GUION" como instrucción, y que el símbolo "-" siga siendo el separador oficial.
 
 ```ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { montoProsaProtocolo } from "./index.ts"; // requiere export
+import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { certificadoTradicionPrompt } from "./prompt.ts";
 
-Deno.test("A8: monto sin M/CTE se re-normaliza (caso d1d90c54)", () => {
-  const input = "OCHO MILLONES OCHOCIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.858.475)";
-  const out = montoProsaProtocolo(input);
-  assertEquals(out, "OCHO MILLONES OCHOCIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS M/CTE ($8.858.475)");
+Deno.test("A11: prompt NO contiene la palabra 'GUION' como instrucción de formato", () => {
+  // Solo se permite la palabra en contextos prohibitivos explícitos
+  // ("NUNCA la palabra 'GUION'", "PROHIBIDO … 'GUION'"). Cualquier otro
+  // uso indica regresión al ejemplo antiguo.
+  const matches = certificadoTradicionPrompt.match(/GUION/g) ?? [];
+  const contextos = certificadoTradicionPrompt.split(/\n/).filter((l) => l.includes("GUION"));
+  for (const linea of contextos) {
+    const esProhibitivo = /NUNCA.*['"]GUION['"]|PROHIBIDO.*['"]GUION['"]/.test(linea);
+    if (!esProhibitivo) {
+      throw new Error(`Regresión A11: 'GUION' aparece como instrucción, no como prohibición → ${linea}`);
+    }
+  }
+  // Al menos una ocurrencia prohibitiva debe existir (documenta la regla).
+  if (matches.length === 0) {
+    throw new Error("Se espera que la prohibición explícita mencione 'GUION' al menos una vez.");
+  }
 });
 
-Deno.test("A8: monto sin M/CTE (caso 4b05d210)", () => {
-  const input = "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)";
-  const out = montoProsaProtocolo(input);
-  assertEquals(out, "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS M/CTE ($8.558.475)");
+Deno.test("A11: prompt usa el símbolo '-' como separador de placa en los ejemplos", () => {
+  assertStringIncludes(
+    certificadoTradicionPrompt,
+    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO",
+  );
 });
 
-Deno.test("A8: monto sin M/CTE (caso d7193993)", () => {
-  const input = "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)";
-  assertEquals(montoProsaProtocolo(input), "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)");
-});
-
-Deno.test("A8: monto sin M/CTE (caso 15a90eef)", () => {
-  const input = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)";
-  assertEquals(montoProsaProtocolo(input), "CIENTO OCHENTA Y CINCO MILLONES DE PESOS M/CTE ($185.000.000)");
-});
-
-Deno.test("A8: monto YA con M/CTE no se duplica (caso 5022544d)", () => {
-  const input = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS M/CTE ($185.000.000)";
-  assertEquals(montoProsaProtocolo(input), input);
-});
-
-Deno.test("A8: idempotencia — mismo output al re-pasar por el helper", () => {
-  const input = "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)";
-  const once = montoProsaProtocolo(input);
-  const twice = montoProsaProtocolo(once);
-  assertEquals(once, twice);
-});
-
-Deno.test("A8: variante MCTE sin barra se respeta como ya formateado", () => {
-  const input = "TREINTA MILLONES DE PESOS MCTE ($30.000.000)";
-  assertEquals(montoProsaProtocolo(input), input);
-});
-
-Deno.test("A8: strip ,00 cuando trae M/CTE y decimales cero", () => {
-  const input = "TREINTA MILLONES DE PESOS M/CTE ($30.000.000,00)";
-  assertEquals(montoProsaProtocolo(input), "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)");
-});
-
-Deno.test("A8: legacy 'HIPOTECA DE CUANTÍA INDETERMINADA' no se formatea (retorna '')", () => {
-  // Aguas arriba esCuantiaIndeterminada cortocircuita; si por defensa
-  // llegase aquí, no debe intentar parsearlo como monto.
-  assertEquals(montoProsaProtocolo("HIPOTECA DE CUANTÍA INDETERMINADA"), "");
-});
-
-Deno.test("A8: número crudo se formatea con M/CTE (comportamiento previo)", () => {
-  assertEquals(montoProsaProtocolo(30000000), "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)");
-});
-
-Deno.test("A8: string vacío/null retorna ''", () => {
-  assertEquals(montoProsaProtocolo(""), "");
-  assertEquals(montoProsaProtocolo(null), "");
-  assertEquals(montoProsaProtocolo(undefined), "");
+Deno.test("A11: prompt sigue alineado con tool.ts (regla de separador)", async () => {
+  const toolSrc = await Deno.readTextFile(new URL("./tool.ts", import.meta.url));
+  assertStringIncludes(toolSrc, "NUNCA se verbaliza como la palabra 'GUION'");
 });
 ```
 
-**Requisito:** exportar `montoProsaProtocolo` desde `index.ts` (hoy es privada). Alternativa sin cambio de superficie: mover el helper a `_shared/isomorphic/` y re-importarlo desde `index.ts` + test. Preferencia: `export` in-place, mínimo cambio.
+## 5. Alcance del cambio
 
-### Espejo frontend: `src/lib/legalProse.test.ts` (agregar bloque)
+**Modificado (1):**
+- `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts` — 4 líneas de ejemplo + 1 refuerzo en L28.
 
-```ts
-describe("legalProse — montoProsa (A8 M/CTE guard)", () => {
-  it("re-normaliza monto extraído por IA sin M/CTE", () => {
-    expect(montoProsa("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)"))
-      .toBe("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)");
-  });
-  it("respeta MCTE sin barra", () => {
-    const s = "TREINTA MILLONES DE PESOS MCTE ($30.000.000)";
-    expect(montoProsa(s)).toBe(s);
-  });
-  it("no toca literales de cuantía indeterminada", () => {
-    expect(montoProsa("HIPOTECA DE CUANTÍA INDETERMINADA")).toBe("");
-  });
-});
-```
+**Nuevo (1):**
+- `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` — 3 tests Deno.
 
-Los tests existentes de `montoProsa` (L76-95) siguen verdes: input numérico crudo, input ya con M/CTE, y strip de `,00` — el fix solo cambia el camino "trae ($NNN) sin M/CTE".
+**No se toca:** `tool.ts`, `handler.ts`, `index.ts` de scan-document, ni `procesar-cancelacion/index.ts` (ya correcto).
 
-### Sin espejo backend `process-expediente`
+## 6. Criterios de aceptación
 
-Este helper no tiene test dedicado hoy. Añadir un `Deno.test` mínimo equivalente al bloque de `legalProse.test.ts` en `supabase/functions/process-expediente/legalProse_test.ts` (crear si no existe).
+- [ ] Los 4 ejemplos del prompt usan " - " en vez de " GUION ".
+- [ ] La palabra "GUION" solo aparece en frases prohibitivas.
+- [ ] `deno test supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` verde.
+- [ ] Suite completo (Deno + Vitest) sin regresiones — en particular `procesar-cancelacion/index_test.ts:134` sigue verde.
 
-## Verificación de no-regresión
+## 7. Fuera de alcance
 
-1. **A9 (`"null"` literal → sanitizado):** no toca el path — la sanitización ocurre antes de llegar aquí (en el merge de `data_final`). El fix opera sobre strings válidos con paréntesis. ✅
-2. **B4 (extracción semántica de cuantía):** este audit verificó que `valor_hipoteca_original` llega correcto. El fix mejora la salida de render, no la extracción. ✅
-3. **`esCuantiaIndeterminada` (skill cuantia-indeterminada-cancelacion):** en L938 `valorHipotecaProtocolo = undefined` cuando el flag es true — el helper ni se llama. Fix preserva ese cortocircuito. ✅
-4. **`buildClausulaPagoHipoteca` (L692):** llama a `montoProsaProtocolo(valorRaw)` sólo en la rama NO-indeterminada. Fix mejora la prosa de la cláusula sin cambiar la lógica de rama. ✅
-5. **Tests existentes de `montoProsa` frontend (L77-94):** los 4 tests siguen verdes porque cubren números crudos e inputs que ya traen M/CTE. ✅
-
-## Alcance del cambio
-
-**Archivos modificados (3):**
-- `supabase/functions/procesar-cancelacion/index.ts` — fix + `export`
-- `src/lib/legalProse.ts` — fix
-- `supabase/functions/process-expediente/legalProse.ts` — fix
-
-**Archivos nuevos (2):**
-- `supabase/functions/procesar-cancelacion/montoProsaProtocolo_test.ts` — 11 tests
-- `supabase/functions/process-expediente/legalProse_test.ts` — 3 tests (nuevo archivo o append si existe)
-
-**Archivo con append (1):**
-- `src/lib/legalProse.test.ts` — 3 tests nuevos
-
-**Fuera de alcance:**
-- No se toca `formatMonedaLegal` (backend ni frontend) — funciona correctamente.
-- No se toca el extractor IA — el fix es defensivo en la capa de render, apropiado.
-- No se re-generan cancelaciones históricas — solo aplica a nuevas ejecuciones.
-
-## Criterios de aceptación
-
-- [ ] Los 11 tests Deno del helper cancelaciones pasan.
-- [ ] Los tests existentes de `legalProse.test.ts` (frontend) siguen verdes + 3 nuevos verdes.
-- [ ] Los tests nuevos de `process-expediente/legalProse` verdes.
-- [ ] Test suite completo del proyecto verde (sin regresiones).
-- [ ] Los tests A5/A9/B4 existentes en `procesar-cancelacion/index_test.ts` (si los hay) siguen verdes.
+- No re-generar certificados históricos ya extraídos.
+- No tocar la lógica de red de seguridad en `procesar-cancelacion/index.ts:901` (ya normaliza si el modelo emite "GUION" pese al prompt).
+- No modificar prompts de otros extractores (poderBanco, predial, cartaCredito) — este audit es específico a certificadoTradicion.
