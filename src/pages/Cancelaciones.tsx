@@ -90,7 +90,7 @@ const ManualReviewChip = () => (
         aria-label="Con alertas históricas de revisión manual"
       >
         <AlertTriangle className="h-3 w-3" />
-        Con alertas
+        Alertas
       </Badge>
     </TooltipTrigger>
     <TooltipContent className="max-w-xs text-xs leading-snug">
