@@ -75,7 +75,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
 
     const row = screen.getByText("MAT-9dc33048").closest("tr")!;
     expect(within(row).getByText("Completada")).toBeInTheDocument();
-    expect(within(row).getByText("Con alertas")).toBeInTheDocument();
+    expect(within(row).getByText("Alertas")).toBeInTheDocument();
   });
 
   it("status='requiere_revision_manual' pinta badge rojo distintivo, no fallback 'Borrador'", async () => {
@@ -125,7 +125,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     expect(within(screen.getByText("R-DONE").closest("tr")!).getByText("Completada")).toBeInTheDocument();
     expect(within(screen.getByText("R-ERR").closest("tr")!).getByText("Error")).toBeInTheDocument();
 
-    expect(screen.queryByText("Con alertas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alertas")).not.toBeInTheDocument();
     expect(screen.queryByText("Bloqueada")).not.toBeInTheDocument();
   });
 
@@ -155,6 +155,6 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
 
     const row = screen.getByText("MAT-NODUP").closest("tr")!;
     expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
-    expect(within(row).queryByText("Con alertas")).not.toBeInTheDocument();
+    expect(within(row).queryByText("Alertas")).not.toBeInTheDocument();
   });
 });
