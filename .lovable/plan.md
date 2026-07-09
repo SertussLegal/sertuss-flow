@@ -1,67 +1,285 @@
-# Diagnóstico: coherencia intra-trámite entre poder, escritura y certificado
+# Plan Final — Fase 2: coherencia intra-trámite poder ↔ acreedor
 
-**Solo investigación — no se cambia código.** Este es el terreno actual y una propuesta de dónde debería vivir el chequeo si se decide construirlo.
-
----
-
-## 1. ¿Existe hoy el cruce entidad-otorgante del poder ↔ acreedor hipotecario?
-
-**No. En ningún archivo.**
-
-`validate.ts` (`supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts:137-277`) ejecuta 5 reglas — todas sobre el `poder_banco` mergeado **en aislamiento**. Su firma es `validatePoderBancoCoherencia(merged)` y solo recibe el objeto poder; nunca ve `partes.banco_nit`, `partes.banco_acreedor` ni datos de la escritura/certificado.
-
-Los campos necesarios para el cruce **sí existen** en la data ya extraída:
-
-- `poder_banco.poderdante.entidad_nit` / `entidad_nombre` — banco que otorga el poder (`poderBancoExtractor/tool.ts:60-66`).
-- `partes.banco_acreedor` + `partes.banco_nit` — acreedor real, extraído por la llamada monolítica de `procesar-cancelacion` desde escritura/certificado (`procesar-cancelacion/index.ts:238-239`).
-- `certificadoTradicion.actos.entidad_bancaria` + `actos.entidad_nit` — presente en el schema OCR del certificado (`certificadoTradicion/tool.ts:80-81`).
-
-**Pero ningún código los compara entre sí dentro del mismo trámite.**
-
-## 2. ¿Existe hoy el cruce apoderado ↔ quien firma/gestiona en la escritura o certificado?
-
-**No.** `reconcileData.ts` (`src/lib/reconcileData.ts:207-288`) reconcilia personas naturales (deudores/comparecientes) entre cédulas, escritura y certificado usando CC como clave — jamás cruza la identidad del apoderado del poder contra ninguno de los otros dos documentos. `validatePoderSuficiencia.ts` valida facultades/vigencia del poder aisladamente (`_shared/validatePoderSuficiencia.ts:75-144`).
-
-## 3. ¿`crossCheck.ts` cubre este caso?
-
-**No — `crossCheck.ts` es explícitamente ENTRE cancelaciones distintas** de la misma organización (`crossCheck.ts:1-13, 57-96`). Sus 2 reglas (`apoderado_nombre_duplicidad_cruzada`, `apoderado_cedula_duplicidad_cruzada`) toman el poder actual y lo comparan contra ~500 filas de OTRAS cancelaciones. Cero lógica intra-trámite.
-
-## 4. ¿Dónde se combinan hoy los 3 documentos?
-
-En `procesar-cancelacion/index.ts`, la llamada monolítica a Gemini con la herramienta `extract_cancelacion_hipoteca` (líneas 162-283) ya recibe las páginas de los 3 documentos y produce en el mismo `extracted`: `partes.banco_acreedor/banco_nit` (desde certificado/escritura) y `poder_banco.*` (desde páginas del poder). Después del merge (línea 2744-2758) se llaman `annotatePoderCoherencia()` y `runPoderCrossChecks()` — **ambas reciben solo `mergedPoder`** y son ciegas a `extracted.partes.*` y `extracted.hipoteca_anterior.*`. El punto de fusión de datos existe; el punto de cruce no.
+Construir un nuevo módulo isomórfico que valide que el `poder_banco.poderdante` corresponde al mismo banco que aparece como acreedor hipotecario en la escritura/certificado del MISMO trámite. HARD_BLOCK, misma gravedad que NO_LEGIBLE.
 
 ---
 
-## Confirmación explícita
+## Terreno relevante hallado (para no re-inventar)
 
-Un poder auténtico, internamente coherente (pasa Regla 5, sin NO_LEGIBLE, cédulas bien formadas, sin duplicidad cruzada entre cancelaciones), que autorice sobre BANCO A cuando la escritura de esta cancelación tiene como acreedor a BANCO B — **hoy pasa sin ningún warning**. No hay defensa contra este escenario.
+- **`normalizeNit` ya existe** en `supabase/functions/_shared/isomorphic/prosaBancos/index.ts:29` como función privada de una línea: `nit.replace(/[.\s\-]/g, "")`. No está exportada. Es idéntica a lo que necesitamos.
+- **`normalizeBankName` + fuzzy** ya existen en `src/lib/bankDirectory.ts:37-49` (quita acentos, sufijos comerciales `S.A./S.A.S./LTDA/E.U.`, normaliza espacios). Pero vive en `src/lib/` — **NO importable desde edge functions** (regla del proyecto: código isomórfico solo en `supabase/functions/_shared/isomorphic/`).
+- **`partes.banco_nit`** viene con formato `"860.034.313-7"` (validado por prompt en `procesar-cancelacion/index.ts:239`). **`poderdante.entidad_nit`** viene sin puntos, `"900123456-7"` (validado por prompt en `poderBancoExtractor/tool.ts:66`). Formatos distintos → normalización obligatoria antes de comparar.
+- **Punto de llamada evidente**: `procesar-cancelacion/index.ts:2748-2757` — bloque post-merge donde ya se invocan `annotatePoderCoherencia` y `runPoderCrossChecks`, con `extracted.partes` en scope. Ahí va la tercera llamada.
 
----
+## Decisión de reutilización
 
-## Propuesta de ubicación (para cuando se decida construir Fase 2 intra-trámite)
-
-Dos opciones limpias, ambas viables:
-
-**Opción A — Nuevo módulo isomórfico `validateIntraTramite.ts` en `_shared/isomorphic/poderBancoExtractor/`.**
-Firma: `validatePoderVsCancelacion(merged, partes: { banco_nit, banco_acreedor })` → devuelve el mismo `CoherenciaResult` (warnings + suspicious) que `validatePoderBancoCoherencia`. Pure TS, unit-testable desde Vitest sin Deno. Mantiene separación de responsabilidades: `validate.ts` = intra-poder, `validateIntraTramite.ts` = poder ↔ resto del trámite, `crossCheck.ts` = poder ↔ otras cancelaciones.
-
-**Opción B — Extender `annotatePoderCoherencia()` en `procesar-cancelacion/index.ts:1414-1440`.**
-Ya vive donde `extracted.partes.*` está en scope. Menor superficie de cambio, pero mezcla orquestación con lógica de validación y no es testeable con Vitest (es Deno edge).
-
-**Recomendación: Opción A** — coherente con el patrón que ya existe (Regla 5 se hizo isomórfica precisamente para tests). El orquestador la llama junto a `validatePoderBancoCoherencia` y `detectDuplicidadCruzada`, y sus warnings entran al mismo `_coherencia_warnings` y a `HARD_BLOCK_WARNING_SUFFIXES` si se decide que deben bloquear (por ejemplo, sufijo `_entidad_incoherente`).
-
-**Reglas candidatas** (a diseñar en un plan aparte si se aprueba construir):
-
-1. `poder_entidad_nit_incoherente` — `normalizarNit(poderdante.entidad_nit)` ≠ `normalizarNit(partes.banco_nit)` cuando ambos están presentes.
-2. `poder_entidad_nombre_incoherente` — comparación fuzzy de `entidad_nombre` vs `banco_acreedor` (fallback si falta un NIT).
-3. Considerar también `certificadoTradicion.actos.entidad_nit` como segunda fuente de verdad del acreedor (Smart Fallback igual que el chequeo de notaría origen).
+- **Duplicar `normalizeNit`** dentro del nuevo `validateIntraTramite.ts` (una línea, cero costo, evita cambiar la firma pública de `prosaBancos`).
+- **Portar `normalizeBankName`** al nuevo archivo (isomórfico). No mover `bankDirectory.ts` completo — solo replicar los ~15 líneas de la función pura de normalización. El día que se necesite en otro validador isomórfico, se extrae a `_shared/isomorphic/text/`.
+- **Fuzzy match**: la técnica de `bankDirectory.ts` (contención bidireccional sobre nombres normalizados) es suficiente y determinista. No hace falta Levenshtein/dice.
 
 ---
 
-## Fuera de alcance de este diagnóstico
+## Archivos afectados
 
-- No se propone aún qué sufijo usar, si es HARD_BLOCK o warning suave, ni la lógica de fuzzy match.
-- No se propone Fase 3 (backfill retroactivo).
-- No se toca código.
+### 1. NUEVO: `supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts`
 
-Si querés que arme el plan formal de construcción con reglas exactas, tests y ubicación final, decímelo y lo redacto en Plan mode antes de pasar a Build.
+Módulo isomórfico puro (sin Deno, sin fetch). Firma:
+
+```typescript
+export interface PartesForCoherencia {
+  banco_nit?: string | null;
+  banco_acreedor?: string | null;
+}
+
+export interface IntraTramiteResult {
+  warnings: string[];
+  suspicious: Set<string>;
+}
+
+export function validatePoderVsCancelacion(
+  merged: Record<string, unknown> | null | undefined,
+  partes: PartesForCoherencia | null | undefined,
+): IntraTramiteResult;
+```
+
+**Lógica (en este orden estricto):**
+
+```
+poderdanteNit = merged.poderdante.entidad_nit
+poderdanteNom = merged.poderdante.entidad_nombre
+acreedorNit   = partes.banco_nit
+acreedorNom   = partes.banco_acreedor
+
+nNitPoder    = normalizeNit(poderdanteNit)   // "" si null
+nNitAcreedor = normalizeNit(acreedorNit)
+
+// Regla 1 — primaria: NIT vs NIT.
+if (nNitPoder && nNitAcreedor) {
+  if (nNitPoder !== nNitAcreedor) {
+    warnings.push("poder_entidad_nit_incoherente");
+    suspicious.add("poderdante.entidad_nit");
+    suspicious.add("partes.banco_nit");
+  }
+  // ← Sale aquí. NO evalúa Regla 2 aunque los nombres difieran.
+  //   Rationale: NIT es evidencia más fuerte; si NIT coincide,
+  //   asumimos que un desalineamiento textual del nombre es OCR ruido
+  //   (ej. "DAVIVIENDA" vs "BANCO DAVIVIENDA S.A."), no incoherencia real.
+  return { warnings, suspicious };
+}
+
+// Regla 2 — respaldo: nombre fuzzy, SOLO si falta al menos un NIT.
+if (poderdanteNom && acreedorNom) {
+  const nA = normalizeBankName(poderdanteNom);
+  const nB = normalizeBankName(acreedorNom);
+  if (nA && nB) {
+    const match = nA === nB || nA.includes(nB) || nB.includes(nA);
+    if (!match) {
+      warnings.push("poder_entidad_nombre_incoherente");
+      suspicious.add("poderdante.entidad_nombre");
+      suspicious.add("partes.banco_acreedor");
+    }
+  }
+}
+
+return { warnings, suspicious };
+```
+
+**Helpers privados (copiados en el archivo):**
+
+```typescript
+function normalizeNit(nit: string | null | undefined): string {
+  if (!nit || typeof nit !== "string") return "";
+  return nit.replace(/[.\s\-]/g, "").replace(/\D/g, "");
+}
+
+function normalizeBankName(raw: string | null | undefined): string {
+  if (!raw || typeof raw !== "string") return "";
+  let n = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  n = n.replace(/\b(S\.?A\.?S\.?|S\.?A\.?|LTDA\.?|E\.?U\.?)\b\.?/g, "");
+  n = n.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
+  return n;
+}
+```
+
+Nota: el `.replace(/\D/g, "")` extra en `normalizeNit` (respecto al de `prosaBancos`) blinda contra cualquier char no-numérico residual — comparación siempre sobre dígitos puros.
+
+### 2. EDITAR: `validate.ts` — extender registros compartidos
+
+```typescript
+// HARD_BLOCK_WARNING_SUFFIXES: añadir 2 sufijos (ambos son HARD_BLOCK, como los ya existentes)
+export const HARD_BLOCK_WARNING_SUFFIXES = [
+  "_no_legible",
+  "_incoherente",              // ya cubre "poder_entidad_nit_incoherente" y "poder_entidad_nombre_incoherente"
+  "_placeholder",
+  "_duplicidad_cruzada",
+  "_menciones_incoherentes",
+] as const;
+```
+
+**Ojo — decisión clave**: el sufijo `_incoherente` YA está en la lista (lo agregó Fase 1 vía `escritura_num_incoherente` y `fecha_incoherente`). Ambos nuevos warnings terminan en `_incoherente` → **no requieren nuevos sufijos**, ya son HARD_BLOCK por herencia del sufijo existente. Verificar con test explícito (ver §4).
+
+```typescript
+// WARNING_LABELS: añadir 2 entradas
+poder_entidad_nit_incoherente:
+  "El NIT del banco que otorga el poder no coincide con el NIT del acreedor hipotecario extraído de la escritura/certificado — el poder podría no aplicar a esta cancelación.",
+poder_entidad_nombre_incoherente:
+  "El nombre del banco que otorga el poder no coincide con el acreedor hipotecario extraído de la escritura/certificado — verifica que el poder corresponda a esta cancelación.",
+
+// SUSPICIOUS_FIELD_LABELS: añadir 4 entradas
+"poderdante.entidad_nit": "NIT del banco que otorga el poder",
+"poderdante.entidad_nombre": "Nombre del banco que otorga el poder",
+"partes.banco_nit": "NIT del banco acreedor (escritura/certificado)",
+"partes.banco_acreedor": "Nombre del banco acreedor (escritura/certificado)",
+```
+
+### 3. EDITAR: `supabase/functions/procesar-cancelacion/index.ts`
+
+**Import (junto a los existentes en línea 1408-1410):**
+
+```typescript
+import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
+```
+
+**Nueva función wrapper (justo después de `annotatePoderCoherencia`, ~línea 1440):**
+
+```typescript
+async function annotatePoderIntraTramite(
+  supabase: any,
+  merged: Record<string, unknown> | undefined | null,
+  partes: { banco_nit?: string | null; banco_acreedor?: string | null } | null | undefined,
+  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
+): Promise<void> {
+  if (!merged) return;
+  const { warnings, suspicious } = validatePoderVsCancelacion(merged, partes);
+  if (warnings.length === 0) return;
+  // ACUMULAR — no sobrescribir lo que annotatePoderCoherencia ya escribió.
+  const prevW = Array.isArray(merged._coherencia_warnings) ? merged._coherencia_warnings as string[] : [];
+  const prevS = Array.isArray(merged._coherencia_suspicious) ? merged._coherencia_suspicious as string[] : [];
+  merged._coherencia_warnings = [...prevW, ...warnings];
+  merged._coherencia_suspicious = Array.from(new Set([...prevS, ...suspicious]));
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: ctx.orgId,
+      tramite_id: ctx.cancelacionId,
+      user_id: ctx.userId,
+      evento: "procesar-cancelacion.poder.intra_tramite",
+      resultado: "warnings",
+      categoria: "ocr_poder_banco",
+      detalle: { trigger: ctx.trigger, warnings, suspicious: Array.from(suspicious) },
+    });
+  } catch (_) { /* no bloqueante */ }
+}
+```
+
+**Llamada (insertar entre `annotatePoderCoherencia` y `runPoderCrossChecks`, línea ~2753):**
+
+```typescript
+await annotatePoderCoherencia(supabaseService, mergedPoder, { … });
+// NUEVA:
+await annotatePoderIntraTramite(
+  supabaseService,
+  mergedPoder as unknown as Record<string, unknown>,
+  { banco_nit: extracted.partes.banco_nit, banco_acreedor: extracted.partes.banco_acreedor },
+  { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+);
+await runPoderCrossChecks(supabaseService, mergedPoder, { … });
+```
+
+**Orden importa**: primero `annotatePoderCoherencia` (inicializa el array), luego intra-trámite (acumula), luego cross-checks (también acumula — verificar que ya lo hace; si sobrescribe, es bug preexistente fuera de alcance).
+
+### 4. NUEVO: `src/shared/poderBancoValidateIntraTramite.test.ts`
+
+Tests de regresión (7 casos exactos):
+
+```typescript
+import { describe, it, expect } from "vitest";
+import {
+  validatePoderVsCancelacion,
+} from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite";
+import { HARD_BLOCK_WARNING_SUFFIXES, isHardBlockCoherenciaWarning } from "…/validate";
+
+describe("validatePoderVsCancelacion", () => {
+  const poderdante = (extra: Record<string, unknown>) => ({
+    poderdante: { entidad_nit: null, entidad_nombre: null, ...extra },
+  });
+
+  it("Regla 1: NIT distinto → dispara poder_entidad_nit_incoherente", () => {
+    const r = validatePoderVsCancelacion(
+      poderdante({ entidad_nit: "860034313-7", entidad_nombre: "BANCO DAVIVIENDA S.A." }),
+      { banco_nit: "890903938-8", banco_acreedor: "BANCOLOMBIA S.A." },
+    );
+    expect(r.warnings).toContain("poder_entidad_nit_incoherente");
+    expect(r.suspicious.has("poderdante.entidad_nit")).toBe(true);
+    expect(r.suspicious.has("partes.banco_nit")).toBe(true);
+  });
+
+  it("Regla 1: NIT igual (formatos distintos) → NO dispara", () => {
+    const r = validatePoderVsCancelacion(
+      poderdante({ entidad_nit: "860034313-7", entidad_nombre: "DAVIVIENDA" }),
+      { banco_nit: "860.034.313-7", banco_acreedor: "BANCO DAVIVIENDA S.A." },
+    );
+    expect(r.warnings).toHaveLength(0);
+  });
+
+  it("Regla 2: NIT faltante en poder + nombres distintos → dispara fuzzy", () => {
+    const r = validatePoderVsCancelacion(
+      poderdante({ entidad_nombre: "BANCOLOMBIA S.A." }),
+      { banco_nit: "860.034.313-7", banco_acreedor: "BANCO DAVIVIENDA S.A." },
+    );
+    expect(r.warnings).toContain("poder_entidad_nombre_incoherente");
+  });
+
+  it("Regla 2: NIT faltante + nombres similares (DAVIVIENDA vs BANCO DAVIVIENDA S.A.) → NO dispara", () => {
+    const r = validatePoderVsCancelacion(
+      poderdante({ entidad_nombre: "DAVIVIENDA" }),
+      { banco_acreedor: "BANCO DAVIVIENDA S.A." },
+    );
+    expect(r.warnings).toHaveLength(0);
+  });
+
+  it("Ambos NIT presentes + coinciden, nombres diferentes → NO doble-dispara (Regla 2 no corre)", () => {
+    const r = validatePoderVsCancelacion(
+      poderdante({ entidad_nit: "860034313-7", entidad_nombre: "DAVIVIENDA" }),
+      { banco_nit: "860.034.313-7", banco_acreedor: "OTRO NOMBRE COMPLETAMENTE DISTINTO" },
+    );
+    expect(r.warnings).toHaveLength(0);
+  });
+
+  it("Ambos NIT presentes + distintos → dispara Regla 1, ignora Regla 2 aunque nombres también difieran", () => {
+    const r = validatePoderVsCancelacion(
+      poderdante({ entidad_nit: "111", entidad_nombre: "BANCOLOMBIA" }),
+      { banco_nit: "222", banco_acreedor: "DAVIVIENDA" },
+    );
+    expect(r.warnings).toEqual(["poder_entidad_nit_incoherente"]);
+  });
+
+  it("Contrato HARD_BLOCK: ambos warnings terminan en _incoherente y son HARD_BLOCK", () => {
+    expect(HARD_BLOCK_WARNING_SUFFIXES).toContain("_incoherente");
+    expect(isHardBlockCoherenciaWarning("poder_entidad_nit_incoherente")).toBe(true);
+    expect(isHardBlockCoherenciaWarning("poder_entidad_nombre_incoherente")).toBe(true);
+  });
+});
+```
+
+---
+
+## Fuera de alcance
+
+- No se toca `merge.ts` — los campos ya vienen mergeados.
+- No se toca UI. Los sufijos ya son HARD_BLOCK vía `_incoherente`, y `revision_manual_requerida` se activa en el edge por lógica existente que consume `HARD_BLOCK_WARNING_SUFFIXES`. UI ya renderiza el label desde `WARNING_LABELS`.
+- No se mueve `bankDirectory.ts` completo — solo se replica `normalizeBankName` en el nuevo módulo isomórfico.
+- No se altera `crossCheck.ts` (sigue haciendo inter-trámite).
+- No se altera `annotatePoderCoherencia` — se crea función hermana `annotatePoderIntraTramite`.
+- Fase 3 (backfill retroactivo sobre cancelaciones históricas) sigue en pausa.
+
+## Riesgos
+
+- **Nombres bancarios muy cortos** ("BANCO W" normaliza a "W") podrían dar falsos positivos por inclusión bidireccional. Mitigación: la Regla 2 solo corre cuando falta un NIT; el catálogo de bancos colombianos no tiene otro monoletra. Aceptable.
+- **Duplicación de `normalizeBankName`** (existe en `src/lib/bankDirectory.ts`). Aceptable: 15 líneas, pura, sin dependencias. Refactor a `_shared/isomorphic/text/` queda para cuando aparezca el segundo caller isomórfico.
+
+## Validación post-implementación
+
+1. Correr `poderBancoValidateIntraTramite.test.ts` (7/7 verde).
+2. Correr suite completa Vitest (esperado sin regresiones).
+3. Deploy explícito de `procesar-cancelacion`.
+4. Confirmar en `system_events` que aparecen eventos `procesar-cancelacion.poder.intra_tramite` cuando el escenario dispare.
