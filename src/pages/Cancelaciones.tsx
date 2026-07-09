@@ -1,12 +1,14 @@
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Eye, FileSearch, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Eye, FileSearch, Loader2, Plus } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -21,7 +23,8 @@ type CancelacionRow = {
   matricula_inmobiliaria: string | null;
   deudor_nombre: string | null;
   deudor_cedula: string | null;
-  status: "draft" | "processing" | "completed" | "error";
+  status: "draft" | "processing" | "completed" | "error" | "requiere_revision_manual";
+  revision_manual_requerida: boolean;
   created_at: string;
 };
 
@@ -56,6 +59,14 @@ const StatusBadge = ({ status }: { status: CancelacionRow["status"] }) => {
   if (status === "error") {
     return <Badge variant="destructive">Error</Badge>;
   }
+  if (status === "requiere_revision_manual") {
+    return (
+      <Badge className="gap-1.5 border border-red-300 bg-red-100 text-red-800 hover:bg-red-100">
+        <AlertTriangle className="h-3 w-3" />
+        Revisión manual bloqueante
+      </Badge>
+    );
+  }
   return (
     <Badge variant="secondary" className="text-muted-foreground">
       Borrador
@@ -63,8 +74,21 @@ const StatusBadge = ({ status }: { status: CancelacionRow["status"] }) => {
   );
 };
 
+const ManualReviewChip = () => (
+  <Badge
+    className="gap-1 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-50"
+    aria-label="Revisión manual"
+  >
+    <AlertTriangle className="h-3 w-3" />
+    Revisión manual
+  </Badge>
+);
+
+type FilterKey = "all" | "review" | "completed";
+
 const Cancelaciones = () => {
   const navigate = useNavigate();
+  const [filter, setFilter] = useState<FilterKey>("all");
 
   const { data, isLoading } = useQuery({
     queryKey: QUERY_KEY,
@@ -74,7 +98,10 @@ const Cancelaciones = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("cancelaciones")
-        .select("id, matricula_inmobiliaria, deudor_nombre, deudor_cedula, status, created_at")
+        .select(
+          "id, matricula_inmobiliaria, deudor_nombre, deudor_cedula, status, revision_manual_requerida, created_at"
+        )
+        .order("revision_manual_requerida", { ascending: false })
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CancelacionRow[];
@@ -85,7 +112,32 @@ const Cancelaciones = () => {
   const isInitialLoading = isLoading && !data;
 
   const rows = data ?? [];
-  const hasRows = rows.length > 0;
+
+  const counts = useMemo(() => {
+    const review = rows.filter(
+      (r) => r.revision_manual_requerida || r.status === "requiere_revision_manual"
+    ).length;
+    const completed = rows.filter(
+      (r) => r.status === "completed" && !r.revision_manual_requerida
+    ).length;
+    return { all: rows.length, review, completed };
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    if (filter === "review") {
+      return rows.filter(
+        (r) => r.revision_manual_requerida || r.status === "requiere_revision_manual"
+      );
+    }
+    if (filter === "completed") {
+      return rows.filter(
+        (r) => r.status === "completed" && !r.revision_manual_requerida
+      );
+    }
+    return rows;
+  }, [rows, filter]);
+
+  const hasRows = filteredRows.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -103,8 +155,15 @@ const Cancelaciones = () => {
       </header>
 
       <Card className="overflow-hidden">
-        <div className="border-b border-border px-6 py-4">
+        <div className="flex flex-col gap-3 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
+            <TabsList>
+              <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
+              <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
+              <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
         {isInitialLoading ? (
           <div data-testid="page-skeleton" className="space-y-3 p-6">
@@ -135,7 +194,7 @@ const Cancelaciones = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <TableRow
                   key={row.id}
                   className="cursor-pointer hover:bg-muted/50 transition-colors"
@@ -154,7 +213,10 @@ const Cancelaciones = () => {
                     {row.deudor_cedula || "—"}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={row.status} />
+                    <div className="flex items-center gap-1.5">
+                      <StatusBadge status={row.status} />
+                      {row.revision_manual_requerida && <ManualReviewChip />}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
                     {formatDate(row.created_at)}
