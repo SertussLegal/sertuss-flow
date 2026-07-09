@@ -38,7 +38,7 @@ export interface DedicadoFlatResult {
 }
 
 /** Marcadores literales que la IA a veces devuelve como string. Deben tratarse como ausencia real. */
-const NULLY_STRINGS = new Set([
+export const NULLY_STRINGS = new Set([
   "null", "NULL", "Null",
   "undefined", "UNDEFINED",
   "nan", "NaN", "NAN", "Nan",
@@ -49,6 +49,7 @@ const NULLY_STRINGS = new Set([
   "?", "??",
 ]);
 
+
 /** Normaliza cualquier string a string real, o undefined si es vacío/nully. */
 export function sanitizeString(raw: unknown): string | undefined {
   if (raw == null) return undefined;
@@ -58,6 +59,39 @@ export function sanitizeString(raw: unknown): string | undefined {
   if (NULLY_STRINGS.has(trimmed)) return undefined;
   return trimmed;
 }
+
+/**
+ * Cinturón de seguridad: elimina claves planas de `poder_banco` cuyo valor
+ * sea un marcador literal basura (`"null"`, `"undefined"`, `"N/A"`, etc.).
+ * Devuelve una copia — nunca muta el input. Bloques profundos v6
+ * (`apoderado`, `poderdante`, `instrumento_poder`, ...) pasan tal cual.
+ */
+const FLAT_STRING_KEYS = [
+  "apoderado_nombre",
+  "apoderado_cedula",
+  "apoderado_escritura",
+  "apoderado_fecha",
+  "apoderado_fecha_dia",
+  "apoderado_fecha_mes",
+  "apoderado_fecha_anio",
+  "apoderado_notaria_poder",
+] as const;
+
+export function stripNullyStrings<T extends Record<string, unknown> | undefined | null>(pb: T): T {
+  if (!pb || typeof pb !== "object") return pb;
+  const out: Record<string, unknown> = { ...(pb as Record<string, unknown>) };
+  for (const key of FLAT_STRING_KEYS) {
+    const raw = out[key];
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    if (!trimmed || NULLY_STRINGS.has(trimmed)) {
+      delete out[key];
+    }
+  }
+  return out as T;
+}
+
+
 
 /** Unwraps a confField `{valor, confianza}` a string plano, saneando "null"/etc. */
 export function unwrapConf(v: unknown): string | undefined {

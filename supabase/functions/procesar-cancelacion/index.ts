@@ -23,7 +23,7 @@ import {
   PODER_BANCO_TOOL_NAME,
   type PoderBancoDeepPayload,
 } from "../_shared/isomorphic/poderBancoExtractor/index.ts";
-import { sanitizeString } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
+import { sanitizeString, stripNullyStrings } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -2387,7 +2387,7 @@ if (import.meta.main) serve(async (req) => {
           { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
         );
       }
-      const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
+      const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: stripNullyStrings(finalPoder as unknown as Record<string, unknown>) } : {}) };
       const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
       const existingFinalPoder = (prevDataFinal.poder_banco ?? {}) as PoderBanco;
       // En data_final, humano gana en los flat legacy: dedicado solo rellena huecos.
@@ -2414,10 +2414,14 @@ if (import.meta.main) serve(async (req) => {
             ...(finalPoderExt?.vigencia ? { vigencia: finalPoderExt.vigencia } : {}),
           } as unknown as PoderBanco)
         : existingFinalPoder;
+      const sanitizedFinalPoder = mergedFinalPoder
+        ? (stripNullyStrings(mergedFinalPoder as unknown as Record<string, unknown>) as unknown as PoderBanco)
+        : undefined;
       const newDataFinal = {
         ...prevDataFinal,
-        ...(mergedFinalPoder && Object.values(mergedFinalPoder).some((v) => v) ? { poder_banco: mergedFinalPoder } : {}),
+        ...(sanitizedFinalPoder && Object.values(sanitizedFinalPoder).some((v) => v) ? { poder_banco: sanitizedFinalPoder } : {}),
       };
+
 
       await supabaseService.from("cancelaciones").update({
         data_ia: newDataIa,
@@ -2821,7 +2825,7 @@ if (import.meta.main) serve(async (req) => {
             mergedPoder as unknown as Record<string, unknown>,
             { orgId, cancelacionId, userId, trigger: "live_pipeline" },
           );
-          extracted.poder_banco = mergedPoder;
+          extracted.poder_banco = stripNullyStrings(mergedPoder as unknown as Record<string, unknown>) as typeof mergedPoder;
         } else if (poderUrls.length === 0) {
           // No se adjuntó poder → no debe existir el objeto.
           delete (extracted as { poder_banco?: unknown }).poder_banco;
