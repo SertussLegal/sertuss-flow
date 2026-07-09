@@ -139,4 +139,19 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     expect(screen.getByText("No hay cancelaciones que coincidan con este filtro")).toBeInTheDocument();
     expect(screen.queryByText("No hay cancelaciones registradas aún")).not.toBeInTheDocument();
   });
+
+  it("cuando status='requiere_revision_manual' y flag=true, no duplica badges (solo 'Bloqueada')", async () => {
+    setRows([
+      baseRow({
+        matricula_inmobiliaria: "MAT-NODUP",
+        status: "requiere_revision_manual",
+        revision_manual_requerida: true,
+      }),
+    ]);
+    await renderPage("MAT-NODUP");
+
+    const row = screen.getByText("MAT-NODUP").closest("tr")!;
+    expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
+    expect(within(row).queryByText("Con alertas")).not.toBeInTheDocument();
+  });
 });
