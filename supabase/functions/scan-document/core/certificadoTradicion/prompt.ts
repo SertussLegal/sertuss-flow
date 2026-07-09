@@ -37,7 +37,7 @@ Ejemplo canónico (caso real Bogotá):
     1) CALLE 59 SUR 62A-84 APT 501 TORRE 5 CONJ RESD PIMIENTOS DE MADELENA
     2) CL 59 SUR 60 84 TO 5 AP 501 (DIRECCION CATASTRAL)
   Output esperado para inmueble.direccion:
-    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
+    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
 
 3. PERSONAS: TODAS las personas y entidades que aparecen en el certificado (propietarios actuales, anteriores, acreedores hipotecarios, constructoras, bancos, etc.). Para cada una extrae: nombre completo o razón social, número de identificación (cédula o NIT), tipo de identificación (CC, NIT, CE), y lugar de expedición.
 
