@@ -1440,6 +1440,45 @@ async function annotatePoderCoherencia(
   } catch (_) { /* no bloqueante */ }
 }
 
+/** Fase 2 — Coherencia intra-trámite: valida que el banco que otorga el poder
+ *  coincida con el acreedor hipotecario extraído de la escritura/certificado
+ *  del MISMO trámite. Acumula sobre `_coherencia_warnings`/`_coherencia_suspicious`
+ *  sin sobreescribir lo que `annotatePoderCoherencia` ya escribió. */
+async function annotatePoderIntraTramite(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  merged: Record<string, unknown> | undefined | null,
+  partes: { banco_nit?: string | null; banco_acreedor?: string | null } | null | undefined,
+  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
+): Promise<void> {
+  if (!merged) return;
+  const { warnings, suspicious } = validatePoderVsCancelacion(merged, partes);
+  if (warnings.length === 0) return;
+  const prevW = Array.isArray(merged._coherencia_warnings)
+    ? (merged._coherencia_warnings as string[]).filter((s) => typeof s === "string")
+    : [];
+  const prevS = Array.isArray(merged._coherencia_suspicious)
+    ? (merged._coherencia_suspicious as string[]).filter((s) => typeof s === "string")
+    : [];
+  (merged as Record<string, unknown>)._coherencia_warnings = Array.from(new Set([...prevW, ...warnings]));
+  (merged as Record<string, unknown>)._coherencia_suspicious = Array.from(
+    new Set<string>([...prevS, ...Array.from(suspicious)]),
+  );
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: ctx.orgId,
+      tramite_id: ctx.cancelacionId,
+      user_id: ctx.userId,
+      evento: "procesar-cancelacion.poder.intra_tramite",
+      resultado: "warnings",
+      categoria: "ocr_poder_banco",
+      detalle: { trigger: ctx.trigger, warnings, suspicious: Array.from(suspicious) },
+    });
+  } catch (_) { /* no bloqueante */ }
+}
+
+
+
 /** Ejecuta el chequeo de duplicidad cruzada contra el histórico de
  *  cancelaciones de la MISMA organización. Consulta hasta 500 filas más
  *  recientes (excluyendo la actual), extrae nombre+cédula del apoderado
