@@ -137,6 +137,7 @@ const Cancelaciones = () => {
     return rows;
   }, [rows, filter]);
 
+  const hasAnyRow = rows.length > 0;
   const hasRows = filteredRows.length > 0;
 
   return (
