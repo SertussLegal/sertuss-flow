@@ -68,7 +68,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
         revision_manual_requerida: true,
       }),
     ]);
-    await renderPage();
+    await renderPage("MAT-9dc33048");
 
     const row = screen.getByText("MAT-9dc33048").closest("tr")!;
     expect(within(row).getByText("Completada")).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
         revision_manual_requerida: true,
       }),
     ]);
-    await renderPage();
+    await renderPage("MAT-9dc33048");
 
     const row = screen.getByText("MAT-BLOCK").closest("tr")!;
     expect(within(row).getByText("Revisión manual bloqueante")).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
       baseRow({ matricula_inmobiliaria: "CLEAN-DONE", status: "completed", revision_manual_requerida: false }),
       baseRow({ matricula_inmobiliaria: "CLEAN-DRAFT", status: "draft", revision_manual_requerida: false }),
     ]);
-    await renderPage();
+    await renderPage("FLAG-ON");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: /Requieren revisión/i }));
@@ -115,7 +115,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
       baseRow({ matricula_inmobiliaria: "R-DONE", status: "completed" }),
       baseRow({ matricula_inmobiliaria: "R-ERR", status: "error" }),
     ]);
-    await renderPage();
+    await renderPage("R-DRAFT");
 
     expect(within(screen.getByText("R-DRAFT").closest("tr")!).getByText("Borrador")).toBeInTheDocument();
     expect(within(screen.getByText("R-PROC").closest("tr")!).getByText("Procesando")).toBeInTheDocument();
