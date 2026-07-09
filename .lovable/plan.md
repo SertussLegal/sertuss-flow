@@ -1,87 +1,118 @@
+# Plan — Limpieza y actualización de skills (5 acciones)
 
-# Diagnóstico "null" literal en `poder_banco` — SOLO PLAN
+Solo toca skills bajo `.agents/skills/` y `mem://index.md` + un nuevo `mem://` file. Cero cambios de código de la app. Todos los skills activos viven en `.workspace/skills/` (read-only) y se editan como drafts en `.agents/skills/` + `skills--apply_draft`.
 
-## 1. Datos reales encontrados
+---
 
-Consultas ejecutadas contra `cancelaciones` (152 filas totales):
+## 1) Eliminar `convertir-numero-a-letras`
 
-| Ámbito | Ocurrencias `"null"`/`"undefined"` literales |
-|---|---|
-| Todo `data_final` de cancelaciones | **exactamente 2 filas, 2 campos c/u**: `apoderado_nombre` y `apoderado_cedula` |
-| Otros campos de `poder_banco` (escritura, fecha, notaria) | **0** |
-| Otros extractores (cédula, predial, cert. tradición, carta crédito) | **N/A**: usan shape `confField {valor, confianza}` + `unwrapConfianza`, no strings planos → no reproducen el patrón |
-| `tramites` | tabla sin columnas `data_ia`/`data_final` (modelo distinto) |
+**Verificación de referencias hecha** (`grep -rn` en `.workspace/skills/`):
 
-Filas afectadas:
+- `direccion-completa-saneada-cancelacion/SKILL.md` — NO lo referencia.
+- `limpieza-segura-codigo/SKILL.md:24` — lo menciona como ejemplo en el "Principio de Preservación Notarial" (`sanitizar-direccion`, `convertir-numero-a-letras`, etc.). Referencia **ilustrativa**, no funcional.
+- El propio archivo tiene un stub de 1 línea que redirige a `formato-texto-numero-notarial`.
+- Memoria (`mem://index.md`) no lo lista.
 
-| id | flat `apoderado_nombre`/`cedula` | Bloque profundo v6 | Motivos classifier | created_at | updated_at |
-|---|---|---|---|---|---|
-| `0443d2f1…` | `"null"` / `"null"` | ausente (v6 no corrió) | `no_apoderado_tipo_from_ocr` | 2026-07-07 21:09 | 2026-07-08 15:44 |
-| `32f5317e…` | `"null"` / `"null"` | `{tipo:null, nombre:"ANA MARIA MONTOYA ECHEVERRY", cedula:"52857443"}` | `natural_missing_poder_data` | 2026-07-07 21:55 | 2026-07-08 16:05 |
+**Acción:**
+- Borrar `.workspace/skills/convertir-numero-a-letras/` vía Settings > Skills (no se puede rm directo — reset por mensaje).
+- Editar `.agents/skills/limpieza-segura-codigo/SKILL.md` (crear draft desde `.workspace/`) para reemplazar el ejemplo por `formato-texto-numero-notarial` y `direccion-completa-saneada-cancelacion`, evitando que quede colgando un nombre inexistente.
 
-En ambas, `data_ia.poder_banco.*` y `data_final.poder_banco.*` traen el mismo `"null"` (no hubo edición humana corrigiéndolo).
+---
 
-## 2. Rastro del "null"
+## 2) Consolidar `sanitizar-direccion` → `direccion-completa-saneada-cancelacion`
 
-- **Origen**: extractor monolítico (Gemini) devolvió el string `"null"` a pesar de la instrucción "OMITE el campo si es ilegible". Confirmado porque `data_ia` (crudo tras merge) ya lo tenía.
-- **Guard central existente**: `sanitizeString()` en `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts`, `NULLY_STRINGS` incluye ya `"null"`, `"NULL"`, `"Null"`, `"undefined"/"UNDEFINED"`, `"nan"/"NaN"/"NAN"/"Nan"`, `"n/a"/"N/A"/"N/a"`, `"na"/"NA"`, `"none"/"NONE"/"None"`, `"---"/"--"/"-"`, `"?"/"??"`, vacíos. **`sanitizeString("null") → undefined` ya funciona.**
-- **Sitios que la aplican en `procesar-cancelacion`**: líneas 1089-1096 (`buildDocxVars`), 1391 (`pick` interno de `mergePoderBancoFlat`), 2401-2405 (merge de `data_final` con humano).
+**Comparación de contenido (ambos leídos completos):**
 
-### Por qué escapó en estas 2 filas: **son datos legacy pre-guard**
+| Bloque | `sanitizar-direccion` | `direccion-completa-saneada-cancelacion` | ¿Único de sanitizar? |
+|---|---|---|---|
+| Trigger `buildDocxVars` | ✅ | ✅ (Fase A) | no |
+| Regex catastral con `\(?…\)?` | ✅ | ✅ idéntica | no |
+| Regex `Y\/?O` + `DIRECCI[OÓ]N` | ✅ | ✅ idéntica | no |
+| Colapso espacios + MAYÚSCULAS | ✅ | ✅ | no |
+| Función `execute({nomenclatura_predio, ciudad})` | ✅ (contrato viejo, 1-fase, sin `esBogota`) | ❌ — el nuevo usa Fase A pura + Fase B con `esBogota`/departamento | **sí (obsoleto)** |
+| Tabla de tests | ✅ 5 filas | ✅ 6 filas (incluye Bogotá + Villeta) | no |
+| Anti-ejemplos regex | ✅ 4 | ✅ 6 (incluye GUION vs `-`) | no |
+| Regla GUION → `-` | ❌ | ✅ | — |
+| Regla municipio ≠ Bogotá | ❌ | ✅ | — |
 
-Historial git de `poderBancoExtractor/merge.ts`:
+**Conclusión:** `sanitizar-direccion` es un subconjunto estricto del actual (que ya lo declara así en su description: "Incluye el sub-paso de limpieza regex de la nomenclatura urbana (antes `sanitizar-direccion`)"). No hay información única a rescatar salvo el nombre del contrato viejo `execute({nomenclatura_predio, ciudad})`, que ya está superado por el pipeline de 2 fases.
 
-```
-6966599  2026-07-07 22:20:16 UTC  (introduce NULLY_STRINGS + sanitizeString)
-```
+**Acción:**
+- Nombre canónico que se queda: **`direccion-completa-saneada-cancelacion`** (más completo, más reciente, ya incluye la nota "antes `sanitizar-direccion`").
+- Añadir al final una sección `## Historial` de 2 líneas: "Este skill absorbió a `sanitizar-direccion` (2026-07). El contrato viejo `execute({nomenclatura_predio, ciudad})` está superado por el pipeline Fase A + Fase B descrito arriba."
+- Borrar `.workspace/skills/sanitizar-direccion/` vía Settings > Skills.
+- Editar `limpieza-segura-codigo` (mismo draft del paso 1) para retirar la referencia a `sanitizar-direccion`.
 
-Ambas filas se **crearon antes** (21:09 y 21:55 UTC). No es un bug activo en el código actual: es contaminación histórica de ~30-90 min de ventana. Las corridas posteriores (`system_events` "procesar-cancelacion.poder" con `resultado=exito` para trámites hermanos) ya pasan por el guard.
+---
 
-### Riesgo residual (real, aunque no reprodujo aquí)
+## 3) Actualizar `validar-poder-general-banco`
 
-En `mergePoderBancoV6`, la ruta "V6-wins override" está guardada por `cls.tipoEfectivo !== null`. Cuando el classifier degrada `tipoEfectivo` a `null` (caso `32f5317e…`, motivo `natural_missing_poder_data`), el override NO corre y el fallback legacy tampoco (guarda por `apoderadoOut?.tipo === "natural"|"juridica"`, y en degradación `tipo` queda `null`). Hoy `finalFlat.apoderado_nombre` queda `undefined` (sanitizado) y al serializar cae al `nullGetter → "___________"`, pero **se pierde info real del bloque profundo v6** (nombre/cedula que sí extrajo). No es el bug del ticket, pero es contiguo.
+**Estado actual:** un solo bloque `execute()` con regex de facultades. **No menciona** NO_LEGIBLE, hard-block de generación, badges de revisión manual, ni `stripNullyStrings`.
 
-## 3. Otros extractores
+**Acción:** reescribir como skill de referencia (no solo de trigger), agregando estas secciones con rutas a los archivos reales:
 
-- `cedula`, `predial`, `certificadoTradicion`, `cartaCredito`, `escrituraAntecedente`: emiten `confField` `{valor, confianza}`. El único punto de conversión a string plano es `unwrapConf()` en `merge.ts`, que ya delega en `sanitizeString`. No hay otros paths que salten el guard.
-- `reconcileData.ts` (frontend): ya usa `sanitizeString`; test `sanitizeNullPattern.test.ts` cubre `avaluo_catastral`, `estrato`, `area`, `direccion`.
-- Prompts de `procesar-cancelacion` ya instruyen "OMITE el campo si es ilegible (NO devuelvas la cadena \"null\")" en las 8+ ocurrencias que valida el test `sanitizeNullPattern.test.ts`.
+- **Sección "Validación de facultades" (lo actual, se conserva).**
+- **Sección "Hard-block NO_LEGIBLE en generación"** — describe el flujo: `detectRequiereRevisionManual` + `ManualReviewRequiredError` en `supabase/functions/procesar-cancelacion/index.ts`; disparado desde `action: "regen"` y `action: "confirm_manual_review"`. Tests: `procesar-cancelacion/index_manualReview_test.ts` (7 casos, 6 paths críticos + coherencia_warnings). Efecto en UI: `PoderBannersV5.tsx` / badges de revisión manual.
+- **Sección "Regla 5 — coherencia intra-documento RL"** — `menciones_rl` en `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts`. Tests: `src/shared/poderBancoValidateMencionesRL.test.ts`.
+- **Sección "`stripNullyStrings` — cinturón anti-`"null"` literal"** — `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts` (FLAT_STRING_KEYS + NULLY_STRINGS exportados). Tests: `src/shared/sanitizeNullPattern.test.ts`. Justificación: incidente real filas `32f5317e` / `0443d2f1`.
+- **Anti-ejemplos:** no reintroducir el bloque `apoderadoValido: false` como si fuera bloqueante — hoy la señal fuerte es `_coherencia_warnings` + `NO_LEGIBLE`, no la regex de facultades.
 
-**Conclusión: problema aislado a `cancelaciones.poder_banco` legacy, no sistémico.**
+---
 
-## 4. Fix propuesto (3 partes, orden de riesgo creciente)
+## 4) Actualizar `verificar-consistencia-notarial`
 
-### 4.1. Limpieza de datos histórica (obligatorio — resuelve el ticket)
+**Estado actual:** solo cruce escritura↔certificado por número. **No menciona** poder↔acreedor.
 
-Migración de datos idempotente que, sobre `cancelaciones`, para cada key `apoderado_nombre|apoderado_cedula|apoderado_escritura|apoderado_fecha|apoderado_notaria_poder` dentro de `data_ia.poder_banco` y `data_final.poder_banco`, elimina el key si su valor (tras `trim` + `lower`) está en el set `NULLY_STRINGS`. Un `UPDATE` con `jsonb #- '{poder_banco,apoderado_nombre}'` condicionado por `->>` matching. **Solo cancelaciones cuyo `data_ia/data_final` contenga literales basura**; no toca las 150 filas limpias. Barrer las 2 conocidas + cualquier otra que aparezca.
+**Acción:** agregar sección **"Coherencia intra-trámite: poder ↔ acreedor real"**:
 
-### 4.2. Cinturón de seguridad al escribir (defensivo — bajo riesgo)
+- Fuente: `supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts` (`validatePoderVsCancelacion`).
+- Regla 1 (primaria): NIT poderdante vs NIT acreedor (normalización solo dígitos). Si ambos NITs están, cualquier ruido textual del nombre se ignora.
+- Regla 2 (respaldo, solo si falta al menos un NIT): fuzzy de nombres bancarios normalizados (portado defensivamente desde `bankDirectory.ts` porque no es importable desde edges).
+- Warnings emitidos: `poder_entidad_nit_incoherente` (HARD_BLOCK), `poder_entidad_nombre_incoherente` (HARD_BLOCK).
+- Tests: `src/shared/poderBancoValidateIntraTramite.test.ts`.
+- Anti-ejemplo: no aplicar la regla 2 cuando ambos NITs están presentes (produce falsos positivos por variaciones legales del nombre).
 
-En `procesar-cancelacion/index.ts`, en el sitio único que hace `.update({data_ia: newDataIa, data_final: newDataFinal})` (path `reprocess_poder`) y en el path principal donde `mergedPoder` se asigna a `extracted.poder_banco`, envolver el objeto `poder_banco` en una función `stripNullyStrings(pb)` que recorra las claves conocidas y borre las que caigan en `NULLY_STRINGS`. Así, si un día un extractor futuro (o un cambio en Gemini) vuelve a filtrar el patrón, la BD nunca lo persiste. Reutiliza el `NULLY_STRINGS` existente exportándolo desde `merge.ts` (no duplicar la lista).
+---
 
-### 4.3. Test de regresión (mismo estilo que `sanitizeNullPattern.test.ts`)
+## 5) Nueva memoria: `mem://tech/blindaje-poder-bancario`
 
-Añadir a `src/shared/sanitizeNullPattern.test.ts` un bloque `describe("cancelaciones.poder_banco: nunca persiste 'null' literal")` que:
-- Simule un `pb` con `{apoderado_nombre: "null", apoderado_cedula: "NULL", apoderado_escritura: "  null  "}` pasando por la función `stripNullyStrings` del punto 4.2 → resultado sin esas claves.
-- Verifique que `mergePoderBancoV6` con `apoderadoOut.tipo === null` y bloque profundo v6 real ya no deja `finalFlat.apoderado_nombre` como `"null"` (regresión del caso `32f5317e…`).
+**Tipo:** `reference` — decisión arquitectónica, no procedimiento paso a paso.
 
-### 4.4. Fuera de alcance (para tickets separados, mencionar pero no implementar aquí)
+**Contenido propuesto (borrador para tu revisión antes de aplicarlo):**
 
-- **B2 relacionado**: extender la ruta V6-wins de `mergePoderBancoV6` para que, cuando `tipoEfectivo === null` PERO `apoderadoOut.nombre`/`cedula` estén presentes en el bloque profundo, se usen como fallback en `finalFlat`. Recupera info real de `32f5317e…` (ANA MARIA MONTOYA) que hoy se pierde. **No lo tocamos aquí porque cambia lógica de classifier, no es "arreglar el `null` literal".**
-- **Ampliar `NULLY_STRINGS`**: **no es necesario**. El set actual ya cubre todos los casos observados en la BD. Añadir más variantes sin evidencia real solo genera falsos positivos.
+- **Problema original (2026-07):**
+  - Render en blanco del PDF del poder (worker WASM del pdf.js roto en producción).
+  - Alucinación de `apoderado_cedula` "41525143" cuando la imagen era ilegible.
+  - Literal `"null"` colándose en `data_ia`/`data_final` (filas `32f5317e`, `0443d2f1`).
 
-## 5. Verificación post-fix
+- **5 capas de defensa construidas (en orden de ejecución):**
+  1. **wasmUrl → PNG binarizado** (`src/lib/pdfToImages.ts`): worker robusto + fallback binarización para OCR limpio antes de Gemini.
+  2. **Hard-block `NO_LEGIBLE`** (`procesar-cancelacion/index.ts` + `index_manualReview_test.ts`): 6 paths críticos + `_coherencia_warnings` con sufijo hard-block ⇒ `ManualReviewRequiredError` antes de tocar `storage.upload`.
+  3. **Regla 5 — coherencia intra-documento RL** (`_shared/isomorphic/poderBancoExtractor/validate.ts` + `menciones_rl`): valida que el RL mencionado calce con el firmante del poder.
+  4. **Coherencia intra-trámite** (`_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts`): poderdante del poder = acreedor real del certificado/escritura antecedente (NIT primario, nombre fuzzy solo si falta NIT).
+  5. **`stripNullyStrings` + `NULLY_STRINGS` exportados** (`_shared/isomorphic/poderBancoExtractor/merge.ts`): cinturón final que borra literales `"null"/"undefined"/"N/A"/…` de los 8 campos planos legacy antes de `buildDocxVars`.
 
-1. `SELECT count(*) FROM cancelaciones ... WHERE value ILIKE 'null'` debe dar **0** tras 4.1.
-2. Vitest suite completa: `sanitizeNullPattern.test.ts` con nuevos casos verdes; resto sin regresión.
-3. Deno tests de `procesar-cancelacion/*_test.ts` verdes.
-4. Confirmar en las 2 filas afectadas que abriendo `CancelacionValidar` los inputs "Nombre apoderado" y "Cédula" aparecen vacíos (no con la palabra "null"), quedando editables y con badge rojo `cancelacionCriticalFields` señalando el faltante.
+- **Referencias:**
+  - Skills `validar-poder-general-banco` y `verificar-consistencia-notarial` (actualizados en esta misma sesión).
+  - Tests en `src/shared/poderBanco*.test.ts` y `procesar-cancelacion/index_manualReview_test.ts`.
 
-## 6. Archivos que se tocarían (referencia, no ejecutar)
+- **Actualizar `mem://index.md`:** añadir bajo "Memories":
+  `- [Blindaje Poder Bancario](mem://tech/blindaje-poder-bancario) — 5 capas: wasmUrl/PNG, NO_LEGIBLE hard-block, Regla 5, intra-trámite, stripNullyStrings`
 
-- `supabase/migrations/<nuevo>_cleanup_poder_banco_null_literal.sql` (4.1)
-- `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts` (exportar `NULLY_STRINGS` + añadir `stripNullyStrings(pb)`)
-- `supabase/functions/procesar-cancelacion/index.ts` (2 sitios: aplicar `stripNullyStrings` al `poder_banco` antes de escribir a BD)
-- `src/shared/sanitizeNullPattern.test.ts` (nuevo `describe`)
+---
 
-Sin cambios en frontend, `PoderViewerTab`, `PoderBannersV5`, ni schema de `credit_prices`.
+## Orden de ejecución en build mode
+
+1. Escribir los drafts en `.agents/skills/` (paralelo):
+   - `direccion-completa-saneada-cancelacion/SKILL.md` (+ nota histórica)
+   - `validar-poder-general-banco/SKILL.md` (reescrito)
+   - `verificar-consistencia-notarial/SKILL.md` (nueva sección)
+   - `limpieza-segura-codigo/SKILL.md` (retirar refs muertas)
+2. `skills--apply_draft` para cada uno (paralelo).
+3. Escribir `mem://tech/blindaje-poder-bancario` + actualizar `mem://index.md` (paralelo).
+4. Reportar al usuario que `convertir-numero-a-letras` y `sanitizar-direccion` deben eliminarse manualmente desde **Settings > Skills** (los skills activos no son borrables desde tool — solo desactivables por el usuario).
+
+## Riesgos / decisiones abiertas
+
+- **No puedo borrar skills activos** desde tool: paso 1 y 2 dejan el skill obsoleto vacío hasta que el usuario los elimine desde Settings > Skills. Alternativa: reducir el body del obsoleto a un stub tipo "DEPRECADO — usar X" (igual que hoy hace `convertir-numero-a-letras`). ¿Prefieres que dejemos el stub o esperamos a que los borres tú?
+- El paso 3 cambia la naturaleza del skill (de "trigger con execute" a "referencia con múltiples secciones"). ¿OK cambiar el estilo, o prefieres mantenerlo como skill de trigger y crear otro separado tipo `blindaje-poder-runtime`?
