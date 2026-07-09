@@ -2364,6 +2364,15 @@ if (import.meta.main) serve(async (req) => {
           finalPoder as unknown as Record<string, unknown>,
           { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
         );
+        await annotatePoderIntraTramite(
+          supabaseService,
+          finalPoder as unknown as Record<string, unknown>,
+          {
+            banco_nit: (cancRow as Record<string, unknown>).banco_nit as string | null | undefined,
+            banco_acreedor: (cancRow as Record<string, unknown>).banco_acreedor as string | null | undefined,
+          },
+          { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
+        );
         await runPoderCrossChecks(
           supabaseService,
           finalPoder as unknown as Record<string, unknown>,
@@ -2788,6 +2797,15 @@ if (import.meta.main) serve(async (req) => {
           await annotatePoderCoherencia(
             supabaseService,
             mergedPoder as unknown as Record<string, unknown>,
+            { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+          );
+          await annotatePoderIntraTramite(
+            supabaseService,
+            mergedPoder as unknown as Record<string, unknown>,
+            {
+              banco_nit: extracted.partes?.banco_nit,
+              banco_acreedor: extracted.partes?.banco_acreedor,
+            },
             { orgId, cancelacionId, userId, trigger: "live_pipeline" },
           );
           await runPoderCrossChecks(
