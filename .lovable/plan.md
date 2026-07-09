@@ -1,120 +1,167 @@
-# Fix A11 — `certificadoTradicion/prompt.ts` contradice al tool schema con la palabra "GUION"
+# Fix B/UI-1 — Visibilidad de `revision_manual_requerida` en listado Cancelaciones
 
-## 1. Texto actual (4 líneas problemáticas)
+## 1. Diagnóstico del terreno
 
-Archivo: `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts`
+### 1.1 Datos reales (evidencia cruda)
 
-- **L22** (regla b, formato de placa):
-  ```
-  - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
-  ```
-- **L26** (ejemplo blindaje alfanumérico):
-  ```
-  - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
-  ```
-- **L27** (ejemplo blindaje alfanumérico):
-  ```
-  - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
-  ```
-- **L40** (ejemplo canónico Bogotá):
-  ```
-  "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
-  ```
+`SELECT id, status, revision_manual_requerida` filtrando por casos "sucios":
 
-Contradicen a `tool.ts:32` (regla oficial): *"SEPARADOR DE PLACA: se conserva como el SÍMBOLO '-' (guion ASCII rodeado de espacios), NUNCA se verbaliza como la palabra 'GUION'"*. También contradicen a `procesar-cancelacion/index.ts:327,330,333` que ya usan el símbolo "-".
+| id | status | revision_manual_requerida |
+|---|---|---|
+| `9dc33048…` | `completed` | `true` ← el caso de hoy |
+| `32f5317e…` | `completed` | `true` |
+| `2bef1db3…` | `requiere_revision_manual` | `true` |
+| `748f3220…` | `requiere_revision_manual` | `true` |
+| … 10 filas en total | mezcla | siempre `true` |
 
-## 2. Diff propuesto
+**Hallazgo clave:** el flag `revision_manual_requerida` y el status `'requiere_revision_manual'` son **dos señales independientes** que pueden coexistir o divergir:
 
-Un solo archivo modificado: `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts`
+- `status='requiere_revision_manual'` → bloqueo transitorio, se cambia a `completed` cuando el humano hace `confirm_manual_review`.
+- `revision_manual_requerida=true` → **persistente**, sobrevive al confirm. Marca el trámite como "hubo un warning que un humano revisó".
 
+Hoy `9dc33048` (`completed` + flag=true) se pinta como **"Completada" verde** — nada indica que hubo revisión manual. Los que están en `'requiere_revision_manual'` caen al `else` del `StatusBadge` (L61-65 de `Cancelaciones.tsx`) y se pintan como **"Borrador" gris** — indistinguibles de un draft normal. Los dos casos están mal.
+
+### 1.2 Terreno actual de `src/pages/Cancelaciones.tsx`
+
+- **`CancelacionRow`** (L18-25): `status: "draft" | "processing" | "completed" | "error"` — falta `'requiere_revision_manual'` y falta la columna booleana.
+- **`select`** (L77): no trae `revision_manual_requerida` ni acepta el status nuevo.
+- **`StatusBadge`** (L37-67): `if status==='processing'|'completed'|'error'` → fallback gris "Borrador". El nuevo status cae al fallback.
+- **Filtros/tabs/orden:** **no existen** en este archivo. El Dashboard de Escrituras sí tiene `<Select filterStatus>` reusable como patrón conceptual, pero aquí no hay nada instalado.
+- **Navegación:** `onClick` de fila → `/cancelaciones/:id/validar`. Ya funciona.
+
+### 1.3 Sidebar y patrón de badge de conteo
+
+Revisé `AppSidebar.tsx` completo. **No existe** un patrón de badge numérico en items del menú. El "46" que se veía en capturas viene del `credit_balance` del org switcher del footer (L162, L286), no de un ítem de navegación. Introducir un badge de conteo en el sidebar sería inventar un patrón nuevo → **fuera de alcance para hoy**, mejor mantenerlo dentro de `/cancelaciones`.
+
+### 1.4 Dashboard como candidato de resumen
+
+`src/pages/Dashboard.tsx` es el listado de **Escrituras**, no un dashboard de resumen cross-módulo. No hay ningún widget de cancelaciones ahí hoy. Meter un contador ahí sería mezclar dominios → **fuera de alcance**.
+
+### 1.5 Otros flags booleanos en la tabla
+
+Revisado el schema de `cancelaciones` (32 columnas). El único booleano de "atención requerida" hoy es `revision_manual_requerida`. No hay `requiere_ajuste_manual`, ni `poder_defectuoso`, ni similares. **No hay que generalizar** — sobreingeniería para un solo flag. Diseño 1:1.
+
+### 1.6 Tests existentes de `Cancelaciones.tsx`
+
+`ls src/pages/__tests__` no existe y no hay `.test.` para esta página. Cero cobertura previa. Puedo agregar tests nuevos sin romper nada.
+
+---
+
+## 2. Diseño propuesto
+
+**Principio:** dos señales visuales, misma prioridad visual — un badge de status (el actual) + un chip inline "Revisión manual" cuando el flag está activo. El chip **sobrevive** aunque el status haya avanzado a `completed`.
+
+### 2.1 Estados visuales
+
+| status \ flag | flag=false | flag=true |
+|---|---|---|
+| `draft` | gris "Borrador" | gris "Borrador" + chip ámbar 🚩 "Revisión manual" |
+| `processing` | ámbar animado "Procesando" | mismo + chip |
+| `completed` | verde "Completada" | verde "Completada" + chip |
+| `error` | rojo "Error" | rojo "Error" + chip |
+| `requiere_revision_manual` | **NUEVO:** rojo "Revisión manual bloqueante" | mismo (los dos suelen ir juntos) |
+
+El chip usa `bg-amber-50 border-amber-300 text-amber-900` con icono `AlertTriangle` — distinto del "Procesando" ámbar+spinner y del "Borrador" gris.
+
+### 2.2 Filtro por Tabs (no Select)
+
+Tres tabs sobre la tabla, sin dropdown — patrón más ligero y ya usado en Admin:
+- **Todas** (default, N)
+- **Requieren revisión** (M) — filtra `revision_manual_requerida=true OR status='requiere_revision_manual'`
+- **Completadas** (K) — `status='completed' AND revision_manual_requerida=false`
+
+Los conteos se calculan en cliente sobre `rows` ya cargadas (todo cabe en un `select` — la lista total de una notaría ronda las decenas, no miles).
+
+### 2.3 Orden
+
+Añadir orden secundario: filas con `revision_manual_requerida=true` **primero**, luego por `updated_at desc`. Así aparecen arriba del todo sin necesidad de filtrar.
+
+```sql
+ORDER BY revision_manual_requerida DESC, created_at DESC
+```
+
+---
+
+## 3. Diff propuesto
+
+### 3.1 `src/pages/Cancelaciones.tsx`
+
+**Tipo (L18-25):**
 ```diff
-@@ L22
--   - Placa: literal "NÚMERO" + primer número en letras + "GUION" + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
-+   - Placa: literal "NÚMERO" + primer número en letras + " - " (SÍMBOLO GUION ASCII rodeado de espacios, NUNCA la palabra "GUION") + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
-@@ L26-27
--   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B GUION VEINTIUNO (62A No. 53B-21)".
--   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO GUION TREINTA Y DOS (13 BIS No. 85-32)".
-+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)".
-+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (13 BIS No. 85-32)".
-@@ L28 (misma zona, ya prohíbe "ALFA/BETA/…"; se refuerza)
--   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA" o "DOBLE": la letra/sufijo se transcribe literal en mayúscula.
-+   PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA", "DOBLE" o "GUION": la letra/sufijo se transcribe literal en mayúscula y el separador de placa es el símbolo "-".
-@@ L40
--    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA GUION OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
-+    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84) TORRE CINCO (5) APARTAMENTO QUINIENTOS UNO (501)"
+ type CancelacionRow = {
+   id: string;
+   matricula_inmobiliaria: string | null;
+   deudor_nombre: string | null;
+   deudor_cedula: string | null;
+-  status: "draft" | "processing" | "completed" | "error";
++  status: "draft" | "processing" | "completed" | "error" | "requiere_revision_manual";
++  revision_manual_requerida: boolean;
+   created_at: string;
+ };
 ```
 
-La edición extra en L28 replica el patrón ya presente en `procesar-cancelacion/index.ts:333` — hace explícito que "GUION" también es palabra prohibida, no solo omisión de ejemplo. Es 1 línea adicional dentro del mismo módulo, mismo alcance.
-
-## 3. Riesgo de tests existentes
-
-Búsqueda global (`rg "GUION|certificadoTradicionPrompt"` en `supabase/` y `src/`, filtrando archivos test):
-
-- **No existe ningún test de `certificadoTradicion`** (prompt, tool o handler). Cero cobertura previa.
-- Único match: `supabase/functions/procesar-cancelacion/index_test.ts:134` — `assertStringIncludes(SRC, "GUION")` donde `SRC = readTextFile("./index.ts")` de `procesar-cancelacion`, **no** del prompt de scan-document. Ese `index.ts` sigue conteniendo la palabra "GUION" en frases prohibitivas ("NUNCA la palabra 'GUION'", "PROHIBIDO … 'GUION'"). El test sigue verde. **Sin impacto.**
-
-Conclusión: **cero regresiones esperadas** por la edición del prompt.
-
-## 4. Test de regresión nuevo
-
-Archivo nuevo: `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts`
-
-Objetivo: garantizar que ningún futuro cambio reintroduzca "GUION" como instrucción, y que el símbolo "-" siga siendo el separador oficial.
-
-```ts
-import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { certificadoTradicionPrompt } from "./prompt.ts";
-
-Deno.test("A11: prompt NO contiene la palabra 'GUION' como instrucción de formato", () => {
-  // Solo se permite la palabra en contextos prohibitivos explícitos
-  // ("NUNCA la palabra 'GUION'", "PROHIBIDO … 'GUION'"). Cualquier otro
-  // uso indica regresión al ejemplo antiguo.
-  const matches = certificadoTradicionPrompt.match(/GUION/g) ?? [];
-  const contextos = certificadoTradicionPrompt.split(/\n/).filter((l) => l.includes("GUION"));
-  for (const linea of contextos) {
-    const esProhibitivo = /NUNCA.*['"]GUION['"]|PROHIBIDO.*['"]GUION['"]/.test(linea);
-    if (!esProhibitivo) {
-      throw new Error(`Regresión A11: 'GUION' aparece como instrucción, no como prohibición → ${linea}`);
-    }
-  }
-  // Al menos una ocurrencia prohibitiva debe existir (documenta la regla).
-  if (matches.length === 0) {
-    throw new Error("Se espera que la prohibición explícita mencione 'GUION' al menos una vez.");
-  }
-});
-
-Deno.test("A11: prompt usa el símbolo '-' como separador de placa en los ejemplos", () => {
-  assertStringIncludes(
-    certificadoTradicionPrompt,
-    "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO",
-  );
-});
-
-Deno.test("A11: prompt sigue alineado con tool.ts (regla de separador)", async () => {
-  const toolSrc = await Deno.readTextFile(new URL("./tool.ts", import.meta.url));
-  assertStringIncludes(toolSrc, "NUNCA se verbaliza como la palabra 'GUION'");
-});
+**Select (L77):**
+```diff
+-        .select("id, matricula_inmobiliaria, deudor_nombre, deudor_cedula, status, created_at")
+-        .order("created_at", { ascending: false });
++        .select("id, matricula_inmobiliaria, deudor_nombre, deudor_cedula, status, revision_manual_requerida, created_at")
++        .order("revision_manual_requerida", { ascending: false })
++        .order("created_at", { ascending: false });
 ```
 
-## 5. Alcance del cambio
+**`StatusBadge` (L37-67):** añadir caso `'requiere_revision_manual'` (rojo con icono `AlertTriangle`). Sin tocar los demás.
 
-**Modificado (1):**
-- `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts` — 4 líneas de ejemplo + 1 refuerzo en L28.
+**Nuevo `ManualReviewChip`:** chip ámbar independiente que se renderiza junto al `StatusBadge` cuando `row.revision_manual_requerida === true`.
 
-**Nuevo (1):**
-- `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` — 3 tests Deno.
+**Nueva sección de filtros:** `<Tabs>` shadcn arriba del `<Table>` con los 3 tabs y conteos. Filtra `rows` en memoria antes de mapear.
 
-**No se toca:** `tool.ts`, `handler.ts`, `index.ts` de scan-document, ni `procesar-cancelacion/index.ts` (ya correcto).
+**Celda status (columna existente):**
+```diff
+-<TableCell><StatusBadge status={row.status} /></TableCell>
++<TableCell>
++  <div className="flex items-center gap-1.5">
++    <StatusBadge status={row.status} />
++    {row.revision_manual_requerida && <ManualReviewChip />}
++  </div>
++</TableCell>
+```
 
-## 6. Criterios de aceptación
+Todo lo demás del archivo (skeleton, empty state, navegación, botón "Abrir") **queda igual**.
 
-- [ ] Los 4 ejemplos del prompt usan " - " en vez de " GUION ".
-- [ ] La palabra "GUION" solo aparece en frases prohibitivas.
-- [ ] `deno test supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` verde.
-- [ ] Suite completo (Deno + Vitest) sin regresiones — en particular `procesar-cancelacion/index_test.ts:134` sigue verde.
+### 3.2 Nuevo `src/pages/Cancelaciones.test.tsx`
 
-## 7. Fuera de alcance
+Tests con Vitest + Testing Library. Cuatro casos:
 
-- No re-generar certificados históricos ya extraídos.
-- No tocar la lógica de red de seguridad en `procesar-cancelacion/index.ts:901` (ya normaliza si el modelo emite "GUION" pese al prompt).
-- No modificar prompts de otros extractores (poderBanco, predial, cartaCredito) — este audit es específico a certificadoTradicion.
+1. **Fila con `revision_manual_requerida=true` muestra chip "Revisión manual"** aunque status sea `completed`. Regresión directa del hallazgo `9dc33048`.
+2. **Status `'requiere_revision_manual'` renderiza badge rojo distintivo** — no cae al fallback gris "Borrador".
+3. **Tab "Requieren revisión" filtra correctamente** — solo muestra filas con flag=true o status bloqueante; ocultan las demás.
+4. **Los estados existentes (`draft/processing/completed/error`) sin flag siguen renderizando su badge original** — protección anti-regresión de los 4 estados que ya funcionaban.
+
+### 3.3 No se toca
+
+- `AppSidebar.tsx` (no hay patrón de badge de menú).
+- `Dashboard.tsx` (dominio distinto).
+- `CancelacionValidar.tsx` (la vista detalle ya muestra el banner del poder).
+- `PoderBannersV5.tsx` (ya lee `manualReviewPending`).
+- Backend: cero cambios. El flag ya se persiste correctamente en `procesar-cancelacion/index.ts` L2953-2958.
+- Migraciones: cero.
+
+---
+
+## 4. Criterios de aceptación
+
+- [ ] `9dc33048` (completed + flag) aparece con badge verde "Completada" **y** chip ámbar "Revisión manual" a su lado en el listado.
+- [ ] Filas con `status='requiere_revision_manual'` se pintan con badge rojo, no gris "Borrador".
+- [ ] Filas con flag=true aparecen ordenadas **primero** en la tabla.
+- [ ] Tab "Requieren revisión" muestra el conteo real y filtra correctamente.
+- [ ] Los 4 estados originales siguen pintándose igual que hoy cuando el flag es false.
+- [ ] Vitest 220 → 224 (o similar, con 4 tests nuevos verdes). Deno sin cambios (66/66).
+- [ ] `tsgo` sin errores por el tipo ampliado.
+
+## 5. Fuera de alcance (explícito)
+
+- Badge numérico en sidebar (no hay patrón previo — sería inventar).
+- Widget cross-módulo en Dashboard (mezcla dominios).
+- Generalizar a otros flags (solo existe uno hoy).
+- Notificación email / toast automático cuando aparece un caso nuevo.
+- Reordenar la sección "Historial" en función del flag para escrituras (`tramites` no tiene este flag).
