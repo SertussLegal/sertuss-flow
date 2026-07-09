@@ -6,7 +6,7 @@ Deno.test("A8: monto sin M/CTE se re-normaliza (caso d1d90c54)", () => {
   const out = montoProsaProtocolo(input);
   assertEquals(
     out,
-    "OCHO MILLONES OCHOCIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS M/CTE ($8.858.475)",
+    "OCHO MILLONES OCHOCIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO DE PESOS M/CTE ($8.858.475)",
   );
 });
 
@@ -15,7 +15,7 @@ Deno.test("A8: monto sin M/CTE (caso 4b05d210)", () => {
   const out = montoProsaProtocolo(input);
   assertEquals(
     out,
-    "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS M/CTE ($8.558.475)",
+    "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO DE PESOS M/CTE ($8.558.475)",
   );
 });
 
@@ -23,7 +23,7 @@ Deno.test("A8: monto sin M/CTE (caso d7193993)", () => {
   const input = "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)";
   assertEquals(
     montoProsaProtocolo(input),
-    "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)",
+    "CINCUENTA Y DOS MILLONES QUINIENTOS MIL DE PESOS M/CTE ($52.500.000)",
   );
 });
 
