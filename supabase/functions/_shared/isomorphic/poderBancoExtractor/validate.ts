@@ -75,6 +75,7 @@ export const HARD_BLOCK_WARNING_SUFFIXES = [
   "_incoherente",
   "_placeholder",
   "_duplicidad_cruzada",
+  "_menciones_incoherentes",
 ] as const;
 
 export function isHardBlockCoherenciaWarning(w: string | undefined | null): boolean {
