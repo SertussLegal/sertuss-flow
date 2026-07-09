@@ -1,158 +1,67 @@
-# Plan Final — Fase 1: Coherencia intra-documento del RL del banco (poder bancario)
+# Diagnóstico: coherencia intra-trámite entre poder, escritura y certificado
 
-## Alcance de este ciclo
+**Solo investigación — no se cambia código.** Este es el terreno actual y una propuesta de dónde debería vivir el chequeo si se decide construirlo.
 
-**SÍ se construye ahora:**
-- Extracción redundante del RL del banco: array `poderdante.menciones_rl[]` con las apariciones independientes dentro del MISMO PDF (cuerpo del poder, firma, certificado Superfinanciera).
-- Regla determinista 5 en `validate.ts` que dispara `rl_banco_menciones_incoherentes` cuando ≥2 menciones tienen cédula normalizada distinta.
-- El warning entra a `HARD_BLOCK_WARNING_SUFFIXES` → fuerza `revision_manual_requerida = true` en el edge (comportamiento ya cableado).
-- Tests de regresión cubriendo: caso real (79392406 vs 79382406), menciones consistentes (no dispara), 1 sola mención (no dispara), variantes de formato con puntos/espacios (normaliza antes de comparar).
+---
 
-**NO se construye ahora (documentado como siguiente candidato):**
-- **Fase 2** (segunda pasada dedicada al Certificado Superfinanciera): diseño queda en el plan, decisión post-datos reales de Fase 1. Alejandra confirmó que el certificado SIEMPRE viene dentro del mismo PDF → cuando se construya reutiliza `poderUrls` sin fuente adicional.
-- **Fase 3** (backfill retroactivo): pospuesta sin ventana. **Nota crítica**: no es gratis — las cancelaciones históricas no tienen `menciones_rl[]`, así que retroactivo implica **volver a llamar a Gemini** por cada poder histórico (costo real de OCR × N), no solo re-correr una regla sobre datos ya guardados. Ventana (14/30/90 días) se decide después de medir tasa de disparo real en producción.
+## 1. ¿Existe hoy el cruce entidad-otorgante del poder ↔ acreedor hipotecario?
 
-## Diff propuesto — Fase 1
+**No. En ningún archivo.**
 
-### 1. `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts`
+`validate.ts` (`supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts:137-277`) ejecuta 5 reglas — todas sobre el `poder_banco` mergeado **en aislamiento**. Su firma es `validatePoderBancoCoherencia(merged)` y solo recibe el objeto poder; nunca ve `partes.banco_nit`, `partes.banco_acreedor` ni datos de la escritura/certificado.
 
-Agregar dentro de `poderdante.properties` (tras `representante_legal_cedula_expedida_en`):
+Los campos necesarios para el cruce **sí existen** en la data ya extraída:
 
-```ts
-menciones_rl: {
-  type: "array",
-  description:
-    "TRAZABILIDAD ANTI-ALUCINACIÓN. Registra cada aparición INDEPENDIENTE del RL del banco dentro del MISMO PDF (cuerpo del poder, firma manuscrita, certificado Superfinanciera adjunto). Mínimo 1 entrada si el RL aparece; ideal 2-3. Sirve para que el validador determinista detecte transposiciones de dígitos entre menciones que deberían coincidir. NO inventes menciones; solo las que efectivamente leas en distintas secciones.",
-  items: {
-    type: "object",
-    properties: {
-      seccion: {
-        type: "string",
-        enum: ["cuerpo_poder", "firma", "certificado_superfinanciera", "otro"],
-        description: "Sección del PDF donde aparece esta mención.",
-      },
-      nombre: { type: "string", description: "Nombre tal como aparece en esta sección. MAYÚSCULAS." },
-      cedula: { type: "string", description: "Cédula tal como aparece en esta sección. Solo dígitos. Si es ilegible, 'NO_LEGIBLE'." },
-      pagina: { type: "number", description: "Página del PDF (1-indexed) donde se leyó." },
-    },
-    required: ["seccion"],
-    additionalProperties: false,
-  },
-},
-```
+- `poder_banco.poderdante.entidad_nit` / `entidad_nombre` — banco que otorga el poder (`poderBancoExtractor/tool.ts:60-66`).
+- `partes.banco_acreedor` + `partes.banco_nit` — acreedor real, extraído por la llamada monolítica de `procesar-cancelacion` desde escritura/certificado (`procesar-cancelacion/index.ts:238-239`).
+- `certificadoTradicion.actos.entidad_bancaria` + `actos.entidad_nit` — presente en el schema OCR del certificado (`certificadoTradicion/tool.ts:80-81`).
 
-**Compatibilidad:** campo opcional, no en `required`. Cachés viejos (`ocr_raw_cache`) siguen válidos: sin `menciones_rl` → Regla 5 no dispara (comportamiento actual).
+**Pero ningún código los compara entre sí dentro del mismo trámite.**
 
-### 2. `.../poderBancoExtractor/prompt.ts`
+## 2. ¿Existe hoy el cruce apoderado ↔ quien firma/gestiona en la escritura o certificado?
 
-Insertar nueva sección después del bloque "EXTRACCIÓN DE CADENA PROFUNDA":
+**No.** `reconcileData.ts` (`src/lib/reconcileData.ts:207-288`) reconcilia personas naturales (deudores/comparecientes) entre cédulas, escritura y certificado usando CC como clave — jamás cruza la identidad del apoderado del poder contra ninguno de los otros dos documentos. `validatePoderSuficiencia.ts` valida facultades/vigencia del poder aisladamente (`_shared/validatePoderSuficiencia.ts:75-144`).
 
-```
-═══════════════════════════════════════════════════════════════════════════════
-TRAZABILIDAD DEL RL DEL BANCO (poderdante.menciones_rl[])
-═══════════════════════════════════════════════════════════════════════════════
+## 3. ¿`crossCheck.ts` cubre este caso?
 
-El RL del banco (quien firma el poder EN NOMBRE de la entidad) suele aparecer
-2-3 veces dentro del mismo PDF:
-  1. Cuerpo del poder (párrafo de comparecencia).
-  2. Firma manuscrita al final del instrumento.
-  3. Certificado de la Superintendencia Financiera adjunto/protocolizado.
+**No — `crossCheck.ts` es explícitamente ENTRE cancelaciones distintas** de la misma organización (`crossCheck.ts:1-13, 57-96`). Sus 2 reglas (`apoderado_nombre_duplicidad_cruzada`, `apoderado_cedula_duplicidad_cruzada`) toman el poder actual y lo comparan contra ~500 filas de OTRAS cancelaciones. Cero lógica intra-trámite.
 
-REGLA: para CADA aparición independiente que efectivamente leas, añade una
-entrada a `poderdante.menciones_rl[]` con {seccion, nombre, cedula, pagina}.
+## 4. ¿Dónde se combinan hoy los 3 documentos?
 
-NO copies la misma cédula 3 veces desde la primera lectura — VUELVE a mirar
-la sección correspondiente y transcribe lo que ves ahí, dígito por dígito.
-Si dos secciones muestran cédulas distintas, reporta AMBAS tal cual — el
-validador determinista del backend detectará la incoherencia y pedirá
-verificación humana. NUNCA armonices menciones que difieren.
+En `procesar-cancelacion/index.ts`, la llamada monolítica a Gemini con la herramienta `extract_cancelacion_hipoteca` (líneas 162-283) ya recibe las páginas de los 3 documentos y produce en el mismo `extracted`: `partes.banco_acreedor/banco_nit` (desde certificado/escritura) y `poder_banco.*` (desde páginas del poder). Después del merge (línea 2744-2758) se llaman `annotatePoderCoherencia()` y `runPoderCrossChecks()` — **ambas reciben solo `mergedPoder`** y son ciegas a `extracted.partes.*` y `extracted.hipoteca_anterior.*`. El punto de fusión de datos existe; el punto de cruce no.
 
-Si solo hay 1 mención legible, devuelve 1 sola entrada (no rellenes).
-Si no hay ninguna mención legible, omite el array.
-```
+---
 
-### 3. `.../poderBancoExtractor/validate.ts`
+## Confirmación explícita
 
-**a) Añadir a `HARD_BLOCK_WARNING_SUFFIXES`:**
+Un poder auténtico, internamente coherente (pasa Regla 5, sin NO_LEGIBLE, cédulas bien formadas, sin duplicidad cruzada entre cancelaciones), que autorice sobre BANCO A cuando la escritura de esta cancelación tiene como acreedor a BANCO B — **hoy pasa sin ningún warning**. No hay defensa contra este escenario.
 
-```ts
-export const HARD_BLOCK_WARNING_SUFFIXES = [
-  "_no_legible",
-  "_incoherente",
-  "_placeholder",
-  "_duplicidad_cruzada",
-  "_menciones_incoherentes",  // ← nuevo
-] as const;
-```
+---
 
-**b) Añadir a `WARNING_LABELS`:**
+## Propuesta de ubicación (para cuando se decida construir Fase 2 intra-trámite)
 
-```ts
-rl_banco_menciones_incoherentes:
-  "Las menciones del representante legal del banco dentro del mismo documento no coinciden entre sí (posible transposición de dígitos) — verifica manualmente contra el PDF original.",
-```
+Dos opciones limpias, ambas viables:
 
-**c) Añadir a `SUSPICIOUS_FIELD_LABELS`:**
+**Opción A — Nuevo módulo isomórfico `validateIntraTramite.ts` en `_shared/isomorphic/poderBancoExtractor/`.**
+Firma: `validatePoderVsCancelacion(merged, partes: { banco_nit, banco_acreedor })` → devuelve el mismo `CoherenciaResult` (warnings + suspicious) que `validatePoderBancoCoherencia`. Pure TS, unit-testable desde Vitest sin Deno. Mantiene separación de responsabilidades: `validate.ts` = intra-poder, `validateIntraTramite.ts` = poder ↔ resto del trámite, `crossCheck.ts` = poder ↔ otras cancelaciones.
 
-```ts
-"poderdante.menciones_rl": "Menciones del representante legal del banco",
-```
+**Opción B — Extender `annotatePoderCoherencia()` en `procesar-cancelacion/index.ts:1414-1440`.**
+Ya vive donde `extracted.partes.*` está en scope. Menor superficie de cambio, pero mezcla orquestación con lógica de validación y no es testeable con Vitest (es Deno edge).
 
-**d) Regla 5 al final de `validatePoderBancoCoherencia` (antes del `return`):**
+**Recomendación: Opción A** — coherente con el patrón que ya existe (Regla 5 se hizo isomórfica precisamente para tests). El orquestador la llama junto a `validatePoderBancoCoherencia` y `detectDuplicidadCruzada`, y sus warnings entran al mismo `_coherencia_warnings` y a `HARD_BLOCK_WARNING_SUFFIXES` si se decide que deben bloquear (por ejemplo, sufijo `_entidad_incoherente`).
 
-```ts
-// Regla 5 — Coherencia intra-documento del RL del banco (Fase 1 anti-transposición).
-// Compara las cédulas normalizadas de todas las menciones independientes del
-// RL leídas en distintas secciones del MISMO PDF. Si ≥2 difieren, warning +
-// suspicious. Caso real que motivó la regla: 79392406 vs 79382406.
-const menciones = (poderdante?.menciones_rl ?? []) as Array<Record<string, unknown>>;
-if (Array.isArray(menciones) && menciones.length >= 2) {
-  const cedulasNorm = menciones
-    .map((m) => normalizeCedula(m?.cedula as string | undefined))
-    .filter((c) => c && !isNoLegible(c));  // NO_LEGIBLE no cuenta como discrepancia
-  const distintas = new Set(cedulasNorm);
-  if (distintas.size >= 2) {
-    warnings.push("rl_banco_menciones_incoherentes");
-    suspicious.add("poderdante.menciones_rl");
-    suspicious.add("poderdante.representante_legal_cedula");
-  }
-}
-```
+**Reglas candidatas** (a diseñar en un plan aparte si se aprueba construir):
 
-Notas:
-- Sin `menciones_rl` o con 1 entrada → no dispara (comportamiento seguro, no rompe cachés viejos).
-- `NO_LEGIBLE` en una mención se ignora (ya lo cubre Regla 3 con otro warning).
-- Comparación con `normalizeCedula` → tolera "79.382.406" vs "79382406".
+1. `poder_entidad_nit_incoherente` — `normalizarNit(poderdante.entidad_nit)` ≠ `normalizarNit(partes.banco_nit)` cuando ambos están presentes.
+2. `poder_entidad_nombre_incoherente` — comparación fuzzy de `entidad_nombre` vs `banco_acreedor` (fallback si falta un NIT).
+3. Considerar también `certificadoTradicion.actos.entidad_nit` como segunda fuente de verdad del acreedor (Smart Fallback igual que el chequeo de notaría origen).
 
-### 4. Tests de regresión
+---
 
-**Archivo nuevo:** `src/shared/poderBancoValidateMencionesRL.test.ts` (o extender `poderBancoValidate.test.ts`).
+## Fuera de alcance de este diagnóstico
 
-Casos mínimos:
+- No se propone aún qué sufijo usar, si es HARD_BLOCK o warning suave, ni la lógica de fuzzy match.
+- No se propone Fase 3 (backfill retroactivo).
+- No se toca código.
 
-1. **Caso real (dispara)** — 2 menciones cuerpo_poder=79392406 y certificado_superfinanciera=79382406 → warning `rl_banco_menciones_incoherentes` + `suspicious` incluye `poderdante.menciones_rl` y `poderdante.representante_legal_cedula` + `isHardBlockCoherenciaWarning('rl_banco_menciones_incoherentes') === true`.
-2. **Menciones consistentes (no dispara)** — 3 menciones con misma cédula → warnings sin `rl_banco_menciones_incoherentes`.
-3. **1 sola mención (no dispara)** — array con 1 entrada → no warning.
-4. **Sin `menciones_rl` (no dispara)** — payload legacy → no warning (compat cachés viejos).
-5. **Normalización de formato (no dispara)** — "79.382.406" vs "79382406" vs "79 382 406" → todos iguales, no warning.
-6. **NO_LEGIBLE parcial** — 1 mención "NO_LEGIBLE" + 2 menciones iguales → no dispara Regla 5 (lo cubre Regla 3).
-7. **Contrato HARD_BLOCK** — verificar que `HARD_BLOCK_WARNING_SUFFIXES` contiene `_menciones_incoherentes` y que `isHardBlockCoherenciaWarning` lo reconoce.
-
-## Fuera de alcance / no tocar
-
-- Merge (`merge.ts`): `menciones_rl` fluye por el deep passthrough existente, no requiere lógica nueva.
-- Edge `procesar-cancelacion`: ya consume `validatePoderBancoCoherencia` y ya cablea `HARD_BLOCK_WARNING_SUFFIXES` → `revision_manual_requerida`. No hay diff.
-- UI: los labels nuevos se muestran automáticamente vía `WARNING_LABELS` / `SUSPICIOUS_FIELD_LABELS`. Sin cambios de componentes en este ciclo.
-- Fase 2 y Fase 3: documentadas arriba, no se construyen.
-
-## Riesgos / mitigaciones
-
-- **Modelo puede "auto-consistir" copiando la misma cédula 3 veces sin volver a mirar** → el prompt lo prohíbe explícitamente ("NO copies la misma cédula 3 veces desde la primera lectura"). Si en producción vemos que sigue pasando, es señal para acelerar Fase 2 (segunda pasada independiente del certificado, donde el modelo no puede auto-consistir porque es otra llamada con otro contexto).
-- **Falsos positivos por typos triviales** (ej. espacio de más) → `normalizeCedula` ya quita puntos, espacios y guiones antes de comparar.
-- **Costo tokens del prompt extra** → marginal (~200 tokens adicionales en system prompt, sin llamadas nuevas).
-
-## Criterio de éxito
-
-- Poderes nuevos con menciones incoherentes → `revision_manual_requerida = true` automático + warning visible en UI antes de generar Word.
-- Poderes con menciones consistentes → cero fricción nueva.
-- Cachés viejos → siguen funcionando sin regresión.
+Si querés que arme el plan formal de construcción con reglas exactas, tests y ubicación final, decímelo y lo redacto en Plan mode antes de pasar a Build.
