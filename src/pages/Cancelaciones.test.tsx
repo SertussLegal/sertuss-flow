@@ -122,8 +122,8 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     expect(within(screen.getByText("R-DONE").closest("tr")!).getByText("Completada")).toBeInTheDocument();
     expect(within(screen.getByText("R-ERR").closest("tr")!).getByText("Error")).toBeInTheDocument();
 
-    expect(screen.queryByText("Revisión manual")).not.toBeInTheDocument();
-    expect(screen.queryByText("Revisión manual bloqueante")).not.toBeInTheDocument();
+    expect(screen.queryByText("Con alertas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bloqueada")).not.toBeInTheDocument();
   });
 
   it("cuenta con filas pero filtro vacío muestra mensaje de filtro, no mensaje de cuenta vacía", async () => {
