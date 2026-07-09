@@ -86,7 +86,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     await renderPage("MAT-BLOCK");
 
     const row = screen.getByText("MAT-BLOCK").closest("tr")!;
-    expect(within(row).getByText("Revisión manual bloqueante")).toBeInTheDocument();
+    expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
     expect(within(row).queryByText("Borrador")).not.toBeInTheDocument();
   });
 
