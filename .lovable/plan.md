@@ -1,141 +1,39 @@
-# Fix B/UI-1.2 — Rediseño de badges de revisión manual en Cancelaciones
+# Fix UI-1.3 — `Badge` a `forwardRef` para desbloquear Tooltip
 
-## Diagnóstico
+## Diagnóstico de impacto
 
-### Bug: doble badge redundante
-Hoy en `src/pages/Cancelaciones.tsx` (L207-210) el render es:
+**Consumidores de `Badge`:** 15 archivos, ~43 usos totales (`<Badge …>`), distribuidos en Validacion, Cancelaciones, Admin, Team, Dashboard, DocxDebugModal, PreviewModal, ProsaApoderado*, SystemMonitor, ReglasPropuestas, NotariaSettings, OcrBadge, CancelacionValidar.
 
-```tsx
-<StatusBadge status={row.status} />
-{row.revision_manual_requerida && <ManualReviewChip />}
-```
+**Uso de `ref` explícita sobre `<Badge>` hoy:** cero (`rg "<Badge[^>]*\bref=" src/` → sin resultados). Nadie depende del comportamiento actual "no acepta ref".
 
-Cuando `status === 'requiere_revision_manual'`, la fila casi siempre también trae `revision_manual_requerida=true`, así que se pintan **dos badges diciendo lo mismo**:
-- Rojo "Revisión manual bloqueante"
-- Ámbar "Revisión manual"
+**Snapshots que puedan romperse:** solo `src/shared/prosaBancos/__contract__/parity.test.ts`, que serializa prosa de bancos y no toca `Badge`. Sin riesgo.
 
-Es el caso visto en la captura del usuario.
+**Cambio HTML:** cero. `forwardRef` solo agrega captura de la ref; el elemento renderizado sigue siendo el mismo `<div className={cn(badgeVariants({ variant }), className)} {...props} />` con exactamente los mismos props. 100% aditivo, no cosmético.
 
-### Terreno de Tooltip
-- `src/components/ui/tooltip.tsx` existe (shadcn estándar) y `TooltipProvider` ya envuelve toda la app en `src/App.tsx` L35 — no hay que agregarlo.
-- Patrón ya en uso en `InlineBadgeDot.tsx`, `PersonaForm.tsx`, `InmuebleForm.tsx`, `Validacion.tsx`, etc. Reutilizable directo.
-- Radix Tooltip: `TooltipTrigger asChild` sobre un `<span>` inline. El evento hover no dispara `onClick` del `<tr>` padre (son eventos distintos: `mouseenter`/`focus` vs `click`). El único cuidado es que si el usuario **hace click sobre el badge**, ese click SÍ burbujea al `<tr>` y navega — comportamiento actual y aceptable (el badge no es interactivo por sí mismo, solo informativo). No requiere `stopPropagation`.
+## Cambio único
 
-## Propuesta de copy
-
-| Caso | Texto visible | Tooltip |
-|---|---|---|
-| `status='requiere_revision_manual'` (badge rojo, bloqueante) | **"Bloqueada"** | "La IA no pudo leer con confianza uno o más campos obligatorios. El documento no se puede generar hasta que un humano revise y corrija los datos marcados." |
-| `revision_manual_requerida=true` con status ya avanzado (chip ámbar, histórico) | **"Con alertas"** | "En algún momento uno o más campos quedaron marcados como poco legibles y fueron confirmados manualmente. Esta marca se conserva solo para trazabilidad histórica." |
-
-Elección de palabras:
-- **"Bloqueada"** > "Pendiente" porque comunica accionabilidad urgente ("hay algo que impide seguir") sin ambigüedad temporal.
-- **"Con alertas"** > "Revisado" porque "Revisado" suena a estado positivo neutro y borra la señal de que hubo un problema histórico; "Con alertas" mantiene la trazabilidad visible sin alarmar.
-
-## Cambios propuestos
-
-### 1. `src/pages/Cancelaciones.tsx`
-
-**Imports** — agregar `Tooltip`, `TooltipContent`, `TooltipTrigger`:
+`src/components/ui/badge.tsx`:
 
 ```tsx
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-```
-
-**`StatusBadge`** — cambiar el caso `requiere_revision_manual`:
-
-```tsx
-if (status === "requiere_revision_manual") {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge className="gap-1.5 border border-red-300 bg-red-100 text-red-800 hover:bg-red-100 cursor-help">
-          <AlertTriangle className="h-3 w-3" />
-          Bloqueada
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs text-xs leading-snug">
-        La IA no pudo leer con confianza uno o más campos obligatorios. El documento no se puede generar hasta que un humano revise y corrija los datos marcados.
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-```
-
-**`ManualReviewChip`** — envolver con Tooltip y cambiar texto:
-
-```tsx
-const ManualReviewChip = () => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <Badge
-        className="gap-1 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-50 cursor-help"
-        aria-label="Con alertas históricas de revisión manual"
-      >
-        <AlertTriangle className="h-3 w-3" />
-        Con alertas
-      </Badge>
-    </TooltipTrigger>
-    <TooltipContent className="max-w-xs text-xs leading-snug">
-      En algún momento uno o más campos quedaron marcados como poco legibles y fueron confirmados manualmente. Esta marca se conserva solo para trazabilidad histórica.
-    </TooltipContent>
-  </Tooltip>
+const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
+  ({ className, variant, ...props }, ref) => (
+    <div ref={ref} className={cn(badgeVariants({ variant }), className)} {...props} />
+  ),
 );
+Badge.displayName = "Badge";
+
+export { Badge, badgeVariants };
 ```
 
-**Render de la celda de estado** (L204-211) — evitar duplicado:
+Sin cambios en `BadgeProps`, `badgeVariants`, ni en ninguno de los 15 archivos consumidores.
 
-```tsx
-<TableCell>
-  <div className="flex items-center gap-1.5">
-    <StatusBadge status={row.status} />
-    {row.revision_manual_requerida && row.status !== "requiere_revision_manual" && (
-      <ManualReviewChip />
-    )}
-  </div>
-</TableCell>
-```
+## Verificación
 
-### 2. `src/pages/Cancelaciones.test.tsx`
-
-Actualizar los tests que dependen del copy viejo:
-
-- Test 1 (`chip 'Revisión manual' junto a badge 'Completada'`): reemplazar `"Revisión manual"` por `"Con alertas"`.
-- Test 2 (`status='requiere_revision_manual' pinta badge rojo distintivo`): reemplazar `"Revisión manual bloqueante"` por `"Bloqueada"`.
-- Test 4 (`estados existentes sin flag renderizan su badge original`): reemplazar los `queryByText("Revisión manual")` / `("Revisión manual bloqueante")` por `("Con alertas")` / `("Bloqueada")`.
-
-Agregar test nuevo (sexto):
-
-```tsx
-it("cuando status='requiere_revision_manual' y flag=true, no duplica badges (solo 'Bloqueada')", async () => {
-  setRows([
-    baseRow({
-      matricula_inmobiliaria: "MAT-NODUP",
-      status: "requiere_revision_manual",
-      revision_manual_requerida: true,
-    }),
-  ]);
-  await renderPage("MAT-NODUP");
-
-  const row = screen.getByText("MAT-NODUP").closest("tr")!;
-  expect(within(row).getByText("Bloqueada")).toBeInTheDocument();
-  expect(within(row).queryByText("Con alertas")).not.toBeInTheDocument();
-});
-```
-
-Nota: los tests renderizan sin `TooltipProvider` explícito. Radix Tooltip permite `TooltipTrigger` sin provider en el árbol (fallback silencioso) — el `TooltipContent` no se abrirá en test, pero el `TooltipTrigger asChild` sí renderiza al `<Badge>` hijo con su texto, que es lo único que los tests verifican (`getByText("Bloqueada")` / `("Con alertas")`). No hace falta añadir provider al helper.
+1. Suite completo Vitest + Deno. Esperado: 226/226 + 66/66 sin regresiones (ningún test depende de que Badge sea función plana).
+2. Reproducción en navegador real: la sesión Supabase no se inyecta en el sandbox actual (`/cancelaciones` redirige a login), así que la verificación visual del hover queda del lado del usuario en el preview autenticado — se le pedirá confirmar que al pasar el mouse sobre "Bloqueada" y "Con alertas" ahora aparece el tooltip con el texto explicativo. Si el usuario prefiere que intente inyectar sesión antes, lo hago primero.
 
 ## Criterios de aceptación
 
-- [ ] Fila con `status='requiere_revision_manual'` y `flag=true` muestra **una sola** badge ("Bloqueada"), no dos.
-- [ ] Fila con `status='completed'` y `flag=true` muestra "Completada" + "Con alertas".
-- [ ] Hover sobre "Bloqueada" o "Con alertas" muestra la explicación larga.
-- [ ] Hover del badge no dispara navegación de la fila; click sobre el badge sí navega (comportamiento actual, aceptable).
-- [ ] Los 5 tests existentes se actualizan al copy nuevo y siguen pasando.
-- [ ] Test nuevo (no duplicación) pasa.
-- [ ] Vitest 226/226, Deno 66/66.
-
-## Fuera de alcance
-
-- Cambios en lógica de filtros, backend, o cualquier otra columna/badge no relacionada con revisión manual.
-- Añadir tests de apertura visual del Tooltip (requeriría user-event hover + jsdom timers; no aporta valor sobre el smoke visible).
+- Vitest y Deno siguen en verde con los mismos totales.
+- Tooltip visible en hover sobre badges "Bloqueada" / "Con alertas" en `/cancelaciones` (confirmación visual del usuario).
+- Ningún cambio visible en los otros 43 usos de `Badge` en la app.
