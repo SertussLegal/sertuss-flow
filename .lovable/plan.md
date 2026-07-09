@@ -1,100 +1,202 @@
 
-# Diagnóstico A5 — Tabla "DATOS DE LA ESCRITURA PUBLICA" sale vacía
+# Fix A8 — `montoProsaProtocolo` no reañade M/CTE cuando la IA extrae el monto sin él
 
-Investigación solo lectura. Base: cancelación real `d1d90c54-2f48-4736-8269-7d4f55de41d0`, captura del docx generado, código de `supabase/functions/procesar-cancelacion/index.ts`, plantillas en bucket `cancelaciones-plantillas/davivienda/`.
+## Diagnóstico confirmado
 
-## Respuesta directa
+Tres helpers espejo tienen el MISMO bug de idempotencia:
 
-**No es un desfase de nombres ni un bug de emisión. Es una decisión de diseño activa: el código y la plantilla asumen que esa tabla del encabezado es la ESCRITURA NUEVA (todavía sin numerar), no la hipoteca anterior.** Los datos de la hipoteca 3752/2002/Notaría 20 SÍ se emiten, pero a otro conjunto de tags (`*_hipoteca_*`) que la plantilla usa en el cuerpo (la cláusula), no en la tabla del encabezado.
+| Archivo | Función | Línea |
+|---|---|---|
+| `supabase/functions/procesar-cancelacion/index.ts` | `montoProsaProtocolo` | 638–646 |
+| `src/lib/legalProse.ts` | `montoProsa` | 164–176 |
+| `supabase/functions/process-expediente/legalProse.ts` | `montoProsa` | 140–152 |
 
-## Evidencia código-por-código
-
-### 1. Existen DOS familias de tags separadas para la misma "matriz" visual
-
-En `buildDocxVars` (`supabase/functions/procesar-cancelacion/index.ts`):
-
-| Familia | Tags | Fuente de datos | Poblado en d1d90c54 |
-|---|---|---|---|
-| **Hipoteca anterior** (cuerpo) | `numero_escritura_hipoteca_corto`, `fecha_escritura_hipoteca_{dia,mes,ano}`, `notaria_hipoteca_numero`, `ciudad_hipoteca`, `ciudad_hipoteca_corto`, `notaria_hipoteca_numero_letras`, `fecha_escritura_hipoteca_letras`, `escritura_hipoteca_numero_letras` | `data.hipoteca_anterior.*` (OCR) | **SÍ** — 3752/20/06/2002/0020/BOGOTA D.C. |
-| **Escritura nueva** (tabla SNR encabezado) | `numero_escritura_nueva`, `numero_escritura_nueva_corto`, `numero_escritura_nueva_letras`, `fecha_otorgamiento_nueva{,_dia,_mes,_ano,_letras,_prosa,_cont}`, `notaria_emisora_numero`, `notaria_emisora_numero_letras`, `notaria_emisora_ciudad`, `notaria_emisora_titulo`, `notario_nombre` | `data.notaria_emisora.*` (UI manual en `CancelacionValidar.tsx` L1332–1343) | **NO** — `notaria_emisora = {}` (verificado por SQL) |
-
-### 2. La intención es explícita en el código
-
-`supabase/functions/procesar-cancelacion/index.ts` **L1096** — comentario textual del autor:
-
-> `// Escritura NUEVA (tabla SNR encabezado) → undefined fuerza líneas en blanco`
-
-Seguido de L1097–1104: todos los tags `*_nueva*` se emiten con `|| undefined` cuando `ne` (=`data.notaria_emisora`) está vacío. No es un accidente ni una regresión reciente — es diseño.
-
-### 3. `SLIM_FIELDS` confirma que la plantilla usa los tags `*_nueva*` / `*_emisora_*`
-
-`supabase/functions/procesar-cancelacion/index.ts` **L1151–1164** — el conjunto de fallback corto (`—` en vez de `___________`) lista **explícitamente** ambas familias:
-
-```
-"fecha_escritura_hipoteca_dia/mes/ano",
-"notaria_hipoteca_numero",
-"ciudad_hipoteca_corto",
-"numero_escritura_hipoteca_corto",
-// Tabla SNR (escritura nueva) — celdas angostas
-"numero_escritura_nueva_corto",
-"fecha_otorgamiento_nueva_dia/mes/ano",
-"notaria_emisora_numero",
+**Guard actual (idéntico en los 3):**
+```ts
+if (typeof raw === "string" && /\(\$[\d.,]+\)\s*$/.test(raw.trim())) return raw.trim();
 ```
 
-Que `notaria_emisora_numero` esté marcado como SLIM sólo tiene sentido si aparece dentro de una celda angosta de una tabla real de la plantilla. Prueba circunstancial fuerte de que la plantilla renderiza esos tags.
+Acepta como "ya formateado" **cualquier** cadena que termine en `($NNN)`, aunque falte `M/CTE`. La IA emite justamente eso (`"... PESOS ($8.858.475)"`), el helper lo devuelve intacto y el docx queda sin M/CTE.
 
-### 4. El patrón visual observado coincide 1:1 con nullGetter sobre tags `*_nueva*` / `*_emisora_*`
+Los 3 deben corregirse en sincronía (regla del proyecto: `legalProse.ts` cliente ↔ backend son espejos).
 
-Captura del docx: `—` en 4 celdas (No. Escritura, Día, Mes, Año) y `___________` en 2 celdas (Notaría de Origen, Ciudad).
+## Diseño del fix
 
-`nullGetter` en L1168–1169:
+**Nuevo guard:** exigir que la cadena entrante contenga M/CTE **además** del patrón `($NNN)` para considerarse ya formateada. Si trae `($NNN)` sin M/CTE, extraer el número y re-formatear con `formatMonedaLegal` (que sí añade M/CTE), luego strippear `,00`.
+
+**Variantes de M/CTE aceptadas** (regex tolerante case-insensitive):
+- `M/CTE` (canónico)
+- `MCTE`, `M.CTE`, `M CTE` (variantes históricas)
+
+Regex: `/\bM\s*[\/.]?\s*CTE\b/i`
+
+**No toca `esIndetLegacy`:** el literal `"HIPOTECA DE CUANTÍA INDETERMINADA"` no termina en `($NNN)`, no entra al guard nuevo ni al viejo. Además, aguas arriba (`index.ts` L938) `esCuantiaIndeterminada` cortocircuita a `undefined` antes de llamar al helper. Comportamiento preservado.
+
+## Diff propuesto (idéntico en los 3 archivos, adaptado a nombre)
+
+### 1) `supabase/functions/procesar-cancelacion/index.ts` (L636-646)
+
+```diff
+-// Monto para protocolo: reusa formatMonedaLegal y elimina ",00)" si decimales = 0.
+-// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente.
++// Monto para protocolo: reusa formatMonedaLegal y elimina ",00)" si decimales = 0.
++// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente solo
++// cuando la cadena entrante YA contiene M/CTE (requisito registral colombiano).
++// Si trae "... ($NNN)" sin M/CTE, re-normaliza extrayendo el número.
++const _M_CTE_RE = /\bM\s*[\/.]?\s*CTE\b/i;
++const _MONTO_TAIL_RE = /\(\$([\d.,]+)\)\s*$/;
+ function montoProsaProtocolo(valor: string | number | undefined | null): string {
+   if (valor === null || valor === undefined || valor === "") return "";
+   const raw = typeof valor === "number" ? String(valor) : valor;
+-  if (typeof raw === "string" && /\(\$[\d.,]+\)\s*$/.test(raw.trim())) return raw.trim();
+-  const formateado = formatMonedaLegal(raw);
++  const trimmed = typeof raw === "string" ? raw.trim() : "";
++  const tail = trimmed ? trimmed.match(_MONTO_TAIL_RE) : null;
++  if (tail && _M_CTE_RE.test(trimmed)) {
++    // Ya formateado con M/CTE: idempotente, solo quita ",00" si existe.
++    return trimmed.replace(/,00\)$/, ")");
++  }
++  // Si trae "($NNN)" pero SIN M/CTE, extraer el número y re-formatear.
++  const source = tail ? tail[1] : raw;
++  const formateado = formatMonedaLegal(source);
+   if (!formateado) return "";
+-  // Escape correcto del paréntesis de cierre.
+   return formateado.replace(/,00\)$/, ")");
+ }
 ```
-part.value in SLIM_FIELDS ? "—" : "___________"
+
+### 2) `src/lib/legalProse.ts` (L164-176) y 3) `supabase/functions/process-expediente/legalProse.ts` (L140-152)
+
+Cambio equivalente, adaptado al nombre `montoProsa` (misma lógica, mismos regex helpers `_M_CTE_RE` / `_MONTO_TAIL_RE` locales al módulo).
+
+## Tests
+
+### Nuevo: `supabase/functions/procesar-cancelacion/montoProsaProtocolo_test.ts`
+
+Fixture con los 5 casos reales auditados + legacy + idempotencia + edge cases.
+
+```ts
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { montoProsaProtocolo } from "./index.ts"; // requiere export
+
+Deno.test("A8: monto sin M/CTE se re-normaliza (caso d1d90c54)", () => {
+  const input = "OCHO MILLONES OCHOCIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.858.475)";
+  const out = montoProsaProtocolo(input);
+  assertEquals(out, "OCHO MILLONES OCHOCIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS M/CTE ($8.858.475)");
+});
+
+Deno.test("A8: monto sin M/CTE (caso 4b05d210)", () => {
+  const input = "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS ($8.558.475)";
+  const out = montoProsaProtocolo(input);
+  assertEquals(out, "OCHO MILLONES QUINIENTOS CINCUENTA Y OCHO MIL CUATROCIENTOS SETENTA Y CINCO PESOS M/CTE ($8.558.475)");
+});
+
+Deno.test("A8: monto sin M/CTE (caso d7193993)", () => {
+  const input = "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)";
+  assertEquals(montoProsaProtocolo(input), "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)");
+});
+
+Deno.test("A8: monto sin M/CTE (caso 15a90eef)", () => {
+  const input = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS ($185.000.000)";
+  assertEquals(montoProsaProtocolo(input), "CIENTO OCHENTA Y CINCO MILLONES DE PESOS M/CTE ($185.000.000)");
+});
+
+Deno.test("A8: monto YA con M/CTE no se duplica (caso 5022544d)", () => {
+  const input = "CIENTO OCHENTA Y CINCO MILLONES DE PESOS M/CTE ($185.000.000)";
+  assertEquals(montoProsaProtocolo(input), input);
+});
+
+Deno.test("A8: idempotencia — mismo output al re-pasar por el helper", () => {
+  const input = "CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)";
+  const once = montoProsaProtocolo(input);
+  const twice = montoProsaProtocolo(once);
+  assertEquals(once, twice);
+});
+
+Deno.test("A8: variante MCTE sin barra se respeta como ya formateado", () => {
+  const input = "TREINTA MILLONES DE PESOS MCTE ($30.000.000)";
+  assertEquals(montoProsaProtocolo(input), input);
+});
+
+Deno.test("A8: strip ,00 cuando trae M/CTE y decimales cero", () => {
+  const input = "TREINTA MILLONES DE PESOS M/CTE ($30.000.000,00)";
+  assertEquals(montoProsaProtocolo(input), "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)");
+});
+
+Deno.test("A8: legacy 'HIPOTECA DE CUANTÍA INDETERMINADA' no se formatea (retorna '')", () => {
+  // Aguas arriba esCuantiaIndeterminada cortocircuita; si por defensa
+  // llegase aquí, no debe intentar parsearlo como monto.
+  assertEquals(montoProsaProtocolo("HIPOTECA DE CUANTÍA INDETERMINADA"), "");
+});
+
+Deno.test("A8: número crudo se formatea con M/CTE (comportamiento previo)", () => {
+  assertEquals(montoProsaProtocolo(30000000), "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)");
+});
+
+Deno.test("A8: string vacío/null retorna ''", () => {
+  assertEquals(montoProsaProtocolo(""), "");
+  assertEquals(montoProsaProtocolo(null), "");
+  assertEquals(montoProsaProtocolo(undefined), "");
+});
 ```
 
-Aplicado a los tags de "escritura nueva" con `data.notaria_emisora = {}`:
+**Requisito:** exportar `montoProsaProtocolo` desde `index.ts` (hoy es privada). Alternativa sin cambio de superficie: mover el helper a `_shared/isomorphic/` y re-importarlo desde `index.ts` + test. Preferencia: `export` in-place, mínimo cambio.
 
-| Celda visible | Tag probable | En SLIM? | Render esperado | Render observado |
-|---|---|---|---|---|
-| No. Escritura | `numero_escritura_nueva_corto` | ✅ | `—` | `—` ✅ |
-| Día | `fecha_otorgamiento_nueva_dia` | ✅ | `—` | `—` ✅ |
-| Mes | `fecha_otorgamiento_nueva_mes` | ✅ | `—` | `—` ✅ |
-| Año | `fecha_otorgamiento_nueva_ano` | ✅ | `—` | `—` ✅ |
-| Notaría de Origen | `notaria_emisora_numero_letras` o `notaria_emisora_titulo` | ❌ | `___________` | `___________` ✅ |
-| Ciudad | `notaria_emisora_ciudad` | ❌ | `___________` | `___________` ✅ |
+### Espejo frontend: `src/lib/legalProse.test.ts` (agregar bloque)
 
-Match completo. Ninguna otra combinación de tags produce ese mismo patrón mixto.
+```ts
+describe("legalProse — montoProsa (A8 M/CTE guard)", () => {
+  it("re-normaliza monto extraído por IA sin M/CTE", () => {
+    expect(montoProsa("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS ($52.500.000)"))
+      .toBe("CINCUENTA Y DOS MILLONES QUINIENTOS MIL PESOS M/CTE ($52.500.000)");
+  });
+  it("respeta MCTE sin barra", () => {
+    const s = "TREINTA MILLONES DE PESOS MCTE ($30.000.000)";
+    expect(montoProsa(s)).toBe(s);
+  });
+  it("no toca literales de cuantía indeterminada", () => {
+    expect(montoProsa("HIPOTECA DE CUANTÍA INDETERMINADA")).toBe("");
+  });
+});
+```
 
-### 5. Los tests A5-1 / A5-2 son un falso positivo
+Los tests existentes de `montoProsa` (L76-95) siguen verdes: input numérico crudo, input ya con M/CTE, y strip de `,00` — el fix solo cambia el camino "trae ($NNN) sin M/CTE".
 
-`supabase/functions/procesar-cancelacion/index_test.ts` L281–326 verifican que `numero_escritura_hipoteca_corto="0559"`, `notaria_hipoteca_numero="0021"`, etc. Están verdes — pero **esos tags no son los que la plantilla `formato cancelacion hipoteca blanqueado v2.docx` pone en la tabla del encabezado**. Los tests blindan un contrato que la plantilla no consume. La segregación (A5-2) además cementa que la contaminación cruzada está prohibida: `data.hipoteca_anterior` NO puede llegar a los tags `*_nueva*`.
+### Sin espejo backend `process-expediente`
 
-### 6. Contradicción histórica documentada
+Este helper no tiene test dedicado hoy. Añadir un `Deno.test` mínimo equivalente al bloque de `legalProse.test.ts` en `supabase/functions/process-expediente/legalProse_test.ts` (crear si no existe).
 
-- Mensaje del 21-05-2026 (#1273): Alejandra corrige "esa tabla es la ESCRITURA NUEVA, vaciarla". Se implementa; queda comentario L1096 + tests A5.
-- Mensaje del mismo día (#1271, versión completa del texto): Alejandra vuelve a corregir "no, esa tabla del formato Davivienda **exige** los datos de la hipoteca anterior".
-- Última implementación (la que corre hoy): sigue la primera corrección. La segunda nunca se aplicó al código de la plantilla ni al mapeo.
+## Verificación de no-regresión
 
-## Limitación de la investigación
+1. **A9 (`"null"` literal → sanitizado):** no toca el path — la sanitización ocurre antes de llegar aquí (en el merge de `data_final`). El fix opera sobre strings válidos con paréntesis. ✅
+2. **B4 (extracción semántica de cuantía):** este audit verificó que `valor_hipoteca_original` llega correcto. El fix mejora la salida de render, no la extracción. ✅
+3. **`esCuantiaIndeterminada` (skill cuantia-indeterminada-cancelacion):** en L938 `valorHipotecaProtocolo = undefined` cuando el flag es true — el helper ni se llama. Fix preserva ese cortocircuito. ✅
+4. **`buildClausulaPagoHipoteca` (L692):** llama a `montoProsaProtocolo(valorRaw)` sólo en la rama NO-indeterminada. Fix mejora la prosa de la cláusula sin cambiar la lógica de rama. ✅
+5. **Tests existentes de `montoProsa` frontend (L77-94):** los 4 tests siguen verdes porque cubren números crudos e inputs que ya traen M/CTE. ✅
 
-No pude descargar los bytes del template `formato cancelacion hipoteca blanqueado v2.docx` (282 KB, `cancelaciones-plantillas/davivienda/`) para leer literalmente los `{tags}` de la tabla:
+## Alcance del cambio
 
-- Bucket privado; política sólo permite `authenticated` con `foldername[1] = org_id`, y el folder es `davivienda/` — sólo `is_platform_admin()` puede leerlo.
-- `LOVABLE_BROWSER_AUTH_STATUS=signed_out`; sin sesión inyectada.
-- `SUPABASE_SERVICE_ROLE_KEY` no disponible en Lovable Cloud.
-- Anon key → 404/403.
+**Archivos modificados (3):**
+- `supabase/functions/procesar-cancelacion/index.ts` — fix + `export`
+- `src/lib/legalProse.ts` — fix
+- `supabase/functions/process-expediente/legalProse.ts` — fix
 
-Los puntos 1–6 son evidencia circunstancial extremadamente fuerte (comentario explícito del autor + SLIM_FIELDS + patrón visual coincidente celda por celda), pero la confirmación literal del nombre de los 6 tags dentro de esa tabla del `.docx` sigue pendiente de acceso al binario. Formas de desbloquearla:
+**Archivos nuevos (2):**
+- `supabase/functions/procesar-cancelacion/montoProsaProtocolo_test.ts` — 11 tests
+- `supabase/functions/process-expediente/legalProse_test.ts` — 3 tests (nuevo archivo o append si existe)
 
-1. Iniciar sesión en el preview como `is_platform_admin()` (email `info@sertuss.com`) → próxima invocación puede firmar URL.
-2. Exportar temporalmente el `.docx` a un bucket público sólo para lectura de este diagnóstico.
-3. Ejecutar `psql \COPY` sobre `storage.objects` — no funciona: el binario vive en el backend de storage, no en Postgres.
+**Archivo con append (1):**
+- `src/lib/legalProse.test.ts` — 3 tests nuevos
 
-## Conclusión
+**Fuera de alcance:**
+- No se toca `formatMonedaLegal` (backend ni frontend) — funciona correctamente.
+- No se toca el extractor IA — el fix es defensivo en la capa de render, apropiado.
+- No se re-generan cancelaciones históricas — solo aplica a nuevas ejecuciones.
 
-- **Causa raíz:** la plantilla `formato cancelacion hipoteca blanqueado v2.docx` conecta la tabla visible "DATOS DE LA ESCRITURA PUBLICA" a los tags de la **escritura nueva** (`*_nueva*` / `*_emisora_*`). El código sigue esa convención y sólo los llena cuando el operador rellena manualmente el bloque "Notaría / Escritura nueva" en la UI. En trámites que se generan de una sola pasada (como d1d90c54), ese bloque queda vacío → tabla vacía por diseño.
-- **No es desfase de nombres.** Los nombres emitidos y los consumidos por la plantilla coinciden — sobre el conjunto equivocado.
-- **No es una segunda tabla oculta.** Hay una sola tabla visible en el encabezado; el mapeo de `*_hipoteca_*` renderiza en otro lugar (párrafos de cláusula segunda) y sí muestra bien 3752/2002/Notaría 20 y el valor `$8.858.475`, exactamente como reportaste.
-- **Los tests A5 protegen la interpretación equivocada** (la de mayo-2026 v1) y por eso el punto A5 estaba marcado como "resuelto" en el histórico sin serlo desde el punto de vista de Alejandra.
+## Criterios de aceptación
 
-Ninguna implementación en este mensaje. Cuando pases a build, la decisión política es la primera pregunta: ¿la tabla debe salir con los datos de la hipoteca anterior (segunda corrección de Alejandra), o dejarse vacía a propósito y esperar edición manual del operador (interpretación actual)? El fix técnico es distinto según cuál se elija.
+- [ ] Los 11 tests Deno del helper cancelaciones pasan.
+- [ ] Los tests existentes de `legalProse.test.ts` (frontend) siguen verdes + 3 nuevos verdes.
+- [ ] Los tests nuevos de `process-expediente/legalProse` verdes.
+- [ ] Test suite completo del proyecto verde (sin regresiones).
+- [ ] Los tests A5/A9/B4 existentes en `procesar-cancelacion/index_test.ts` (si los hay) siguen verdes.
