@@ -634,14 +634,22 @@ function formatMonedaLegal(valor: string): string {
 }
 
 // Monto para protocolo: reusa formatMonedaLegal y elimina ",00)" si decimales = 0.
-// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente.
-function montoProsaProtocolo(valor: string | number | undefined | null): string {
+// Resultado: "TREINTA MILLONES DE PESOS M/CTE ($30.000.000)". Idempotente solo
+// cuando la cadena entrante YA contiene M/CTE (requisito registral colombiano).
+// Si trae "... ($NNN)" sin M/CTE, re-normaliza extrayendo el número.
+const _M_CTE_RE = /\bM\s*[\/.]?\s*CTE\b/i;
+const _MONTO_TAIL_RE = /\(\$([\d.,]+)\)\s*$/;
+export function montoProsaProtocolo(valor: string | number | undefined | null): string {
   if (valor === null || valor === undefined || valor === "") return "";
   const raw = typeof valor === "number" ? String(valor) : valor;
-  if (typeof raw === "string" && /\(\$[\d.,]+\)\s*$/.test(raw.trim())) return raw.trim();
-  const formateado = formatMonedaLegal(raw);
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  const tail = trimmed ? trimmed.match(_MONTO_TAIL_RE) : null;
+  if (tail && _M_CTE_RE.test(trimmed)) {
+    return trimmed.replace(/,00\)$/, ")");
+  }
+  const source = tail ? tail[1] : raw;
+  const formateado = formatMonedaLegal(source);
   if (!formateado) return "";
-  // Escape correcto del paréntesis de cierre.
   return formateado.replace(/,00\)$/, ")");
 }
 
