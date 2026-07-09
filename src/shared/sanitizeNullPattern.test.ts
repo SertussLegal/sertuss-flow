@@ -10,7 +10,10 @@ import { describe, it, expect } from "vitest";
 import {
   sanitizeString,
   mergePoderBancoFlat,
+  mergePoderBancoV6,
+  stripNullyStrings,
 } from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/merge";
+
 import { reconcileInmueble } from "@/lib/reconcileData";
 import type { Inmueble } from "@/lib/types";
 import { readFileSync } from "node:fs";
