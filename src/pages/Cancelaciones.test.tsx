@@ -36,9 +36,11 @@ const renderPage = async (waitForText: string) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
-        <Cancelaciones />
-      </MemoryRouter>
+      <TooltipProvider>
+        <MemoryRouter>
+          <Cancelaciones />
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   );
   await screen.findByText(waitForText);
