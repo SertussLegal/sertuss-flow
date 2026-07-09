@@ -72,7 +72,7 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
 
     const row = screen.getByText("MAT-9dc33048").closest("tr")!;
     expect(within(row).getByText("Completada")).toBeInTheDocument();
-    expect(within(row).getByText("Revisión manual")).toBeInTheDocument();
+    expect(within(row).getByText("Con alertas")).toBeInTheDocument();
   });
 
   it("status='requiere_revision_manual' pinta badge rojo distintivo, no fallback 'Borrador'", async () => {
