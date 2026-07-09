@@ -125,4 +125,18 @@ describe("Cancelaciones — visibilidad de revision_manual_requerida", () => {
     expect(screen.queryByText("Revisión manual")).not.toBeInTheDocument();
     expect(screen.queryByText("Revisión manual bloqueante")).not.toBeInTheDocument();
   });
+
+  it("cuenta con filas pero filtro vacío muestra mensaje de filtro, no mensaje de cuenta vacía", async () => {
+    setRows([
+      baseRow({ matricula_inmobiliaria: "CLEAN-DONE", status: "completed", revision_manual_requerida: false }),
+    ]);
+    await renderPage("CLEAN-DONE");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /Requieren revisión/i }));
+
+    expect(screen.queryByText("CLEAN-DONE")).not.toBeInTheDocument();
+    expect(screen.getByText("No hay cancelaciones que coincidan con este filtro")).toBeInTheDocument();
+    expect(screen.queryByText("No hay cancelaciones registradas aún")).not.toBeInTheDocument();
+  });
 });
