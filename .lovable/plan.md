@@ -1,167 +1,141 @@
-# Fix B/UI-1 — Visibilidad de `revision_manual_requerida` en listado Cancelaciones
+# Fix B/UI-1.1 — Estados vacíos distintos en listado de Cancelaciones
 
-## 1. Diagnóstico del terreno
+## Diagnóstico
 
-### 1.1 Datos reales (evidencia cruda)
+En `src/pages/Cancelaciones.tsx` (versión desplegada de hoy) hay una sola variable `hasRows = filteredRows.length > 0` (L140). Como se evalúa después del filtro, dos estados distintos se confunden:
 
-`SELECT id, status, revision_manual_requerida` filtrando por casos "sucios":
+1. **Cuenta 100% vacía** (`rows.length === 0`) → hoy muestra el mensaje correcto: "No hay cancelaciones registradas aún".
+2. **Cuenta con filas, pero el filtro activo no coincide** (`rows.length > 0 && filteredRows.length === 0`) → hoy cae al mismo `!hasRows` y muestra el mensaje genérico de cuenta vacía, lo cual es incorrecto.
 
-| id | status | revision_manual_requerida |
-|---|---|---|
-| `9dc33048…` | `completed` | `true` ← el caso de hoy |
-| `32f5317e…` | `completed` | `true` |
-| `2bef1db3…` | `requiere_revision_manual` | `true` |
-| `748f3220…` | `requiere_revision_manual` | `true` |
-| … 10 filas en total | mezcla | siempre `true` |
+Además, los `<Tabs>` se renderizan siempre (L160-166), incluso cuando `counts.all === 0`.
 
-**Hallazgo clave:** el flag `revision_manual_requerida` y el status `'requiere_revision_manual'` son **dos señales independientes** que pueden coexistir o divergir:
+## Cambios propuestos
 
-- `status='requiere_revision_manual'` → bloqueo transitorio, se cambia a `completed` cuando el humano hace `confirm_manual_review`.
-- `revision_manual_requerida=true` → **persistente**, sobrevive al confirm. Marca el trámite como "hubo un warning que un humano revisó".
+### 1. `src/pages/Cancelaciones.tsx`
 
-Hoy `9dc33048` (`completed` + flag=true) se pinta como **"Completada" verde** — nada indica que hubo revisión manual. Los que están en `'requiere_revision_manual'` caen al `else` del `StatusBadge` (L61-65 de `Cancelaciones.tsx`) y se pintan como **"Borrador" gris** — indistinguibles de un draft normal. Los dos casos están mal.
+#### 1.1 Variables de estado
 
-### 1.2 Terreno actual de `src/pages/Cancelaciones.tsx`
+Reemplazar L140:
 
-- **`CancelacionRow`** (L18-25): `status: "draft" | "processing" | "completed" | "error"` — falta `'requiere_revision_manual'` y falta la columna booleana.
-- **`select`** (L77): no trae `revision_manual_requerida` ni acepta el status nuevo.
-- **`StatusBadge`** (L37-67): `if status==='processing'|'completed'|'error'` → fallback gris "Borrador". El nuevo status cae al fallback.
-- **Filtros/tabs/orden:** **no existen** en este archivo. El Dashboard de Escrituras sí tiene `<Select filterStatus>` reusable como patrón conceptual, pero aquí no hay nada instalado.
-- **Navegación:** `onClick` de fila → `/cancelaciones/:id/validar`. Ya funciona.
-
-### 1.3 Sidebar y patrón de badge de conteo
-
-Revisé `AppSidebar.tsx` completo. **No existe** un patrón de badge numérico en items del menú. El "46" que se veía en capturas viene del `credit_balance` del org switcher del footer (L162, L286), no de un ítem de navegación. Introducir un badge de conteo en el sidebar sería inventar un patrón nuevo → **fuera de alcance para hoy**, mejor mantenerlo dentro de `/cancelaciones`.
-
-### 1.4 Dashboard como candidato de resumen
-
-`src/pages/Dashboard.tsx` es el listado de **Escrituras**, no un dashboard de resumen cross-módulo. No hay ningún widget de cancelaciones ahí hoy. Meter un contador ahí sería mezclar dominios → **fuera de alcance**.
-
-### 1.5 Otros flags booleanos en la tabla
-
-Revisado el schema de `cancelaciones` (32 columnas). El único booleano de "atención requerida" hoy es `revision_manual_requerida`. No hay `requiere_ajuste_manual`, ni `poder_defectuoso`, ni similares. **No hay que generalizar** — sobreingeniería para un solo flag. Diseño 1:1.
-
-### 1.6 Tests existentes de `Cancelaciones.tsx`
-
-`ls src/pages/__tests__` no existe y no hay `.test.` para esta página. Cero cobertura previa. Puedo agregar tests nuevos sin romper nada.
-
----
-
-## 2. Diseño propuesto
-
-**Principio:** dos señales visuales, misma prioridad visual — un badge de status (el actual) + un chip inline "Revisión manual" cuando el flag está activo. El chip **sobrevive** aunque el status haya avanzado a `completed`.
-
-### 2.1 Estados visuales
-
-| status \ flag | flag=false | flag=true |
-|---|---|---|
-| `draft` | gris "Borrador" | gris "Borrador" + chip ámbar 🚩 "Revisión manual" |
-| `processing` | ámbar animado "Procesando" | mismo + chip |
-| `completed` | verde "Completada" | verde "Completada" + chip |
-| `error` | rojo "Error" | rojo "Error" + chip |
-| `requiere_revision_manual` | **NUEVO:** rojo "Revisión manual bloqueante" | mismo (los dos suelen ir juntos) |
-
-El chip usa `bg-amber-50 border-amber-300 text-amber-900` con icono `AlertTriangle` — distinto del "Procesando" ámbar+spinner y del "Borrador" gris.
-
-### 2.2 Filtro por Tabs (no Select)
-
-Tres tabs sobre la tabla, sin dropdown — patrón más ligero y ya usado en Admin:
-- **Todas** (default, N)
-- **Requieren revisión** (M) — filtra `revision_manual_requerida=true OR status='requiere_revision_manual'`
-- **Completadas** (K) — `status='completed' AND revision_manual_requerida=false`
-
-Los conteos se calculan en cliente sobre `rows` ya cargadas (todo cabe en un `select` — la lista total de una notaría ronda las decenas, no miles).
-
-### 2.3 Orden
-
-Añadir orden secundario: filas con `revision_manual_requerida=true` **primero**, luego por `updated_at desc`. Así aparecen arriba del todo sin necesidad de filtrar.
-
-```sql
-ORDER BY revision_manual_requerida DESC, created_at DESC
+```tsx
+const hasRows = filteredRows.length > 0;
 ```
 
----
+Por:
 
-## 3. Diff propuesto
-
-### 3.1 `src/pages/Cancelaciones.tsx`
-
-**Tipo (L18-25):**
-```diff
- type CancelacionRow = {
-   id: string;
-   matricula_inmobiliaria: string | null;
-   deudor_nombre: string | null;
-   deudor_cedula: string | null;
--  status: "draft" | "processing" | "completed" | "error";
-+  status: "draft" | "processing" | "completed" | "error" | "requiere_revision_manual";
-+  revision_manual_requerida: boolean;
-   created_at: string;
- };
+```tsx
+const hasAnyRow = rows.length > 0;
+const hasRows = filteredRows.length > 0;
 ```
 
-**Select (L77):**
-```diff
--        .select("id, matricula_inmobiliaria, deudor_nombre, deudor_cedula, status, created_at")
--        .order("created_at", { ascending: false });
-+        .select("id, matricula_inmobiliaria, deudor_nombre, deudor_cedula, status, revision_manual_requerida, created_at")
-+        .order("revision_manual_requerida", { ascending: false })
-+        .order("created_at", { ascending: false });
+#### 1.2 Renderizado condicional
+
+Reemplazar el bloque de renderizado L158-184:
+
+```tsx
+<div className="flex flex-col gap-3 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+  <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
+  <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
+    <TabsList>
+      <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
+      <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
+      <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
+    </TabsList>
+  </Tabs>
+</div>
+{isInitialLoading ? (
+  <div data-testid="page-skeleton" className="space-y-3 p-6">
+    {Array.from({ length: 4 }).map((_, i) => (
+      <Skeleton key={i} className="h-10 w-full" />
+    ))}
+  </div>
+) : !hasRows ? (
+  <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+      <FileSearch className="h-6 w-6 text-muted-foreground" />
+    </div>
+    <h2 className="text-base font-semibold">No hay cancelaciones registradas aún</h2>
+    <p className="max-w-sm text-sm text-muted-foreground">
+      Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
+    </p>
+  </div>
+) : (
 ```
 
-**`StatusBadge` (L37-67):** añadir caso `'requiere_revision_manual'` (rojo con icono `AlertTriangle`). Sin tocar los demás.
+Por:
 
-**Nuevo `ManualReviewChip`:** chip ámbar independiente que se renderiza junto al `StatusBadge` cuando `row.revision_manual_requerida === true`.
-
-**Nueva sección de filtros:** `<Tabs>` shadcn arriba del `<Table>` con los 3 tabs y conteos. Filtra `rows` en memoria antes de mapear.
-
-**Celda status (columna existente):**
-```diff
--<TableCell><StatusBadge status={row.status} /></TableCell>
-+<TableCell>
-+  <div className="flex items-center gap-1.5">
-+    <StatusBadge status={row.status} />
-+    {row.revision_manual_requerida && <ManualReviewChip />}
-+  </div>
-+</TableCell>
+```tsx
+<div className="flex flex-col gap-3 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+  <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
+  {hasAnyRow && (
+    <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
+      <TabsList>
+        <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
+        <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
+        <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  )}
+</div>
+{isInitialLoading ? (
+  <div data-testid="page-skeleton" className="space-y-3 p-6">
+    {Array.from({ length: 4 }).map((_, i) => (
+      <Skeleton key={i} className="h-10 w-full" />
+    ))}
+  </div>
+) : !hasAnyRow ? (
+  <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+      <FileSearch className="h-6 w-6 text-muted-foreground" />
+    </div>
+    <h2 className="text-base font-semibold">No hay cancelaciones registradas aún</h2>
+    <p className="max-w-sm text-sm text-muted-foreground">
+      Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
+    </p>
+  </div>
+) : !hasRows ? (
+  <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+      <FileSearch className="h-6 w-6 text-muted-foreground" />
+    </div>
+    <h2 className="text-base font-semibold">No hay cancelaciones que coincidan con este filtro</h2>
+    <p className="max-w-sm text-sm text-muted-foreground">
+      Prueba con otro filtro o vuelve a "Todas" para ver el historial completo.
+    </p>
+  </div>
+) : (
 ```
 
-Todo lo demás del archivo (skeleton, empty state, navegación, botón "Abrir") **queda igual**.
+### 2. `src/pages/Cancelaciones.test.tsx`
 
-### 3.2 Nuevo `src/pages/Cancelaciones.test.tsx`
+Agregar un quinto test al final del `describe`:
 
-Tests con Vitest + Testing Library. Cuatro casos:
+```tsx
+it("cuenta con filas pero filtro vacío muestra mensaje de filtro, no mensaje de cuenta vacía", async () => {
+  setRows([
+    baseRow({ matricula_inmobiliaria: "CLEAN-DONE", status: "completed", revision_manual_requerida: false }),
+  ]);
+  await renderPage("CLEAN-DONE");
 
-1. **Fila con `revision_manual_requerida=true` muestra chip "Revisión manual"** aunque status sea `completed`. Regresión directa del hallazgo `9dc33048`.
-2. **Status `'requiere_revision_manual'` renderiza badge rojo distintivo** — no cae al fallback gris "Borrador".
-3. **Tab "Requieren revisión" filtra correctamente** — solo muestra filas con flag=true o status bloqueante; ocultan las demás.
-4. **Los estados existentes (`draft/processing/completed/error`) sin flag siguen renderizando su badge original** — protección anti-regresión de los 4 estados que ya funcionaban.
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name: /Requieren revisión/i }));
 
-### 3.3 No se toca
+  expect(screen.queryByText("CLEAN-DONE")).not.toBeInTheDocument();
+  expect(screen.getByText("No hay cancelaciones que coincidan con este filtro")).toBeInTheDocument();
+  expect(screen.queryByText("No hay cancelaciones registradas aún")).not.toBeInTheDocument();
+});
+```
 
-- `AppSidebar.tsx` (no hay patrón de badge de menú).
-- `Dashboard.tsx` (dominio distinto).
-- `CancelacionValidar.tsx` (la vista detalle ya muestra el banner del poder).
-- `PoderBannersV5.tsx` (ya lee `manualReviewPending`).
-- Backend: cero cambios. El flag ya se persiste correctamente en `procesar-cancelacion/index.ts` L2953-2958.
-- Migraciones: cero.
+## Criterios de aceptación
 
----
+- [ ] `hasAnyRow` y `hasRows` coexisten como variables separadas.
+- [ ] Los `<Tabs>` no se renderizan cuando `counts.all === 0`.
+- [ ] Cuenta vacía real muestra "No hay cancelaciones registradas aún".
+- [ ] Cuenta con filas pero filtro sin coincidencias muestra "No hay cancelaciones que coincidan con este filtro".
+- [ ] El test nuevo pasa y no rompe los 4 tests existentes.
+- [ ] Vitest sigue en 225/225 y Deno en 66/66.
 
-## 4. Criterios de aceptación
+## Fuera de alcance
 
-- [ ] `9dc33048` (completed + flag) aparece con badge verde "Completada" **y** chip ámbar "Revisión manual" a su lado en el listado.
-- [ ] Filas con `status='requiere_revision_manual'` se pintan con badge rojo, no gris "Borrador".
-- [ ] Filas con flag=true aparecen ordenadas **primero** en la tabla.
-- [ ] Tab "Requieren revisión" muestra el conteo real y filtra correctamente.
-- [ ] Los 4 estados originales siguen pintándose igual que hoy cuando el flag es false.
-- [ ] Vitest 220 → 224 (o similar, con 4 tests nuevos verdes). Deno sin cambios (66/66).
-- [ ] `tsgo` sin errores por el tipo ampliado.
-
-## 5. Fuera de alcance (explícito)
-
-- Badge numérico en sidebar (no hay patrón previo — sería inventar).
-- Widget cross-módulo en Dashboard (mezcla dominios).
-- Generalizar a otros flags (solo existe uno hoy).
-- Notificación email / toast automático cuando aparece un caso nuevo.
-- Reordenar la sección "Historial" en función del flag para escrituras (`tramites` no tiene este flag).
+- Cambios de lógica de negocio, backend, migraciones o comportamiento de filtrado.
+- Modificar mensajes de otros estados de error/carga.
