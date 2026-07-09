@@ -1,120 +1,100 @@
 
-# Compilación granular — 19 puntos de retroalimentación de Alejandra Arciniegas
+# Diagnóstico A5 — Tabla "DATOS DE LA ESCRITURA PUBLICA" sale vacía
 
-Solo lectura. Recuperado del historial (mensajes #213 – #2114). Los 3 puntos ya verificados con evidencia real en sesiones previas quedan marcados **[VERIFICADO]**; el resto queda **[PENDIENTE]** de auditoría independiente. Los 7 puntos derivados de la auditoría de la minuta real de mayo (A4 – A10) van marcados con `†`.
+Investigación solo lectura. Base: cancelación real `d1d90c54-2f48-4736-8269-7d4f55de41d0`, captura del docx generado, código de `supabase/functions/procesar-cancelacion/index.ts`, plantillas en bucket `cancelaciones-plantillas/davivienda/`.
 
----
+## Respuesta directa
 
-## Bloque A — Cancelaciones (14 puntos)
+**No es un desfase de nombres ni un bug de emisión. Es una decisión de diseño activa: el código y la plantilla asumen que esa tabla del encabezado es la ESCRITURA NUEVA (todavía sin numerar), no la hipoteca anterior.** Los datos de la hipoteca 3752/2002/Notaría 20 SÍ se emiten, pero a otro conjunto de tags (`*_hipoteca_*`) que la plantilla usa en el cuerpo (la cláusula), no en la tabla del encabezado.
 
-**A1 — Formulario Vendedor/Comprador confunde "dirección" con "domicilio"** *(2026-03-09)*
-- Problema: en el paso de personas, "dirección" pedía domicilio real de habitación, no la del inmueble; además faltaba flag "actúa por apoderado" con subformulario para representantes.
-- Fix aplicado: OCR de cédula, separación de campos "dirección de residencia" vs "dirección del inmueble", bloque anidado para apoderado.
-- Estado: **[PENDIENTE]**
+## Evidencia código-por-código
 
-**A2 — "Número predial nacional" es ambiguo (CHIP vs Cédula Catastral); avalúo salía del paz y salvo** *(2026-03-09)*
-- Problema: Bogotá usa CHIP alfanumérico; resto del país Cédula Catastral numérica. El sistema los mezclaba y además tomaba el "avalúo" desde el paz y salvo (dato incorrecto).
-- Fix aplicado: skill dedicado + memoria `mem://legal/requisitos-inmuebles`; normalización según ciudad.
-- Estado: **[PENDIENTE]**
+### 1. Existen DOS familias de tags separadas para la misma "matriz" visual
 
-**A3 — No se cargaban escrituras antecedentes para linderos ni se cruzaban entre sí** *(2026-03-09)*
-- Problema: el flujo de compraventa no permitía subir la escritura antecedente para heredar linderos técnicos; tampoco había reconciliación multi-documento.
-- Fix aplicado: `scan-document/core/escrituraAntecedente/*` + `reconcileData.ts` (Reconciliación multi-documento vía `normalizeCC`).
-- Estado: **[PENDIENTE]**
+En `buildDocxVars` (`supabase/functions/procesar-cancelacion/index.ts`):
 
-**A4† — Tabla "DATOS DE LA ESCRITURA PÚBLICA" salía con `X X` en la fecha** *(2026-05-20)*
-- Problema: `parseFechaNotarial` no era atómica: día/mes/año llegaban partidos y la plantilla imprimía literales "X X" en las celdas.
-- Fix aplicado: `buildDocxVars` inyecta directamente `{fecha_dia}/{mes}/{ano}/{notaria}` en la tabla SNR.
-- Estado: **[PENDIENTE]**
+| Familia | Tags | Fuente de datos | Poblado en d1d90c54 |
+|---|---|---|---|
+| **Hipoteca anterior** (cuerpo) | `numero_escritura_hipoteca_corto`, `fecha_escritura_hipoteca_{dia,mes,ano}`, `notaria_hipoteca_numero`, `ciudad_hipoteca`, `ciudad_hipoteca_corto`, `notaria_hipoteca_numero_letras`, `fecha_escritura_hipoteca_letras`, `escritura_hipoteca_numero_letras` | `data.hipoteca_anterior.*` (OCR) | **SÍ** — 3752/20/06/2002/0020/BOGOTA D.C. |
+| **Escritura nueva** (tabla SNR encabezado) | `numero_escritura_nueva`, `numero_escritura_nueva_corto`, `numero_escritura_nueva_letras`, `fecha_otorgamiento_nueva{,_dia,_mes,_ano,_letras,_prosa,_cont}`, `notaria_emisora_numero`, `notaria_emisora_numero_letras`, `notaria_emisora_ciudad`, `notaria_emisora_titulo`, `notario_nombre` | `data.notaria_emisora.*` (UI manual en `CancelacionValidar.tsx` L1332–1343) | **NO** — `notaria_emisora = {}` (verificado por SQL) |
 
-**A5† — Confusión escritura nueva vs. hipoteca anterior en la tabla "DATOS DE LA ESCRITURA PÚBLICA"** *(2026-05-21)*
-- Problema (según Alejandra): esa tabla del formato Davivienda es para la **hipoteca anterior** (la que se cancela). Lovable primero la dejó vacía, luego se sobrecorrigió y llegó a poner los datos en la casilla equivocada.
-- Fix aplicado: reasignación explícita de tags en `buildDocxVars` — tabla SNR ↔ hipoteca anterior; encabezado de escritura nueva ↔ vacío con `___________`.
-- Estado: **[PENDIENTE]** (parcial: existen tests A5-1 / A5-2 en `procesar-cancelacion/index_test.ts` desde 2026-07-08, pero no reauditado hoy contra minuta real).
+### 2. La intención es explícita en el código
 
-**A6† — Duplicación de `(DIRECCION CATASTRAL)` y de ciudad/notaría (`BOGOTA D.C. DEL BOGOTA D.C.`)** *(2026-05-21)*
-- Problema: `descripcion_predio` y `nomenclatura_predio` se cruzaban; el sufijo `(DIRECCION CATASTRAL)` aparecía dos veces; la notaría se concatenaba con la ciudad ya incluida en el string.
-- Fix aplicado: `buildDireccionCompletaSaneada()` (Bogotá) + condicional de omisión de ciudad cuando la notaría ya la contiene.
-- Estado: **[PENDIENTE]**
+`supabase/functions/procesar-cancelacion/index.ts` **L1096** — comentario textual del autor:
 
-**A7† — Linderos técnicos invadían las casillas cortas SNR** *(2026-05-22)*
-- Problema: en cancelaciones no se necesitan linderos (medidas, coordenadas), solo la descripción arquitectónica corta; se estaban metiendo bloques largos y desbordaban celdas.
-- Fix aplicado: regla en `mem://features/cancelaciones-reglas-inmueble`, bloque vacío en plantilla v2.
-- Estado: **[PENDIENTE]**
+> `// Escritura NUEVA (tabla SNR encabezado) → undefined fuerza líneas en blanco`
 
-**A8† — Números crudos en las cláusulas (matrícula transcrita a letras, montos sin `M/CTE`, etc.)** *(2026-05-22)*
-- Problema: violación del formato notarial colombiano `TEXTO (NÚMERO)` con concordancia de género; la matrícula `50C-2085432` salía como "CINCUENTA C – DOSCIENTOS…".
-- Fix aplicado: skills `formato-texto-numero-notarial` + `concordancia-genero-minutas`, aplicados en `legalFormatters.ts` / `legalProse.ts` (`montoProsa` conserva `M/CTE`).
-- Estado: **[PENDIENTE]**
+Seguido de L1097–1104: todos los tags `*_nueva*` se emiten con `|| undefined` cuando `ne` (=`data.notaria_emisora`) está vacío. No es un accidente ni una regresión reciente — es diseño.
 
-**A9† — `valor_hipoteca_original` llegaba con string literal `"null"` a la minuta** *(2026-05-24)*
-- Problema: la cuantía se imprimía literalmente como la palabra "null" cuando la extracción semántica no encontraba Mutuo/Pago/Liquidación.
-- Fix aplicado: `mergeCuantiaIntoExtracted` + `sanitizeString`/`NULLY_STRINGS` (2026-07-08).
-- Estado: **[VERIFICADO]** (auditoría de sesión previa confirmó el fix en vivo).
+### 3. `SLIM_FIELDS` confirma que la plantilla usa los tags `*_nueva*` / `*_emisora_*`
 
-**A10† — Apoderado del banco hardcodeado (`APODERADO_FIJO` = HEIBER HERNAN BELTRAN TORRES)** *(2026-05-21)*
-- Problema: para cualquier trámite se inyectaba siempre el mismo apoderado, sin importar si Alejandra había cargado un poder o no.
-- Fix aplicado: eliminación de `APODERADO_FIJO`, tercer `FileDropzone` no obligatorio, extractor `poderBanco/*`, `nullGetter` que pinta `___________`.
-- Estado: **[PENDIENTE]** (auditoría 2026-07-08 confirmó 0 residuos hardcodeados en `src/` y `supabase/functions/`, pero no está en la lista de los 3 confirmados en vivo por Alejandra).
+`supabase/functions/procesar-cancelacion/index.ts` **L1151–1164** — el conjunto de fallback corto (`—` en vez de `___________`) lista **explícitamente** ambas familias:
 
-**A11 — El texto salía con la palabra "GUION" en direcciones, en lugar del símbolo `-`** *(2026-06-21)*
-- Problema: la IA transcribía "guion" literalmente en la nomenclatura urbana.
-- Fix aplicado: regla explícita en memoria + reforzada en el prompt (matrículas/NIT conservan guion ASCII; direcciones urbanas usan el símbolo).
-- Estado: **[PENDIENTE]**
+```
+"fecha_escritura_hipoteca_dia/mes/ano",
+"notaria_hipoteca_numero",
+"ciudad_hipoteca_corto",
+"numero_escritura_hipoteca_corto",
+// Tabla SNR (escritura nueva) — celdas angostas
+"numero_escritura_nueva_corto",
+"fecha_otorgamiento_nueva_dia/mes/ano",
+"notaria_emisora_numero",
+```
 
-**A12 — Cédulas con puntos rompían edición manual; `tipo_id` siempre venía CC** *(2026-06-21)*
-- Problema: al pegar una cédula formateada "1.234.567" el sistema no reconciliaba con la OCR; el tipo de documento se forzaba a CC.
-- Fix aplicado: `normalizeCC` en `reconcileData.ts`.
-- Estado: **[PENDIENTE]**
+Que `notaria_emisora_numero` esté marcado como SLIM sólo tiene sentido si aparece dentro de una celda angosta de una tabla real de la plantilla. Prueba circunstancial fuerte de que la plantilla renderiza esos tags.
 
-**A13 — Orden de firmas no alfabético en la antefirma** *(2026-06-21)*
-- Problema: cuando había varios deudores, el orden en la antefirma no era el esperado (alfabético para firma; original para el cuerpo).
-- Fix aplicado: `normalizeDeudores` mantiene orden original + expone copia ordenable para la antefirma.
-- Estado: **[PENDIENTE]**
+### 4. El patrón visual observado coincide 1:1 con nullGetter sobre tags `*_nueva*` / `*_emisora_*`
 
-**A14 — Plantilla v3 duplicada en storage** *(2026-07-04)*
-- Problema: había dos versiones de plantilla conviviendo en el bucket `cancelaciones-plantillas`, generando resultados distintos según cuál cargara el runtime.
-- Fix aplicado: auditoría de tags, singleton `loadTemplateOnce` en `DocxPreview.tsx`, memoria `mem://blindaje-cancelaciones-v2`.
-- Estado: **[PENDIENTE]**
+Captura del docx: `—` en 4 celdas (No. Escritura, Día, Mes, Año) y `___________` en 2 celdas (Notaría de Origen, Ciudad).
 
----
+`nullGetter` en L1168–1169:
+```
+part.value in SLIM_FIELDS ? "—" : "___________"
+```
 
-## Bloque B — Poder General del Banco (5 puntos)
+Aplicado a los tags de "escritura nueva" con `data.notaria_emisora = {}`:
 
-**B1 — Datos del apoderado y valor del crédito no se extraían del PDF** *(2026-03-09)*
-- Problema: no existía flujo específico para el poder ni para la carta de crédito; los campos quedaban vacíos siempre.
-- Fix aplicado: extractores `poderBanco/*` y `cartaCredito/*`.
-- Estado: **[PENDIENTE]**
+| Celda visible | Tag probable | En SLIM? | Render esperado | Render observado |
+|---|---|---|---|---|
+| No. Escritura | `numero_escritura_nueva_corto` | ✅ | `—` | `—` ✅ |
+| Día | `fecha_otorgamiento_nueva_dia` | ✅ | `—` | `—` ✅ |
+| Mes | `fecha_otorgamiento_nueva_mes` | ✅ | `—` | `—` ✅ |
+| Año | `fecha_otorgamiento_nueva_ano` | ✅ | `—` | `—` ✅ |
+| Notaría de Origen | `notaria_emisora_numero_letras` o `notaria_emisora_titulo` | ❌ | `___________` | `___________` ✅ |
+| Ciudad | `notaria_emisora_ciudad` | ❌ | `___________` | `___________` ✅ |
 
-**B2 — Sección "Apoderado del Banco" salía vacía aunque hubiera datos** *(2026-05-21)*
-- Problema: aun con OCR exitoso, la UI no renderizaba los datos ni permitía editarlos; en la minuta salía `___________` en la antefirma.
-- Fix aplicado: `PoderViewerTab.tsx`, `PoderBannersV5.tsx`, `ProsaApoderadoModal.tsx`, `nullGetter` alineado.
-- Estado: **[PENDIENTE]**
+Match completo. Ninguna otra combinación de tags produce ese mismo patrón mixto.
 
-**B3 — Poder adjuntado pero NO leído (páginas 25+ truncadas)** *(2026-06-21)*
-- Problema: los poderes bancarios superan 25 páginas y los datos del apoderado sustituto están al final; el sistema truncaba y mostraba "No se adjuntó Poder General".
-- Fix aplicado: pipeline v5/v6 con `PODER_MAX_PAGES`, `POWER_SCHEMA_VERSION`, `poderBancoExtractor/*`, `validatePoderSuficiencia`, `classifyApoderado`.
-- Estado: **[VERIFICADO]** (re-auditado 2026-07-08 sobre poder real `32f5317e…`).
+### 5. Los tests A5-1 / A5-2 son un falso positivo
 
-**B4 — Valor de la hipoteca no encontrado por OCR** *(2026-06-21)*
-- Problema: el certificado de tradición decía "CUANTÍA INDETERMINADA"; el sistema no sabía ir a buscar el monto real a la escritura antecedente (Mutuo/Pago/Liquidación).
-- Fix aplicado: extracción semántica jerárquica documentada en `mem://legal/valor-credito-hipotecario-cancelacion`.
-- Estado: **[PENDIENTE]** (relacionado con A9 pero es la ruta OCR, no la sanitización del literal "null").
+`supabase/functions/procesar-cancelacion/index_test.ts` L281–326 verifican que `numero_escritura_hipoteca_corto="0559"`, `notaria_hipoteca_numero="0021"`, etc. Están verdes — pero **esos tags no son los que la plantilla `formato cancelacion hipoteca blanqueado v2.docx` pone en la tabla del encabezado**. Los tests blindan un contrato que la plantilla no consume. La segregación (A5-2) además cementa que la contaminación cruzada está prohibida: `data.hipoteca_anterior` NO puede llegar a los tags `*_nueva*`.
 
-**B5 — `apoderado_nombre` / `apoderado_cedula` con string literal `"null"`** *(2026-07-08)*
-- Problema: encontrado en el camino, no era parte de los 19 originales. El campo plano llegaba con la palabra "null" cuando el V6 profundo no producía apoderado.
-- Fix aplicado: `sanitizeString` + `NULLY_STRINGS` en `merge.ts` (mismo patrón que A9).
-- Estado: **[VERIFICADO]**.
+### 6. Contradicción histórica documentada
 
----
+- Mensaje del 21-05-2026 (#1273): Alejandra corrige "esa tabla es la ESCRITURA NUEVA, vaciarla". Se implementa; queda comentario L1096 + tests A5.
+- Mensaje del mismo día (#1271, versión completa del texto): Alejandra vuelve a corregir "no, esa tabla del formato Davivienda **exige** los datos de la hipoteca anterior".
+- Última implementación (la que corre hoy): sigue la primera corrección. La segunda nunca se aplicó al código de la plantilla ni al mapeo.
 
-## Resumen del estado
+## Limitación de la investigación
 
-| Estado | Cantidad | Puntos |
-|---|---|---|
-| **[VERIFICADO]** | 3 | A9, B3, B5 |
-| **[PENDIENTE]** | 16 | A1, A2, A3, A4, A5, A6, A7, A8, A10, A11, A12, A13, A14, B1, B2, B4 |
+No pude descargar los bytes del template `formato cancelacion hipoteca blanqueado v2.docx` (282 KB, `cancelaciones-plantillas/davivienda/`) para leer literalmente los `{tags}` de la tabla:
 
-Los 7 puntos de la auditoría de la minuta real de mayo son **A4 – A10** (marcados `†`).
+- Bucket privado; política sólo permite `authenticated` con `foldername[1] = org_id`, y el folder es `davivienda/` — sólo `is_platform_admin()` puede leerlo.
+- `LOVABLE_BROWSER_AUTH_STATUS=signed_out`; sin sesión inyectada.
+- `SUPABASE_SERVICE_ROLE_KEY` no disponible en Lovable Cloud.
+- Anon key → 404/403.
 
-Solo compilación; ninguna auditoría, verificación o cambio de código se ejecuta con este plan.
+Los puntos 1–6 son evidencia circunstancial extremadamente fuerte (comentario explícito del autor + SLIM_FIELDS + patrón visual coincidente celda por celda), pero la confirmación literal del nombre de los 6 tags dentro de esa tabla del `.docx` sigue pendiente de acceso al binario. Formas de desbloquearla:
+
+1. Iniciar sesión en el preview como `is_platform_admin()` (email `info@sertuss.com`) → próxima invocación puede firmar URL.
+2. Exportar temporalmente el `.docx` a un bucket público sólo para lectura de este diagnóstico.
+3. Ejecutar `psql \COPY` sobre `storage.objects` — no funciona: el binario vive en el backend de storage, no en Postgres.
+
+## Conclusión
+
+- **Causa raíz:** la plantilla `formato cancelacion hipoteca blanqueado v2.docx` conecta la tabla visible "DATOS DE LA ESCRITURA PUBLICA" a los tags de la **escritura nueva** (`*_nueva*` / `*_emisora_*`). El código sigue esa convención y sólo los llena cuando el operador rellena manualmente el bloque "Notaría / Escritura nueva" en la UI. En trámites que se generan de una sola pasada (como d1d90c54), ese bloque queda vacío → tabla vacía por diseño.
+- **No es desfase de nombres.** Los nombres emitidos y los consumidos por la plantilla coinciden — sobre el conjunto equivocado.
+- **No es una segunda tabla oculta.** Hay una sola tabla visible en el encabezado; el mapeo de `*_hipoteca_*` renderiza en otro lugar (párrafos de cláusula segunda) y sí muestra bien 3752/2002/Notaría 20 y el valor `$8.858.475`, exactamente como reportaste.
+- **Los tests A5 protegen la interpretación equivocada** (la de mayo-2026 v1) y por eso el punto A5 estaba marcado como "resuelto" en el histórico sin serlo desde el punto de vista de Alejandra.
+
+Ninguna implementación en este mensaje. Cuando pases a build, la decisión política es la primera pregunta: ¿la tabla debe salir con los datos de la hipoteca anterior (segunda corrección de Alejandra), o dejarse vacía a propósito y esperar edición manual del operador (interpretación actual)? El fix técnico es distinto según cuál se elija.
