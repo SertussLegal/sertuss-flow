@@ -152,6 +152,10 @@ export function montoProsa(valor: string | number): string {
   const source = tail ? tail[1] : raw;
   const formatted = formatMonedaLegal(source);
   if (!formatted) return "";
-  return formatted.replace(/,00\)$/, ")").trim();
+  // formatMonedaLegal local NO añade M/CTE → inyectarlo antes del "($".
+  const withMcte = _M_CTE_RE.test(formatted)
+    ? formatted
+    : formatted.replace(/\s*\(\$/, " M/CTE ($");
+  return withMcte.replace(/,00\)$/, ")").trim();
 }
 
