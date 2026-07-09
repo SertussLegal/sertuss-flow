@@ -106,6 +106,8 @@ export const WARNING_LABELS: Record<string, string> = {
     "Este nombre de apoderado ya aparece en otra cancelación con una cédula distinta — probable alucinación cruzada, requiere verificación manual",
   apoderado_cedula_duplicidad_cruzada:
     "Esta cédula ya está asociada a un nombre de apoderado distinto en otra cancelación — probable alucinación cruzada, requiere verificación manual",
+  rl_banco_menciones_incoherentes:
+    "Las menciones del representante legal del banco dentro del mismo documento no coinciden entre sí (posible transposición de dígitos) — verifica manualmente contra el PDF original.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
