@@ -111,3 +111,10 @@ Input atómico (nunca prosa):
 - ❌ `replace(/\s+DE\s+LA\s+CIUDAD\s+YO\s+MUNICIPIO\s+DE\s+.+$/i, "")` — no matchea `Y/O` real.
 - ❌ Verbalizar el separador de placa como `GUION` en la parte alfabética (`"NÚMERO SESENTA GUION OCHENTA Y CUATRO"`) — debe ser el símbolo `-`. Aplica la regex `\s+GUION(?:ES)?\s+ → " - "` como red de seguridad.
 - ❌ Aplicar la regex anti-`GUION` a `matricula_inmobiliaria` o `banco_nit` — el guion ASCII ahí es contrato técnico ORIP/DIAN y NO se altera.
+
+---
+
+## Historial
+
+- **2026-07:** este skill absorbió a `sanitizar-direccion`. El contrato viejo `execute({nomenclatura_predio, ciudad})` de una sola fase está superado por el pipeline Fase A + Fase B descrito arriba. Cualquier referencia externa a `sanitizar-direccion` debe apuntar aquí.
+
