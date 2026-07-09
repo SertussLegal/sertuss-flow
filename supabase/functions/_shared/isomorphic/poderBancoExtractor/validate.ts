@@ -253,5 +253,26 @@ export function validatePoderBancoCoherencia(
   }
   if (hitPlaceholder) warnings.push("apoderado_cedula_placeholder");
 
+  // Regla 5 — Coherencia intra-documento del RL del banco (Fase 1 anti-transposición).
+  // Compara las cédulas normalizadas de todas las menciones independientes del
+  // RL leídas en distintas secciones del MISMO PDF. Si ≥2 difieren, warning +
+  // suspicious. Caso real que motivó la regla: 79392406 vs 79382406.
+  const menciones = (poderdante?.menciones_rl ?? []) as Array<Record<string, unknown>>;
+  if (Array.isArray(menciones) && menciones.length >= 2) {
+    const cedulasNorm = menciones
+      .map((m) => {
+        const raw = m?.cedula as string | undefined;
+        if (isNoLegible(raw)) return ""; // NO_LEGIBLE no cuenta como discrepancia
+        return normalizeCedula(raw);
+      })
+      .filter((c) => c);
+    const distintas = new Set(cedulasNorm);
+    if (distintas.size >= 2) {
+      warnings.push("rl_banco_menciones_incoherentes");
+      suspicious.add("poderdante.menciones_rl");
+      suspicious.add("poderdante.representante_legal_cedula");
+    }
+  }
+
   return { warnings, suspicious };
 }
