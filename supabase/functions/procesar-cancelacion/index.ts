@@ -2387,7 +2387,7 @@ if (import.meta.main) serve(async (req) => {
           { orgId, cancelacionId, userId, trigger: "reprocess_poder" },
         );
       }
-      const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: finalPoder } : {}) };
+      const newDataIa = { ...cleanedIa, ...(finalPoder ? { poder_banco: stripNullyStrings(finalPoder as unknown as Record<string, unknown>) } : {}) };
       const prevDataFinal = (cancRow.data_final ?? {}) as Record<string, unknown>;
       const existingFinalPoder = (prevDataFinal.poder_banco ?? {}) as PoderBanco;
       // En data_final, humano gana en los flat legacy: dedicado solo rellena huecos.
@@ -2414,10 +2414,14 @@ if (import.meta.main) serve(async (req) => {
             ...(finalPoderExt?.vigencia ? { vigencia: finalPoderExt.vigencia } : {}),
           } as unknown as PoderBanco)
         : existingFinalPoder;
+      const sanitizedFinalPoder = mergedFinalPoder
+        ? (stripNullyStrings(mergedFinalPoder as unknown as Record<string, unknown>) as unknown as PoderBanco)
+        : undefined;
       const newDataFinal = {
         ...prevDataFinal,
-        ...(mergedFinalPoder && Object.values(mergedFinalPoder).some((v) => v) ? { poder_banco: mergedFinalPoder } : {}),
+        ...(sanitizedFinalPoder && Object.values(sanitizedFinalPoder).some((v) => v) ? { poder_banco: sanitizedFinalPoder } : {}),
       };
+
 
       await supabaseService.from("cancelaciones").update({
         data_ia: newDataIa,
