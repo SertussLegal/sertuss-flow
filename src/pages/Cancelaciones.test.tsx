@@ -31,7 +31,7 @@ const setRows = (rows: Array<Record<string, unknown>>) => {
   mockRows.push(...rows);
 };
 
-const renderPage = async () => {
+const renderPage = async (waitForText: string) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={qc}>
@@ -40,8 +40,7 @@ const renderPage = async () => {
       </MemoryRouter>
     </QueryClientProvider>
   );
-  // wait for query to resolve
-  await screen.findByText("Historial de Cancelaciones");
+  await screen.findByText(waitForText);
   return utils;
 };
 
