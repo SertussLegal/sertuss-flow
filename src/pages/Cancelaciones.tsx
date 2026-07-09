@@ -158,13 +158,15 @@ const Cancelaciones = () => {
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold">Historial de Cancelaciones</h2>
-          <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
-            <TabsList>
-              <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
-              <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
-              <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {hasAnyRow && (
+            <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterKey)}>
+              <TabsList>
+                <TabsTrigger value="all">Todas ({counts.all})</TabsTrigger>
+                <TabsTrigger value="review">Requieren revisión ({counts.review})</TabsTrigger>
+                <TabsTrigger value="completed">Completadas ({counts.completed})</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </div>
         {isInitialLoading ? (
           <div data-testid="page-skeleton" className="space-y-3 p-6">
@@ -172,7 +174,7 @@ const Cancelaciones = () => {
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
-        ) : !hasRows ? (
+        ) : !hasAnyRow ? (
           <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
               <FileSearch className="h-6 w-6 text-muted-foreground" />
@@ -180,6 +182,16 @@ const Cancelaciones = () => {
             <h2 className="text-base font-semibold">No hay cancelaciones registradas aún</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
               Cuando inicies un trámite de cancelación de hipoteca, aparecerá aquí su historial completo.
+            </p>
+          </div>
+        ) : !hasRows ? (
+          <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+              <FileSearch className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h2 className="text-base font-semibold">No hay cancelaciones que coincidan con este filtro</h2>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Prueba con otro filtro o vuelve a "Todas" para ver el historial completo.
             </p>
           </div>
         ) : (
