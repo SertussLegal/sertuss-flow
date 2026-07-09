@@ -108,6 +108,10 @@ export const WARNING_LABELS: Record<string, string> = {
     "Esta cédula ya está asociada a un nombre de apoderado distinto en otra cancelación — probable alucinación cruzada, requiere verificación manual",
   rl_banco_menciones_incoherentes:
     "Las menciones del representante legal del banco dentro del mismo documento no coinciden entre sí (posible transposición de dígitos) — verifica manualmente contra el PDF original.",
+  poder_entidad_nit_incoherente:
+    "El NIT del banco que otorga el poder no coincide con el NIT del acreedor hipotecario extraído de la escritura/certificado — el poder podría no aplicar a esta cancelación.",
+  poder_entidad_nombre_incoherente:
+    "El nombre del banco que otorga el poder no coincide con el acreedor hipotecario extraído de la escritura/certificado — verifica que el poder corresponda a esta cancelación.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -125,7 +129,12 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "apoderado_nombre": "Nombre del apoderado (plano)",
   "poderdante.representante_legal_cedula": "Cédula del representante legal del banco",
   "poderdante.menciones_rl": "Menciones del representante legal del banco",
+  "poderdante.entidad_nit": "NIT del banco que otorga el poder",
+  "poderdante.entidad_nombre": "Nombre del banco que otorga el poder",
+  "partes.banco_nit": "NIT del banco acreedor (escritura/certificado)",
+  "partes.banco_acreedor": "Nombre del banco acreedor (escritura/certificado)",
 };
+
 
 export interface CoherenciaResult {
   warnings: string[];
