@@ -38,7 +38,7 @@ export interface DedicadoFlatResult {
 }
 
 /** Marcadores literales que la IA a veces devuelve como string. Deben tratarse como ausencia real. */
-const NULLY_STRINGS = new Set([
+export const NULLY_STRINGS = new Set([
   "null", "NULL", "Null",
   "undefined", "UNDEFINED",
   "nan", "NaN", "NAN", "Nan",
@@ -48,6 +48,7 @@ const NULLY_STRINGS = new Set([
   "---", "--", "-",
   "?", "??",
 ]);
+
 
 /** Normaliza cualquier string a string real, o undefined si es vacío/nully. */
 export function sanitizeString(raw: unknown): string | undefined {
