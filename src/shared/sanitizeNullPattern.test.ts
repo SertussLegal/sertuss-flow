@@ -92,3 +92,56 @@ describe("(6) Prompts procesar-cancelacion: prohíben 'null si es ilegible'", ()
     expect(occurrences.length).toBeGreaterThanOrEqual(8); // 4 tool #1 + 4 tool dedicado
   });
 });
+
+describe("cancelaciones.poder_banco: nunca persiste 'null' literal", () => {
+  it("stripNullyStrings elimina claves basura y preserva el resto", () => {
+    const pb = {
+      apoderado_nombre: "null",
+      apoderado_cedula: "NULL",
+      apoderado_escritura: "  null  ",
+      apoderado_fecha: "2024-05-01",
+      apoderado_notaria_poder: "N/A",
+      // Bloques profundos v6: intactos.
+      apoderado: { tipo: "natural", nombre: "ANA MARIA MONTOYA", cedula: "52857443" },
+      instrumento_poder: { escritura_num: "123" },
+    };
+    const out = stripNullyStrings(pb as unknown as Record<string, unknown>);
+    expect(out.apoderado_nombre).toBeUndefined();
+    expect(out.apoderado_cedula).toBeUndefined();
+    expect(out.apoderado_escritura).toBeUndefined();
+    expect(out.apoderado_notaria_poder).toBeUndefined();
+    expect(out.apoderado_fecha).toBe("2024-05-01");
+    // Bloques profundos v6 no se tocan.
+    expect((out as { apoderado?: { nombre?: string } }).apoderado?.nombre).toBe("ANA MARIA MONTOYA");
+    expect((out as { instrumento_poder?: { escritura_num?: string } }).instrumento_poder?.escritura_num).toBe("123");
+    // No muta el input.
+    expect(pb.apoderado_nombre).toBe("null");
+  });
+
+  it("regresión 32f5317e: monolítico con 'null' + deepV6 degradado → tras strip, sin 'null' literal", () => {
+    // Reproduce el caso real: classifier degrada tipoEfectivo a null (natural_missing_poder_data)
+    // y monolítico traía 'null' string. Sin strip, finalFlat.apoderado_nombre = "null".
+    const monolitico = { apoderado_nombre: "null", apoderado_cedula: "null" };
+    const deepV6 = {
+      apoderado: { tipo: null, nombre: "ANA MARIA MONTOYA ECHEVERRY", cedula: "52857443" },
+      apoderado_nombre: null,
+      apoderado_cedula: null,
+      escritura_poder_num: null,
+      fecha_poder: null,
+      notaria_poder: null,
+      poderdante: null,
+      instrumento_poder: null,
+      facultades: null,
+      vigencia: null,
+      has_apoderado_banco_v3: null,
+      motivos_incompletitud: ["natural_missing_poder_data"],
+    } as unknown as Parameters<typeof mergePoderBancoV6>[2];
+    const merged = mergePoderBancoV6(monolitico, null, deepV6);
+    const stripped = stripNullyStrings(merged as unknown as Record<string, unknown>);
+    expect(stripped?.apoderado_nombre).not.toBe("null");
+    expect(stripped?.apoderado_cedula).not.toBe("null");
+    // Aceptable: quede undefined (el bloque profundo tiene el nombre real; el fix B2 lo rescatará en ticket separado).
+    expect(stripped?.apoderado_nombre === undefined || stripped?.apoderado_nombre === "ANA MARIA MONTOYA ECHEVERRY").toBe(true);
+  });
+});
+
