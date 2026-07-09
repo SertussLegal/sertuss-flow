@@ -1,4 +1,10 @@
+---
+name: "limpieza-segura-codigo"
+description: "Use cuando solicite limpiar código muerto, refactorizar componentes visuales, eliminar comentarios basura de desarrollo o remover redundancias en el repositorio, asegurando que no se altere la lógica funcional."
+---
+
 # Playbook de Limpieza Segura de Código y Refactorización
+
 
 Este skill guía el proceso de limpieza de "basura" en el código del sitio (deuda técnica, estilos huérfanos, console.logs de prueba y funciones en desuso) sin alterar el comportamiento esperado por el usuario ni romper integraciones de base de datos.
 
