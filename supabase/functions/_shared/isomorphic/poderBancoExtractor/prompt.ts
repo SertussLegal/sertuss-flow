@@ -74,6 +74,29 @@ EXTRACCIÓN DE CADENA PROFUNDA (cuando has_apoderado_banco_v3 = "true")
   - anexos: certificados de Superfinanciera y/o Cámara de Comercio.
 
 ═══════════════════════════════════════════════════════════════════════════════
+TRAZABILIDAD DEL RL DEL BANCO (poderdante.menciones_rl[])
+═══════════════════════════════════════════════════════════════════════════════
+
+El RL del banco (quien firma el poder EN NOMBRE de la entidad) suele aparecer
+2-3 veces dentro del mismo PDF:
+  1. Cuerpo del poder (párrafo de comparecencia).
+  2. Firma manuscrita al final del instrumento.
+  3. Certificado de la Superintendencia Financiera adjunto/protocolizado.
+
+REGLA: para CADA aparición independiente que efectivamente leas, añade una
+entrada a \`poderdante.menciones_rl[]\` con {seccion, nombre, cedula, pagina}.
+
+NO copies la misma cédula 3 veces desde la primera lectura — VUELVE a mirar
+la sección correspondiente y transcribe lo que ves ahí, dígito por dígito.
+Si dos secciones muestran cédulas distintas, reporta AMBAS tal cual — el
+validador determinista del backend detectará la incoherencia y pedirá
+verificación humana. NUNCA armonices menciones que difieren.
+
+Si solo hay 1 mención legible, devuelve 1 sola entrada (no rellenes).
+Si no hay ninguna mención legible, omite el array.
+
+
+═══════════════════════════════════════════════════════════════════════════════
 COMPATIBILIDAD LEGACY (mantener SIEMPRE)
 ═══════════════════════════════════════════════════════════════════════════════
 
