@@ -2825,7 +2825,7 @@ if (import.meta.main) serve(async (req) => {
             mergedPoder as unknown as Record<string, unknown>,
             { orgId, cancelacionId, userId, trigger: "live_pipeline" },
           );
-          extracted.poder_banco = mergedPoder;
+          extracted.poder_banco = stripNullyStrings(mergedPoder as unknown as Record<string, unknown>) as typeof mergedPoder;
         } else if (poderUrls.length === 0) {
           // No se adjuntó poder → no debe existir el objeto.
           delete (extracted as { poder_banco?: unknown }).poder_banco;
