@@ -69,6 +69,26 @@ export const poderBancoTool = {
             representante_legal_cedula: { type: "string", description: "Cédula del RL del banco. Solo dígitos. null si no es legible." },
             representante_legal_cargo: { type: "string", description: "Cargo del firmante en el banco. Ej: 'SUPLENTE DEL PRESIDENTE'. null si no aparece." },
             representante_legal_cedula_expedida_en: { type: "string", description: "Ciudad de expedición de la cédula del RL del banco. Ej: 'BOGOTA D.C.'. null si no aparece." },
+            menciones_rl: {
+              type: "array",
+              description:
+                "TRAZABILIDAD ANTI-ALUCINACIÓN. Registra cada aparición INDEPENDIENTE del RL del banco dentro del MISMO PDF (cuerpo del poder, firma manuscrita, certificado Superfinanciera adjunto). Mínimo 1 entrada si el RL aparece; ideal 2-3. Sirve para que el validador determinista detecte transposiciones de dígitos entre menciones que deberían coincidir. NO inventes menciones; solo las que efectivamente leas en distintas secciones.",
+              items: {
+                type: "object",
+                properties: {
+                  seccion: {
+                    type: "string",
+                    enum: ["cuerpo_poder", "firma", "certificado_superfinanciera", "otro"],
+                    description: "Sección del PDF donde aparece esta mención.",
+                  },
+                  nombre: { type: "string", description: "Nombre tal como aparece en esta sección. MAYÚSCULAS." },
+                  cedula: { type: "string", description: "Cédula tal como aparece en esta sección. Solo dígitos. Si es ilegible, 'NO_LEGIBLE'." },
+                  pagina: { type: "number", description: "Página del PDF (1-indexed) donde se leyó." },
+                },
+                required: ["seccion"],
+                additionalProperties: false,
+              },
+            },
           },
           additionalProperties: false,
         },
