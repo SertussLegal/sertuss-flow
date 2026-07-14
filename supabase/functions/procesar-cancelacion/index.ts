@@ -2577,20 +2577,16 @@ if (import.meta.main) serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     if (regen) {
 
-      // Read-then-Merge defensivo: `manualOverrides` puede sobreescribir
-      // campos conocidos por el frontend, pero NUNCA debe borrar bloques
-      // profundos v6 (`apoderado.sociedad_*`, `poderdante`, `instrumento_poder`,
-      // `facultades`, `motivos_incompletitud`, ...) que el frontend no envía
-      // porque no los edita. Rescata además el `poder_banco` profundo de
-      // `data_ia` si un `data_final` histórico lo perdió (caso c8924aa2).
-      const base = (cancRow.data_final ?? cancRow.data_ia ?? {}) as Record<string, unknown>;
-      const overrides = (manualOverrides ?? {}) as Record<string, unknown>;
-      const iaPB    = ((cancRow.data_ia as Record<string, unknown> | null)?.poder_banco ?? {}) as Record<string, unknown>;
-      const basePB  = (base.poder_banco ?? {}) as Record<string, unknown>;
-      const ovPB    = (overrides.poder_banco ?? {}) as Record<string, unknown>;
-      const mergedPB = { ...iaPB, ...basePB, ...ovPB };
-      const data = ({ ...base, ...overrides, poder_banco: mergedPB } as unknown) as CancelacionData;
-      if (!data) {
+      // Read-then-Merge defensivo (helper puro isomórfico + test dedicado):
+      // rescata bloque profundo v6 de `data_ia` si `data_final` histórico lo
+      // perdió (caso c8924aa2) y garantiza que `overrides` NUNCA borra
+      // claves que no envía.
+      const data = mergeRegenPayload<Record<string, unknown>>({
+        dataIa: cancRow.data_ia as Record<string, unknown> | null,
+        dataFinal: cancRow.data_final as Record<string, unknown> | null,
+        overrides: (manualOverrides ?? null) as Record<string, unknown> | null,
+      }) as unknown as CancelacionData;
+      if (!data || Object.keys(data as Record<string, unknown>).length === 0) {
         return new Response(JSON.stringify({ error: "No hay datos para regenerar" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
