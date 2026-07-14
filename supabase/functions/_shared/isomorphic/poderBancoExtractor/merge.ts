@@ -77,9 +77,32 @@ const FLAT_STRING_KEYS = [
   "apoderado_notaria_poder",
 ] as const;
 
-export function stripNullyStrings<T extends Record<string, unknown> | undefined | null>(pb: T): T {
+export function stripNullyStrings<T extends Record<string, unknown> | undefined | null>(
+  pb: T,
+  paths?: ReadonlyArray<readonly [string, string]>,
+): T {
   if (!pb || typeof pb !== "object") return pb;
   const out: Record<string, unknown> = { ...(pb as Record<string, unknown>) };
+
+  // Modo por rutas: limpia obj[sub][field] para cada (sub, field). Copia
+  // superficial del subobjeto tocado — no muta el input.
+  if (paths) {
+    for (const [sub, field] of paths) {
+      const child = out[sub];
+      if (!child || typeof child !== "object") continue;
+      const raw = (child as Record<string, unknown>)[field];
+      if (typeof raw !== "string") continue;
+      const trimmed = raw.trim();
+      if (!trimmed || NULLY_STRINGS.has(trimmed)) {
+        const copy = { ...(child as Record<string, unknown>) };
+        delete copy[field];
+        out[sub] = copy;
+      }
+    }
+    return out as T;
+  }
+
+  // Modo legacy: limpia FLAT_STRING_KEYS del propio objeto (poder_banco plano).
   for (const key of FLAT_STRING_KEYS) {
     const raw = out[key];
     if (typeof raw !== "string") continue;
@@ -90,6 +113,17 @@ export function stripNullyStrings<T extends Record<string, unknown> | undefined 
   }
   return out as T;
 }
+
+/**
+ * Rutas fuera de `poder_banco` que también pueden recibir strings tóxicas
+ * de la IA monolítica (Gemini a veces devuelve `"null"` literal en cuantía
+ * no legible en vez de omitir). Ampliar aquí — misma función, mismo set
+ * `NULLY_STRINGS`, sin walker recursivo.
+ */
+export const CANCELACION_NULLY_PATHS: ReadonlyArray<readonly [string, string]> = [
+  ["hipoteca_anterior", "valor_hipoteca_original"],
+  ["hipoteca_anterior", "cuantia_origen"],
+];
 
 
 
