@@ -367,10 +367,11 @@ JERARQUÍA SEMÁNTICA (en orden):
 
 FALLBACK DE CUERPO: si la carátula / hoja de calificación no aparece, recorre las cláusulas del cuerpo buscando los términos 'CUANTÍA', 'GARANTÍA HIPOTECARIA', 'MUTUO HIPOTECARIO', 'VALOR DEL CRÉDITO' ancladas a la misma hipoteca.
 
-CONTRATO DE SALIDA (TYPE-SAFE — CRÍTICO):
-- Si encuentras un monto válido anclado al mutuo → 'valor_hipoteca_original' = "<LETRAS> DE PESOS ($<NÚMEROS>)" y 'valor_hipoteca_es_indeterminada' = false.
-- Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA / DE CUANTÍA INDETERMINADA → 'valor_hipoteca_original' = "" (cadena vacía, NUNCA inyectes literales en el campo de monto) y 'valor_hipoteca_es_indeterminada' = true.
-- Si hay dos cifras candidatas ambiguas y no puedes desambiguar → 'valor_hipoteca_original' = "" y 'valor_hipoteca_es_indeterminada' = false. Siempre es preferible que el notario complete manualmente a que el documento salga con cuantía incorrecta (rechazo de calificación registral).
+CONTRATO DE SALIDA (TYPE-SAFE — CAMPOS INDEPENDIENTES):
+Evalúa los dos campos por SEPARADO — pueden coexistir en el caso Ley 546/VIS (mutuo determinado + garantía abierta simultáneamente):
+- 'valor_hipoteca_original': SI existe una cifra anclada al verbo rector del mutuo → devuélvela SIEMPRE en formato "<LETRAS> DE PESOS ($<NÚMEROS>)", INDEPENDIENTEMENTE de que la garantía se declare abierta. Cadena vacía "" SOLO si no hay ninguna cifra anclable, o si hay dos cifras ambiguas que no puedes desambiguar. NUNCA inyectes literales en este campo.
+- 'hipoteca_garantia_abierta': true si en las cláusulas de la hipoteca aparece literal "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA" (es un hecho del texto — no depende de si encontraste o no un monto). false en cualquier otro caso.
+- 'valor_hipoteca_es_indeterminada': alias legacy — MISMO valor que hipoteca_garantia_abierta.
 
 PROHIBIDO ABSOLUTO: copiar el precio de la compraventa, el avalúo, el abono parcial, el saldo pendiente, o cualquier monto que no esté inequívocamente gobernado por un verbo rector del crédito.
 
