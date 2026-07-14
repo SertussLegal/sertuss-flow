@@ -111,7 +111,8 @@ interface CancelacionData {
     fecha_escritura_hipoteca: string;
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
-    valor_hipoteca_es_indeterminada?: boolean;
+    valor_hipoteca_es_indeterminada?: boolean; // alias legacy — se rederiva desde hipoteca_garantia_abierta
+    hipoteca_garantia_abierta?: boolean;       // NUEVO — techo de garantía abierta/sin límite, INDEPENDIENTE del monto
     /** Metadata para UI: "escritura" cuando el monto vino del OCR dedicado
      *  a la escritura antecedente porque el certificado estaba indeterminado. */
     cuantia_origen?: "escritura" | "certificado" | "manual";
