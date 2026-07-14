@@ -2532,9 +2532,12 @@ if (import.meta.main) serve(async (req) => {
       let aplicadoIndet = false;
       if (dedicadaMonto && finalVacioOSustituible) {
         (finalHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
-        // Coexistencia Ley 546/VIS: monto poblado Y bandera de garantía abierta pueden convivir.
+        // Coexistencia Ley 546/VIS: `hipoteca_garantia_abierta` guarda el hecho
+        // independiente; alias legacy queda en false cuando hay monto poblado
+        // para no romper la cláusula pago existente (que trata alias=true como
+        // "no imprimir monto, imprimir frase indeterminada").
         (finalHA as Record<string, unknown>).hipoteca_garantia_abierta = dedicadaAbierta;
-        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = dedicadaAbierta;
+        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
         (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
         aplicado = true;
       } else if (dedicadaAbierta && finalVacioOSustituible) {
@@ -2551,7 +2554,7 @@ if (import.meta.main) serve(async (req) => {
       if (dedicadaMonto) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
         (newDataIaHA as Record<string, unknown>).hipoteca_garantia_abierta = dedicadaAbierta;
-        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = dedicadaAbierta;
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
       } else if (dedicadaAbierta) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = "";
