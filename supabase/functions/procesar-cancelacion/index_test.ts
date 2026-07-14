@@ -345,3 +345,111 @@ Deno.test("PODER-5) buildDocxVars: poder_banco={} → 8 campos apoderado undefin
 });
 
 
+// ─────────────────────────────────────────────────────────────────────
+// Entrega 1 — Coexistencia monto + garantía abierta (Ley 546/VIS)
+// El nuevo campo `hipoteca_garantia_abierta` NO es excluyente del monto.
+// El alias legacy `valor_hipoteca_es_indeterminada` refleja el mismo valor.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("E1-A) VIS/Ley 546: mergeCuantiaIntoExtracted preserva monto Y marca garantía abierta", () => {
+  const extracted = minimalData();
+  const res = mergeCuantiaIntoExtracted(extracted, {
+    valor_hipoteca_original: "SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL DE PESOS ($7.958.000)",
+    // Escritura VIS 2003 declara HIPOTECA ABIERTA además del mutuo determinado.
+    hipoteca_garantia_abierta: true,
+    valor_hipoteca_es_indeterminada: true,
+    motivo_null: null,
+    // deno-lint-ignore no-explicit-any
+  } as any);
+  assertEquals(res.applied, true);
+  assertEquals(
+    extracted.hipoteca_anterior.valor_hipoteca_original,
+    "SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL DE PESOS ($7.958.000)",
+  );
+  // Alias legacy y campo nuevo van sincronizados y a true.
+  assertEquals(
+    (extracted.hipoteca_anterior as Record<string, unknown>).hipoteca_garantia_abierta,
+    true,
+  );
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, true);
+  // El helper de cláusula, cuando ve monto poblado, imprime el monto (no la frase indeterminada).
+  const clausula = buildClausulaPagoHipoteca({
+    esCuantiaIndeterminada: true,
+    valorRaw: extracted.hipoteca_anterior.valor_hipoteca_original,
+  });
+  assertStringIncludes(clausula, "7.958.000");
+  assert(!/INDETERMINADA/i.test(clausula), "con monto poblado, no debe hablar de indeterminada");
+});
+
+Deno.test("E1-B) Legacy 0 cifras + apertura → path clásico intacto", () => {
+  const extracted = minimalData();
+  const res = mergeCuantiaIntoExtracted(extracted, {
+    valor_hipoteca_original: null,
+    hipoteca_garantia_abierta: true,
+    valor_hipoteca_es_indeterminada: true,
+    motivo_null: "escritura_declara_abierta",
+    // deno-lint-ignore no-explicit-any
+  } as any);
+  assertEquals(res.applied, true);
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_original, "");
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, true);
+  assertEquals(
+    (extracted.hipoteca_anterior as Record<string, unknown>).hipoteca_garantia_abierta,
+    true,
+  );
+});
+
+Deno.test("E1-C) Monto sin apertura → alias legacy = false", () => {
+  const extracted = minimalData();
+  const res = mergeCuantiaIntoExtracted(extracted, {
+    valor_hipoteca_original: "CINCUENTA MILLONES DE PESOS ($50.000.000)",
+    hipoteca_garantia_abierta: false,
+    valor_hipoteca_es_indeterminada: false,
+    motivo_null: null,
+    // deno-lint-ignore no-explicit-any
+  } as any);
+  assertEquals(res.applied, true);
+  assertEquals(
+    extracted.hipoteca_anterior.valor_hipoteca_original,
+    "CINCUENTA MILLONES DE PESOS ($50.000.000)",
+  );
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, false);
+  assertEquals(
+    (extracted.hipoteca_anterior as Record<string, unknown>).hipoteca_garantia_abierta,
+    false,
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Entrega 1 — Validación estática de schema/prompt del extractor de poder.
+// Blindaje contra regresión: la descripción de sociedad_constitucion.numero
+// debe condicionarse a documento_privado; el prompt debe reforzar cargo
+// (sin "cuando aparezcan") y consistencia interna de reforma.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("E1-schemaPoder) sociedad_constitucion.numero condicionado a tipo_documento", async () => {
+  const src = await Deno.readTextFile(
+    new URL("../_shared/isomorphic/poderBancoExtractor/tool.ts", import.meta.url),
+  );
+  const idx = src.indexOf("numero: { type: \"string\"");
+  assert(idx >= 0, "descripción de numero debe existir");
+  const fragmento = src.slice(idx, idx + 800);
+  assertStringIncludes(fragmento, "documento_privado");
+  assertStringIncludes(fragmento, "camara_comercio_numero");
+});
+
+Deno.test("E1-promptPoder) prompt refuerza cargo obligatorio y consistencia interna", async () => {
+  const src = await Deno.readTextFile(
+    new URL("../_shared/isomorphic/poderBancoExtractor/prompt.ts", import.meta.url),
+  );
+  assertStringIncludes(src, "OBLIGATORIO buscar activamente");
+  assertStringIncludes(src, "CONSISTENCIA INTERNA");
+  // La frase legacy debilitante debe estar eliminada.
+  assert(
+    !/representante_legal_cedula_expedida_en\s+cuando\s+aparezcan/.test(src),
+    "no debe subsistir la coletilla 'cuando aparezcan'",
+  );
+});
+
+
+
