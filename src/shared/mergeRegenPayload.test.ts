@@ -1,0 +1,75 @@
+// A1 (backend) — mergeRegenPayload: el modo `regen` de procesar-cancelacion
+// debe rescatar el bloque profundo v6 aunque `data_final` histórico lo haya
+// perdido (caso c8924aa2), y `overrides` NUNCA puede borrar claves que no
+// envía.
+import { describe, it, expect } from "vitest";
+import { mergeRegenPayload } from "../../supabase/functions/_shared/isomorphic/mergeRegenPayload";
+
+describe("A1 backend — mergeRegenPayload", () => {
+  it("rescate profundo: data_final sin apoderado.sociedad_* lo recupera de data_ia", () => {
+    const dataIa = {
+      poder_banco: {
+        apoderado_nombre: "LINA",
+        apoderado: {
+          tipo: "juridica",
+          sociedad_razon_social: "CONECTIVA GLOBAL S.A.S.",
+          representantes: [{ nombre: "LINA", es_firmante: true }],
+        },
+        poderdante: { nombre: "DAVIVIENDA" },
+        instrumento_poder: { escritura_num: "16390" },
+      },
+      hipoteca_anterior: { numero_escritura_hipoteca: "1000" },
+    };
+    const dataFinal = {
+      poder_banco: { apoderado_nombre: "LINA MARIA CAMPOS" },
+      hipoteca_anterior: { numero_escritura_hipoteca: "1000" },
+    };
+    const overrides = {
+      poder_banco: { apoderado_notaria_poder: "NOTARÍA 29 BOGOTÁ" },
+    };
+    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+
+    // Rescate profundo desde data_ia.
+    expect(out.poder_banco.apoderado.sociedad_razon_social).toBe("CONECTIVA GLOBAL S.A.S.");
+    expect(out.poder_banco.poderdante.nombre).toBe("DAVIVIENDA");
+    expect(out.poder_banco.instrumento_poder.escritura_num).toBe("16390");
+    // Edición previa (data_final) preservada.
+    expect(out.poder_banco.apoderado_nombre).toBe("LINA MARIA CAMPOS");
+    // Override actual del frontend aplicado.
+    expect(out.poder_banco.apoderado_notaria_poder).toBe("NOTARÍA 29 BOGOTÁ");
+  });
+
+  it("no borrado: overrides sin poder_banco.apoderado profundo no elimina el bloque", () => {
+    const dataIa = {
+      poder_banco: { apoderado: { tipo: "juridica", sociedad_razon_social: "X" } },
+    };
+    const dataFinal = { poder_banco: { apoderado_nombre: "Y" } };
+    const overrides = { poder_banco: { apoderado_nombre: "Z" } };
+    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    expect(out.poder_banco.apoderado.sociedad_razon_social).toBe("X");
+    expect(out.poder_banco.apoderado_nombre).toBe("Z");
+  });
+
+  it("sobreescritura permitida: overrides gana sobre data_final en el plano", () => {
+    const dataIa = { poder_banco: { apoderado_nombre: "IA" } };
+    const dataFinal = { poder_banco: { apoderado_nombre: "FINAL" } };
+    const overrides = { poder_banco: { apoderado_nombre: "OV" } };
+    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    expect(out.poder_banco.apoderado_nombre).toBe("OV");
+  });
+
+  it("otros bloques del payload: overrides gana sobre data_final", () => {
+    const dataIa = { hipoteca_anterior: { valor: "IA" } };
+    const dataFinal = { hipoteca_anterior: { valor: "FINAL" } };
+    const overrides = { hipoteca_anterior: { valor: "OV" } };
+    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    expect(out.hipoteca_anterior.valor).toBe("OV");
+  });
+
+  it("sin overrides: base = data_final ?? data_ia", () => {
+    const dataIa = { poder_banco: { apoderado_nombre: "IA" } };
+    const dataFinal = null;
+    const out = mergeRegenPayload({ dataIa, dataFinal, overrides: null }) as Record<string, any>;
+    expect(out.poder_banco.apoderado_nombre).toBe("IA");
+  });
+});
