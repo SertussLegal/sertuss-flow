@@ -30,5 +30,5 @@ export function mergeRegenPayload<T extends Record<string, unknown>>(args: {
   const ovPB = (overrides.poder_banco ?? {}) as Record<string, unknown>;
   const mergedPB = { ...iaPB, ...basePB, ...ovPB };
 
-  return { ...base, ...overrides, poder_banco: mergedPB } as T;
+  return { ...base, ...overrides, poder_banco: mergedPB } as unknown as T;
 }
