@@ -23,7 +23,7 @@ import {
   PODER_BANCO_TOOL_NAME,
   type PoderBancoDeepPayload,
 } from "../_shared/isomorphic/poderBancoExtractor/index.ts";
-import { sanitizeString, stripNullyStrings } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
+import { sanitizeString, stripNullyStrings, CANCELACION_NULLY_PATHS } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
