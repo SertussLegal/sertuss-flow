@@ -101,8 +101,6 @@ type PoderBanco = {
   facultades?: Record<string, unknown> | null;
   motivos_incompletitud?: unknown;
   _classifier_motivos?: unknown;
-  // Escape hatch para futuros campos profundos sin regresar aquí.
-  [k: string]: unknown;
 };
 
 /**
