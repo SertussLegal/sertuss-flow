@@ -3004,7 +3004,7 @@ if (import.meta.main) serve(async (req) => {
           // Path normal — genera minuta+certificado y marca completed.
           const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
           const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-            supabaseService, cancelacionId, extracted, prosaOv,
+            supabaseService, cancelacionId, cleanedExtracted, prosaOv,
           );
           const { error: updErr } = await supabaseService.from("cancelaciones").update({
             ...commonUpdate,
