@@ -39,9 +39,18 @@ EXTRACCIÓN DE CADENA PROFUNDA (cuando has_apoderado_banco_v3 = "true")
 ═══════════════════════════════════════════════════════════════════════════════
 
   - poderdante: la entidad bancaria que OTORGA el poder + datos del RL del
-    banco que firma EN NOMBRE del banco al constituir el poder. Extrae SIEMPRE
-    representante_legal_cargo (ej: "SUPLENTE DEL PRESIDENTE") y
-    representante_legal_cedula_expedida_en cuando aparezcan.
+    banco que firma EN NOMBRE del banco al constituir el poder.
+    OBLIGATORIO buscar activamente y devolver:
+      * representante_legal_cargo — el cargo textual con el que firma
+        (ej: "SUPLENTE DEL PRESIDENTE", "VICEPRESIDENTE JURÍDICO",
+        "GERENTE DE OPERACIONES"). NO uses "REPRESENTANTE LEGAL" como
+        fallback genérico — devuelve el cargo específico que aparece
+        antefirma o en el certificado Superfinanciera adjunto.
+      * representante_legal_cedula_expedida_en — ciudad de expedición
+        de la cédula del RL del banco.
+    Si tras revisar cuerpo del poder, antefirma y certificado
+    Superfinanciera genuinamente no aparece → null con confianza "baja".
+    No inventes.
   - apoderado: a quién se le confiere el poder.
       * apoderado.tipo = "natural" si es persona física directa (NO hay
         sociedad intermedia). Marcador: "confiere poder ... al señor/a NN".
@@ -52,14 +61,28 @@ EXTRACCIÓN DE CADENA PROFUNDA (cuando has_apoderado_banco_v3 = "true")
             - sociedad_nit (con DV)
             - sociedad_constitucion.tipo_documento
               ("documento_privado" | "escritura_publica")
-            - sociedad_constitucion.numero
+            - sociedad_constitucion.numero (SOLO si
+              tipo_documento='escritura_publica'; para documento_privado
+              devolver null — el número de inscripción de Cámara va en
+              camara_comercio_numero, NO aquí)
             - sociedad_constitucion.fecha (YYYY-MM-DD) y fecha_texto
             - sociedad_constitucion.camara_comercio_ciudad
             - sociedad_constitucion.camara_comercio_fecha (YYYY-MM-DD)
             - sociedad_constitucion.camara_comercio_numero
             - sociedad_constitucion.libro
-            - sociedad_constitucion.razon_social_anterior + reforma_acta_*
-              SOLO si hubo cambio de razón social documentado.
+            - sociedad_constitucion.razon_social_anterior +
+              reforma_acta_numero + reforma_acta_fecha_texto +
+              reforma_camara_fecha_texto — SI hubo cambio de razón social
+              documentado. REGLA DE CONSISTENCIA INTERNA: si detectas
+              razon_social_anterior, DEBES buscar en el mismo certificado
+              de Cámara los 3 datos de reforma (número de acta, fecha del
+              acta, fecha de inscripción en Cámara). Aparecen típicamente
+              en el mismo párrafo o página del certificado bajo etiquetas
+              como "Por acta N° ... de fecha ... inscrita el ...". Si
+              genuinamente falta uno tras esa doble verificación, marca
+              ese subcampo específico como null (los que sí encontraste
+              deben ir poblados). NO devuelvas los 3 como null si
+              razon_social_anterior sí está — es inconsistencia interna.
             - representantes[] con CADA persona designada para firmar
               cancelaciones (RL principal + suplentes), incluyendo es_firmante.
         Si falta CUALQUIERA de sociedad_razon_social, sociedad_nit o

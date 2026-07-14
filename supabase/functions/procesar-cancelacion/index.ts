@@ -111,7 +111,8 @@ interface CancelacionData {
     fecha_escritura_hipoteca: string;
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
-    valor_hipoteca_es_indeterminada?: boolean;
+    valor_hipoteca_es_indeterminada?: boolean; // alias legacy — se rederiva desde hipoteca_garantia_abierta
+    hipoteca_garantia_abierta?: boolean;       // NUEVO — techo de garantía abierta/sin límite, INDEPENDIENTE del monto
     /** Metadata para UI: "escritura" cuando el monto vino del OCR dedicado
      *  a la escritura antecedente porque el certificado estaba indeterminado. */
     cuantia_origen?: "escritura" | "certificado" | "manual";
@@ -175,8 +176,9 @@ const tools = [
               numero_escritura_hipoteca: { type: "string", description: "Número de escritura en LETRAS Y NÚMEROS, ej: 'CUATRO MIL CIENTO SESENTA Y CINCO (4165)'" },
               fecha_escritura_hipoteca: { type: "string", description: "Fecha en LETRAS Y NÚMEROS, ej: 'NUEVE (09) DE OCTUBRE DE DOS MIL VEINTE (2020)'" },
               notaria_hipoteca: { type: "string", description: "Notaría en LETRAS Y NÚMEROS + ciudad, ej: 'TREINTA Y OCHO (38) DE BOGOTA D.C.'" },
-              valor_hipoteca_original: { type: "string", description: "Monto del CRÉDITO HIPOTECARIO original. ANCLAJE SINTÁCTICO OBLIGATORIO al verbo rector del gravamen ('constituye', 'grava', 'hipoteca', 'garantiza', 'presta', 'concede', 'desembolsa'). LISTA NEGRA: 'precio de venta', 'avalúo', 'subrogación', 'abono', 'saldo pendiente', 'subsidio', 'cesantías'. Cuantía indeterminada / hipoteca abierta → cadena vacía '' y valor_hipoteca_es_indeterminada=true. Ambigüedad sin desambiguación → '' y false. Formato: '<MONTO EN LETRAS> DE PESOS ($<NÚMERO CON PUNTOS DE MILES>)' MAYÚSCULAS." },
-              valor_hipoteca_es_indeterminada: { type: "boolean", description: "true SOLO si la hipoteca es declarada expresamente ABIERTA, SIN LÍMITE DE CUANTÍA, o de CUANTÍA INDETERMINADA." },
+              valor_hipoteca_original: { type: "string", description: "Monto del CRÉDITO HIPOTECARIO (mutuo) anclado al verbo rector del gravamen ('constituye','grava','hipoteca','garantiza','presta','concede','desembolsa','otorga en mutuo'). Devuelve el monto SI EXISTE, INDEPENDIENTEMENTE de que la garantía se declare abierta (caso Ley 546/VIS: mutuo determinado + garantía abierta coexisten). LISTA NEGRA: 'precio de venta','avalúo','subrogación','abono','saldo pendiente','subsidio','cesantías'. Cadena vacía '' SOLO si no hay ninguna cifra anclable al mutuo. Formato: '<MONTO EN LETRAS> DE PESOS ($<NÚMERO CON PUNTOS DE MILES>)' MAYÚSCULAS." },
+              hipoteca_garantia_abierta: { type: "boolean", description: "INDEPENDIENTE del monto. true si la escritura declara expresamente que la GARANTÍA HIPOTECARIA es 'ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. PUEDE coexistir con valor_hipoteca_original poblado (caso VIS/Ley 546). false por defecto." },
+              valor_hipoteca_es_indeterminada: { type: "boolean", description: "DEPRECATED alias legacy — rellena con el MISMO valor que hipoteca_garantia_abierta." },
               // ── ATÓMICOS (preferidos) — eliminan necesidad de parsers inversos en backend ──
               numero_escritura: { type: "string", description: "Número de escritura SOLO en DÍGITOS ARÁBIGOS, sin paréntesis ni letras. Ej: '3866'. Estricto: solo dígitos." },
               fecha_escritura: {
@@ -365,10 +367,11 @@ JERARQUÍA SEMÁNTICA (en orden):
 
 FALLBACK DE CUERPO: si la carátula / hoja de calificación no aparece, recorre las cláusulas del cuerpo buscando los términos 'CUANTÍA', 'GARANTÍA HIPOTECARIA', 'MUTUO HIPOTECARIO', 'VALOR DEL CRÉDITO' ancladas a la misma hipoteca.
 
-CONTRATO DE SALIDA (TYPE-SAFE — CRÍTICO):
-- Si encuentras un monto válido anclado al mutuo → 'valor_hipoteca_original' = "<LETRAS> DE PESOS ($<NÚMEROS>)" y 'valor_hipoteca_es_indeterminada' = false.
-- Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA / DE CUANTÍA INDETERMINADA → 'valor_hipoteca_original' = "" (cadena vacía, NUNCA inyectes literales en el campo de monto) y 'valor_hipoteca_es_indeterminada' = true.
-- Si hay dos cifras candidatas ambiguas y no puedes desambiguar → 'valor_hipoteca_original' = "" y 'valor_hipoteca_es_indeterminada' = false. Siempre es preferible que el notario complete manualmente a que el documento salga con cuantía incorrecta (rechazo de calificación registral).
+CONTRATO DE SALIDA (TYPE-SAFE — CAMPOS INDEPENDIENTES):
+Evalúa los dos campos por SEPARADO — pueden coexistir en el caso Ley 546/VIS (mutuo determinado + garantía abierta simultáneamente):
+- 'valor_hipoteca_original': SI existe una cifra anclada al verbo rector del mutuo → devuélvela SIEMPRE en formato "<LETRAS> DE PESOS ($<NÚMEROS>)", INDEPENDIENTEMENTE de que la garantía se declare abierta. Cadena vacía "" SOLO si no hay ninguna cifra anclable, o si hay dos cifras ambiguas que no puedes desambiguar. NUNCA inyectes literales en este campo.
+- 'hipoteca_garantia_abierta': true si en las cláusulas de la hipoteca aparece literal "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA" (es un hecho del texto — no depende de si encontraste o no un monto). false en cualquier otro caso.
+- 'valor_hipoteca_es_indeterminada': alias legacy — MISMO valor que hipoteca_garantia_abierta.
 
 PROHIBIDO ABSOLUTO: copiar el precio de la compraventa, el avalúo, el abono parcial, el saldo pendiente, o cualquier monto que no esté inequívocamente gobernado por un verbo rector del crédito.
 
@@ -1698,7 +1701,11 @@ const cuantiaDedicadaTool = [
           },
           valor_hipoteca_es_indeterminada: {
             type: "boolean",
-            description: "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. En cualquier otro caso false.",
+            description: "DEPRECATED alias legacy — devuelve el MISMO valor que hipoteca_garantia_abierta.",
+          },
+          hipoteca_garantia_abierta: {
+            type: "boolean",
+            description: "INDEPENDIENTE de valor_hipoteca_original. true si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. PUEDE ser true simultáneamente con un monto poblado (caso VIS/Ley 546).",
           },
           confianza: {
             type: "string",
@@ -1741,6 +1748,7 @@ const cuantiaDedicadaTool = [
         required: [
           "valor_hipoteca_original",
           "valor_hipoteca_es_indeterminada",
+          "hipoteca_garantia_abierta",
           "motivo_null",
           "candidatos_vistos",
         ],
@@ -1774,23 +1782,24 @@ Para cada cifra, decide su rol SEGÚN EL CONTEXTO SEMÁNTICO que la rodea (no po
 PASO 3 — DESAMBIGUAR (elige UNA salida)
 
   a) Exactamente UNA cifra clasificada como "cuantia_credito"
-     → úsala. Confianza = "alta".
+     → valor_hipoteca_original = monto formateado. Confianza = "alta".
 
   b) VARIAS cifras "cuantia_credito" con el MISMO monto normalizado (mismo entero en pesos, ignorando formato/decimales/UVR paralelo)
-     → úsala. Confianza = "alta" (redundancia entre mutuo, pago y liquidación es lo esperado en escrituras bien redactadas).
+     → valor_hipoteca_original = monto formateado. Confianza = "alta" (redundancia entre mutuo, pago y liquidación es lo esperado en escrituras bien redactadas).
 
   c) VARIAS cifras "cuantia_credito" con montos DISTINTOS que no puedes conciliar
      → valor_hipoteca_original = null, motivo_null = "ambigua_multiple". Confianza = "baja".
 
   d) CERO cifras "cuantia_credito" pero la escritura declara expresamente "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA"
-     → valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = true, motivo_null = "escritura_declara_abierta". Confianza = "alta".
+     → valor_hipoteca_original = null, hipoteca_garantia_abierta = true, motivo_null = "escritura_declara_abierta". Confianza = "alta".
 
   e) CERO cifras "cuantia_credito" y sin declaración de apertura
      → valor_hipoteca_original = null, motivo_null = "sin_evidencia". Confianza = "baja".
 
+INDEPENDIENTEMENTE del caso (a/b/c/d/e), evalúa SIEMPRE 'hipoteca_garantia_abierta' por separado: true si aparece literal "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA" en las cláusulas de la hipoteca; false en otro caso. En los casos (a) y (b) puede haber monto Y garantía abierta simultáneamente (caso VIS/Ley 546). El campo legacy 'valor_hipoteca_es_indeterminada' se rellena con el MISMO valor que 'hipoteca_garantia_abierta'.
+
 REGLAS DE FORMATO (solo aplican a los casos a/b):
 - valor_hipoteca_original = "<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)"
-- valor_hipoteca_es_indeterminada = false
 - motivo_null = null
 
 ANTI-ALUCINACIÓN (estricto):
@@ -1813,13 +1822,18 @@ Ejemplo 2 — Construcción nominal de carátula (escrituras 90s–2000s)
 
 Ejemplo 3 — Ambigüedad real (dos cifras de crédito irreconciliables → null)
   Fragmentos: "cláusula sexta: el mutuo asciende a CINCUENTA MILLONES DE PESOS ($50.000.000)" + "cláusula décima: reliquidado el crédito, el saldo insoluto es SESENTA Y DOS MILLONES DE PESOS ($62.000.000) al momento del otorgamiento".
-  Salida: valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = false, motivo_null = "ambigua_multiple", confianza = "baja", candidatos_vistos = [{..., "cuantia_credito", 50000000}, {..., "cuantia_credito", 62000000}].
+  Salida: valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = false, hipoteca_garantia_abierta = false, motivo_null = "ambigua_multiple", confianza = "baja", candidatos_vistos = [{..., "cuantia_credito", 50000000}, {..., "cuantia_credito", 62000000}].
+
+Ejemplo 4 — Ley 546 / VIS (mutuo determinado + garantía abierta coexisten)
+  Fragmentos: "CLÁUSULA SEGUNDA — HIPOTECA ABIERTA SIN LÍMITE EN LA CUANTÍA sobre el inmueble …" + "CLÁUSULA PRIMERA — El BANCO concede al deudor un mutuo por valor de SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL PESOS ($7.958.000)".
+  Salida: valor_hipoteca_original = "SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL DE PESOS ($7.958.000)", hipoteca_garantia_abierta = true, valor_hipoteca_es_indeterminada = true, motivo_null = null, confianza = "alta", candidatos_vistos incluye {clasificacion:"cuantia_credito", monto:7958000}.
 
 Llama SIEMPRE a la herramienta extract_cuantia_credito_dedicada.`;
 
 export interface CuantiaDedicadaResult {
   valor_hipoteca_original?: string | null;
   valor_hipoteca_es_indeterminada?: boolean;
+  hipoteca_garantia_abierta?: boolean;
   confianza?: "alta" | "media" | "baja";
   motivo_null?: CuantiaMotivoNull;
   candidatos_vistos?: CuantiaCandidato[];
@@ -1964,19 +1978,25 @@ export function mergeCuantiaIntoExtracted(
   const certVacio = monoMonto === "" || monoIndet || /^(null|undefined|nan)$/i.test(monoMonto);
   if (!certVacio) return { applied: false, monto: null };
   const dedicadaMonto = (dedicada.valor_hipoteca_original ?? "").trim();
-  const dedicadaIndet = dedicada.valor_hipoteca_es_indeterminada === true
+  const dedicadaAbierta = dedicada.hipoteca_garantia_abierta === true
+    || dedicada.valor_hipoteca_es_indeterminada === true
     || dedicada.motivo_null === "escritura_declara_abierta";
   if (dedicadaMonto) {
     extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
+    // Coexistencia Ley 546/VIS: hipoteca_garantia_abierta captura el hecho del
+    // texto (independiente del monto). El alias legacy `valor_hipoteca_es_indeterminada`
+    // conserva su semántica original (=true ⇒ "cláusula sin monto") y queda en false
+    // cuando hay monto poblado, para no romper la prosa notarial existente.
+    extracted.hipoteca_anterior.hipoteca_garantia_abierta = dedicadaAbierta;
     extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
     extracted.hipoteca_anterior.cuantia_origen = "escritura";
     return { applied: true, monto: dedicadaMonto };
   }
-  if (dedicadaIndet) {
-    // Propagación explícita: el extractor dedicado confirmó HIPOTECA ABIERTA.
-    // Escribimos vacío REAL (no "null"), flag=true, origen=escritura. Sin esto,
-    // el estado basura del monolítico sobrevive y termina en la prosa.
+  if (dedicadaAbierta) {
+    // Propagación explícita: el extractor dedicado confirmó HIPOTECA ABIERTA
+    // y no halló monto. Vacío REAL (no "null"), flag=true, origen=escritura.
     extracted.hipoteca_anterior.valor_hipoteca_original = "";
+    extracted.hipoteca_anterior.hipoteca_garantia_abierta = true;
     extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = true;
     extracted.hipoteca_anterior.cuantia_origen = "escritura";
     return { applied: true, monto: null };
@@ -2496,7 +2516,8 @@ if (import.meta.main) serve(async (req) => {
       const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
       const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
-      const dedicadaIndet = dedicada?.valor_hipoteca_es_indeterminada === true
+      const dedicadaAbierta = dedicada?.hipoteca_garantia_abierta === true
+        || dedicada?.valor_hipoteca_es_indeterminada === true
         || dedicada?.motivo_null === "escritura_declara_abierta";
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
@@ -2511,12 +2532,18 @@ if (import.meta.main) serve(async (req) => {
       let aplicadoIndet = false;
       if (dedicadaMonto && finalVacioOSustituible) {
         (finalHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
+        // Coexistencia Ley 546/VIS: `hipoteca_garantia_abierta` guarda el hecho
+        // independiente; alias legacy queda en false cuando hay monto poblado
+        // para no romper la cláusula pago existente (que trata alias=true como
+        // "no imprimir monto, imprimir frase indeterminada").
+        (finalHA as Record<string, unknown>).hipoteca_garantia_abierta = dedicadaAbierta;
         (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
         (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
         aplicado = true;
-      } else if (dedicadaIndet && finalVacioOSustituible) {
-        // Propagación explícita de indeterminada confirmada por el extractor dedicado.
+      } else if (dedicadaAbierta && finalVacioOSustituible) {
+        // Propagación explícita: sin monto, pero garantía abierta confirmada.
         (finalHA as Record<string, unknown>).valor_hipoteca_original = "";
+        (finalHA as Record<string, unknown>).hipoteca_garantia_abierta = true;
         (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
         aplicado = true;
@@ -2526,10 +2553,12 @@ if (import.meta.main) serve(async (req) => {
       const newDataIaHA = { ...cleanedIaHA };
       if (dedicadaMonto) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
+        (newDataIaHA as Record<string, unknown>).hipoteca_garantia_abierta = dedicadaAbierta;
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
-      } else if (dedicadaIndet) {
+      } else if (dedicadaAbierta) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = "";
+        (newDataIaHA as Record<string, unknown>).hipoteca_garantia_abierta = true;
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
       }

@@ -11,7 +11,8 @@
 // `supabase/functions/_shared/prosaBancos/davivienda.ts` re-exporta desde aquí.
 // ============================================================================
 
-import { numeroConLetras, fechaProsa } from "./legalProse.ts";
+import { numeroConLetras } from "./legalProse.ts";
+import { describirConstitucionSociedad, describirCargoRL, fechaOTextoProsa } from "./prosaHelpers.ts";
 import type { ProsaBancoTemplate, ProsaContext } from "./types.ts";
 
 const NOMBRE_BANCO = "BANCO DAVIVIENDA S.A.";
@@ -36,53 +37,7 @@ function ced(s?: string | null): string {
   return (s ?? "").toString().replace(/\D/g, "");
 }
 function fechaOTexto(fecha?: string | null, fechaTexto?: string | null): string {
-  if (nn(fecha)) {
-    const p = fechaProsa(fecha!);
-    if (p) return p;
-  }
-  if (nn(fechaTexto)) return fechaTexto!.trim().toLowerCase();
-  return "";
-}
-
-function descripcionConstitucionSociedad(ctx: ProsaContext): string {
-  const c = ctx.apoderado.sociedad_constitucion || {};
-  const partes: string[] = [];
-
-  if (nn(c.tipo_documento) || nn(c.fecha) || nn(c.fecha_texto) || nn(c.numero)) {
-    const docTipo = c.tipo_documento === "escritura_publica" ? "escritura pública" : "documento privado";
-    const numTxt = nn(c.numero) ? `número ${numeroConLetras(c.numero!, "masculine")} ` : "";
-    const fechaTxt = fechaOTexto(c.fecha, c.fecha_texto);
-    if (fechaTxt) {
-      partes.push(`sociedad constituida mediante ${docTipo} ${numTxt}del ${fechaTxt} de asamblea de accionistas`);
-    } else {
-      partes.push(`sociedad constituida mediante ${docTipo}${numTxt ? " " + numTxt.trim() : ""}`);
-    }
-  }
-
-  if (nn(c.camara_comercio_ciudad) || nn(c.camara_comercio_fecha) || nn(c.camara_comercio_numero) || nn(c.libro)) {
-    const cciu = nn(c.camara_comercio_ciudad) ? c.camara_comercio_ciudad!.trim().toLowerCase() : "";
-    const cfecha = fechaOTexto(c.camara_comercio_fecha, null);
-    const cnum = nn(c.camara_comercio_numero) ? c.camara_comercio_numero!.trim() : "";
-    const libro = nn(c.libro) ? c.libro!.trim() : "";
-    let s = `inscrita en la cámara de comercio${cciu ? " de " + cciu : ""}`;
-    if (cfecha) s += ` el ${cfecha}`;
-    if (cnum) s += ` bajo el número ${cnum}`;
-    if (libro) s += ` del libro ${libro}`;
-    partes.push(s);
-  }
-
-  if (nn(c.razon_social_anterior)) {
-    let s = `se constituyó inicialmente como ${up(c.razon_social_anterior)}`;
-    const actaNum = nn(c.reforma_acta_numero) ? ` número ${numeroConLetras(c.reforma_acta_numero!, "masculine")}` : "";
-    const actaFecha = nn(c.reforma_acta_fecha_texto) ? ` del ${c.reforma_acta_fecha_texto!.trim().toLowerCase()}` : "";
-    const camFecha = nn(c.reforma_camara_fecha_texto) ? ` el ${c.reforma_camara_fecha_texto!.trim().toLowerCase()}` : "";
-    if (actaNum || actaFecha || camFecha) {
-      s += `, posteriormente mediante acta${actaNum}${actaFecha} de asamblea de accionistas, inscrita en la Cámara de comercio${camFecha}, cambio su razón social por ${up(ctx.apoderado.sociedad_razon_social)}`;
-    }
-    partes.push(s);
-  }
-
-  return partes.join(", ");
+  return fechaOTextoProsa(fecha, fechaTexto);
 }
 
 /** Sufijo de notas adicionales del usuario (v5 Modal Híbrido). */
@@ -113,12 +68,12 @@ function comparecenciaJuridica(ctx: ProsaContext): string {
   const cedula = ced(ctx.apoderado.cedula) || ced((ctx.apoderado.representantes ?? [])[0]?.cedula);
   const razonSocial = up(ctx.apoderado.sociedad_razon_social);
   const nitSociedad = ctx.apoderado.sociedad_nit?.trim() || "___________";
-  const constitucion = descripcionConstitucionSociedad(ctx);
+  const constitucion = describirConstitucionSociedad(ctx.apoderado);
 
   const rlBancoNombre = up(ctx.poderdante.representante_legal_nombre) || "___________";
   const rlBancoCed = ced(ctx.poderdante.representante_legal_cedula) || "___________";
   const rlBancoCiu = low(ctx.poderdante.representante_legal_cedula_expedida_en) || "Bogotá D.C.";
-  const rlBancoCargo = low(ctx.poderdante.representante_legal_cargo).toLowerCase() || "representante legal";
+  const cargoFragmento = describirCargoRL(ctx.poderdante.representante_legal_cargo, NOMBRE_BANCO);
 
   const escrituraPoderNum = nn(ctx.instrumento.escritura_num)
     ? numeroConLetras(ctx.instrumento.escritura_num!, "masculine")
@@ -130,7 +85,7 @@ function comparecenciaJuridica(ctx: ProsaContext): string {
   const notariaPoderCiu = low(ctx.instrumento.notaria_ciudad) || "Bogotá D.C.";
   const ciudadFirma = low(ctx.ciudad_firma) || "Bogotá D.C.";
 
-  const s = `COMPARECIÓ: ${nombre || "___________"}, mayor de edad, vecino(a) y domiciliado(a) en la ciudad de ${ciudadFirma}, identificado(a) con la cédula de ciudadanía número ${cedula || "___________"}, manifestó: PRIMERO.- Que en su calidad de representante legal de la sociedad ${razonSocial || "___________"} con NIT. ${nitSociedad}${constitucion ? ", " + constitucion : ""}, sociedad que actúa como apoderada general del ${NOMBRE_BANCO}, NIT: ${NIT_BANCO}, establecimiento de crédito legalmente constituido, por ${ESCRITURA_CONSTITUCION_BANCO}, con domicilio principal en la ciudad de Bogotá D.C., como consta en el poder general conferido por el doctor ${rlBancoNombre}, mayor de edad, domiciliado en la ciudad de Bogotá D.C., identificado con cédula de ciudadanía número ${rlBancoCed} expedida en ${rlBancoCiu}, obrando en su condición de ${rlBancoCargo} y como tal representante legal del ${NOMBRE_BANCO}, mediante la escritura pública número ${escrituraPoderNum} del ${escrituraPoderFecha} otorgado en la Notaría ${notariaPoderNum} del Círculo de ${notariaPoderCiu}, cuya copia se protocoliza en el presente instrumento.${notasSufijo(ctx)}`;
+  const s = `COMPARECIÓ: ${nombre || "___________"}, mayor de edad, vecino(a) y domiciliado(a) en la ciudad de ${ciudadFirma}, identificado(a) con la cédula de ciudadanía número ${cedula || "___________"}, manifestó: PRIMERO.- Que en su calidad de representante legal de la sociedad ${razonSocial || "___________"} con NIT. ${nitSociedad}${constitucion ? ", " + constitucion : ""}, sociedad que actúa como apoderada general del ${NOMBRE_BANCO}, NIT: ${NIT_BANCO}, establecimiento de crédito legalmente constituido, por ${ESCRITURA_CONSTITUCION_BANCO}, con domicilio principal en la ciudad de Bogotá D.C., como consta en el poder general conferido por el doctor ${rlBancoNombre}, mayor de edad, domiciliado en la ciudad de Bogotá D.C., identificado con cédula de ciudadanía número ${rlBancoCed} expedida en ${rlBancoCiu}, ${cargoFragmento}, mediante la escritura pública número ${escrituraPoderNum} del ${escrituraPoderFecha} otorgado en la Notaría ${notariaPoderNum} del Círculo de ${notariaPoderCiu}, cuya copia se protocoliza en el presente instrumento.${notasSufijo(ctx)}`;
   return collapseSpaces(s);
 }
 

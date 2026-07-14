@@ -115,7 +115,7 @@ export const poderBancoTool = {
                 "Si tipo='juridica': datos de constitución de la sociedad apoderada. Requerido para probar el tracto sucesivo ante la ORIP.",
               properties: {
                 tipo_documento: { type: "string", enum: ["documento_privado", "escritura_publica"], description: "Naturaleza del acto de constitución." },
-                numero: { type: "string", description: "Número del documento/escritura de constitución. Solo dígitos si es escritura. null si no aparece." },
+                numero: { type: "string", description: "Número de la escritura pública de constitución. SOLO rellenar cuando tipo_documento='escritura_publica' (solo dígitos). Si tipo_documento='documento_privado', este campo DEBE ser null — los documentos privados de constitución (actas de asamblea, minutas privadas) NO tienen número propio del instrumento. NO confundir con el número de inscripción en Cámara de Comercio (ese va en camara_comercio_numero). null si no aparece o si el tipo es documento privado." },
                 fecha: { type: "string", description: "Fecha de constitución en YYYY-MM-DD. null si solo hay letras no deducibles." },
                 fecha_texto: { type: "string", description: "Fecha literal como aparece en el documento. Ej: 'DIECIOCHO (18) DE OCTUBRE DE DOS MIL TRECE (2013)'." },
                 camara_comercio_ciudad: { type: "string", description: "Ciudad de la Cámara de Comercio donde se inscribió. MAYÚSCULAS. Ej: 'BOGOTA'." },
