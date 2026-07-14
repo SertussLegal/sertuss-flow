@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { numeroConLetras, fechaProsa } from "./legalProse.ts";
+import { describirConstitucionSociedad, describirCargoRL, fechaOTextoProsa } from "./prosaHelpers.ts";
 import type { ProsaBancoTemplate, ProsaContext } from "./types.ts";
 
 const NOMBRE_BANCO = "BANCO DAVIVIENDA S.A.";
