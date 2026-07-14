@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import "@/lib/cancelacionCriticalFields";
 
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { monitored } from "@/services/monitoredClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
