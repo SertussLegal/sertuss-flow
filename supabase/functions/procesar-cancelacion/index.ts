@@ -1983,10 +1983,12 @@ export function mergeCuantiaIntoExtracted(
     || dedicada.motivo_null === "escritura_declara_abierta";
   if (dedicadaMonto) {
     extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
-    // Coexistencia Ley 546/VIS: si además la escritura declara garantía abierta,
-    // preservamos ese hecho en ambos campos (nuevo + alias legacy) sin borrar el monto.
+    // Coexistencia Ley 546/VIS: hipoteca_garantia_abierta captura el hecho del
+    // texto (independiente del monto). El alias legacy `valor_hipoteca_es_indeterminada`
+    // conserva su semántica original (=true ⇒ "cláusula sin monto") y queda en false
+    // cuando hay monto poblado, para no romper la prosa notarial existente.
     extracted.hipoteca_anterior.hipoteca_garantia_abierta = dedicadaAbierta;
-    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = dedicadaAbierta;
+    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
     extracted.hipoteca_anterior.cuantia_origen = "escritura";
     return { applied: true, monto: dedicadaMonto };
   }
