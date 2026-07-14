@@ -1978,19 +1978,23 @@ export function mergeCuantiaIntoExtracted(
   const certVacio = monoMonto === "" || monoIndet || /^(null|undefined|nan)$/i.test(monoMonto);
   if (!certVacio) return { applied: false, monto: null };
   const dedicadaMonto = (dedicada.valor_hipoteca_original ?? "").trim();
-  const dedicadaIndet = dedicada.valor_hipoteca_es_indeterminada === true
+  const dedicadaAbierta = dedicada.hipoteca_garantia_abierta === true
+    || dedicada.valor_hipoteca_es_indeterminada === true
     || dedicada.motivo_null === "escritura_declara_abierta";
   if (dedicadaMonto) {
     extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
-    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
+    // Coexistencia Ley 546/VIS: si además la escritura declara garantía abierta,
+    // preservamos ese hecho en ambos campos (nuevo + alias legacy) sin borrar el monto.
+    extracted.hipoteca_anterior.hipoteca_garantia_abierta = dedicadaAbierta;
+    extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = dedicadaAbierta;
     extracted.hipoteca_anterior.cuantia_origen = "escritura";
     return { applied: true, monto: dedicadaMonto };
   }
-  if (dedicadaIndet) {
-    // Propagación explícita: el extractor dedicado confirmó HIPOTECA ABIERTA.
-    // Escribimos vacío REAL (no "null"), flag=true, origen=escritura. Sin esto,
-    // el estado basura del monolítico sobrevive y termina en la prosa.
+  if (dedicadaAbierta) {
+    // Propagación explícita: el extractor dedicado confirmó HIPOTECA ABIERTA
+    // y no halló monto. Vacío REAL (no "null"), flag=true, origen=escritura.
     extracted.hipoteca_anterior.valor_hipoteca_original = "";
+    extracted.hipoteca_anterior.hipoteca_garantia_abierta = true;
     extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = true;
     extracted.hipoteca_anterior.cuantia_origen = "escritura";
     return { applied: true, monto: null };
