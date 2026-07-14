@@ -86,11 +86,49 @@ type PoderBanco = {
   //    rellenos por el extractor v5 o quedar `undefined` en cancelaciones
   //    legacy. La UI los lee de forma defensiva.
   has_apoderado_banco?: boolean | null;
+  has_apoderado_banco_v3?: boolean | null;
   vigencia?: {
     tipo?: "indefinida" | "hasta_fecha" | "hasta_terminacion_contrato" | null;
     fecha_limite?: string | null;
   };
+  // ── Bloque profundo v6 (opaco para la UI, sólo se preserva atómicamente
+  //    entre data_ia → data_final para que la escritura conserve la cadena
+  //    de representación: apoderado.sociedad_*, representantes, poderdante,
+  //    instrumento_poder, facultades, motivos_incompletitud, ...).
+  apoderado?: Record<string, unknown> | null;
+  poderdante?: Record<string, unknown> | null;
+  instrumento_poder?: Record<string, unknown> | null;
+  facultades?: Record<string, unknown> | null;
+  motivos_incompletitud?: unknown;
+  _classifier_motivos?: unknown;
+  // Escape hatch para futuros campos profundos sin regresar aquí.
+  [k: string]: unknown;
 };
+
+/**
+ * Hidratación pura de `poder_banco`: parte del bloque completo que trajo la
+ * IA (incluyendo campos profundos v6 que la UI no edita) y encima aplica la
+ * edición manual sólo en las 9 claves planas editables (src ?? ia). Preserva
+ * `apoderado.sociedad_*`, `poderdante`, `instrumento_poder`, `facultades`,
+ * `motivos_incompletitud`, etc.
+ *
+ * Exportado para test unitario en `CancelacionValidar.hydration.test.tsx`.
+ */
+export function hydratePoderBanco(ia_pb: PoderBanco, src_pb: PoderBanco): PoderBanco {
+  return {
+    ...ia_pb,
+    ...src_pb,
+    apoderado_nombre:        src_pb.apoderado_nombre        ?? ia_pb.apoderado_nombre,
+    apoderado_cedula:        src_pb.apoderado_cedula        ?? ia_pb.apoderado_cedula,
+    apoderado_escritura:     src_pb.apoderado_escritura     ?? ia_pb.apoderado_escritura,
+    apoderado_fecha:         src_pb.apoderado_fecha         ?? ia_pb.apoderado_fecha,
+    apoderado_fecha_dia:     src_pb.apoderado_fecha_dia     ?? ia_pb.apoderado_fecha_dia,
+    apoderado_fecha_mes:     src_pb.apoderado_fecha_mes     ?? ia_pb.apoderado_fecha_mes,
+    apoderado_fecha_anio:    src_pb.apoderado_fecha_anio    ?? ia_pb.apoderado_fecha_anio,
+    apoderado_notaria_poder: src_pb.apoderado_notaria_poder ?? ia_pb.apoderado_notaria_poder,
+    apoderado_genero:        src_pb.apoderado_genero        ?? ia_pb.apoderado_genero,
+  };
+}
 
 type Data = {
   hipoteca_anterior: {
