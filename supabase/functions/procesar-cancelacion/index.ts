@@ -1782,23 +1782,24 @@ Para cada cifra, decide su rol SEGÚN EL CONTEXTO SEMÁNTICO que la rodea (no po
 PASO 3 — DESAMBIGUAR (elige UNA salida)
 
   a) Exactamente UNA cifra clasificada como "cuantia_credito"
-     → úsala. Confianza = "alta".
+     → valor_hipoteca_original = monto formateado. Confianza = "alta".
 
   b) VARIAS cifras "cuantia_credito" con el MISMO monto normalizado (mismo entero en pesos, ignorando formato/decimales/UVR paralelo)
-     → úsala. Confianza = "alta" (redundancia entre mutuo, pago y liquidación es lo esperado en escrituras bien redactadas).
+     → valor_hipoteca_original = monto formateado. Confianza = "alta" (redundancia entre mutuo, pago y liquidación es lo esperado en escrituras bien redactadas).
 
   c) VARIAS cifras "cuantia_credito" con montos DISTINTOS que no puedes conciliar
      → valor_hipoteca_original = null, motivo_null = "ambigua_multiple". Confianza = "baja".
 
   d) CERO cifras "cuantia_credito" pero la escritura declara expresamente "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA"
-     → valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = true, motivo_null = "escritura_declara_abierta". Confianza = "alta".
+     → valor_hipoteca_original = null, hipoteca_garantia_abierta = true, motivo_null = "escritura_declara_abierta". Confianza = "alta".
 
   e) CERO cifras "cuantia_credito" y sin declaración de apertura
      → valor_hipoteca_original = null, motivo_null = "sin_evidencia". Confianza = "baja".
 
+INDEPENDIENTEMENTE del caso (a/b/c/d/e), evalúa SIEMPRE 'hipoteca_garantia_abierta' por separado: true si aparece literal "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA" en las cláusulas de la hipoteca; false en otro caso. En los casos (a) y (b) puede haber monto Y garantía abierta simultáneamente (caso VIS/Ley 546). El campo legacy 'valor_hipoteca_es_indeterminada' se rellena con el MISMO valor que 'hipoteca_garantia_abierta'.
+
 REGLAS DE FORMATO (solo aplican a los casos a/b):
 - valor_hipoteca_original = "<LETRAS EN MAYÚSCULAS> DE PESOS ($<NÚMEROS CON PUNTOS DE MILES>)"
-- valor_hipoteca_es_indeterminada = false
 - motivo_null = null
 
 ANTI-ALUCINACIÓN (estricto):
