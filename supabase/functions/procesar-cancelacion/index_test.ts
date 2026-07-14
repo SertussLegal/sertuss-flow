@@ -366,15 +366,17 @@ Deno.test("E1-A) VIS/Ley 546: mergeCuantiaIntoExtracted preserva monto Y marca g
     extracted.hipoteca_anterior.valor_hipoteca_original,
     "SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL DE PESOS ($7.958.000)",
   );
-  // Alias legacy y campo nuevo van sincronizados y a true.
+  // El hecho del texto (garantía abierta) vive en el campo nuevo.
   assertEquals(
     (extracted.hipoteca_anterior as Record<string, unknown>).hipoteca_garantia_abierta,
     true,
   );
-  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, true);
-  // El helper de cláusula, cuando ve monto poblado, imprime el monto (no la frase indeterminada).
+  // El alias legacy queda en false cuando hay monto poblado: rige la cláusula
+  // pago (alias=true significa "no imprimir monto") — la coexistencia se resuelve
+  // dando prioridad al monto para no romper prosa notarial existente.
+  assertEquals(extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada, false);
   const clausula = buildClausulaPagoHipoteca({
-    esCuantiaIndeterminada: true,
+    esCuantiaIndeterminada: extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada === true,
     valorRaw: extracted.hipoteca_anterior.valor_hipoteca_original,
   });
   assertStringIncludes(clausula, "7.958.000");
