@@ -37,53 +37,7 @@ function ced(s?: string | null): string {
   return (s ?? "").toString().replace(/\D/g, "");
 }
 function fechaOTexto(fecha?: string | null, fechaTexto?: string | null): string {
-  if (nn(fecha)) {
-    const p = fechaProsa(fecha!);
-    if (p) return p;
-  }
-  if (nn(fechaTexto)) return fechaTexto!.trim().toLowerCase();
-  return "";
-}
-
-function descripcionConstitucionSociedad(ctx: ProsaContext): string {
-  const c = ctx.apoderado.sociedad_constitucion || {};
-  const partes: string[] = [];
-
-  if (nn(c.tipo_documento) || nn(c.fecha) || nn(c.fecha_texto) || nn(c.numero)) {
-    const docTipo = c.tipo_documento === "escritura_publica" ? "escritura pública" : "documento privado";
-    const numTxt = nn(c.numero) ? `número ${numeroConLetras(c.numero!, "masculine")} ` : "";
-    const fechaTxt = fechaOTexto(c.fecha, c.fecha_texto);
-    if (fechaTxt) {
-      partes.push(`sociedad constituida mediante ${docTipo} ${numTxt}del ${fechaTxt} de asamblea de accionistas`);
-    } else {
-      partes.push(`sociedad constituida mediante ${docTipo}${numTxt ? " " + numTxt.trim() : ""}`);
-    }
-  }
-
-  if (nn(c.camara_comercio_ciudad) || nn(c.camara_comercio_fecha) || nn(c.camara_comercio_numero) || nn(c.libro)) {
-    const cciu = nn(c.camara_comercio_ciudad) ? c.camara_comercio_ciudad!.trim().toLowerCase() : "";
-    const cfecha = fechaOTexto(c.camara_comercio_fecha, null);
-    const cnum = nn(c.camara_comercio_numero) ? c.camara_comercio_numero!.trim() : "";
-    const libro = nn(c.libro) ? c.libro!.trim() : "";
-    let s = `inscrita en la cámara de comercio${cciu ? " de " + cciu : ""}`;
-    if (cfecha) s += ` el ${cfecha}`;
-    if (cnum) s += ` bajo el número ${cnum}`;
-    if (libro) s += ` del libro ${libro}`;
-    partes.push(s);
-  }
-
-  if (nn(c.razon_social_anterior)) {
-    let s = `se constituyó inicialmente como ${up(c.razon_social_anterior)}`;
-    const actaNum = nn(c.reforma_acta_numero) ? ` número ${numeroConLetras(c.reforma_acta_numero!, "masculine")}` : "";
-    const actaFecha = nn(c.reforma_acta_fecha_texto) ? ` del ${c.reforma_acta_fecha_texto!.trim().toLowerCase()}` : "";
-    const camFecha = nn(c.reforma_camara_fecha_texto) ? ` el ${c.reforma_camara_fecha_texto!.trim().toLowerCase()}` : "";
-    if (actaNum || actaFecha || camFecha) {
-      s += `, posteriormente mediante acta${actaNum}${actaFecha} de asamblea de accionistas, inscrita en la Cámara de comercio${camFecha}, cambio su razón social por ${up(ctx.apoderado.sociedad_razon_social)}`;
-    }
-    partes.push(s);
-  }
-
-  return partes.join(", ");
+  return fechaOTextoProsa(fecha, fechaTexto);
 }
 
 /** Sufijo de notas adicionales del usuario (v5 Modal Híbrido). */
