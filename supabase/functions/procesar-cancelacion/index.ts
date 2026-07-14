@@ -1822,13 +1822,18 @@ Ejemplo 2 — Construcción nominal de carátula (escrituras 90s–2000s)
 
 Ejemplo 3 — Ambigüedad real (dos cifras de crédito irreconciliables → null)
   Fragmentos: "cláusula sexta: el mutuo asciende a CINCUENTA MILLONES DE PESOS ($50.000.000)" + "cláusula décima: reliquidado el crédito, el saldo insoluto es SESENTA Y DOS MILLONES DE PESOS ($62.000.000) al momento del otorgamiento".
-  Salida: valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = false, motivo_null = "ambigua_multiple", confianza = "baja", candidatos_vistos = [{..., "cuantia_credito", 50000000}, {..., "cuantia_credito", 62000000}].
+  Salida: valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = false, hipoteca_garantia_abierta = false, motivo_null = "ambigua_multiple", confianza = "baja", candidatos_vistos = [{..., "cuantia_credito", 50000000}, {..., "cuantia_credito", 62000000}].
+
+Ejemplo 4 — Ley 546 / VIS (mutuo determinado + garantía abierta coexisten)
+  Fragmentos: "CLÁUSULA SEGUNDA — HIPOTECA ABIERTA SIN LÍMITE EN LA CUANTÍA sobre el inmueble …" + "CLÁUSULA PRIMERA — El BANCO concede al deudor un mutuo por valor de SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL PESOS ($7.958.000)".
+  Salida: valor_hipoteca_original = "SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL DE PESOS ($7.958.000)", hipoteca_garantia_abierta = true, valor_hipoteca_es_indeterminada = true, motivo_null = null, confianza = "alta", candidatos_vistos incluye {clasificacion:"cuantia_credito", monto:7958000}.
 
 Llama SIEMPRE a la herramienta extract_cuantia_credito_dedicada.`;
 
 export interface CuantiaDedicadaResult {
   valor_hipoteca_original?: string | null;
   valor_hipoteca_es_indeterminada?: boolean;
+  hipoteca_garantia_abierta?: boolean;
   confianza?: "alta" | "media" | "baja";
   motivo_null?: CuantiaMotivoNull;
   candidatos_vistos?: CuantiaCandidato[];
