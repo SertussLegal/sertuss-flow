@@ -12,6 +12,7 @@ import {
   mergePoderBancoFlat,
   mergePoderBancoV6,
   stripNullyStrings,
+  CANCELACION_NULLY_PATHS,
 } from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/merge";
 
 import { reconcileInmueble } from "@/lib/reconcileData";
