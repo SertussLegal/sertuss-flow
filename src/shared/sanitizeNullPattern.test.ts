@@ -143,7 +143,9 @@ describe("cancelaciones.poder_banco: nunca persiste 'null' literal", () => {
     expect(stripped?.apoderado_cedula).not.toBe("null");
     // Aceptable: quede undefined (el bloque profundo tiene el nombre real; el fix B2 lo rescatará en ticket separado).
     expect(stripped?.apoderado_nombre === undefined || stripped?.apoderado_nombre === "ANA MARIA MONTOYA ECHEVERRY").toBe(true);
+  });
 });
+
 
 describe("A2 — stripNullyStrings con rutas: hipoteca_anterior.valor_hipoteca_original", () => {
   it("elimina 'null' literal en hipoteca_anterior.valor_hipoteca_original", () => {
