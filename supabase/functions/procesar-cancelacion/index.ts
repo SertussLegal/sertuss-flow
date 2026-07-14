@@ -2940,14 +2940,24 @@ if (import.meta.main) serve(async (req) => {
         // que el usuario pueda revisar/editar en la pantalla de validación y
         // dejamos status='requiere_revision_manual'. El desbloqueo ocurre por
         // la acción `confirm_manual_review` (misma edge function).
-        const revision = detectRequiereRevisionManual(extracted);
+        // ── Sanea strings tóxicas de la IA monolítica fuera de poder_banco.
+        // Gemini a veces devuelve `"null"` literal en cuantía no legible en
+        // vez de omitir. Sólo afecta `hipoteca_anterior.valor_hipoteca_original`
+        // y `hipoteca_anterior.cuantia_origen` (rutas listadas en
+        // `CANCELACION_NULLY_PATHS`). Ver `sanitizeNullPattern.test.ts`.
+        const cleanedExtracted = stripNullyStrings(
+          extracted as unknown as Record<string, unknown>,
+          CANCELACION_NULLY_PATHS,
+        ) as unknown as typeof extracted;
+
+        const revision = detectRequiereRevisionManual(cleanedExtracted);
         const commonUpdate = {
-          data_ia: extracted,
-          data_final: extracted,
-          numero_escritura_hipoteca: extracted.hipoteca_anterior.numero_escritura_hipoteca,
-          fecha_escritura_hipoteca: extracted.hipoteca_anterior.fecha_escritura_hipoteca,
-          notaria_hipoteca: extracted.hipoteca_anterior.notaria_hipoteca,
-          valor_hipoteca_original: extracted.hipoteca_anterior.valor_hipoteca_original,
+          data_ia: cleanedExtracted,
+          data_final: cleanedExtracted,
+          numero_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.numero_escritura_hipoteca,
+          fecha_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.fecha_escritura_hipoteca,
+          notaria_hipoteca: cleanedExtracted.hipoteca_anterior.notaria_hipoteca,
+          valor_hipoteca_original: cleanedExtracted.hipoteca_anterior.valor_hipoteca_original,
           matricula_inmobiliaria: extracted.inmueble.matricula_inmobiliaria,
           direccion_inmueble: extracted.inmueble.nomenclatura_predio ?? extracted.inmueble.direccion_completa ?? null,
           ciudad_inmueble: extracted.inmueble.ciudad,
