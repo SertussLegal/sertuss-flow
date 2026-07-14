@@ -27,7 +27,7 @@ describe("A1 backend — mergeRegenPayload", () => {
     const overrides = {
       poder_banco: { apoderado_notaria_poder: "NOTARÍA 29 BOGOTÁ" },
     };
-    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides }) as Record<string, any>;
 
     // Rescate profundo desde data_ia.
     expect(out.poder_banco.apoderado.sociedad_razon_social).toBe("CONECTIVA GLOBAL S.A.S.");
@@ -45,7 +45,7 @@ describe("A1 backend — mergeRegenPayload", () => {
     };
     const dataFinal = { poder_banco: { apoderado_nombre: "Y" } };
     const overrides = { poder_banco: { apoderado_nombre: "Z" } };
-    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides }) as Record<string, any>;
     expect(out.poder_banco.apoderado.sociedad_razon_social).toBe("X");
     expect(out.poder_banco.apoderado_nombre).toBe("Z");
   });
@@ -54,7 +54,7 @@ describe("A1 backend — mergeRegenPayload", () => {
     const dataIa = { poder_banco: { apoderado_nombre: "IA" } };
     const dataFinal = { poder_banco: { apoderado_nombre: "FINAL" } };
     const overrides = { poder_banco: { apoderado_nombre: "OV" } };
-    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides }) as Record<string, any>;
     expect(out.poder_banco.apoderado_nombre).toBe("OV");
   });
 
@@ -62,14 +62,14 @@ describe("A1 backend — mergeRegenPayload", () => {
     const dataIa = { hipoteca_anterior: { valor: "IA" } };
     const dataFinal = { hipoteca_anterior: { valor: "FINAL" } };
     const overrides = { hipoteca_anterior: { valor: "OV" } };
-    const out = mergeRegenPayload({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides }) as Record<string, any>;
     expect(out.hipoteca_anterior.valor).toBe("OV");
   });
 
   it("sin overrides: base = data_final ?? data_ia", () => {
     const dataIa = { poder_banco: { apoderado_nombre: "IA" } };
     const dataFinal = null;
-    const out = mergeRegenPayload({ dataIa, dataFinal, overrides: null }) as Record<string, any>;
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides: null }) as Record<string, any>;
     expect(out.poder_banco.apoderado_nombre).toBe("IA");
   });
 });
