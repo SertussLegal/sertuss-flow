@@ -1748,6 +1748,7 @@ const cuantiaDedicadaTool = [
         required: [
           "valor_hipoteca_original",
           "valor_hipoteca_es_indeterminada",
+          "hipoteca_garantia_abierta",
           "motivo_null",
           "candidatos_vistos",
         ],
