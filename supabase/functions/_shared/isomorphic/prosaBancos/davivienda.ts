@@ -68,12 +68,12 @@ function comparecenciaJuridica(ctx: ProsaContext): string {
   const cedula = ced(ctx.apoderado.cedula) || ced((ctx.apoderado.representantes ?? [])[0]?.cedula);
   const razonSocial = up(ctx.apoderado.sociedad_razon_social);
   const nitSociedad = ctx.apoderado.sociedad_nit?.trim() || "___________";
-  const constitucion = descripcionConstitucionSociedad(ctx);
+  const constitucion = describirConstitucionSociedad(ctx.apoderado);
 
   const rlBancoNombre = up(ctx.poderdante.representante_legal_nombre) || "___________";
   const rlBancoCed = ced(ctx.poderdante.representante_legal_cedula) || "___________";
   const rlBancoCiu = low(ctx.poderdante.representante_legal_cedula_expedida_en) || "Bogotá D.C.";
-  const rlBancoCargo = low(ctx.poderdante.representante_legal_cargo).toLowerCase() || "representante legal";
+  const cargoFragmento = describirCargoRL(ctx.poderdante.representante_legal_cargo, NOMBRE_BANCO);
 
   const escrituraPoderNum = nn(ctx.instrumento.escritura_num)
     ? numeroConLetras(ctx.instrumento.escritura_num!, "masculine")
@@ -85,7 +85,7 @@ function comparecenciaJuridica(ctx: ProsaContext): string {
   const notariaPoderCiu = low(ctx.instrumento.notaria_ciudad) || "Bogotá D.C.";
   const ciudadFirma = low(ctx.ciudad_firma) || "Bogotá D.C.";
 
-  const s = `COMPARECIÓ: ${nombre || "___________"}, mayor de edad, vecino(a) y domiciliado(a) en la ciudad de ${ciudadFirma}, identificado(a) con la cédula de ciudadanía número ${cedula || "___________"}, manifestó: PRIMERO.- Que en su calidad de representante legal de la sociedad ${razonSocial || "___________"} con NIT. ${nitSociedad}${constitucion ? ", " + constitucion : ""}, sociedad que actúa como apoderada general del ${NOMBRE_BANCO}, NIT: ${NIT_BANCO}, establecimiento de crédito legalmente constituido, por ${ESCRITURA_CONSTITUCION_BANCO}, con domicilio principal en la ciudad de Bogotá D.C., como consta en el poder general conferido por el doctor ${rlBancoNombre}, mayor de edad, domiciliado en la ciudad de Bogotá D.C., identificado con cédula de ciudadanía número ${rlBancoCed} expedida en ${rlBancoCiu}, obrando en su condición de ${rlBancoCargo} y como tal representante legal del ${NOMBRE_BANCO}, mediante la escritura pública número ${escrituraPoderNum} del ${escrituraPoderFecha} otorgado en la Notaría ${notariaPoderNum} del Círculo de ${notariaPoderCiu}, cuya copia se protocoliza en el presente instrumento.${notasSufijo(ctx)}`;
+  const s = `COMPARECIÓ: ${nombre || "___________"}, mayor de edad, vecino(a) y domiciliado(a) en la ciudad de ${ciudadFirma}, identificado(a) con la cédula de ciudadanía número ${cedula || "___________"}, manifestó: PRIMERO.- Que en su calidad de representante legal de la sociedad ${razonSocial || "___________"} con NIT. ${nitSociedad}${constitucion ? ", " + constitucion : ""}, sociedad que actúa como apoderada general del ${NOMBRE_BANCO}, NIT: ${NIT_BANCO}, establecimiento de crédito legalmente constituido, por ${ESCRITURA_CONSTITUCION_BANCO}, con domicilio principal en la ciudad de Bogotá D.C., como consta en el poder general conferido por el doctor ${rlBancoNombre}, mayor de edad, domiciliado en la ciudad de Bogotá D.C., identificado con cédula de ciudadanía número ${rlBancoCed} expedida en ${rlBancoCiu}, ${cargoFragmento}, mediante la escritura pública número ${escrituraPoderNum} del ${escrituraPoderFecha} otorgado en la Notaría ${notariaPoderNum} del Círculo de ${notariaPoderCiu}, cuya copia se protocoliza en el presente instrumento.${notasSufijo(ctx)}`;
   return collapseSpaces(s);
 }
 
