@@ -2587,7 +2587,7 @@ if (import.meta.main) serve(async (req) => {
         dataFinal: cancRow.data_final as Record<string, unknown> | null,
         overrides: (manualOverrides ?? null) as Record<string, unknown> | null,
       }) as unknown as CancelacionData;
-      if (!data || Object.keys(data as Record<string, unknown>).length === 0) {
+      if (!data || Object.keys(data as unknown as Record<string, unknown>).length === 0) {
         return new Response(JSON.stringify({ error: "No hay datos para regenerar" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
