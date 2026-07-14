@@ -1701,7 +1701,11 @@ const cuantiaDedicadaTool = [
           },
           valor_hipoteca_es_indeterminada: {
             type: "boolean",
-            description: "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. En cualquier otro caso false.",
+            description: "DEPRECATED alias legacy — devuelve el MISMO valor que hipoteca_garantia_abierta.",
+          },
+          hipoteca_garantia_abierta: {
+            type: "boolean",
+            description: "INDEPENDIENTE de valor_hipoteca_original. true si la escritura declara expresamente 'HIPOTECA ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. PUEDE ser true simultáneamente con un monto poblado (caso VIS/Ley 546).",
           },
           confianza: {
             type: "string",
