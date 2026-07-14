@@ -1,210 +1,331 @@
-# Fase A — Fix definitivo A1 + A2
+# Entrega 1 — Diff propuesto (SOLO PLAN)
 
-> **Nota:** este plan ya fue aprobado e implementado en el turno anterior. Todos los archivos y tests están en el árbol y los 34 tests pasan. Se re-emite sin cambios para tu revisión final; aprobarlo de nuevo es no-op (o sirve para revalidar). Si algo debe cambiar, dime qué y ajusto.
+Reordenada por prioridad: shared primero (schema + prompt), luego renderer defensivo con helpers reutilizables, luego tests. La motivación es que un segundo banco entrará en el pipeline pronto, y todo lo que sea específico de Davivienda debe quedar aislado.
 
-## A1 — Preservar bloque profundo v6 en hidratación + defensa backend
+---
 
-### Diff 1 · `src/pages/CancelacionValidar.tsx` — tipo `PoderBanco` ampliado + helper puro
+## 1. Nuevo campo semántico `hipoteca_garantia_abierta` (schema + prompts)
 
-Se añaden los bloques profundos v6 como opcionales (sin index signature para no romper la compatibilidad con `Json` de supabase) y se extrae `hydratePoderBanco` como función pura testeable.
+**Objetivo:** que `valor_hipoteca_original` (monto del crédito) y `hipoteca_garantia_abierta` (techo de garantía) puedan coexistir. Hoy son mutuamente excluyentes por diseño del prompt.
+
+### 1.1 `supabase/functions/procesar-cancelacion/index.ts` — schema monolítico (L113-179)
+
+```diff
+ interface HipotecaAnterior {
+   ...
+   valor_hipoteca_original: string;
+-  valor_hipoteca_es_indeterminada?: boolean;
++  valor_hipoteca_es_indeterminada?: boolean;   // DEPRECATED alias — se rederiva en migración
++  hipoteca_garantia_abierta?: boolean;         // NUEVO — techo de garantía abierta/sin límite
+ }
+```
+
+En el schema JSON (~L178-179):
+
+```diff
+- valor_hipoteca_original: { ...description: "...Cuantía indeterminada / hipoteca abierta → cadena vacía '' y valor_hipoteca_es_indeterminada=true..." },
+- valor_hipoteca_es_indeterminada: { type: "boolean", description: "true SOLO si la hipoteca es declarada expresamente ABIERTA, SIN LÍMITE DE CUANTÍA, o de CUANTÍA INDETERMINADA." },
++ valor_hipoteca_original: { type: "string", description: "Monto del CRÉDITO HIPOTECARIO (mutuo) anclado al verbo rector ('presta', 'concede', 'desembolsa', 'otorga en mutuo'). Devuelve el monto SI EXISTE, INDEPENDIENTEMENTE de que la garantía se declare abierta. Formato notarial: '<LETRAS> DE PESOS ($<NÚMEROS>)' MAYÚSCULAS. Cadena vacía '' SOLO si no hay ninguna cifra anclable al mutuo. LISTA NEGRA: precio de venta, avalúo, subrogación, abono, saldo, subsidio, cesantías." },
++ hipoteca_garantia_abierta: { type: "boolean", description: "INDEPENDIENTE del monto. true si la escritura declara expresamente que la GARANTÍA HIPOTECARIA es 'ABIERTA', 'SIN LÍMITE DE CUANTÍA' o 'DE CUANTÍA INDETERMINADA'. Puede coexistir con un monto de mutuo (práctica VIS/Ley 546: mutuo determinado + garantía abierta). false por defecto." },
++ valor_hipoteca_es_indeterminada: { type: "boolean", description: "DEPRECATED — mantener por back-compat. Rellena con el mismo valor que hipoteca_garantia_abierta." },
+```
+
+En el bloque de instrucciones (~L361-371):
+
+```diff
+- Si encuentras un monto válido anclado al mutuo → 'valor_hipoteca_original' = "<LETRAS> DE PESOS ($<NÚMEROS>)" y 'valor_hipoteca_es_indeterminada' = false.
+- Si la hipoteca es ABIERTA / SIN LÍMITE DE CUANTÍA / DE CUANTÍA INDETERMINADA → 'valor_hipoteca_original' = "" y 'valor_hipoteca_es_indeterminada' = true.
+- Si hay dos cifras candidatas ambiguas → 'valor_hipoteca_original' = "" y 'valor_hipoteca_es_indeterminada' = false.
++ CAMPOS INDEPENDIENTES — evalúa cada uno por separado, pueden coexistir:
++   * valor_hipoteca_original: SI existe una cifra anclada al verbo rector del mutuo → devuélvela SIEMPRE, aunque la garantía se declare abierta (caso Ley 546/VIS típico). "" solo si no hay ninguna cifra anclable.
++   * hipoteca_garantia_abierta: true si aparece literal "HIPOTECA ABIERTA", "SIN LÍMITE DE CUANTÍA" o "DE CUANTÍA INDETERMINADA" en las cláusulas de la hipoteca. Es un hecho del texto — no depende de si encontraste o no un monto.
++   * valor_hipoteca_es_indeterminada: MISMO valor que hipoteca_garantia_abierta (campo legacy).
++ Ambigüedad entre dos cifras candidatas al mutuo → valor_hipoteca_original = "", hipoteca_garantia_abierta = evaluar de forma independiente.
+```
+
+### 1.2 Extractor dedicado de cuantía (~L1690-1818)
+
+```diff
+  properties: {
+    valor_hipoteca_original: { ... },
+-   valor_hipoteca_es_indeterminada: { type: "boolean", description: "true SOLO si la escritura declara expresamente 'HIPOTECA ABIERTA'..." },
++   valor_hipoteca_es_indeterminada: { type: "boolean", description: "Alias legacy — mismo valor que hipoteca_garantia_abierta." },
++   hipoteca_garantia_abierta: { type: "boolean", description: "INDEPENDIENTE del monto. true si la escritura declara ABIERTA/SIN LÍMITE. Puede ser true incluso cuando valor_hipoteca_original tiene un monto (caso VIS/Ley 546)." },
+    motivo_null: { ... },
+    candidatos_vistos: { ... },
+  },
+- required: [ "valor_hipoteca_original", "valor_hipoteca_es_indeterminada", ... ],
++ required: [ "valor_hipoteca_original", "valor_hipoteca_es_indeterminada", "hipoteca_garantia_abierta", ... ],
+```
+
+Árbol de decisión (~L1774-1789):
+
+```diff
+  a) UNA cifra "cuantia_credito"
+-    → devolver monto formateado, es_indeterminada = false.
++    → valor_hipoteca_original = monto, hipoteca_garantia_abierta = detectAperturaLiteral(texto).
+  b) VARIAS "cuantia_credito" mismo monto → igual que (a).
+  c) VARIAS "cuantia_credito" montos distintos
+     → valor_hipoteca_original = null, motivo_null = "ambigua_multiple".
++    hipoteca_garantia_abierta se evalúa igual, independiente.
+  d) CERO "cuantia_credito" pero escritura declara ABIERTA
+-    → valor_hipoteca_original = null, valor_hipoteca_es_indeterminada = true, motivo_null = "escritura_declara_abierta".
++    → valor_hipoteca_original = null, hipoteca_garantia_abierta = true, motivo_null = "escritura_declara_abierta". (Camino legacy intacto.)
+  e) CERO "cuantia_credito" sin declaración de apertura
+     → null, motivo_null = "sin_evidencia".
+```
+
+Añadir en el prompt del extractor dedicado un ejemplo VIS explícito:
+
+```diff
++ Ejemplo 4 (Ley 546/VIS, mutuo + garantía abierta coexisten):
++   Texto: "SEGUNDA — HIPOTECA ABIERTA SIN LÍMITE EN LA CUANTÍA... PRIMERA — Cuantía del crédito: SIETE MILLONES NOVECIENTOS CINCUENTA Y OCHO MIL PESOS ($7.958.000)."
++   Salida: valor_hipoteca_original = "SIETE MILLONES ... ($7.958.000)", hipoteca_garantia_abierta = true, valor_hipoteca_es_indeterminada = true, motivo_null = null, confianza = "alta".
+```
+
+### 1.3 Lógica de reconciliación mono vs dedicada (~L1962-1980, L2498-2549)
+
+```diff
+- extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
+- extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = false;
++ extracted.hipoteca_anterior.valor_hipoteca_original = dedicadaMonto;
++ extracted.hipoteca_anterior.hipoteca_garantia_abierta = dedicada.hipoteca_garantia_abierta === true;
++ extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = dedicada.hipoteca_garantia_abierta === true; // alias
+```
+
+Análogo en el bloque de regen (L2498-2549). El caso "declara abierta" (L1979) ya no vacía el monto si `dedicadaMonto` también existe:
+
+```diff
+- extracted.hipoteca_anterior.valor_hipoteca_original = "";
+- extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = true;
++ if (!dedicadaMonto) extracted.hipoteca_anterior.valor_hipoteca_original = "";
++ extracted.hipoteca_anterior.hipoteca_garantia_abierta = true;
++ extracted.hipoteca_anterior.valor_hipoteca_es_indeterminada = true;
+```
+
+### 1.4 Consumidor en la cláusula pago hipoteca
+
+`src/lib/clausulaBuilder.ts` (`buildClausulaPagoHipoteca`) y frontend en `CancelacionValidar.tsx` L923: seguir leyendo `valor_hipoteca_es_indeterminada` (alias legacy, ya poblado). Sin cambios funcionales — el helper del skill `cuantia-indeterminada-cancelacion` sigue funcionando. La única diferencia: si ahora existe un monto Y hipoteca_garantia_abierta=true, la cláusula debe imprimir el monto (comportamiento actual del helper cuando `valor_hipoteca_original` tiene valor). El invariante del skill se preserva: precedencia manual > OCR > BD.
+
+---
+
+## 2. Prompt del extractor de poder — refuerzos B y C
+
+**Archivo:** `supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts`
+
+### 2.1 Cargo del RL (L41-44) — quitar "cuando aparezcan"
+
+```diff
+-  - poderdante: la entidad bancaria que OTORGA el poder + datos del RL del
+-    banco que firma EN NOMBRE del banco al constituir el poder. Extrae SIEMPRE
+-    representante_legal_cargo (ej: "SUPLENTE DEL PRESIDENTE") y
+-    representante_legal_cedula_expedida_en cuando aparezcan.
++  - poderdante: la entidad bancaria que OTORGA el poder + datos del RL del
++    banco que firma EN NOMBRE del banco al constituir el poder.
++    OBLIGATORIO buscar activamente y devolver:
++      * representante_legal_cargo — el cargo textual con el que firma
++        (ej: "SUPLENTE DEL PRESIDENTE", "VICEPRESIDENTE JURÍDICO",
++        "GERENTE DE OPERACIONES"). NO uses "REPRESENTANTE LEGAL"
++        como fallback genérico — devuelve el cargo específico que
++        aparece antefirma o en el certificado Superfinanciera.
++      * representante_legal_cedula_expedida_en — ciudad de expedición.
++    Si tras revisar cuerpo, antefirma y certificado Superfinanciera
++    genuinamente no aparece → null con confianza "baja". No inventes.
+```
+
+### 2.2 Reforma societaria (L51-62) — refuerzo de recall
+
+```diff
+-            - sociedad_constitucion.razon_social_anterior + reforma_acta_*
+-              SOLO si hubo cambio de razón social documentado.
++            - sociedad_constitucion.razon_social_anterior +
++              reforma_acta_numero + reforma_acta_fecha_texto +
++              reforma_camara_fecha_texto — SI hubo cambio de razón social
++              documentado. REGLA DE CONSISTENCIA INTERNA: si detectas
++              razon_social_anterior, DEBES buscar en el mismo certificado
++              de Cámara los 3 datos de reforma (número de acta, fecha del
++              acta, fecha de inscripción en Cámara). Aparecen típicamente
++              en el mismo párrafo o página del certificado bajo etiquetas
++              como "Por acta N° ... de fecha ... inscrita el ...". Si
++              genuinamente falta uno tras esa doble verificación, marca
++              ese subcampo específico como null (los que sí encontraste
++              deben ir poblados). NO devuelvas los 3 como null si
++              razon_social_anterior sí está — es inconsistencia interna.
+```
+
+---
+
+## 3. Schema — condicionar `sociedad_constitucion.numero` al `tipo_documento` (Bug A)
+
+**Archivo:** `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` L118
+
+```diff
+- numero: { type: "string", description: "Número del documento/escritura de constitución. Solo dígitos si es escritura. null si no aparece." },
++ numero: { type: "string", description: "Número de la escritura pública de constitución. SOLO rellenar cuando tipo_documento='escritura_publica' — en ese caso, solo dígitos. Si tipo_documento='documento_privado', este campo DEBE ser null: los documentos privados de constitución (actas de asamblea, minutas privadas) NO tienen un 'número' propio del instrumento. NO confundir con el número de inscripción en Cámara de Comercio (ese va en camara_comercio_numero). null si no aparece o si el tipo es documento privado." },
+```
+
+Reflejar la misma regla en el prompt (L55):
+
+```diff
+-            - sociedad_constitucion.numero
++            - sociedad_constitucion.numero (SOLO si tipo_documento='escritura_publica'; para documento_privado devolver null — el número de Cámara va en camara_comercio_numero).
+```
+
+---
+
+## 4. Renderer defensivo — helpers compartidos en `prosaBancos/`
+
+**Nuevo archivo:** `supabase/functions/_shared/isomorphic/prosaBancos/prosaHelpers.ts`
+
+Motivación: los defectos A/B/C aplicables al bloque de constitución + cargo del RL se repetirán en cada banco. Extraer helpers puros reutilizables. `davivienda.ts` los consume; el próximo template los reusa gratis. `legalProse.ts` sigue siendo el módulo de formateo numérico/fecha — el nuevo módulo es el de composición notarial de sociedades.
+
+### 4.1 API propuesta
 
 ```ts
-type PoderBanco = {
-  apoderado_nombre?: string;
-  apoderado_cedula?: string;
-  apoderado_escritura?: string;
-  apoderado_fecha?: string;
-  apoderado_fecha_dia?: string;
-  apoderado_fecha_mes?: string;
-  apoderado_fecha_anio?: string;
-  apoderado_notaria_poder?: string;
-  apoderado_genero?: "M" | "F" | "";
-  has_apoderado_banco?: boolean | null;
-  has_apoderado_banco_v3?: boolean | null;
-  vigencia?: { tipo?: "indefinida" | "hasta_fecha" | "hasta_terminacion_contrato" | null; fecha_limite?: string | null };
-  // Bloque profundo v6: opaco para la UI, sólo se preserva atómicamente.
-  apoderado?: Record<string, unknown> | null;
-  poderdante?: Record<string, unknown> | null;
-  instrumento_poder?: Record<string, unknown> | null;
-  facultades?: Record<string, unknown> | null;
-  motivos_incompletitud?: unknown;
-  _classifier_motivos?: unknown;
-};
+// prosaBancos/prosaHelpers.ts (ISOMÓRFICO — solo TS puro)
+import { numeroConLetras, fechaProsa } from "./legalProse.ts";
+import type { ApoderadoPayload, PoderdantePayload } from "./types.ts";
 
-export function hydratePoderBanco(ia_pb: PoderBanco, src_pb: PoderBanco): PoderBanco {
-  return {
-    ...ia_pb,
-    ...src_pb,
-    apoderado_nombre:        src_pb.apoderado_nombre        ?? ia_pb.apoderado_nombre,
-    apoderado_cedula:        src_pb.apoderado_cedula        ?? ia_pb.apoderado_cedula,
-    apoderado_escritura:     src_pb.apoderado_escritura     ?? ia_pb.apoderado_escritura,
-    apoderado_fecha:         src_pb.apoderado_fecha         ?? ia_pb.apoderado_fecha,
-    apoderado_fecha_dia:     src_pb.apoderado_fecha_dia     ?? ia_pb.apoderado_fecha_dia,
-    apoderado_fecha_mes:     src_pb.apoderado_fecha_mes     ?? ia_pb.apoderado_fecha_mes,
-    apoderado_fecha_anio:    src_pb.apoderado_fecha_anio    ?? ia_pb.apoderado_fecha_anio,
-    apoderado_notaria_poder: src_pb.apoderado_notaria_poder ?? ia_pb.apoderado_notaria_poder,
-    apoderado_genero:        src_pb.apoderado_genero        ?? ia_pb.apoderado_genero,
-  };
+export interface DescribirConstitucionOpts {
+  incluirReformaSiParcial?: boolean; // default true
 }
+
+/**
+ * Frase notarial de constitución de la sociedad apoderada.
+ * Defensivo:
+ *   - Omite el "número" si tipo_documento='documento_privado' (aun si viene poblado por error del OCR).
+ *   - Menciona la reforma con lo que tenga (aunque falten 1-2 de los 3 campos de reforma), en vez de callar todo.
+ *   - Devuelve "" si no hay NADA que decir (no rompe la cláusula huésped).
+ */
+export function describirConstitucionSociedad(
+  apoderado: Pick<ApoderadoPayload, "sociedad_razon_social" | "sociedad_constitucion">,
+  opts?: DescribirConstitucionOpts,
+): string;
+
+/**
+ * Fragmento "obrando en su condición de <cargo> y como tal representante legal del <banco>".
+ * Defensivo:
+ *   - Si `cargo` está vacío → devuelve solo "obrando en su condición de representante legal del <banco>"
+ *     (sin duplicar "y como tal representante legal", que quedaría redundante).
+ *   - Si `cargo` coincide (case-insensitive) con "representante legal" → mismo tratamiento.
+ *   - Si `cargo` es específico (ej. "suplente del presidente") → frase completa canónica.
+ */
+export function describirCargoRL(cargo: string | null | undefined, nombreBanco: string): string;
+
+/** Helper interno reusable: fecha ISO o textual a prosa lowercase. */
+export function fechaOTextoProsa(fecha?: string | null, fechaTexto?: string | null): string;
 ```
 
-El call site en el `useEffect` de hidratación (L382) queda:
+### 4.2 Semántica de `describirConstitucionSociedad`
 
-```ts
-const ia_pb: PoderBanco = (ia.poder_banco ?? {}) as PoderBanco;
-const src_pb: PoderBanco = (source.poder_banco ?? {}) as PoderBanco;
-const poderBanco: PoderBanco = hydratePoderBanco(ia_pb, src_pb);
+```
+Ejemplos de salida (case ancla 60c879dd, CONECTIVA GLOBAL S.A.S., documento_privado):
+
+Input completo:
+  tipo_documento='documento_privado', numero='01775236' (basura del OCR),
+  fecha_texto='18 de octubre de 2013', camara_comercio_ciudad='BOGOTA',
+  camara_comercio_numero='01775236', libro='IX',
+  razon_social_anterior='PROYECTOS LEGALES S.A.S.',
+  reforma_acta_numero=null, reforma_acta_fecha_texto=null, reforma_camara_fecha_texto=null
+
+Output:
+  "sociedad constituida mediante documento privado del 18 de octubre de 2013
+  de asamblea de accionistas, inscrita en la cámara de comercio de bogota
+  bajo el número 01775236 del libro IX, se constituyó inicialmente como
+  PROYECTOS LEGALES S.A.S. y posteriormente cambió su razón social a
+  CONECTIVA GLOBAL S.A.S."
 ```
 
-Además, `data_final: data` en el `.update(...)` (L473) requiere cast `as unknown as Json` porque `PoderBanco` con campos `Record<string, unknown>` deja de ser `Json`-asignable estructural. Se añade `import type { Json } from "@/integrations/supabase/types"`.
+Regla de degradación de reforma:
+- 3 de 3 campos → frase canónica completa (como hoy).
+- 1-2 de 3 campos → frase reducida "mediante acta <lo_que_hay>, cambió su razón social a <actual>".
+- 0 de 3 campos + razon_social_anterior presente → "se constituyó inicialmente como <anterior> y posteriormente cambió su razón social a <actual>" (sin fechas).
+- razon_social_anterior ausente → omitir todo el bloque reforma.
 
-### Diff 2 · Helper puro `supabase/functions/_shared/isomorphic/mergeRegenPayload.ts` (nuevo)
+Regla de `numero` para documento_privado: siempre omitir, aunque venga poblado (defensa contra falla de schema).
 
-```ts
-export function mergeRegenPayload<T extends Record<string, unknown>>(args: {
-  dataIa: T | null | undefined;
-  dataFinal: T | null | undefined;
-  overrides: Partial<T> | null | undefined;
-}): T {
-  const dataIa = (args.dataIa ?? {}) as Record<string, unknown>;
-  const base = (args.dataFinal ?? args.dataIa ?? {}) as Record<string, unknown>;
-  const overrides = (args.overrides ?? {}) as Record<string, unknown>;
-  const iaPB   = (dataIa.poder_banco    ?? {}) as Record<string, unknown>;
-  const basePB = (base.poder_banco      ?? {}) as Record<string, unknown>;
-  const ovPB   = (overrides.poder_banco ?? {}) as Record<string, unknown>;
-  const mergedPB = { ...iaPB, ...basePB, ...ovPB };
-  return { ...base, ...overrides, poder_banco: mergedPB } as unknown as T;
-}
+### 4.3 `davivienda.ts` — usar los helpers
+
+```diff
+-import { numeroConLetras, fechaProsa } from "./legalProse.ts";
++import { numeroConLetras, fechaProsa } from "./legalProse.ts";
++import {
++  describirConstitucionSociedad,
++  describirCargoRL,
++} from "./prosaHelpers.ts";
+...
+-function descripcionConstitucionSociedad(ctx: ProsaContext): string { ... 40 líneas inline ... }
++// (extraído a prosaHelpers.ts; se conserva solo lo específico de Davivienda)
+...
+ function comparecenciaJuridica(ctx: ProsaContext): string {
+-  const constitucion = descripcionConstitucionSociedad(ctx);
++  const constitucion = describirConstitucionSociedad(ctx.apoderado);
+   ...
+-  const rlBancoCargo = low(ctx.poderdante.representante_legal_cargo).toLowerCase() || "representante legal";
++  const cargoFragmento = describirCargoRL(ctx.poderdante.representante_legal_cargo, NOMBRE_BANCO);
+   ...
+-  const s = `... expedida en ${rlBancoCiu}, obrando en su condición de ${rlBancoCargo} y como tal representante legal del ${NOMBRE_BANCO}, mediante la escritura pública número ${escrituraPoderNum} ...`;
++  const s = `... expedida en ${rlBancoCiu}, ${cargoFragmento}, mediante la escritura pública número ${escrituraPoderNum} ...`;
 ```
 
-Reglas garantizadas:
-- `overrides` gana en las claves que envía.
-- Ausencia de una clave en `overrides` NUNCA borra — cae en `data_final` o `data_ia`.
-- `poder_banco` se fusiona por-clave `iaPB → basePB → ovPB` (rescate del profundo aunque `data_final` esté mutilado).
+`describirCargoRL("SUPLENTE DEL PRESIDENTE", "BANCO DAVIVIENDA S.A.")` →
+  `"obrando en su condición de suplente del presidente y como tal representante legal del BANCO DAVIVIENDA S.A."`
 
-### Diff 3 · `supabase/functions/procesar-cancelacion/index.ts` modo `regen` (L2578-2586)
+`describirCargoRL(null, "BANCO DAVIVIENDA S.A.")` →
+  `"obrando en su condición de representante legal del BANCO DAVIVIENDA S.A."` (sin duplicación).
 
-```ts
-if (regen) {
-  const data = mergeRegenPayload<Record<string, unknown>>({
-    dataIa: cancRow.data_ia as Record<string, unknown> | null,
-    dataFinal: cancRow.data_final as Record<string, unknown> | null,
-    overrides: (manualOverrides ?? null) as Record<string, unknown> | null,
-  }) as unknown as CancelacionData;
-  if (!data || Object.keys(data as Record<string, unknown>).length === 0) {
-    return new Response(JSON.stringify({ error: "No hay datos para regenerar" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  // resto del flujo intacto
-}
-```
+`describirCargoRL("REPRESENTANTE LEGAL", "BANCO DAVIVIENDA S.A.")` → igual que el caso null.
 
-## A2 — Sanear `hipoteca_anterior.valor_hipoteca_original`
+---
 
-### Diff 4 · `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts`
+## 5. Tests de regresión
 
-`stripNullyStrings` recibe un `paths?` opcional. Modo legacy (sin `paths`) intacto para `FLAT_STRING_KEYS` de `poder_banco`. Modo con rutas hace copia superficial del subobjeto tocado, sin walker recursivo (evita reventar la semántica `null` intencional del schema profundo v6).
+### 5.1 `supabase/functions/procesar-cancelacion/_regression_cuantia.ts` (o `_test.ts` nuevo)
 
-```ts
-export function stripNullyStrings<T extends Record<string, unknown> | undefined | null>(
-  pb: T,
-  paths?: ReadonlyArray<readonly [string, string]>,
-): T {
-  if (!pb || typeof pb !== "object") return pb;
-  const out: Record<string, unknown> = { ...(pb as Record<string, unknown>) };
-  if (paths) {
-    for (const [sub, field] of paths) {
-      const child = out[sub];
-      if (!child || typeof child !== "object") continue;
-      const raw = (child as Record<string, unknown>)[field];
-      if (typeof raw !== "string") continue;
-      const trimmed = raw.trim();
-      if (!trimmed || NULLY_STRINGS.has(trimmed)) {
-        const copy = { ...(child as Record<string, unknown>) };
-        delete copy[field];
-        out[sub] = copy;
-      }
-    }
-    return out as T;
-  }
-  for (const key of FLAT_STRING_KEYS) {
-    const raw = out[key];
-    if (typeof raw !== "string") continue;
-    const trimmed = raw.trim();
-    if (!trimmed || NULLY_STRINGS.has(trimmed)) delete out[key];
-  }
-  return out as T;
-}
+- **Test A (ancla real 60c879dd/escritura 7058):** input mock donde el extractor dedicado devuelve `valor_hipoteca_original="SIETE MILLONES ... ($7.958.000)"` y `hipoteca_garantia_abierta=true`. Assert: en `data_ia` y `data_final` post-reconciliación, ambos campos coexisten. `valor_hipoteca_es_indeterminada` alias = true. La cláusula pago (via `buildClausulaPagoHipoteca`) IMPRIME el monto (no la frase indeterminada).
+- **Test B (legacy — 0 cifras + declara abierta):** input mock con `dedicadaMonto=""`, `hipoteca_garantia_abierta=true`. Assert: `valor_hipoteca_original=""`, `valor_hipoteca_es_indeterminada=true`, cláusula pago imprime frase "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA" (comportamiento actual preservado).
+- **Test C (monto solo, no abierta):** `dedicadaMonto="X"`, `hipoteca_garantia_abierta=false`. Assert: `es_indeterminada=false`, monto se imprime.
 
-export const CANCELACION_NULLY_PATHS: ReadonlyArray<readonly [string, string]> = [
-  ["hipoteca_anterior", "valor_hipoteca_original"],
-  ["hipoteca_anterior", "cuantia_origen"],
-];
-```
+### 5.2 `src/shared/prosaBancos/__contract__/prosaHelpers.test.ts` (nuevo)
 
-### Diff 5 · `procesar-cancelacion/index.ts` — call site único en flujo normal (~L2942)
+- `describirConstitucionSociedad` con `tipo_documento='documento_privado'` + `numero='01775236'` → el `01775236` NO aparece en la salida (defensa Bug A).
+- Reforma con solo `razon_social_anterior` → salida menciona ambas razones sociales sin fechas, no rompe.
+- Reforma con 2 de 3 campos → salida menciona lo que tiene.
+- Reforma con 3 de 3 → salida canónica completa (paridad con snapshot actual de Davivienda para el caso "16390 poder + CONECTIVA + reforma completa").
+- `describirCargoRL(null, "BANCO X")` → NO contiene "y como tal representante legal" duplicado.
+- `describirCargoRL("REPRESENTANTE LEGAL", "BANCO X")` → mismo output que null.
+- `describirCargoRL("SUPLENTE DEL PRESIDENTE", "BANCO X")` → frase canónica con doble mención justificada.
 
-Justo antes de `detectRequiereRevisionManual(...)`, sanear `extracted` y usar la copia para `data_ia`, `data_final`, columnas denormalizadas de `hipoteca_anterior` y para `generateAndUploadCancelacionDocs`. Modo `regen` NO re-sanea (evita re-tocar datos ya editados por el usuario).
+### 5.3 `src/shared/prosaBancos/__contract__/parity.test.ts` (existente)
 
-```ts
-const cleanedExtracted = stripNullyStrings(
-  extracted as unknown as Record<string, unknown>,
-  CANCELACION_NULLY_PATHS,
-) as unknown as typeof extracted;
-const revision = detectRequiereRevisionManual(cleanedExtracted);
-const commonUpdate = {
-  data_ia: cleanedExtracted,
-  data_final: cleanedExtracted,
-  numero_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.numero_escritura_hipoteca,
-  fecha_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.fecha_escritura_hipoteca,
-  notaria_hipoteca: cleanedExtracted.hipoteca_anterior.notaria_hipoteca,
-  valor_hipoteca_original: cleanedExtracted.hipoteca_anterior.valor_hipoteca_original,
-  // resto usa `extracted` (paths fuera de CANCELACION_NULLY_PATHS son idénticos)
-  ...
-};
-// docx:
-const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-  supabaseService, cancelacionId, cleanedExtracted, prosaOv,
-);
-```
+Actualizar snapshot esperado para el caso Davivienda-CONECTIVA con datos completos, comprobar que la salida sigue siendo palabra-por-palabra igual a la minuta de referencia oficial. Regenerar snapshot con los helpers en su sitio y confirmar diff vacío contra `referencia_davivienda.contract.json`.
 
-## Tests de regresión (3 archivos)
+### 5.4 `supabase/functions/_shared/__tests__/poderBancoExtractor_schema_test.ts` (nuevo, Deno)
 
-### `src/pages/CancelacionValidar.hydration.test.tsx` (nuevo, 4 casos)
-1. **Ancla c8924aa2**: `ia_pb` con `apoderado` jurídica CONECTIVA + representantes + poderdante Davivienda + instrumento_poder Notaría 29 Silvia Palacios; `src_pb` con edición manual del `apoderado_nombre`. Resultado: planos editados ganan, todo el bloque profundo intacto.
-2. **Persona natural directa**: sin sociedad ni representantes — no inventa campos.
-3. **Superconjunto**: cada clave de `ia_pb` no editada por `src_pb` se preserva idéntica.
-4. **Sobreescritura plana**: `src_pb.apoderado_nombre` gana.
+Test estático: parsear `poderBancoTool.function.parameters` y verificar que:
+- `sociedad_constitucion.numero.description` contiene "documento_privado" y "null".
+- El prompt (import string) contiene "OBLIGATORIO" cerca de `representante_legal_cargo`.
+- El prompt contiene la palabra "consistencia interna" cerca de `reforma_acta`.
 
-### `src/shared/mergeRegenPayload.test.ts` (nuevo, 5 casos)
-1. **Rescate profundo**: `data_final` sin `apoderado.sociedad_*` lo recupera de `data_ia`.
-2. **No borrado**: `overrides` sin la clave profunda no elimina el bloque.
-3. **Sobreescritura plana**: `overrides` > `data_final` > `data_ia`.
-4. **Otros bloques** (`hipoteca_anterior`): `overrides` gana sobre `data_final`.
-5. **Sin overrides**: `base = data_final ?? data_ia`.
+---
 
-### `src/shared/sanitizeNullPattern.test.ts` (extender, 5 casos nuevos)
-1. `hipoteca_anterior.valor_hipoteca_original = "null"` → clave eliminada tras sanitizar con `CANCELACION_NULLY_PATHS`.
-2. Valores legítimos (`"$50.000.000 M/CTE"`) intactos.
-3. `hipoteca_anterior` ausente → no crashea.
-4. Input no mutado (JSON.stringify pre/post idéntico).
-5. Modo legacy sin `paths` sigue limpiando `FLAT_STRING_KEYS` de `poder_banco` (regresión c8924aa2 y 32f5317e).
+## Resumen de archivos tocados
 
-## Impacto y riesgo
+| Archivo | Cambio |
+|---|---|
+| `supabase/functions/procesar-cancelacion/index.ts` | Nuevo campo `hipoteca_garantia_abierta` en 2 schemas (monolítico + dedicado) + 3 prompts + reconciliación mono/dedicada + reconciliación regen. |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` | Descripción de `sociedad_constitucion.numero` condicionada a `tipo_documento`. |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts` | Refuerzo B (reforma con doble verificación) + C (cargo obligatorio, quitar "cuando aparezcan") + A (nota sobre numero vs Cámara). |
+| `supabase/functions/_shared/isomorphic/prosaBancos/prosaHelpers.ts` | **NUEVO** — `describirConstitucionSociedad`, `describirCargoRL`, `fechaOTextoProsa`. Isomórfico, puro. |
+| `supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts` | Consumir helpers, borrar `descripcionConstitucionSociedad` inline, ajustar plantilla `comparecenciaJuridica` para insertar `cargoFragmento` sin duplicar "representante legal". |
+| `supabase/functions/procesar-cancelacion/_regression_cuantia_test.ts` | Nuevos tests A/B/C coexistencia monto + apertura. |
+| `src/shared/prosaBancos/__contract__/prosaHelpers.test.ts` | **NUEVO** — cobertura helpers defensivos. |
+| `src/shared/prosaBancos/__contract__/parity.test.ts` | Refresco snapshot Davivienda con helpers. |
+| `supabase/functions/_shared/__tests__/poderBancoExtractor_schema_test.ts` | **NUEVO** — validación estática del schema/prompt. |
 
-| Cambio | Superficie | Riesgo |
-|---|---|---|
-| `hydratePoderBanco` + spread | Hidratación inicial de cancelaciones | Bajo — 9 planas conservan semántica `src ?? ia` |
-| Ampliar `PoderBanco` type | Sólo tipo; `data_final` cast a `Json` en un único update | Nulo runtime |
-| `mergeRegenPayload` en backend | Modo `regen` (autosave silencioso + regen manual) | Bajo — nunca borra |
-| `stripNullyStrings` con paths opt-in | Firma backwards-compat | Nulo |
-| Call site nuevo tras OCR monolítico | Un solo lugar en flujo normal | Bajo |
+## Notas de riesgo
 
-Sin migraciones, sin RLS, sin edge functions nuevas, sin tocar plantillas docx, sin cambios de UI.
-
-## Fuera de Fase A
-
-- Regenerar docx históricos de las 6 filas afectadas (proceso administrativo, no fix de código).
-- Prompt del monolítico para que Gemini omita en vez de emitir `"null"` (defensa complementaria, no necesaria si el sanitizador cubre).
-- Render de la cadena de representación en `PoderViewerTab` (hoy sólo se preserva; su aparición en la escritura depende de la plantilla y de `prosa_apoderado_override`).
+- El campo `valor_hipoteca_es_indeterminada` NO se elimina — se mantiene como alias legacy porque `clausulaBuilder.ts` y `CancelacionValidar.tsx` L923 lo leen. Migración transparente.
+- `data_final` de trámites ya cerrados no se retroactiva; solo trámites nuevos + regen manual verán `hipoteca_garantia_abierta`.
+- No se toca el helper `buildClausulaPagoHipoteca` (skill `cuantia-indeterminada-cancelacion` sigue mandando). El nuevo campo solo desbloquea que en caso VIS el monto exista, y el helper ya sabe imprimir el monto cuando está presente.
+- Los helpers isomórficos NO importan nada externo — pasan el gate `purity.test.ts`.
