@@ -379,22 +379,14 @@ export const CancelacionValidar = () => {
     const source = (row.data_final ?? row.data_ia) as Data | null;
     if (source && typeof source === "object" && !initialHydrationRef.current) {
       const ia = (row.data_ia ?? {}) as Partial<Data>;
-      // Merge selectivo campo-a-campo: la edición manual (source) prevalece;
-      // la IA solo rellena huecos. Evita que un source.poder_banco parcial borre
-      // los campos que sí extrajo la IA (incluidos los atómicos de fecha).
+      // Read-then-Merge: parte de todo lo que trajo la IA (incluyendo bloques
+      // profundos v6: apoderado.sociedad_*, representantes, poderdante,
+      // instrumento_poder, facultades, vigencia, has_apoderado_banco_v3,
+      // motivos_incompletitud) y encima aplica la edición manual sólo en las
+      // 9 claves planas editables (src ?? ia). Ver `hydratePoderBanco` arriba.
       const ia_pb: PoderBanco = (ia.poder_banco ?? {}) as PoderBanco;
       const src_pb: PoderBanco = (source.poder_banco ?? {}) as PoderBanco;
-      const poderBanco: PoderBanco = {
-        apoderado_nombre:        src_pb.apoderado_nombre        ?? ia_pb.apoderado_nombre,
-        apoderado_cedula:        src_pb.apoderado_cedula        ?? ia_pb.apoderado_cedula,
-        apoderado_escritura:     src_pb.apoderado_escritura     ?? ia_pb.apoderado_escritura,
-        apoderado_fecha:         src_pb.apoderado_fecha         ?? ia_pb.apoderado_fecha,
-        apoderado_fecha_dia:     src_pb.apoderado_fecha_dia     ?? ia_pb.apoderado_fecha_dia,
-        apoderado_fecha_mes:     src_pb.apoderado_fecha_mes     ?? ia_pb.apoderado_fecha_mes,
-        apoderado_fecha_anio:    src_pb.apoderado_fecha_anio    ?? ia_pb.apoderado_fecha_anio,
-        apoderado_notaria_poder: src_pb.apoderado_notaria_poder ?? ia_pb.apoderado_notaria_poder,
-        apoderado_genero:        src_pb.apoderado_genero        ?? ia_pb.apoderado_genero,
-      };
+      const poderBanco: PoderBanco = hydratePoderBanco(ia_pb, src_pb);
       // Inferencia inicial de género (no sobrescribe si ya existe en data_final).
       const onlyDigitsClient = (s: unknown) => String(s ?? "").replace(/\D+/g, "");
       const existingDeudores = (source.partes as { deudores?: unknown[] })?.deudores;
