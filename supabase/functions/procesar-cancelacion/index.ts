@@ -2514,7 +2514,8 @@ if (import.meta.main) serve(async (req) => {
       const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
       const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
-      const dedicadaIndet = dedicada?.valor_hipoteca_es_indeterminada === true
+      const dedicadaAbierta = dedicada?.hipoteca_garantia_abierta === true
+        || dedicada?.valor_hipoteca_es_indeterminada === true
         || dedicada?.motivo_null === "escritura_declara_abierta";
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
@@ -2529,12 +2530,15 @@ if (import.meta.main) serve(async (req) => {
       let aplicadoIndet = false;
       if (dedicadaMonto && finalVacioOSustituible) {
         (finalHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
-        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        // Coexistencia Ley 546/VIS: monto poblado Y bandera de garantía abierta pueden convivir.
+        (finalHA as Record<string, unknown>).hipoteca_garantia_abierta = dedicadaAbierta;
+        (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = dedicadaAbierta;
         (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
         aplicado = true;
-      } else if (dedicadaIndet && finalVacioOSustituible) {
-        // Propagación explícita de indeterminada confirmada por el extractor dedicado.
+      } else if (dedicadaAbierta && finalVacioOSustituible) {
+        // Propagación explícita: sin monto, pero garantía abierta confirmada.
         (finalHA as Record<string, unknown>).valor_hipoteca_original = "";
+        (finalHA as Record<string, unknown>).hipoteca_garantia_abierta = true;
         (finalHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (finalHA as Record<string, unknown>).cuantia_origen = "escritura";
         aplicado = true;
@@ -2544,10 +2548,12 @@ if (import.meta.main) serve(async (req) => {
       const newDataIaHA = { ...cleanedIaHA };
       if (dedicadaMonto) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = dedicadaMonto;
-        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = false;
+        (newDataIaHA as Record<string, unknown>).hipoteca_garantia_abierta = dedicadaAbierta;
+        (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = dedicadaAbierta;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
-      } else if (dedicadaIndet) {
+      } else if (dedicadaAbierta) {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_original = "";
+        (newDataIaHA as Record<string, unknown>).hipoteca_garantia_abierta = true;
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
       }
