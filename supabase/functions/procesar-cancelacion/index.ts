@@ -23,7 +23,8 @@ import {
   PODER_BANCO_TOOL_NAME,
   type PoderBancoDeepPayload,
 } from "../_shared/isomorphic/poderBancoExtractor/index.ts";
-import { sanitizeString, stripNullyStrings } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
+import { sanitizeString, stripNullyStrings, CANCELACION_NULLY_PATHS } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
+import { mergeRegenPayload } from "../_shared/isomorphic/mergeRegenPayload.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -2577,9 +2578,16 @@ if (import.meta.main) serve(async (req) => {
     // ─────────────────────────────────────────────────────────────
     if (regen) {
 
-      // SSOT: frontend payload manda. Permite vaciar campos intencionalmente.
-      const data: CancelacionData = (manualOverrides ?? cancRow.data_final ?? cancRow.data_ia) as CancelacionData;
-      if (!data) {
+      // Read-then-Merge defensivo (helper puro isomórfico + test dedicado):
+      // rescata bloque profundo v6 de `data_ia` si `data_final` histórico lo
+      // perdió (caso c8924aa2) y garantiza que `overrides` NUNCA borra
+      // claves que no envía.
+      const data = mergeRegenPayload<Record<string, unknown>>({
+        dataIa: cancRow.data_ia as Record<string, unknown> | null,
+        dataFinal: cancRow.data_final as Record<string, unknown> | null,
+        overrides: (manualOverrides ?? null) as Record<string, unknown> | null,
+      }) as unknown as CancelacionData;
+      if (!data || Object.keys(data as Record<string, unknown>).length === 0) {
         return new Response(JSON.stringify({ error: "No hay datos para regenerar" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -2929,14 +2937,24 @@ if (import.meta.main) serve(async (req) => {
         // que el usuario pueda revisar/editar en la pantalla de validación y
         // dejamos status='requiere_revision_manual'. El desbloqueo ocurre por
         // la acción `confirm_manual_review` (misma edge function).
-        const revision = detectRequiereRevisionManual(extracted);
+        // ── Sanea strings tóxicas de la IA monolítica fuera de poder_banco.
+        // Gemini a veces devuelve `"null"` literal en cuantía no legible en
+        // vez de omitir. Sólo afecta `hipoteca_anterior.valor_hipoteca_original`
+        // y `hipoteca_anterior.cuantia_origen` (rutas listadas en
+        // `CANCELACION_NULLY_PATHS`). Ver `sanitizeNullPattern.test.ts`.
+        const cleanedExtracted = stripNullyStrings(
+          extracted as unknown as Record<string, unknown>,
+          CANCELACION_NULLY_PATHS,
+        ) as unknown as typeof extracted;
+
+        const revision = detectRequiereRevisionManual(cleanedExtracted);
         const commonUpdate = {
-          data_ia: extracted,
-          data_final: extracted,
-          numero_escritura_hipoteca: extracted.hipoteca_anterior.numero_escritura_hipoteca,
-          fecha_escritura_hipoteca: extracted.hipoteca_anterior.fecha_escritura_hipoteca,
-          notaria_hipoteca: extracted.hipoteca_anterior.notaria_hipoteca,
-          valor_hipoteca_original: extracted.hipoteca_anterior.valor_hipoteca_original,
+          data_ia: cleanedExtracted,
+          data_final: cleanedExtracted,
+          numero_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.numero_escritura_hipoteca,
+          fecha_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.fecha_escritura_hipoteca,
+          notaria_hipoteca: cleanedExtracted.hipoteca_anterior.notaria_hipoteca,
+          valor_hipoteca_original: cleanedExtracted.hipoteca_anterior.valor_hipoteca_original,
           matricula_inmobiliaria: extracted.inmueble.matricula_inmobiliaria,
           direccion_inmueble: extracted.inmueble.nomenclatura_predio ?? extracted.inmueble.direccion_completa ?? null,
           ciudad_inmueble: extracted.inmueble.ciudad,
@@ -2983,7 +3001,7 @@ if (import.meta.main) serve(async (req) => {
           // Path normal — genera minuta+certificado y marca completed.
           const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
           const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-            supabaseService, cancelacionId, extracted, prosaOv,
+            supabaseService, cancelacionId, cleanedExtracted, prosaOv,
           );
           const { error: updErr } = await supabaseService.from("cancelaciones").update({
             ...commonUpdate,

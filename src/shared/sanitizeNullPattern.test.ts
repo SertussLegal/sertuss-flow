@@ -12,6 +12,7 @@ import {
   mergePoderBancoFlat,
   mergePoderBancoV6,
   stripNullyStrings,
+  CANCELACION_NULLY_PATHS,
 } from "../../supabase/functions/_shared/isomorphic/poderBancoExtractor/merge";
 
 import { reconcileInmueble } from "@/lib/reconcileData";
@@ -144,4 +145,68 @@ describe("cancelaciones.poder_banco: nunca persiste 'null' literal", () => {
     expect(stripped?.apoderado_nombre === undefined || stripped?.apoderado_nombre === "ANA MARIA MONTOYA ECHEVERRY").toBe(true);
   });
 });
+
+
+describe("A2 — stripNullyStrings con rutas: hipoteca_anterior.valor_hipoteca_original", () => {
+  it("elimina 'null' literal en hipoteca_anterior.valor_hipoteca_original", () => {
+    const data = {
+      hipoteca_anterior: {
+        numero_escritura_hipoteca: "1234",
+        valor_hipoteca_original: "null",
+        cuantia_origen: "null",
+      },
+      partes: { deudor_nombre: "JUAN" },
+    };
+    const out = stripNullyStrings(
+      data as unknown as Record<string, unknown>,
+      CANCELACION_NULLY_PATHS,
+    ) as { hipoteca_anterior: Record<string, unknown>; partes: Record<string, unknown> };
+    expect(out.hipoteca_anterior.valor_hipoteca_original).toBeUndefined();
+    expect(out.hipoteca_anterior.cuantia_origen).toBeUndefined();
+    // Otros campos intactos.
+    expect(out.hipoteca_anterior.numero_escritura_hipoteca).toBe("1234");
+    expect(out.partes.deudor_nombre).toBe("JUAN");
+  });
+
+  it("preserva valores legítimos", () => {
+    const data = {
+      hipoteca_anterior: {
+        valor_hipoteca_original: "$50.000.000 M/CTE",
+        cuantia_origen: "escritura",
+      },
+    };
+    const out = stripNullyStrings(
+      data as unknown as Record<string, unknown>,
+      CANCELACION_NULLY_PATHS,
+    ) as { hipoteca_anterior: Record<string, unknown> };
+    expect(out.hipoteca_anterior.valor_hipoteca_original).toBe("$50.000.000 M/CTE");
+    expect(out.hipoteca_anterior.cuantia_origen).toBe("escritura");
+  });
+
+  it("no crashea si falta hipoteca_anterior", () => {
+    const data = { partes: { deudor_nombre: "X" } };
+    const out = stripNullyStrings(
+      data as unknown as Record<string, unknown>,
+      CANCELACION_NULLY_PATHS,
+    );
+    expect(out).toBeTruthy();
+  });
+
+  it("no muta el input", () => {
+    const data = {
+      hipoteca_anterior: { valor_hipoteca_original: "null" },
+    };
+    const snapshot = JSON.stringify(data);
+    stripNullyStrings(data as unknown as Record<string, unknown>, CANCELACION_NULLY_PATHS);
+    expect(JSON.stringify(data)).toBe(snapshot);
+  });
+
+  it("modo legacy sin paths sigue limpiando FLAT_STRING_KEYS de poder_banco", () => {
+    const pb = { apoderado_nombre: "null", apoderado_cedula: "REAL123" };
+    const out = stripNullyStrings(pb as unknown as Record<string, unknown>);
+    expect(out?.apoderado_nombre).toBeUndefined();
+    expect(out?.apoderado_cedula).toBe("REAL123");
+  });
+});
+
 
