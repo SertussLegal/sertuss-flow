@@ -470,7 +470,7 @@ export const CancelacionValidar = () => {
       const snapshot = JSON.stringify(data);
       try {
         const { error } = await supabase.from("cancelaciones").update({
-          data_final: data,
+          data_final: data as unknown as Json,
           deudor_nombre: data.partes.deudor_nombre,
           deudor_cedula: data.partes.deudor_identificacion,
           matricula_inmobiliaria: data.inmueble.matricula_inmobiliaria,
