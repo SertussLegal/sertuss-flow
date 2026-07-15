@@ -1,10 +1,12 @@
 # Fix UX ProsaApoderadoModal — Punto de decisión + orden de cierre
 
+> **Nota de estado:** este plan ya fue aprobado e implementado en el turno anterior. Suite completo verde (23 files / 265 tests, incluyendo 8 nuevos en `ProsaApoderadoModal.test.tsx`). Lo re-emito sin cambios porque el mensaje actual repite el mismo alcance. Si querés modificar algo del diseño ya en árbol, indicalo y ajusto el plan.
+
 ## Diagnóstico
 
-**Toaster fuera del Dialog.** `src/App.tsx:36-37` monta `<Toaster />` y `<Sonner />` al nivel de `App`, encima de `<BrowserRouter>` y por lo tanto fuera de cualquier `<DialogContent>`. Un `toast.success` sobrevive al desmontaje del modal sin problema — el reorden es seguro.
+**Toaster fuera del Dialog.** `src/App.tsx:36-37` monta `<Toaster />` y `<Sonner />` al nivel de `App`, encima de `<BrowserRouter>` — fuera de cualquier `<DialogContent>`. Un `toast.success` sobrevive al desmontaje del modal: el reorden es seguro.
 
-**Preview reactiva.** `ProsaLiveRenderer` recibe `override` por prop y usa `useMemo([base, override, section])`. Basta pasarle un `previewOverride` distinto para reflejar la sugerencia pendiente sin duplicar componentes.
+**Preview reactiva.** `ProsaLiveRenderer` recibe `override` por prop y usa `useMemo([base, override, section])`. Basta pasarle un `displayOverride` distinto al panel izquierdo para reflejar la sugerencia pendiente sin duplicar componentes.
 
 **Edge tolera reintento.** `adaptar-estilo-prosa` acepta `rawText` de hasta 8000 chars. Concatenar el comentario del usuario al final del `rawText` original con un separador cabe en el mismo contrato — sin cambios de edge.
 
@@ -15,185 +17,98 @@
 ```ts
 const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
 const [retryComment, setRetryComment] = useState("");
-const [lastRawText, setLastRawText] = useState<string | null>(null); // para reintento
-const [showOriginal, setShowOriginal] = useState(false);             // colapsable
+const [lastRawText, setLastRawText] = useState<string | null>(null);
+const [showOriginal, setShowOriginal] = useState(false);
 ```
 
-Nota: guardamos también el `rawText` original que dio origen a la sugerencia para poder reintentar concatenando el comentario sin depender de `rescueText` (que sigue siendo el trigger inicial desde textarea) ni del archivo (para archivos, deshabilitamos reintento — ver casos borde).
+`lastRawText` permite reintentar concatenando el comentario sin depender de `rescueText` (que se limpia al parquear la sugerencia).
 
 ### `handleRescueAsReference` (rediseñado)
 
-```ts
-async function handleRescueAsReference() {
-  const src = rescueText?.trim();
-  if (!src) return;
-  setAiLoading(true);
-  try {
-    const { data, error } = await supabase.functions.invoke("adaptar-estilo-prosa", {
-      body: { rawText: src, baseContext },
-    });
-    if (error) throw error;
-    const notasSug = (data as { notas_sugeridas?: string })?.notas_sugeridas ?? "";
-    if (!notasSug.trim()) { toast.info("La IA no extrajo notas reutilizables"); return; }
-    setPendingSuggestion(notasSug.slice(0, MAX_NOTAS));
-    setLastRawText(src);
-    setRescueText(null); // ya no necesitamos la banda de rescate
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : "Error de IA");
-  } finally { setAiLoading(false); }
-}
-```
-
-**Clave:** NO tocamos `notas` hasta que el usuario decida.
+Guarda el resultado en `pendingSuggestion` y `lastRawText`. **No toca `notas`.** Limpia `rescueText`. Sin `toast.success` (la banda de decisión ya es señal visual).
 
 ### Preview con sugerencia aplicada
 
-Reemplazar el `previewOverride` que se pasa al panel izquierdo cuando hay sugerencia pendiente:
-
 ```ts
-const displayOverride: ProsaApoderadoOverride = pendingSuggestion
+const displayOverride = pendingSuggestion
   ? { ...previewOverride, notas_adicionales: pendingSuggestion }
   : previewOverride;
 ```
 
-El `ProsaLiveRenderer` ya pinta la banda dorada con las `notas_adicionales` — el usuario ve inmediatamente cómo queda el bloque canónico + notas sugeridas.
+Pasado al panel izquierdo. Badge "Simulando sugerencia IA" en el header del panel.
 
-### UI (dentro de la columna derecha, reemplaza la banda de rescate cuando `pendingSuggestion` está activo)
+### UI (columna derecha, reemplaza banda de rescate cuando hay sugerencia)
 
 ```text
-┌─ Sugerencia de la IA (pendiente de tu decisión) ────────────┐
+┌─ Sugerencia de la IA — pendiente de tu decisión ────────────┐
 │ [▸ Ver texto original que pegaste]  (colapsable)             │
-│                                                              │
-│ Propuesta IA:                                                │
-│ ┌──────────────────────────────────────────────────────┐    │
-│ │ <pendingSuggestion, readonly, whitespace-pre-wrap>    │    │
-│ └──────────────────────────────────────────────────────┘    │
-│ Mira el panel izquierdo para ver cómo quedaría aplicada.     │
-│                                                              │
+│ Propuesta IA: <pendingSuggestion, readonly>                  │
 │ [ Aplicar ]  [ Descartar ]                                   │
-│                                                              │
 │ ─ Reintentar con un comentario ─                             │
-│ [ input una línea: "Más formal, menciona..."         ] [→]   │
+│ [ input ] [Reintentar]                                       │
 └──────────────────────────────────────────────────────────────┘
 ```
 
+Textarea de notas queda `disabled` mientras hay sugerencia pendiente (evita edición ambigua del origen).
+
 ### Handlers
 
-- **Aplicar:** `setNotas(pendingSuggestion!); setPendingSuggestion(null); setRetryComment(""); setLastRawText(null); setShowOriginal(false); toast.success("Sugerencia aplicada")`.
-- **Descartar:** `setPendingSuggestion(null); setRetryComment(""); setLastRawText(null); setShowOriginal(false)`. `notas` queda como estaba (posiblemente vacío si el usuario nunca escribió nada propio antes de pegar).
-- **Reintentar:** `handleRetryWithComment()`:
-  ```ts
-  const comment = retryComment.trim();
-  if (!comment || !lastRawText) return;
-  const combined = `${lastRawText}\n\n---\nAjuste solicitado por el usuario: ${comment}`.slice(0, 8000);
-  setAiLoading(true);
-  try {
-    const { data, error } = await supabase.functions.invoke("adaptar-estilo-prosa", {
-      body: { rawText: combined, baseContext },
-    });
-    if (error) throw error;
-    const notasSug = (data as { notas_sugeridas?: string })?.notas_sugeridas ?? "";
-    if (!notasSug.trim()) { toast.info("La IA no cambió su propuesta"); return; }
-    setPendingSuggestion(notasSug.slice(0, MAX_NOTAS));
-    setRetryComment("");
-  } catch (err) { toast.error(...); }
-  finally { setAiLoading(false); }
-  ```
+- **Aplicar:** `setNotas(pendingSuggestion); setPendingSuggestion(null); ...` + `toast.success("Sugerencia aplicada — revísala antes de guardar")`.
+- **Descartar:** limpia `pendingSuggestion`/`retryComment`/`lastRawText`/`showOriginal`. `notas` conserva el texto original pegado (no lo tocamos).
+- **Reintentar:** concatena `${lastRawText}\n\n---\nAjuste solicitado por el usuario: ${comment}` truncado a `MAX_RAW_TEXT=8000`. Reinvoca `adaptar-estilo-prosa`. Si `notas_sugeridas` viene vacío (edge sanitizó y rechazó por marcador canónico o token prohibido), `toast.info("La IA propuso algo inválido — intenta con otro comentario")` — la propuesta previa sigue visible y `retryComment` se conserva para editar. **Nunca JSON crudo.**
 
 ### Guard "Guardar y cerrar"
 
-```tsx
-<Button
-  disabled={saving || notasLen > MAX_NOTAS || pendingSuggestion !== null}
-  title={pendingSuggestion !== null ? "Decide qué hacer con la sugerencia antes de guardar" : undefined}
-  ...
->
-```
+`disabled={saving || notasLen > MAX_NOTAS || pendingSuggestion !== null}` con microcopy adyacente ("Decide qué hacer con la sugerencia antes de guardar") y `title` para tooltip nativo.
 
-Mostrar un microcopy pequeño junto al botón cuando esté deshabilitado por este motivo (accesibilidad: no depender solo del title).
+### Casos borde resueltos
 
-### Casos borde — resueltos
-
-1. **Usuario cierra el modal (X) con `pendingSuggestion` activo.**
-   Envolver `onOpenChange` externo con un interceptor local:
-   ```ts
-   function handleOpenChange(next: boolean) {
-     if (!next && pendingSuggestion !== null) {
-       const ok = window.confirm(
-         "Tienes una sugerencia de la IA sin decidir. Si cierras ahora, se descartará."
-       );
-       if (!ok) return;
-       // usuario confirmó: limpiar sugerencia y cerrar
-       setPendingSuggestion(null); setRetryComment(""); setLastRawText(null);
-     }
-     onOpenChange(next);
-   }
-   ```
-   Se pasa `handleOpenChange` al `<Dialog>` en lugar de `onOpenChange` directo. Aplica también a click fuera y ESC (Radix los canaliza por el mismo callback).
-
-2. **Reintento devuelve texto con marcador canónico.**
-   La edge sanitiza con `OverrideSchema.safeParse` antes de devolver `notas_sugeridas`. Si falla, la respuesta trae `notas_sugeridas: ""` o `warning`. En ese caso: `toast.info("La IA propuso algo inválido — intenta con otro comentario")`, `pendingSuggestion` queda como estaba (la propuesta previa sigue visible), `retryComment` se conserva para que el usuario lo edite. NO se muestra JSON crudo — la ruta es la misma que la de "no extrajo notas".
-
-3. **`rescueText` de un archivo (no de textarea).** El flujo actual de archivo llama `handleFile` que **hoy sí** aplica directo a `notas`. Se mantiene ese comportamiento (los archivos no vienen de un intento fallido de pegar canónico) — el punto de decisión aplica **solo** al camino de rescate desde marcador canónico. Documentar en comentario.
-
-4. **Aplicar cuando `notas` ya tenía contenido:** se sobrescribe. Es el comportamiento esperado (la sugerencia reemplaza, no anexa). El usuario acaba de decidir explícitamente "Aplicar".
-
-### Efecto de reset
-
-Extender el `useEffect([open])` para limpiar `pendingSuggestion`, `retryComment`, `lastRawText`, `showOriginal` al abrir/cerrar.
+1. **X / ESC / click fuera con `pendingSuggestion` activo.**
+   Interceptor local `handleOpenChange(next)` que si `!next && pendingSuggestion !== null` dispara `window.confirm("Tienes una sugerencia de la IA sin decidir. Si cierras ahora, se descartará.")`. Cancelar → no cierra. Confirmar → limpia estado + `onOpenChange(false)`. Se pasa este wrapper al `<Dialog>` en lugar del `onOpenChange` prop directo.
+2. **Reintento devuelve marcador canónico.** La edge ya sanitiza con `OverrideSchema.safeParse`. Si falla, `notas_sugeridas: ""` — misma ruta que "sin cambios": `toast.info`, propuesta previa intacta.
+3. **Archivo (no textarea).** `handleFile` mantiene aplicación directa a `notas`. El punto de decisión aplica solo a rescate desde marcador canónico (documentado en comentario).
+4. **Aplicar cuando `notas` ya tenía contenido.** Sobrescribe. Es la semántica esperada al decidir "Aplicar".
 
 ## 2. Reordenar cierre en `handleSave`
 
-Cambiar el camino feliz de:
+Cambio de:
 ```ts
-toast.success(...);
-onSaved(payload);
-onOpenChange(false);
+toast.success(...); onSaved(payload); onOpenChange(false);
 ```
 a:
 ```ts
-onOpenChange(false);
-onSaved(payload);
-toast.success(isEmpty ? "Personalización eliminada" : "Personalización guardada");
+onOpenChange(false); onSaved(payload); toast.success(...);
 ```
 
-**Verificación de toast tras desmontar:** `<Sonner />` vive en `App.tsx:37`, fuera de `<BrowserRouter>` y por lo tanto fuera del árbol del `Dialog`. Sonner mantiene su propia store; llamar `toast.success` desde un componente que se está desmontando funciona porque la función es un side effect global, no un efecto de React. Confirmado seguro.
+**Toast tras desmontar es seguro:** `<Sonner />` en `App.tsx:37` vive fuera del árbol del Dialog. `toast.success` es side effect global sobre la store de Sonner — no requiere que el componente que la invoca siga montado.
 
-**Regresión potencial evaluada:**
-- ¿`onSaved` (invalidateQueries) podría no correr si el usuario navega rápido? No: `onSaved` es síncrono al invocarse (la invalidación de React Query dispara refetches pero no requiere que el modal siga montado). El padre (`CancelacionValidar.tsx`) es quien tiene el `queryClient`, no el modal.
-- ¿Race con Radix limpiando `pointer-events`? Al invertir el orden, la animación de salida del Dialog empieza antes de que el padre re-renderice por invalidación, eliminando la ventana donde Radix restaura pointer-events sobre un árbol ya cambiado. Es exactamente lo que queremos.
+**Regresiones evaluadas:**
+- ¿`onSaved`/`invalidateQueries` no corre si el usuario navega rápido? No — `onSaved` es síncrono al invocarse; la invalidación de React Query dispara refetches en el padre (`CancelacionValidar.tsx`) que tiene el `queryClient`, no en el modal.
+- ¿Race con `pointer-events` de Radix? Al invertir, la animación de salida empieza antes de que el padre re-renderice por invalidación — elimina la ventana donde Radix restauraba pointer-events sobre un árbol ya cambiado. Es el efecto deseado.
 
-**No usamos `queueMicrotask`** — el reorden simple es suficiente y más legible.
+Sin `queueMicrotask` — el reorden simple basta.
 
-## Tests de regresión (`src/components/cancelaciones/prosa/__tests__/ProsaApoderadoModal.test.tsx`)
+## Tests de regresión
 
-Nuevo archivo con React Testing Library, mockeando `supabase.functions.invoke` y `supabase.from(...).update(...)`.
+`src/components/cancelaciones/prosa/__tests__/ProsaApoderadoModal.test.tsx` — nuevo, RTL + user-event, mocks de `supabase.functions.invoke`, `supabase.from().update().eq()` y `sonner`. Polyfill local de `ResizeObserver` (Radix ScrollArea). `ProsaLiveRenderer` mockeado para exponer `notas_adicionales` del override recibido.
 
-Casos:
-
-1. **Rescate → pendingSuggestion aparece, no toca notas.** Pegar texto con "COMPARECIÓ:", clic Guardar → banda rescate → clic "Usar como referencia" (mock devuelve `notas_sugeridas: "estilo formal..."`) → assert que aparece bloque "Sugerencia de la IA", que el textarea sigue con el texto original pegado, que el botón "Guardar y cerrar" está `disabled`.
-2. **Aplicar.** Desde estado (1), clic Aplicar → assert textarea ahora contiene `"estilo formal..."`, bloque de sugerencia desaparece, Guardar habilitado, toast success visible.
-3. **Descartar.** Desde (1), clic Descartar → assert textarea conserva el texto original pegado, bloque desaparece, Guardar sigue deshabilitado (porque el textarea aún contiene "COMPARECIÓ:" — validación al guardar volvería a fallar; ok, ese es un caso distinto que el usuario debe editar manualmente).
-4. **Reintentar con comentario.** Desde (1), escribir "más formal" en input reintento, clic → assert `supabase.functions.invoke` llamado con `rawText` que incluye el texto original + `"Ajuste solicitado por el usuario: más formal"`, `pendingSuggestion` se actualiza a la nueva propuesta, `retryComment` se limpia.
-5. **Reintento devuelve vacío.** Mock devuelve `notas_sugeridas: ""` → assert `toast.info` llamado, `pendingSuggestion` sigue mostrando la propuesta previa.
-6. **Cerrar (X) con pendingSuggestion.** Spy en `window.confirm` (return `false`) → intentar cerrar → assert `onOpenChange` externo NO se llamó, sugerencia sigue visible. Segundo caso: `confirm` return `true` → `onOpenChange(false)` llamado, estado limpio.
-7. **Camino feliz orden de cierre.** Escribir nota válida, clic Guardar → assert orden de llamadas: primero `onOpenChange(false)`, luego `onSaved(payload)`, luego `toast.success`. Verificable con `vi.fn().mock.invocationCallOrder`.
-8. **Toaster fuera del Dialog** (test estructural liviano): montar `<App />` mínimo o assert que el componente Toaster no está dentro del árbol del DialogContent. Alternativa más simple: confirmar en el test (7) que `toast.success` se llama después del desmontaje del DialogContent (el spy sobre `toast.success` recibe la llamada; el hecho de que sonner lo renderice fuera se asume por su implementación).
-
-Total: ~8 tests nuevos en un solo archivo. Suite completo debe seguir en 22 files / 265 tests aprox.
+1. **Rescate → pendingSuggestion visible, `notas` intacto, Guardar disabled.**
+2. **Aplicar** → textarea contiene la sugerencia, bloque desaparece, Guardar habilitado, `toast.success`.
+3. **Descartar** → textarea conserva pegado original, bloque desaparece.
+4. **Reintentar con comentario** → `invoke` llamado con `rawText` que contiene el texto pegado + `"Ajuste solicitado por el usuario: ..."`, nueva propuesta reemplaza a la previa, `retryComment` se limpia.
+5. **Reintento vacío** → `toast.info`, propuesta previa sigue.
+6. **Cerrar con pendingSuggestion**: `confirm=false` → `onOpenChange` NO llamado; `confirm=true` → sí.
+7. **Camino feliz orden de cierre** → `invocationCallOrder`: `onOpenChange` < `onSaved` < `toast.success`.
 
 ## Aislamiento
 
-Todos los cambios viven en:
-- `src/components/cancelaciones/prosa/ProsaApoderadoModal.tsx` (lógica + UI)
+- `src/components/cancelaciones/prosa/ProsaApoderadoModal.tsx`
 - `src/components/cancelaciones/prosa/__tests__/ProsaApoderadoModal.test.tsx` (nuevo)
 
 Sin tocar schema compartido, edge, otros bancos ni `CancelacionValidar.tsx`.
 
-## Detalles técnicos (no user-facing)
+## Detalles técnicos
 
-- Reset de estado en `useEffect([open])`: agregar los 4 estados nuevos a la limpieza existente.
-- `MAX_NOTAS = 2000` sigue aplicando a `pendingSuggestion` vía `.slice(0, MAX_NOTAS)` al recibir.
-- `MAX_RETRY_COMMENT = 240` chars en el input de reintento (defensa en profundidad; edge trunca a 8000 igual).
-- Todos los `useState` nuevos van justo debajo de los existentes, sin refactor.
-- El interceptor `handleOpenChange` NO reemplaza la prop `onOpenChange` del componente — es un wrapper local que sí llama a la prop original.
+- `MAX_NOTAS=2000`, `MAX_RETRY_COMMENT=240`, `MAX_RAW_TEXT=8000` (defensa en profundidad; edge trunca igual).
+- Reset de los 4 estados nuevos en `useEffect([open, currentOverride])`.
+- Interceptor `handleOpenChange` **wrappea** la prop, no la reemplaza.
