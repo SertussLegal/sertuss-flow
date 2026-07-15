@@ -63,6 +63,7 @@ export function ProsaApoderadoModal({
   );
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [rescueText, setRescueText] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset local state cuando abre con otro trámite.
@@ -73,6 +74,7 @@ export function ProsaApoderadoModal({
     setRazonAnterior(currentOverride?.campos_editados?.sociedad_constitucion?.razon_social_anterior ?? "");
     setRlCargo(currentOverride?.campos_editados?.representante_legal_cargo ?? "");
     setRlCiudad(currentOverride?.campos_editados?.representante_legal_cedula_expedida_en ?? "");
+    setRescueText(null);
   }, [open, currentOverride]);
 
   const buildOverride = (): ProsaApoderadoOverride => ({
