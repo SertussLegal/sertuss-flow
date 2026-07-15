@@ -55,8 +55,11 @@ interface Payload {
   fileBase64?: string;
   mimeType?: string;
   fileName?: string;
+  rawText?: string;
   baseContext?: unknown;
 }
+
+const MAX_RAW_TEXT = 8000;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
