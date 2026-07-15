@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import {
   OverrideSchema,
+  classifyOverrideError,
   FORBIDDEN_NOTE_TOKENS,
   FORBIDDEN_CANONICAL_MARKERS,
 } from "@shared/prosaBancos/overrideSchema";
