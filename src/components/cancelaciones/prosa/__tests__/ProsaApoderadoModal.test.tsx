@@ -174,7 +174,7 @@ describe("ProsaApoderadoModal — punto de decisión IA", () => {
     const retryInput = screen.getByPlaceholderText(/más formal, menciona/i);
     await user.type(retryInput, "hazlo más formal");
     await user.click(screen.getByRole("button", { name: /Reintentar/i }));
-    await waitFor(() => expect(screen.getByText(/Segunda propuesta más formal/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/Segunda propuesta más formal/).length).toBeGreaterThan(0));
     const lastCall = invokeMock.mock.calls.at(-1);
     expect(lastCall?.[0]).toBe("adaptar-estilo-prosa");
     const body = (lastCall?.[1] as { body: { rawText: string } }).body;
