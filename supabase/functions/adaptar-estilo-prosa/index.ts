@@ -82,34 +82,56 @@ serve(async (req) => {
       return json({ error: "LOVABLE_API_KEY no configurada" }, 500);
     }
     const body = (await req.json()) as Payload;
-    const { fileBase64, mimeType, fileName } = body;
-    if (!fileBase64) return json({ error: "fileBase64 requerido" }, 400);
-    if (!mimeType || !ALLOWED_MIME.includes(mimeType)) {
-      return json({ error: `MIME no soportado: ${mimeType}` }, 400);
+    const { fileBase64, mimeType, fileName, rawText } = body;
+    const hasFile = typeof fileBase64 === "string" && fileBase64.length > 0;
+    const hasText = typeof rawText === "string" && rawText.trim().length > 0;
+    if (!hasFile && !hasText) {
+      return json({ error: "fileBase64 o rawText requerido" }, 400);
     }
-    const approxBytes = Math.floor((fileBase64.length * 3) / 4);
-    if (approxBytes > MAX_BYTES) {
-      return json({ error: "Archivo excede 8 MB" }, 400);
+    if (hasFile) {
+      if (!mimeType || !ALLOWED_MIME.includes(mimeType)) {
+        return json({ error: `MIME no soportado: ${mimeType}` }, 400);
+      }
+      const approxBytes = Math.floor((fileBase64!.length * 3) / 4);
+      if (approxBytes > MAX_BYTES) {
+        return json({ error: "Archivo excede 8 MB" }, 400);
+      }
+    }
+    if (hasText && rawText!.length > MAX_RAW_TEXT) {
+      return json({ error: `rawText excede ${MAX_RAW_TEXT} caracteres` }, 400);
     }
 
-    // Construimos el content multimodal según sea imagen o documento.
-    const isImage = mimeType.startsWith("image/");
-    const userContent: unknown[] = [
-      {
-        type: "text",
-        text: `Analiza el documento adjunto${fileName ? ` ("${fileName}")` : ""} y devuelve el JSON con las notas sugeridas.`,
-      },
-    ];
-    if (isImage) {
-      userContent.push({
-        type: "image_url",
-        image_url: { url: `data:${mimeType};base64,${fileBase64}` },
-      });
+    // Construimos el content del turno de usuario: rama texto directo (rescate
+    // desde el textarea) o rama multimodal (archivo subido).
+    let userContent: unknown[];
+    if (hasText) {
+      userContent = [
+        {
+          type: "text",
+          text:
+            `Analiza el siguiente TEXTO DE REFERENCIA (fragmento pegado por el usuario, no un documento completo). ` +
+            `Extrae únicamente ESTILO y FRASES GENÉRICAS reutilizables. No copies datos concretos, nombres, cifras ni marcadores canónicos.\n\n---\n${rawText}\n---`,
+        },
+      ];
     } else {
-      userContent.push({
-        type: "file",
-        file: { filename: fileName || "referencia", file_data: `data:${mimeType};base64,${fileBase64}` },
-      });
+      const isImage = mimeType!.startsWith("image/");
+      userContent = [
+        {
+          type: "text",
+          text: `Analiza el documento adjunto${fileName ? ` ("${fileName}")` : ""} y devuelve el JSON con las notas sugeridas.`,
+        },
+      ];
+      if (isImage) {
+        userContent.push({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${fileBase64}` },
+        });
+      } else {
+        userContent.push({
+          type: "file",
+          file: { filename: fileName || "referencia", file_data: `data:${mimeType};base64,${fileBase64}` },
+        });
+      }
     }
 
     const upstream = await fetch(GATEWAY, {
