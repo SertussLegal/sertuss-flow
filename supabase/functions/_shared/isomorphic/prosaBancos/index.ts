@@ -20,9 +20,11 @@ export {
   OverrideSchema,
   sanitizeOverride,
   isOverrideForbidden,
+  classifyOverrideError,
   FORBIDDEN_NOTE_TOKENS,
   FORBIDDEN_CANONICAL_MARKERS,
 } from "./overrideSchema.ts";
+export type { OverrideErrorKind, OverrideErrorInfo } from "./overrideSchema.ts";
 
 const TEMPLATES: ProsaBancoTemplate[] = [daviviendaTemplate];
 
