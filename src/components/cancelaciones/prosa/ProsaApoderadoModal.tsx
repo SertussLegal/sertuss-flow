@@ -113,10 +113,42 @@ export function ProsaApoderadoModal({
       onSaved(payload);
       onOpenChange(false);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al guardar";
+      const info = classifyOverrideError(err);
+      if (info?.kind === "canonical_marker") {
+        // Ofrecemos rescatar el texto pegado como referencia de estilo.
+        setRescueText(notas);
+        toast.error("Ese texto contiene estructura canónica del banco. Úsalo como referencia de estilo.");
+        return;
+      }
+      const msg = info?.message ?? (err instanceof Error ? err.message : "Error al guardar");
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRescueAsReference = async () => {
+    const src = rescueText?.trim();
+    if (!src) return;
+    setAiLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("adaptar-estilo-prosa", {
+        body: { rawText: src, baseContext },
+      });
+      if (error) throw error;
+      const notasSug = (data as { notas_sugeridas?: string; warning?: string })?.notas_sugeridas ?? "";
+      if (!notasSug.trim()) {
+        toast.info("La IA no extrajo notas reutilizables del texto");
+        return;
+      }
+      setNotas(notasSug.slice(0, MAX_NOTAS));
+      setRescueText(null);
+      toast.success("Estilo aplicado — revísalo antes de guardar");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error de IA";
+      toast.error(msg);
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -126,6 +158,7 @@ export function ProsaApoderadoModal({
     setRazonAnterior("");
     setRlCargo("");
     setRlCiudad("");
+    setRescueText(null);
   };
 
   const handleFile = async (file: File) => {
