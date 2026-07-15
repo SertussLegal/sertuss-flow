@@ -4,7 +4,7 @@
 // ISOMÓRFICO: usa exclusivamente `zod`, disponible en Vite y Deno (npm:zod).
 // ============================================================================
 
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import type { ProsaApoderadoOverride } from "./types.ts";
 
 /** Tokens sucios que no deben persistirse dentro de notas del usuario. */
@@ -90,4 +90,34 @@ export const OverrideSchema = z
  */
 export function sanitizeOverride(input: unknown): ProsaApoderadoOverride {
   return OverrideSchema.parse(input) as ProsaApoderadoOverride;
+}
+
+// ---------------------------------------------------------------------------
+// Clasificador de errores del schema — la UI decide cómo reaccionar según la
+// causa (ofrecer redirigir el texto a `adaptar-estilo-prosa` cuando fue un
+// marcador canónico, vs. toast normal en los demás casos).
+// ---------------------------------------------------------------------------
+
+export type OverrideErrorKind =
+  | "canonical_marker"
+  | "forbidden_token"
+  | "too_long"
+  | "other";
+
+export interface OverrideErrorInfo {
+  kind: OverrideErrorKind;
+  message: string;
+  path: (string | number)[];
+}
+
+export function classifyOverrideError(err: unknown): OverrideErrorInfo | null {
+  if (!(err instanceof ZodError)) return null;
+  const issue = err.issues[0];
+  if (!issue) return null;
+  const msg = issue.message ?? "";
+  let kind: OverrideErrorKind = "other";
+  if (msg.startsWith("No se pueden redefinir marcadores canónicos")) kind = "canonical_marker";
+  else if (msg.startsWith("Contiene token prohibido")) kind = "forbidden_token";
+  else if (msg.startsWith("Máximo 2000 caracteres")) kind = "too_long";
+  return { kind, message: msg, path: [...issue.path] };
 }

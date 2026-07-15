@@ -1,177 +1,255 @@
-# Entrega 1 — Blindaje compartido del pipeline de poder bancario
 
-Reordenada por prioridad: primero lo compartido (afecta a todo banco futuro), después el renderer específico de Davivienda que consume los helpers compartidos.
+# Plan — UX del modal "Personalizar prosa del Apoderado — Davivienda"
 
-## Alcance
-4 cambios de contrato/prompt + 1 refactor a helpers compartidos + suite de regresión. Todo dentro de `supabase/functions/_shared/isomorphic/` y `supabase/functions/procesar-cancelacion/`. Sin migración de BD, sin flags nuevos.
+## Diagnóstico
 
----
+### A. `ZodError.message` es JSON crudo
+En `ProsaApoderadoModal.tsx` (líneas ~91–113), `handleSave` hace `OverrideSchema.parse(...)` dentro de un `try/catch` genérico y muestra `err.message` con `toast.error`. `ZodError` serializa su `.message` como el string JSON de `error.issues`, por eso el toast enseña el array crudo.
 
-## 1. Schema compartido — desacoplar "garantía abierta" de "monto del crédito"
+### B. `adaptar-estilo-prosa` **no acepta texto plano hoy**
+Verificado en `supabase/functions/adaptar-estilo-prosa/index.ts`:
+- Línea 83: `if (!fileBase64) return json({ error: "fileBase64 requerido" }, 400);` — obliga a archivo.
+- Línea 30: `"text/plain"` está en `ALLOWED_MIME`, así que técnicamente se puede base64-encodear el texto pegado y mandarlo como `text/plain`. Funcionaría sin cambios de edge.
+- Pero el `SYSTEM_PROMPT` (líneas 36–52) dice explícitamente "El usuario adjuntará un documento de REFERENCIA de estilo" y el user turn dice "Analiza el documento adjunto" (línea 97). Con un párrafo corto pegado, el prompt queda incoherente.
+- Además el flujo `type: "file"` multimodal es innecesariamente costoso para 500–2000 chars de texto.
 
-**Archivo:** `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` (sub-schema de `hipoteca_anterior`) + espejo en `types.ts` si existe el tipo TS.
+**Decisión:** agregar una rama `rawText` a la edge que use un user turn distinto ("Analiza el siguiente texto de REFERENCIA") y saltee la parte multimodal. Cambio mínimo, sin romper el contrato actual.
 
-**Diff propuesto (schema JSON):**
-```diff
- hipoteca_anterior: {
-   type: "object",
-   properties: {
-     ...
-     valor_hipoteca_original: { type: ["string","null"], description: "Monto inicial del mutuo en formato TEXTO (NÚMERO) con M/CTE. \"\" (string vacío) si no aparece; NUNCA el literal \"null\"." },
--    valor_hipoteca_es_indeterminada: { type: "boolean", description: "true si la hipoteca es abierta/sin cuantía." }
-+    valor_hipoteca_es_indeterminada: { type: "boolean", description: "DEPRECATED (legacy). true SOLO cuando NO existe ninguna cifra del mutuo en el documento. Ya no es espejo de garantía abierta." },
-+    hipoteca_garantia_abierta: { type: "boolean", description: "true si la escritura declara literal HIPOTECA ABIERTA / SIN LÍMITE EN LA CUANTÍA / SIN LÍMITE DE CUANTÍA / DE CUANTÍA INDETERMINADA, INDEPENDIENTE de que exista o no un monto inicial del mutuo. false si la garantía se declara por cuantía específica. Coexiste con valor_hipoteca_original." }
-   },
--  required: [..., "valor_hipoteca_es_indeterminada"]
-+  required: [..., "valor_hipoteca_es_indeterminada", "hipoteca_garantia_abierta"]
- }
-```
+### C. Cómo distinguir la causa del `ZodError`
+Los mensajes vienen del `.refine` en `overrideSchema.ts:50–57`, cuyo `message` es el `reason` que devuelve `isOverrideForbidden`. Los prefijos son estables y ya únicos:
+- `"No se pueden redefinir marcadores canónicos:"` → marcador canónico (caso a rescatar).
+- `"Contiene token prohibido:"` → token sucio (`___`, `null`, `N/A`, `ilegible`...).
+- `"Máximo 2000 caracteres..."` → largo excedido.
 
-En `types.ts` (si existe el tipo `HipotecaAnterior`):
-```diff
- export interface HipotecaAnterior {
-   valor_hipoteca_original: string | null;
-   valor_hipoteca_es_indeterminada: boolean;
-+  hipoteca_garantia_abierta?: boolean;
- }
-```
+Para no dispersar strings mágicas en el componente, expongo un helper `classifyOverrideError(err: unknown)` en `overrideSchema.ts` que devuelve `"canonical_marker" | "forbidden_token" | "too_long" | "other"` + el `message` del primer issue.
 
----
+## Cambios
 
-## 2. Prompts — ambos sitios en `procesar-cancelacion/index.ts`
+### 1. `supabase/functions/_shared/isomorphic/prosaBancos/overrideSchema.ts`
 
-**Archivo:** `supabase/functions/procesar-cancelacion/index.ts`.
-
-### 2a. Bloque monolítico (~L361-371)
-```diff
- - 'valor_hipoteca_original': monto inicial del mutuo en formato TEXTO (NÚMERO)…
--  · Si la escritura declara "HIPOTECA ABIERTA" o "SIN LÍMITE DE CUANTÍA", devolver "" y marcar valor_hipoteca_es_indeterminada=true.
-+  · Devolver la cifra del mutuo si aparece anclada al préstamo, INDEPENDIENTEMENTE de que la garantía también se declare abierta.
-+  · Si genuinamente no aparece ninguna cifra, devolver "" (string vacío). NUNCA el literal "null".
-+- 'hipoteca_garantia_abierta': true si aparecen las frases "HIPOTECA ABIERTA", "SIN LÍMITE EN LA CUANTÍA", "SIN LÍMITE DE CUANTÍA", "CUANTÍA INDETERMINADA". Se evalúa por separado de valor_hipoteca_original; ambos campos pueden ser verdaderos simultáneamente (caso VIS/Ley 546).
-- 'valor_hipoteca_es_indeterminada': true SOLO cuando NO exista ninguna cifra del mutuo en el documento.
-```
-
-### 2b. Extractor dedicado, caso d) (~L1774-1789)
-```diff
- case d) La escritura declara garantía abierta:
--  → devolver valor_hipoteca_original="", valor_hipoteca_es_indeterminada=true
-+  → derivar hipoteca_garantia_abierta=true SIEMPRE que aparezcan las frases ancla.
-+  → SI ADEMÁS existe una cifra del mutuo (casos a/b), devolver ambas: valor_hipoteca_original=<cifra> y hipoteca_garantia_abierta=true.
-+  → SI cero cifras: valor_hipoteca_original="", valor_hipoteca_es_indeterminada=true, hipoteca_garantia_abierta=true (regresión legacy).
-+  → NUNCA devolver el literal "null" en valor_hipoteca_original. Usar "" cuando no exista.
-```
-
----
-
-## 3. Prompt de poder — refuerzo B (reforma) y C (cargo del RL)
-
-**Archivo:** `supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts`.
-
-### 3a. Cargo del RL (~L41-44)
-```diff
--- representante_legal_cargo: cuando aparezcan, extraer el cargo textual (ej. "SUPLENTE DEL PRESIDENTE").
-+- representante_legal_cargo: OBLIGATORIO. Extraer SIEMPRE el cargo textual completo tal como figura en el certificado ("SUPLENTE DEL PRESIDENTE", "GERENTE", "PRESIDENTE"…). Solo devolver null tras verificar explícitamente que el certificado no lo menciona.
--- representante_legal_cedula_expedida_en: cuando aparezca…
-+- representante_legal_cedula_expedida_en: OBLIGATORIO. Ciudad de expedición de la cédula del RL.
-```
-
-### 3b. Reforma societaria (~L51-62)
-```diff
--- razon_social_anterior, reforma_acta_numero, reforma_acta_fecha_texto, reforma_camara_fecha_texto: cuando aparezcan.
-+- razon_social_anterior: OBLIGATORIO buscar. Si el certificado menciona un cambio de nombre/denominación anterior de la sociedad, extraer el nombre previo.
-+- reforma_acta_numero, reforma_acta_fecha_texto, reforma_camara_fecha_texto: OBLIGATORIOS. Si razon_social_anterior se detecta, los TRES campos de reforma DEBEN buscarse activamente en el mismo párrafo/anexo. Solo devolver null tras búsqueda explícita.
-+  Ejemplo textual real de párrafo de reforma:
-+    "Por Acta No. 12 del 15 de marzo de 2023 de la Asamblea de Accionistas, inscrita en esta Cámara de Comercio el 3 de abril de 2023 bajo el número 01823456 del Libro IX, la sociedad cambió su razón social de PROYECTOS LEGALES S.A.S. a LEGAL BUILDERS S.A.S."
-+    → razon_social_anterior="PROYECTOS LEGALES S.A.S.", reforma_acta_numero="12", reforma_acta_fecha_texto="15 de marzo de 2023", reforma_camara_fecha_texto="3 de abril de 2023".
-```
-
----
-
-## 4. Schema — condicionar `sociedad_constitucion.numero` al `tipo_documento`
-
-**Archivo:** `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` (~L118).
-
-```diff
- sociedad_constitucion: {
-   type: "object",
-   properties: {
-     tipo_documento: { type: "string", enum: ["escritura_publica", "documento_privado"] },
--    numero: { type: ["string","null"], description: "Solo dígitos si es escritura. null si no aparece." }
-+    numero: { type: ["string","null"], description: "Número del documento constitutivo. Rellenar SOLO si tipo_documento==='escritura_publica' (dígitos de la escritura). Si tipo_documento==='documento_privado' DEBE ser null — los documentos privados no tienen número. NUNCA reutilizar el número de inscripción de Cámara de Comercio (ese va en camara_comercio_numero)." }
-   }
- }
-```
-
----
-
-## 5. Renderer defensivo — helpers compartidos en `legalProse.ts`
-
-Extender `supabase/functions/_shared/isomorphic/prosaBancos/legalProse.ts` (módulo existente compartido) exportando tres funciones puras:
+Agregar al final del archivo:
 
 ```ts
-// Bug A — omite bloque "identificada con documento privado número X" si tipo_documento==='documento_privado'
-export function describirConstitucionSociedad(soc: SociedadConstitucion | undefined): string {
-  if (!soc) return "";
-  const esEscritura = soc.tipo_documento === "escritura_publica";
-  const partes: string[] = [];
-  if (esEscritura && soc.numero) partes.push(`escritura pública número ${numeroConLetras(soc.numero)}`);
-  if (esEscritura && soc.fecha_texto) partes.push(`del ${soc.fecha_texto}`);
-  if (esEscritura && soc.notaria) partes.push(`otorgada en la ${soc.notaria}`);
-  if (!esEscritura) partes.push("mediante documento privado");
-  if (soc.fecha_texto && !esEscritura) partes.push(`del ${soc.fecha_texto}`);
-  return partes.filter(Boolean).join(" ").trim();
+import { ZodError } from "zod";
+
+export type OverrideErrorKind =
+  | "canonical_marker"
+  | "forbidden_token"
+  | "too_long"
+  | "other";
+
+export interface OverrideErrorInfo {
+  kind: OverrideErrorKind;
+  message: string;
+  path: (string | number)[];
 }
 
-// Bug B — imprime lo que exista de la reforma sin frase colgada
-export function describirReformaSocietaria(soc: SociedadConstitucion | undefined): string {
-  if (!soc) return "";
-  const tieneAlgo = soc.razon_social_anterior || soc.reforma_acta_numero || soc.reforma_acta_fecha_texto || soc.reforma_camara_fecha_texto;
-  if (!tieneAlgo) return "";
-  const frases: string[] = [];
-  if (soc.razon_social_anterior) frases.push(`antes denominada ${soc.razon_social_anterior}`);
-  if (soc.reforma_acta_numero) frases.push(`Acta No. ${soc.reforma_acta_numero}`);
-  if (soc.reforma_acta_fecha_texto) frases.push(`del ${soc.reforma_acta_fecha_texto}`);
-  if (soc.reforma_camara_fecha_texto) frases.push(`inscrita en Cámara de Comercio el ${soc.reforma_camara_fecha_texto}`);
-  return frases.join(", ");
-}
-
-// Bug C — evita duplicar "representante legal" si cargo está vacío
-export function describirCargoRL(rl: RepresentanteLegal | undefined): string {
-  const cargo = (rl?.representante_legal_cargo ?? "").trim();
-  return cargo ? `${cargo.toLowerCase()} y como tal representante legal` : "representante legal";
+/**
+ * Clasifica un error del schema para que la UI pueda decidir cómo reaccionar
+ * (por ejemplo, ofrecer redirigir el texto pegado a `adaptar-estilo-prosa`
+ * cuando el usuario metió un marcador canónico en las notas).
+ */
+export function classifyOverrideError(err: unknown): OverrideErrorInfo | null {
+  if (!(err instanceof ZodError)) return null;
+  const issue = err.issues[0];
+  if (!issue) return null;
+  const msg = issue.message ?? "";
+  let kind: OverrideErrorKind = "other";
+  if (msg.startsWith("No se pueden redefinir marcadores canónicos")) kind = "canonical_marker";
+  else if (msg.startsWith("Contiene token prohibido")) kind = "forbidden_token";
+  else if (msg.startsWith("Máximo 2000 caracteres")) kind = "too_long";
+  return { kind, message: msg, path: [...issue.path] };
 }
 ```
 
-**Archivo:** `supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts` — los bloques inline actuales (~L46-64 constitución, L74-83 reforma, L100-109 cargo) se sustituyen por llamadas a los tres helpers. Cero lógica nueva Davivienda-específica.
+Rationale: vive en el schema isomórfico, no en el componente → cualquier futuro banco/edge que consuma el mismo schema hereda el mismo clasificador.
 
----
+### 2. `supabase/functions/adaptar-estilo-prosa/index.ts`
 
-## 6. Tests de regresión
+Agregar rama `rawText` sin romper `fileBase64`:
 
-### 6a. Vitest — `src/**/__tests__/` (o dentro de `_shared/isomorphic/__tests__/`)
-- **`legalProse.test.ts`** (nuevo o extendido):
-  - `describirConstitucionSociedad`: `tipo_documento='documento_privado'` con `numero='01775236'` poblado por error → salida omite el número.
-  - `describirReformaSocietaria`: 3 casos (1/3, 2/3, 3/3 campos) → prosa coherente sin comas colgadas; caso 0/3 sin `razon_social_anterior` → cadena vacía.
-  - `describirCargoRL`: cargo `"SUPLENTE DEL PRESIDENTE"` → `"suplente del presidente y como tal representante legal"`; cargo vacío → `"representante legal"` (sin duplicar).
-- **`davivienda.test.ts`** (extender): fixture antes/después consume helpers, casos existentes siguen pasando.
+```ts
+interface Payload {
+  fileBase64?: string;
+  mimeType?: string;
+  fileName?: string;
+  rawText?: string;        // NUEVO
+  baseContext?: unknown;
+}
 
-### 6b. Deno — `supabase/functions/procesar-cancelacion/__tests__/`
-- **Caso ancla `60c879dd`:** fixture con hipoteca $7.958.000 + "sin límite en la cuantía" → `valor_hipoteca_original` con la cifra en formato notarial **y** `hipoteca_garantia_abierta=true` coexistiendo.
-- **Caso legacy:** fixture con cero cifras + "hipoteca abierta" → `valor_hipoteca_original=""`, `valor_hipoteca_es_indeterminada=true`, `hipoteca_garantia_abierta=true` (regresión intacta).
-- **Caso cifras + sin declaración de apertura:** → `hipoteca_garantia_abierta=false`, `valor_hipoteca_es_indeterminada=false`.
-- **Anti-regresión anti-`"null"`:** ningún camino devuelve el string literal `"null"` — solo `""` o valor real.
+// ...dentro del handler, reemplazar el guard actual:
+const { fileBase64, mimeType, fileName, rawText } = body;
+const hasFile = typeof fileBase64 === "string" && fileBase64.length > 0;
+const hasText = typeof rawText === "string" && rawText.trim().length > 0;
+if (!hasFile && !hasText) {
+  return json({ error: "fileBase64 o rawText requerido" }, 400);
+}
+if (hasFile && (!mimeType || !ALLOWED_MIME.includes(mimeType))) {
+  return json({ error: `MIME no soportado: ${mimeType}` }, 400);
+}
+if (hasText && rawText!.length > 8000) {
+  return json({ error: "rawText excede 8000 caracteres" }, 400);
+}
+if (hasFile) {
+  const approxBytes = Math.floor((fileBase64!.length * 3) / 4);
+  if (approxBytes > MAX_BYTES) return json({ error: "Archivo excede 8 MB" }, 400);
+}
 
----
+// Construcción de userContent:
+let userContent: unknown[];
+if (hasText) {
+  userContent = [{
+    type: "text",
+    text:
+      `Analiza el siguiente TEXTO DE REFERENCIA (fragmento pegado por el usuario, no un documento completo). ` +
+      `Extrae únicamente ESTILO y FRASES GENÉRICAS reutilizables. No copies datos concretos, nombres ni cifras.\n\n---\n${rawText}\n---`,
+  }];
+} else {
+  // ...rama actual (imagen o file), sin cambios
+}
+```
 
-## Detalles técnicos
+Todo lo demás (sanitización con `OverrideSchema`, `notas_sugeridas` de vuelta) queda igual. La sanitización final ya te protege si Gemini reemite un marcador canónico.
 
-- **No se toca** el guard de generación docx ni `stripNullyStrings` (ya bien blindados por el bus de 5 capas del poder bancario).
-- **Backward-compat:** trámites cerrados sin el nuevo campo → los helpers tratan `hipoteca_garantia_abierta===undefined` como equivalente a `valor_hipoteca_es_indeterminada` (comportamiento legacy).
-- **Orden de merge en un solo PR:** (1)+(3)+(4) contrato compartido → (2) prompts → (5) helpers + Davivienda → (6) tests. Ambas suites deben quedar verdes (Deno + Vitest).
-- **Sin migración de BD** — todo vive en `data_final` JSON.
+### 3. `src/components/cancelaciones/prosa/ProsaApoderadoModal.tsx`
 
-## Fuera de alcance (Entrega 2+)
-- Reintroducción de `notariaSuggestions` con extractor determinista.
-- Renderer de prosa para bancos distintos a Davivienda (activable cuando se defina el siguiente, ya con los helpers listos).
-- Renombrar o retirar `valor_hipoteca_es_indeterminada` — se deja deprecado para no romper histórico.
+**3a. `handleSave` — toast legible + estado de rescate**
+
+Nuevo state en el componente:
+```ts
+const [rescueText, setRescueText] = useState<string | null>(null);
+```
+
+Reemplazar `handleSave` (líneas 91–113):
+
+```ts
+const handleSave = async () => {
+  try {
+    const parsed = OverrideSchema.parse(previewOverride);
+    setSaving(true);
+    // ...resto igual...
+  } catch (err) {
+    const info = classifyOverrideError(err);
+    if (info?.kind === "canonical_marker") {
+      // Guardamos el texto tal cual pegado para que el botón lo mande a la edge.
+      setRescueText(notas);
+      toast.error("Ese texto contiene estructura canónica del banco. Úsalo como referencia de estilo.");
+      return;
+    }
+    const msg = info?.message ?? (err instanceof Error ? err.message : "Error al guardar");
+    toast.error(msg);
+  } finally {
+    setSaving(false);
+  }
+};
+```
+
+Cuando `notas` cambia manualmente, limpiar el estado de rescate:
+```ts
+onChange={(e) => { setNotas(e.target.value.slice(0, MAX_NOTAS)); setRescueText(null); }}
+```
+
+**3b. Botón "Usar como referencia de estilo" — nuevo handler**
+
+```ts
+const handleRescueAsReference = async () => {
+  if (!rescueText?.trim()) return;
+  setAiLoading(true);
+  try {
+    const { data, error } = await supabase.functions.invoke("adaptar-estilo-prosa", {
+      body: { rawText: rescueText, baseContext },
+    });
+    if (error) throw error;
+    const notasSug = (data as { notas_sugeridas?: string; warning?: string })?.notas_sugeridas ?? "";
+    if (!notasSug.trim()) {
+      toast.info("La IA no extrajo notas reutilizables del texto");
+      return;
+    }
+    setNotas(notasSug.slice(0, MAX_NOTAS));
+    setRescueText(null);
+    toast.success("Estilo aplicado — revísalo antes de guardar");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Error de IA");
+  } finally {
+    setAiLoading(false);
+  }
+};
+```
+
+UI: banda inline debajo del Textarea (solo cuando `rescueText` existe):
+```tsx
+{rescueText && (
+  <div className="rounded-md border border-primary/40 bg-primary/5 p-2.5 flex items-start gap-2">
+    <Sparkles className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+    <div className="flex-1 space-y-1.5">
+      <p className="text-[11px] leading-snug">
+        Detectamos estructura canónica ("COMPARECIÓ:", "PRIMERO.-", etc.) en tu nota.
+        Estos marcadores están reservados. ¿Quieres que la IA extraiga solo el
+        <span className="font-semibold"> estilo </span>
+        del texto pegado y proponga una nota corta compatible?
+      </p>
+      <Button
+        type="button" size="sm" variant="outline" disabled={aiLoading}
+        onClick={handleRescueAsReference} className="gap-1.5 text-xs h-7"
+      >
+        {aiLoading
+          ? <><Loader2 className="h-3 w-3 animate-spin" />Procesando...</>
+          : <><Sparkles className="h-3 w-3" />Usar como referencia de estilo</>}
+      </Button>
+    </div>
+  </div>
+)}
+```
+
+**3c. Microcopy del Textarea (líneas ~200–213)**
+
+- `<Label>`: `"Notas adicionales (se anexan al final del Parágrafo PRIMERO)"`.
+- `placeholder`: `"Ej: 'El otorgamiento se realiza en las oficinas del banco por conveniencia operativa.'"` (se conserva — ya es un buen ejemplo corto).
+- Reemplazar el helper de abajo (`<p>` líneas ~209–213) por:
+
+```tsx
+<p className="text-[10px] text-muted-foreground leading-snug">
+  Texto <span className="font-semibold">corto</span> que se añade al final del párrafo PRIMERO —
+  no es la comparecencia completa. Si tienes una escritura o borrador con el estilo que quieres imitar,
+  usa <span className="font-semibold">"Subir referencia"</span> abajo y la IA extraerá solo el estilo.
+</p>
+```
+
+Y en la sección "Adaptar estilo desde un documento" agregar una nota:
+```tsx
+<p className="text-[10px] text-muted-foreground leading-snug">
+  También puedes pegar un párrafo largo en el campo de notas y presionar Guardar:
+  si detectamos estructura canónica, te ofreceremos usarlo como referencia automáticamente.
+</p>
+```
+
+## Alcance / aislamiento
+
+- El clasificador vive en `overrideSchema.ts` (isomórfico), no en el componente.
+- La rama `rawText` de la edge es aditiva; el flujo existente `fileBase64` no cambia.
+- No hay otros bancos consumiendo este modal hoy; cuando aparezcan, heredan `classifyOverrideError` gratis.
+- No se toca `client.ts`, `types.ts`, ni el schema de BD. No hay migración.
+
+## Tests de regresión
+
+### Unit — `src/shared/prosaBancos/__contract__/overrideSchema.test.ts` (extender)
+1. `classifyOverrideError(zodErrorConMarcadorCanónico) → kind === "canonical_marker"`.
+2. `classifyOverrideError(zodErrorConTokenProhibido) → kind === "forbidden_token"`.
+3. `classifyOverrideError(zodErrorPor2001Chars) → kind === "too_long"`.
+4. `classifyOverrideError(new Error("otro")) → null`.
+
+### Unit — nuevo `adaptar-estilo-prosa/index_test.ts` o inline
+5. POST con `rawText` válido devuelve 200 y `notas_sugeridas` no vacías (mock del gateway).
+6. POST sin `rawText` ni `fileBase64` → 400.
+7. POST con `rawText` > 8000 chars → 400.
+8. Sanitización: si Gemini devolviera un marcador canónico, la edge sigue respondiendo `{ notas_sugeridas: "", warning }` (test ya existente, verificar que aplica a la rama `rawText`).
+
+### Component/integration — `ProsaApoderadoModal.test.tsx` (nuevo)
+9. Pegar párrafo con `"COMPARECIÓ:"` y clic en Guardar → aparece la banda con botón "Usar como referencia de estilo", **no** aparece el JSON crudo en el toast.
+10. Pegar texto de 2001 caracteres → toast normal con "Máximo 2000 caracteres...", banda de rescate NO aparece.
+11. Con la banda visible, clic en el botón → se llama `supabase.functions.invoke("adaptar-estilo-prosa", { body: { rawText, baseContext } })` (mock), el `Textarea` se sustituye por `notas_sugeridas`, la banda desaparece.
+12. Modificar el textarea manualmente después del error → la banda de rescate desaparece (state `rescueText` se limpia).
+
+## Fuera de alcance
+- Ampliar `FORBIDDEN_CANONICAL_MARKERS` a otros bancos: cuando se sume un segundo banco.
+- Validación en vivo (mientras el usuario escribe) bajo el textarea: se puede añadir después con debounce si la fricción persiste.

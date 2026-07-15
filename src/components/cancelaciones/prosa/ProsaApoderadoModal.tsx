@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import {
   OverrideSchema,
+  classifyOverrideError,
   FORBIDDEN_NOTE_TOKENS,
   FORBIDDEN_CANONICAL_MARKERS,
 } from "@shared/prosaBancos/overrideSchema";
@@ -62,6 +63,7 @@ export function ProsaApoderadoModal({
   );
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [rescueText, setRescueText] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset local state cuando abre con otro trámite.
@@ -72,6 +74,7 @@ export function ProsaApoderadoModal({
     setRazonAnterior(currentOverride?.campos_editados?.sociedad_constitucion?.razon_social_anterior ?? "");
     setRlCargo(currentOverride?.campos_editados?.representante_legal_cargo ?? "");
     setRlCiudad(currentOverride?.campos_editados?.representante_legal_cedula_expedida_en ?? "");
+    setRescueText(null);
   }, [open, currentOverride]);
 
   const buildOverride = (): ProsaApoderadoOverride => ({
@@ -110,10 +113,42 @@ export function ProsaApoderadoModal({
       onSaved(payload);
       onOpenChange(false);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al guardar";
+      const info = classifyOverrideError(err);
+      if (info?.kind === "canonical_marker") {
+        // Ofrecemos rescatar el texto pegado como referencia de estilo.
+        setRescueText(notas);
+        toast.error("Ese texto contiene estructura canónica del banco. Úsalo como referencia de estilo.");
+        return;
+      }
+      const msg = info?.message ?? (err instanceof Error ? err.message : "Error al guardar");
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRescueAsReference = async () => {
+    const src = rescueText?.trim();
+    if (!src) return;
+    setAiLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("adaptar-estilo-prosa", {
+        body: { rawText: src, baseContext },
+      });
+      if (error) throw error;
+      const notasSug = (data as { notas_sugeridas?: string; warning?: string })?.notas_sugeridas ?? "";
+      if (!notasSug.trim()) {
+        toast.info("La IA no extrajo notas reutilizables del texto");
+        return;
+      }
+      setNotas(notasSug.slice(0, MAX_NOTAS));
+      setRescueText(null);
+      toast.success("Estilo aplicado — revísalo antes de guardar");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error de IA";
+      toast.error(msg);
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -123,6 +158,7 @@ export function ProsaApoderadoModal({
     setRazonAnterior("");
     setRlCargo("");
     setRlCiudad("");
+    setRescueText(null);
   };
 
   const handleFile = async (file: File) => {
@@ -210,7 +246,9 @@ export function ProsaApoderadoModal({
               <div className="p-4 space-y-5">
                 <section className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold">Notas adicionales</Label>
+                    <Label className="text-xs font-semibold">
+                      Notas adicionales <span className="font-normal text-muted-foreground">(se anexan al final del Parágrafo PRIMERO)</span>
+                    </Label>
                     <span className={`text-[10px] ${notasLen > MAX_NOTAS ? "text-destructive" : "text-muted-foreground"}`}>
                       {notasLen}/{MAX_NOTAS}
                     </span>
@@ -218,15 +256,43 @@ export function ProsaApoderadoModal({
                   <Textarea
                     rows={6}
                     value={notas}
-                    onChange={(e) => setNotas(e.target.value.slice(0, MAX_NOTAS))}
+                    onChange={(e) => {
+                      setNotas(e.target.value.slice(0, MAX_NOTAS));
+                      if (rescueText !== null) setRescueText(null);
+                    }}
                     placeholder="Ej: 'El otorgamiento se realiza en las oficinas del banco por conveniencia operativa.'"
                     className="text-sm"
                   />
                   <p className="text-[10px] text-muted-foreground leading-snug">
-                    Se anexan al final de la cláusula PRIMERO. Prohibidos:{" "}
-                    <code className="text-[10px]">{FORBIDDEN_NOTE_TOKENS.slice(0, 3).join(", ")}</code>{" "}
-                    y marcadores canónicos ({FORBIDDEN_CANONICAL_MARKERS.length} bloqueados).
+                    Texto <span className="font-semibold">corto</span> que se añade al final del párrafo PRIMERO — no es la comparecencia completa.
+                    Si quieres imitar un estilo largo, usa <span className="font-semibold">"Subir referencia"</span> abajo y la IA extraerá solo el estilo.
+                    Prohibidos: <code className="text-[10px]">{FORBIDDEN_NOTE_TOKENS.slice(0, 3).join(", ")}</code> y marcadores canónicos ({FORBIDDEN_CANONICAL_MARKERS.length} bloqueados).
                   </p>
+                  {rescueText && (
+                    <div className="rounded-md border border-primary/40 bg-primary/5 p-2.5 flex items-start gap-2">
+                      <Sparkles className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                      <div className="flex-1 space-y-1.5">
+                        <p className="text-[11px] leading-snug">
+                          Detectamos estructura canónica (<code className="text-[10px]">COMPARECIÓ:</code>, <code className="text-[10px]">PRIMERO.-</code>, etc.) en tu nota.
+                          Esos marcadores están reservados. ¿Quieres que la IA extraiga solo el <span className="font-semibold">estilo</span> del texto pegado y proponga una nota compatible?
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={aiLoading}
+                          onClick={handleRescueAsReference}
+                          className="gap-1.5 text-xs h-7"
+                        >
+                          {aiLoading ? (
+                            <><Loader2 className="h-3 w-3 animate-spin" />Procesando...</>
+                          ) : (
+                            <><Sparkles className="h-3 w-3" />Usar como referencia de estilo</>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 <section className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
@@ -237,6 +303,8 @@ export function ProsaApoderadoModal({
                   <p className="text-[10px] text-muted-foreground leading-snug">
                     Sube una escritura o borrador de referencia. La IA leerá el estilo y sugerirá
                     notas — no persistimos el archivo, se procesa en memoria y se descarta.
+                    También puedes pegar un párrafo largo arriba: si detectamos estructura canónica te
+                    ofreceremos usarlo como referencia automáticamente.
                   </p>
                   <input
                     ref={fileInputRef}

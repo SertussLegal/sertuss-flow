@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from "vitest";
-import { OverrideSchema, sanitizeOverride, isOverrideForbidden } from "@shared/prosaBancos/overrideSchema";
+import { OverrideSchema, sanitizeOverride, isOverrideForbidden, classifyOverrideError } from "@shared/prosaBancos/overrideSchema";
 
 describe("overrideSchema: sanitización dura", () => {
   it("acepta un override mínimo con notas limpias", () => {
@@ -52,5 +52,41 @@ describe("overrideSchema: sanitización dura", () => {
     const r = isOverrideForbidden("valor N/A pendiente");
     expect(r.ok).toBe(false);
     expect(r.reason).toContain("N/A");
+  });
+});
+
+describe("classifyOverrideError", () => {
+  const captureError = (input: unknown): unknown => {
+    try {
+      OverrideSchema.parse(input);
+      return null;
+    } catch (e) {
+      return e;
+    }
+  };
+
+  it("clasifica marcador canónico", () => {
+    const err = captureError({ notas_adicionales: "Fragmento con COMPARECIÓ: pegado" });
+    const info = classifyOverrideError(err);
+    expect(info?.kind).toBe("canonical_marker");
+    expect(info?.message).toContain("COMPARECIÓ:");
+  });
+
+  it("clasifica token prohibido", () => {
+    const err = captureError({ notas_adicionales: "Valor null pendiente" });
+    const info = classifyOverrideError(err);
+    expect(info?.kind).toBe("forbidden_token");
+  });
+
+  it("clasifica largo excedido", () => {
+    const err = captureError({ notas_adicionales: "x".repeat(2001) });
+    const info = classifyOverrideError(err);
+    expect(info?.kind).toBe("too_long");
+  });
+
+  it("devuelve null para errores no-Zod", () => {
+    expect(classifyOverrideError(new Error("otro"))).toBeNull();
+    expect(classifyOverrideError(null)).toBeNull();
+    expect(classifyOverrideError("string")).toBeNull();
   });
 });
