@@ -137,6 +137,31 @@ export function unwrapConf(v: unknown): string | undefined {
   return undefined;
 }
 
+/** Regla 7 (v7-2026-07): además de exponer el `valor`, extrae `confianza`
+ *  cuando viene como wrapper `{valor, confianza}`. Devuelve `undefined` si el
+ *  input es string plano (dato histórico sin wrapper) o si `confianza` no
+ *  aparece — el sidecar `_confianza` omite ese path y la Regla 7 no dispara. */
+export function unwrapConfDeep(v: unknown): {
+  valor?: string;
+  confianza?: "alta" | "media" | "baja";
+} {
+  if (v == null) return {};
+  if (typeof v === "string") {
+    const s = sanitizeString(v);
+    return s ? { valor: s } : {};
+  }
+  if (typeof v === "object" && v !== null && "valor" in (v as Record<string, unknown>)) {
+    const obj = v as { valor?: unknown; confianza?: unknown };
+    const valor = sanitizeString(obj.valor);
+    const rawConf = typeof obj.confianza === "string" ? obj.confianza.trim().toLowerCase() : "";
+    const confianza = (rawConf === "alta" || rawConf === "media" || rawConf === "baja")
+      ? rawConf as "alta" | "media" | "baja"
+      : undefined;
+    return { valor, confianza };
+  }
+  return {};
+}
+
 
 /** Merge plano legacy (equivalente al `mergePoderBanco` interno de la edge). */
 export function mergePoderBancoFlat(
