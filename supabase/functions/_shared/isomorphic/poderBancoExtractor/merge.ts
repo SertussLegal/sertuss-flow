@@ -221,9 +221,39 @@ export function mergePoderBancoV6(
 
   if (!deepV6) return flatMerged as (PoderBancoFlat & Record<string, unknown>) | undefined;
 
-  const apoderadoIn = (deepV6.apoderado ?? undefined) as ApoderadoPayload | undefined;
+  // ─────────────────────────────────────────────────────────────
+  // Regla 7 (v7-2026-07): aplanamos los 4 campos profundos que llegan como
+  // wrapper `{valor, confianza}` a string plano ANTES de exponerlos, para
+  // que TODOS los readers downstream (classifier, davivienda.ts, index.ts,
+  // validate.ts, UI) sigan viendo string. La `confianza` va al sidecar
+  // `_confianza` que Regla 7 en validate.ts consume.
+  // ─────────────────────────────────────────────────────────────
+  const apoderadoRaw = deepV6.apoderado ?? undefined;
+  const apoderadoCedulaU = unwrapConfDeep(apoderadoRaw?.cedula);
+  const apoderadoInFlat = apoderadoRaw
+    ? { ...apoderadoRaw, cedula: apoderadoCedulaU.valor ?? null }
+    : undefined;
+
+  const poderdanteRaw = deepV6.poderdante ?? undefined;
+  const rlCedulaU = unwrapConfDeep(poderdanteRaw?.representante_legal_cedula);
+  const poderdanteFlat = poderdanteRaw
+    ? { ...poderdanteRaw, representante_legal_cedula: rlCedulaU.valor ?? null }
+    : undefined;
+
+  const instrumentoRaw = deepV6.instrumento_poder ?? undefined;
+  const escrituraU = unwrapConfDeep(instrumentoRaw?.escritura_num);
+  const fechaU = unwrapConfDeep(instrumentoRaw?.fecha);
+  const instrumentoFlat = instrumentoRaw
+    ? {
+        ...instrumentoRaw,
+        escritura_num: escrituraU.valor ?? null,
+        fecha: fechaU.valor ?? null,
+      }
+    : undefined;
+
+  const apoderadoIn = apoderadoInFlat as ApoderadoPayload | undefined;
   const cls = classifyApoderado(apoderadoIn, {
-    instrumento_poder: deepV6.instrumento_poder ?? null,
+    instrumento_poder: instrumentoFlat ?? null,
     has_apoderado_banco_v3: deepV6.has_apoderado_banco_v3 ?? null,
   });
 
@@ -265,47 +295,55 @@ export function mergePoderBancoV6(
   // ─────────────────────────────────────────────────────────────
   // NO_LEGIBLE override (incondicional): si el bloque profundo declaró
   // explícitamente que un campo crítico es ilegible, esa señal SIEMPRE gana
-  // sobre el plano monolítico. Corre incluso cuando el classifier degradó
-  // `tipoEfectivo` a null — ese es justamente el caso donde el monolítico
-  // podría estar alucinando (Ana María: cedula plano "41525143" mientras
-  // el profundo marcó NO_LEGIBLE porque la imagen del PDF era mala).
+  // sobre el plano monolítico.
   // ─────────────────────────────────────────────────────────────
   {
-    const deepCedula = unwrapConf(deepV6.apoderado_cedula)
-      ?? (apoderadoIn?.cedula ? String(apoderadoIn.cedula) : undefined);
-    const deepEscritura = unwrapConf(deepV6.escritura_poder_num)
-      ?? (deepV6.instrumento_poder?.escritura_num
-        ? String(deepV6.instrumento_poder.escritura_num)
-        : undefined);
-    const deepFecha = unwrapConf(deepV6.fecha_poder)
-      ?? (deepV6.instrumento_poder?.fecha
-        ? String(deepV6.instrumento_poder.fecha)
-        : undefined);
+    const deepCedula = unwrapConf(deepV6.apoderado_cedula) ?? apoderadoCedulaU.valor;
+    const deepEscritura = unwrapConf(deepV6.escritura_poder_num) ?? escrituraU.valor;
+    const deepFecha = unwrapConf(deepV6.fecha_poder) ?? fechaU.valor;
 
     if (deepCedula === "NO_LEGIBLE") finalFlat.apoderado_cedula = "NO_LEGIBLE";
     if (deepEscritura === "NO_LEGIBLE") finalFlat.apoderado_escritura = "NO_LEGIBLE";
     if (deepFecha === "NO_LEGIBLE") finalFlat.apoderado_fecha = "NO_LEGIBLE";
   }
 
-
-
+  // ─────────────────────────────────────────────────────────────
+  // Regla 7: sidecar `_confianza` (transitorio, no persistir como fuente de
+  // verdad). Solo se emiten paths cuyo wrapper trajo `confianza` explícita.
+  // Registros históricos sin wrapper → sidecar vacío → Regla 7 no dispara.
+  // ─────────────────────────────────────────────────────────────
+  const confianza: Record<string, "alta" | "media" | "baja"> = {};
+  const setConf = (path: string, c?: "alta" | "media" | "baja") => {
+    if (c) confianza[path] = c;
+  };
+  // 4 legacy planos (gratis: el wrapper ya llegaba antes).
+  setConf("apoderado_cedula", unwrapConfDeep(deepV6.apoderado_cedula).confianza);
+  setConf("escritura_poder_num", unwrapConfDeep(deepV6.escritura_poder_num).confianza);
+  setConf("fecha_poder", unwrapConfDeep(deepV6.fecha_poder).confianza);
+  setConf("apoderado_nombre", unwrapConfDeep(deepV6.apoderado_nombre).confianza);
+  // 4 profundos nuevos.
+  setConf("apoderado.cedula", apoderadoCedulaU.confianza);
+  setConf("poderdante.representante_legal_cedula", rlCedulaU.confianza);
+  setConf("instrumento_poder.escritura_num", escrituraU.confianza);
+  setConf("instrumento_poder.fecha", fechaU.confianza);
 
   const out: Record<string, unknown> = {
     ...finalFlat,
     apoderado: apoderadoOut ?? undefined,
-    poderdante: deepV6.poderdante ?? undefined,
-    instrumento_poder: deepV6.instrumento_poder ?? undefined,
+    poderdante: poderdanteFlat ?? undefined,
+    instrumento_poder: instrumentoFlat ?? undefined,
     facultades: deepV6.facultades ?? undefined,
     vigencia: deepV6.vigencia ?? undefined,
     has_apoderado_banco_v3: deepV6.has_apoderado_banco_v3,
     motivos_incompletitud: deepV6.motivos_incompletitud,
     _classifier_motivos: cls.motivos,
+    ...(Object.keys(confianza).length > 0 ? { _confianza: confianza } : {}),
   };
 
   const hasSignal =
     Object.values(finalFlat).some((v) => v != null && String(v).trim() !== "") ||
     !!apoderadoOut ||
-    !!deepV6.poderdante ||
-    !!deepV6.instrumento_poder;
+    !!poderdanteFlat ||
+    !!instrumentoFlat;
   return hasSignal ? (out as PoderBancoFlat & Record<string, unknown>) : undefined;
 }
