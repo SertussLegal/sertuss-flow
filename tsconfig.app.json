@@ -41,6 +41,7 @@
     "supabase/functions/_shared/isomorphic/prosaBancos/overrideSchema.ts",
     "supabase/functions/_shared/isomorphic/prosaBancos/mergeOverride.ts",
     "supabase/functions/_shared/isomorphic/prosaBancos/legalProse.ts",
+    "supabase/functions/_shared/isomorphic/prosaBancos/syncApoderadoFlatNested.ts",
     "supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts",
     "supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts",
     "supabase/functions/_shared/isomorphic/poderBancoExtractor/index.ts",

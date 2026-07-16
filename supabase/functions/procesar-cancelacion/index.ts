@@ -18,6 +18,7 @@ import { POWER_V5_ENABLED, POWER_V6_EXTRACTOR_ENABLED } from "../_shared/poderBa
 import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
 import { classifyApoderado, type ApoderadoPayload } from "../_shared/isomorphic/apoderadoClassifier.ts";
 import { getProsaBanco, type ProsaContext, mergeOverride, type ProsaApoderadoOverride } from "../_shared/isomorphic/prosaBancos/index.ts";
+import { syncApoderadoFlatWithNested } from "../_shared/isomorphic/prosaBancos/syncApoderadoFlatNested.ts";
 import {
   buildPoderBancoRequest,
   PODER_BANCO_TOOL_NAME,
@@ -1332,8 +1333,34 @@ export async function generateAndUploadCancelacionDocs(
     throw new ManualReviewRequiredError(revision.paths, revision.motivos);
   }
 
-  const vars = buildDocxVars(data, prosaApoderadoOverride);
-  const minutaTemplate = selectMinutaTemplate(data);
+  // ═══════════════════════════════════════════════════════════════════════
+  // Coherencia holística del apoderado — plano (UI-editable) gana sobre
+  // anidado v6 (alimenta la prosa). Si difieren, sobrescribe el anidado y
+  // marca warning ámbar informativo (NO hard-block). Con V6 apagado el
+  // anidado está vacío y el helper no toca nada. Ver:
+  //   `_shared/isomorphic/prosaBancos/syncApoderadoFlatNested.ts`
+  // ═══════════════════════════════════════════════════════════════════════
+  const pbInput = (data.poder_banco ?? {}) as Record<string, unknown>;
+  const syncResult = syncApoderadoFlatWithNested(pbInput);
+  let dataForVars: CancelacionData = data;
+  if (syncResult.warnings.length > 0) {
+    const syncedPB: Record<string, unknown> = { ...syncResult.synced };
+    const prevW = Array.isArray(syncedPB._coherencia_warnings)
+      ? (syncedPB._coherencia_warnings as unknown[]).filter((s): s is string => typeof s === "string")
+      : [];
+    const prevS = Array.isArray(syncedPB._coherencia_suspicious)
+      ? (syncedPB._coherencia_suspicious as unknown[]).filter((s): s is string => typeof s === "string")
+      : [];
+    syncedPB._coherencia_warnings = Array.from(new Set([...prevW, ...syncResult.warnings]));
+    syncedPB._coherencia_suspicious = Array.from(new Set([...prevS, ...syncResult.suspicious]));
+    dataForVars = { ...data, poder_banco: syncedPB } as CancelacionData;
+    console.log("[apoderadoSync] warnings=", syncResult.warnings, "suspicious=", Array.from(syncResult.suspicious));
+  } else if (syncResult.synced !== pbInput) {
+    dataForVars = { ...data, poder_banco: syncResult.synced } as CancelacionData;
+  }
+
+  const vars = buildDocxVars(dataForVars, prosaApoderadoOverride);
+  const minutaTemplate = selectMinutaTemplate(dataForVars);
   const minuta = await fillTemplate(supabaseService, minutaTemplate, vars);
   const certificado = await fillTemplate(supabaseService, TEMPLATE_CERT, vars);
 
