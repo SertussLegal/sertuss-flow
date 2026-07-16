@@ -116,6 +116,8 @@ export const WARNING_LABELS: Record<string, string> = {
     "La dirección catastral se lee distinta en ≥2 secciones del mismo certificado (posible transposición de dígitos) — verifica manualmente contra el PDF original antes de firmar.",
   inmueble_matricula_menciones_incoherentes:
     "El número de matrícula inmobiliaria aparece distinto en ≥2 secciones del mismo certificado — verifica manualmente contra el PDF original antes de firmar.",
+  apoderado_cedula_menciones_incoherentes:
+    "La cédula del apoderado se lee distinta en ≥2 secciones del mismo poder (posible transposición de dígitos o atribución cruzada entre firmantes) — verifica manualmente contra el PDF original antes de firmar.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
