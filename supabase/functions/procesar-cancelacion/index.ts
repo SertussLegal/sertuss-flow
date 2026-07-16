@@ -212,6 +212,34 @@ const tools = [
               nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio, MAYÚSCULAS, en formato notarial TEXTO (NÚMERO). Tomada EXCLUSIVAMENTE del renglón de ÍNDICE MÁS ALTO de la sección 'DIRECCION DEL INMUEBLE' del certificado de tradición (renglones '1)','2)','3)' o romanos — la vigente es la del índice mayor). Vía y números en letras con dígito entre paréntesis, sufijos cardinales SUR/NORTE/ESTE/OESTE en MAYÚSCULA pegados al número. SEPARADOR DE PLACA: se conserva como el SÍMBOLO '-' (un guion ASCII rodeado de espacios), NUNCA se verbaliza como la palabra 'GUION'. Letras pegadas (62A, 53B, 'BIS') se transcriben literales en MAYÚSCULA. Cardinales masculinos ('UNO','DOS','VEINTIUNO'). Ej: 'CL 59 SUR 60 84' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)'. PROHIBIDO incluir apartamento/torre/interior/bloque/manzana/casa (van en descripcion_predio), ciudad (va en ciudad), nombre de conjunto/edificio, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los inyecta." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
               departamento: { type: "string", description: "Departamento del inmueble en mayúsculas, ej: 'CUNDINAMARCA'. Opcional." },
+              menciones_direccion: {
+                type: "array",
+                description: "BLINDAJE ANTI-TRANSPOSICIÓN. TODAS las menciones INDEPENDIENTES de la dirección catastral tal como aparecen LITERALMENTE en el certificado, ANTES de aplicar la regla de índice más alto o cualquier reformateo. Una entrada por renglón numerado del bloque 'DIRECCION DEL INMUEBLE' (1), 2), 3)…). Si solo hay un renglón, emite 1 sola entrada — está bien. NO reemplaza a nomenclatura_predio; alimenta la verificación cruzada del backend.",
+                items: {
+                  type: "object",
+                  properties: {
+                    seccion: { type: "string", description: "Sección de origen: 'direccion_inmueble_1', 'direccion_inmueble_2', 'encabezado', 'anotacion_XXXX', etc." },
+                    valor: { type: "string", description: "Transcripción LITERAL de esa mención, sin reformatear ni verbalizar." },
+                    pagina: { type: "number", description: "Página del PDF donde aparece (opcional)." },
+                  },
+                  required: ["seccion", "valor"],
+                  additionalProperties: false,
+                },
+              },
+              menciones_matricula: {
+                type: "array",
+                description: "BLINDAJE ANTI-TRANSPOSICIÓN. TODAS las menciones INDEPENDIENTES del número de matrícula inmobiliaria tal como aparecen literalmente (encabezado del certificado y pie de cada anotación relevante). Si solo hay 1, emite 1 — está bien. NO inventes menciones extra para llenar el arreglo.",
+                items: {
+                  type: "object",
+                  properties: {
+                    seccion: { type: "string", description: "'encabezado', 'anotacion_0205', 'pie_pagina_1', etc." },
+                    valor: { type: "string", description: "Matrícula LITERAL tal como se lee (ej: '50C-1572091', '50C 1572091')." },
+                    pagina: { type: "number", description: "Página del PDF donde aparece (opcional)." },
+                  },
+                  required: ["seccion", "valor"],
+                  additionalProperties: false,
+                },
+              },
             },
             required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
             additionalProperties: false,
