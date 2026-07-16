@@ -129,6 +129,11 @@ interface CancelacionData {
     nomenclatura_predio?: string;
     ciudad: string;
     departamento?: string;
+    // Blindaje anti-selección-alucinada: transcripción cruda por índice de
+    // los renglones del bloque "DIRECCION DEL INMUEBLE" del certificado.
+    // El backend elige el vigente (índice más alto) vía
+    // `direccionCandidatasSelect.ts`. Puede faltar en trámites históricos.
+    direccion_candidatas?: Array<{ indice: string; valor: string }>;
   };
   partes: {
     // ── Array canónico (NUEVO) — preferido por buildDocxVars ──
