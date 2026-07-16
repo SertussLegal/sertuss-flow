@@ -1262,6 +1262,23 @@ export const CancelacionValidar = () => {
                   && !pb.apoderado_fecha && !pb.apoderado_notaria_poder;
                 // Eje A v3 — bandera de verdad emitida por el cliente al subir.
                 const poderAdjuntado = (row as { poder_adjuntado?: boolean })?.poder_adjuntado === true;
+                const suspicious = new Set(
+                  (((pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious) ?? [])
+                    .filter((s): s is string => typeof s === "string"),
+                );
+                const warnings = (pb as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings ?? [];
+                const cedulaWarningKeys = [
+                  "apoderado_cedula_no_legible",
+                  "apoderado_cedula_placeholder",
+                  "apoderado_cedula_menciones_incoherentes",
+                  "apoderado_coincide_con_rl_banco",
+                ];
+                const cedulaSuspiciousLabel =
+                  warnings
+                    .filter((w): w is string => typeof w === "string" && cedulaWarningKeys.includes(w))
+                    .map((w) => WARNING_LABELS[w])
+                    .filter(Boolean)
+                    .join(" / ") || undefined;
                 return (
                   <Section title="Apoderado del Banco (Poder General)">
                     {/* Plan v5/B4 — Banners K3 (ambigüedad) + L3 (vigencia) + v7/C1 (tipo). */}
