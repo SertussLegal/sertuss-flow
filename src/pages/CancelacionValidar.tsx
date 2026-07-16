@@ -34,6 +34,7 @@ import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/Pros
 import { getProsaBanco } from "@shared/prosaBancos";
 import { WARNING_LABELS } from "@shared/poderBancoExtractor/validate";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
+import { ensamblarNombreNotarial } from "@shared/ensamblarNombreNotarial";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
 // cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
