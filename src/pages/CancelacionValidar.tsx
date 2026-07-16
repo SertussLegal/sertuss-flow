@@ -1156,7 +1156,14 @@ export const CancelacionValidar = () => {
                     });
                   };
                   const updateAt = (idx: number, patch: Partial<Deudor>) => {
-                    const next = deudoresArr.map((d, i) => i === idx ? { ...d, ...patch } : d);
+                    // Cuando el humano edita `nombre` manualmente, invalidamos
+                    // `apellidos`/`nombres` para que el ensamblador determinista
+                    // del backend (`normalizeDeudores`) NO reemplace el string
+                    // corregido por una recomposición basada en datos viejos.
+                    const invalidateSeparados = Object.prototype.hasOwnProperty.call(patch, "nombre")
+                      ? { apellidos: undefined, nombres: undefined }
+                      : {};
+                    const next = deudoresArr.map((d, i) => i === idx ? { ...d, ...patch, ...invalidateSeparados } : d);
                     writeDeudores(next);
                   };
                   const addDeudor = () => {
