@@ -272,7 +272,9 @@ const tools = [
                 items: {
                   type: "object",
                   properties: {
-                    nombre: { type: "string", description: "Nombre completo en MAYÚSCULAS, idéntico al certificado." },
+                    nombre: { type: "string", description: "Nombre completo VERBATIM tal como aparece en la anotación del certificado (formato registral APELLIDOS NOMBRES). Evidencia cruda. NO reordenar. La minuta usa `nombres` + `apellidos`." },
+                    apellidos: { type: "string", description: "APELLIDOS del deudor en MAYÚSCULAS. En el certificado registral suelen ir PRIMERO (ej. 'DIAZ GARCIA'). Si tienes duda, deja cadena vacía y llena solo `nombre`." },
+                    nombres: { type: "string", description: "NOMBRES DE PILA del deudor en MAYÚSCULAS. En el certificado registral suelen ir DESPUÉS de los apellidos (ej. 'MARGARITA IBETH'). NO incluir apellidos aquí. Si tienes duda, deja cadena vacía y llena solo `nombre`." },
                     identificacion: { type: "string", description: "Número de identificación ESTRICTAMENTE NUMÉRICO sin puntos ni espacios ni letras. Solo dígitos 0-9. Ej: '20549804'. Si es ilegible, devuelve cadena vacía — NO inventes." },
                     tipo_id: {
                       type: "string",
@@ -280,7 +282,7 @@ const tools = [
                       description: "Detéctalo LITERAL del texto del certificado/escritura. 'CC' → CEDULA DE CIUDADANIA; 'CE' → CEDULA DE EXTRANJERIA; 'PA' / 'PASAPORTE' → PASAPORTE. NO asumas CC por defecto."
                     },
                   },
-                  required: ["nombre", "identificacion", "tipo_id"],
+                  required: ["nombre", "apellidos", "nombres", "identificacion", "tipo_id"],
                   additionalProperties: false,
                 }
               },
