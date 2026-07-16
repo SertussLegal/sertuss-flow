@@ -241,6 +241,8 @@ const Field = ({
   copyable = true,
   required = false,
   uppercaseOnBlur = false,
+  suspicious = false,
+  suspiciousLabel,
 }: {
   label: string;
   value: string;
@@ -249,9 +251,14 @@ const Field = ({
   copyable?: boolean;
   required?: boolean;
   uppercaseOnBlur?: boolean;
+  /** Marca visual ámbar cuando la validación determinista detecta el path como
+   *  sospechoso (`_coherencia_suspicious`). No bloquea la edición. */
+  suspicious?: boolean;
+  suspiciousLabel?: string;
 }) => {
   const isEmpty = !value || !value.trim() || value.trim() === "___________";
   const showMissing = required && isEmpty && !disabled;
+  const showSuspicious = suspicious && !showMissing && !disabled;
   return (
     <div className="space-y-1">
       {label && (
@@ -275,13 +282,21 @@ const Field = ({
             className={`h-9 text-sm ${
               showMissing
                 ? "border-destructive/70 focus-visible:ring-destructive/40 pr-8"
-                : ""
+                : showSuspicious
+                  ? "border-amber-500/70 focus-visible:ring-amber-500/40 pr-8"
+                  : ""
             }`}
-            aria-invalid={showMissing || undefined}
+            aria-invalid={showMissing || showSuspicious || undefined}
           />
           {showMissing && (
             <AlertCircle
               className="h-3.5 w-3.5 text-destructive absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden
+            />
+          )}
+          {showSuspicious && (
+            <AlertTriangle
+              className="h-3.5 w-3.5 text-amber-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
               aria-hidden
             />
           )}
@@ -302,6 +317,12 @@ const Field = ({
       {showMissing && (
         <p className="text-[11px] text-destructive flex items-center gap-1">
           <AlertCircle className="h-3 w-3" /> Campo obligatorio sin completar
+        </p>
+      )}
+      {showSuspicious && (
+        <p className="text-[11px] text-amber-500 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          {suspiciousLabel ?? "El OCR marcó este campo como sospechoso — verifícalo contra el PDF."}
         </p>
       )}
     </div>
