@@ -139,6 +139,8 @@ interface CancelacionData {
     // ── Array canónico (NUEVO) — preferido por buildDocxVars ──
     deudores?: Array<{
       nombre: string;
+      apellidos?: string;
+      nombres?: string;
       identificacion: string; // SOLO DÍGITOS limpios (sin puntos)
       tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
       genero?: "M" | "F" | "";
