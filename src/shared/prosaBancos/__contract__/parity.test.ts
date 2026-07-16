@@ -74,4 +74,28 @@ describe("prosaBancos: paridad byte-a-byte (snapshots congelados)", () => {
     expect(rendered.includes("Se protocoliza igualmente certificación bancaria de saldo cero.")).toBe(true);
     expect(rendered).toMatchSnapshot("natural.comparecencia.conNotas");
   });
+
+  it("NATURAL con poder directo (extractor v6) — usa ctx.instrumento en lugar de apoderado.escritura_poder_*", () => {
+    const ctxNaturalDirecto: ProsaContext = {
+      apoderado: {
+        tipo: "natural",
+        nombre: "ANA MARIA MONTOYA ECHEVERRY",
+        cedula: "41939243",
+        // NO escritura_poder_* — datos viven en instrumento (poder directo)
+      },
+      poderdante: {},
+      instrumento: {
+        escritura_num: "7364",
+        fecha: "2023-05-26",
+        notaria_numero: "29",
+        notaria_ciudad: "Bogotá D.C.",
+      },
+      ciudad_firma: "Bogotá",
+    };
+    const rendered = daviviendaTemplate.renderComparecencia(ctxNaturalDirecto);
+    expect(rendered).toContain("siete mil trescientos sesenta y cuatro (7364)");
+    expect(rendered).toContain("veintiséis (26) de mayo de dos mil veintitrés (2023)");
+    expect(rendered).toContain("notaría veintinueve (29) de Bogotá D.C.");
+    expect(rendered).not.toContain("___________");
+  });
 });
