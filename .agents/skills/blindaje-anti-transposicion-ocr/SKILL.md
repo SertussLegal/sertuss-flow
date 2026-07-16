@@ -210,7 +210,7 @@ test correspondiente.
 
 ## 8) Aplicaciones vivas y pendientes
 
-### Vivas (4)
+### Vivas (5)
 
 | # | Campo | Módulo | Warning | Tests |
 |---|---|---|---|---|
@@ -218,6 +218,7 @@ test correspondiente.
 | 2 | `inmueble.menciones_direccion` (cancelaciones) | `_shared/isomorphic/certificadoInmuebleValidate.ts` | `inmueble_direccion_menciones_incoherentes` | `certificadoInmuebleValidate.test.ts` |
 | 3 | `inmueble.menciones_matricula` (cancelaciones) | `_shared/isomorphic/certificadoInmuebleValidate.ts` | `inmueble_matricula_menciones_incoherentes` | `certificadoInmuebleValidate.test.ts` |
 | 4 | `apoderado.menciones_cedula` (cédula del apoderado, con desambiguación por nombre para múltiples firmantes) | `poderBancoExtractor/validate.ts` Regla 6 | `apoderado_cedula_menciones_incoherentes` | `poderBancoValidateMencionesApoderado.test.ts` |
+| 5 | `inmueble.direccion_candidatas` (selección por índice más alto — variante del patrón: elige entre hechos legítimamente distintos, no detecta ruido OCR; coexiste con la fila 2) | `_shared/isomorphic/direccionCandidatasSelect.ts` (inyectada en `annotateInmuebleCoherencia` de `procesar-cancelacion`) | `direccion_indice_corregido_por_codigo` (ámbar, NO hard-block) | `direccionCandidatasSelect.test.ts` |
 
 ### 4ª aplicación identificada — PAUSADA
 

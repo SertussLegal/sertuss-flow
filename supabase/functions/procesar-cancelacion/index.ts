@@ -129,6 +129,11 @@ interface CancelacionData {
     nomenclatura_predio?: string;
     ciudad: string;
     departamento?: string;
+    // Blindaje anti-selección-alucinada: transcripción cruda por índice de
+    // los renglones del bloque "DIRECCION DEL INMUEBLE" del certificado.
+    // El backend elige el vigente (índice más alto) vía
+    // `direccionCandidatasSelect.ts`. Puede faltar en trámites históricos.
+    direccion_candidatas?: Array<{ indice: string; valor: string }>;
   };
   partes: {
     // ── Array canónico (NUEVO) — preferido por buildDocxVars ──
@@ -237,6 +242,19 @@ const tools = [
                     pagina: { type: "number", description: "Página del PDF donde aparece (opcional)." },
                   },
                   required: ["seccion", "valor"],
+                  additionalProperties: false,
+                },
+              },
+              direccion_candidatas: {
+                type: "array",
+                description: "BLINDAJE ANTI-SELECCIÓN-ALUCINADA. Transcribe TODOS los renglones numerados del bloque 'DIRECCION DEL INMUEBLE/PREDIO' del certificado de tradición, uno por renglón (arábigos '1)','2)','3)' o romanos 'I)','II)','III)'). Aplica el MISMO formato notarial TEXTO (NÚMERO) que aplicarías a nomenclatura_predio a CADA candidato (no dejes texto crudo sin formatear; misma limpieza: sin apartamento/torre/interior/conjunto, sin ciudad, sin sufijo '(DIRECCION CATASTRAL)', separador '-' símbolo nunca palabra 'GUION'). NO decidas cuál es el vigente — eso lo hace el backend por índice más alto. Si solo hay 1 renglón, emite 1 sola entrada — está bien.",
+                items: {
+                  type: "object",
+                  properties: {
+                    indice: { type: "string", description: "Índice tal como aparece: '1','2','3'… o romano 'I','II','III'…. Sin paréntesis final." },
+                    valor: { type: "string", description: "Dirección de ESTE renglón, ya formateada en notarial TEXTO (NÚMERO). Si el renglón es humanamente ilegible, emite 'NO_LEGIBLE'." },
+                  },
+                  required: ["indice", "valor"],
                   additionalProperties: false,
                 },
               },
@@ -424,6 +442,10 @@ Si una limitación NO concurre con la escritura de la hipoteca a cancelar (es de
 BLINDAJE ANTI-TRANSPOSICIÓN (dirección y matrícula):
 
 Antes de emitir 'inmueble.nomenclatura_predio' (que resulta de aplicar el "índice más alto" + formato TEXTO (NÚMERO)), transcribe ADEMÁS en 'inmueble.menciones_direccion[]' cada mención de dirección catastral tal como aparece LITERALMENTE en el bloque "DIRECCION DEL INMUEBLE" — sin reformatear, sin verbalizar, sin reordenar. Una entrada por renglón numerado (1), 2), 3)…).
+
+BLINDAJE ANTI-SELECCIÓN-ALUCINADA (dirección por índice):
+
+Además, emite 'inmueble.direccion_candidatas[]' con TODOS los renglones numerados del bloque "DIRECCION DEL INMUEBLE" ya formateados en notarial TEXTO (NÚMERO) — uno por renglón, con su índice ('1','2','3'… o romano 'I','II','III'…) en el campo 'indice'. NO decidas cuál es el vigente: el backend elige el de índice más alto. Aplica la misma limpieza que a 'nomenclatura_predio' (sin apartamento/torre/interior/conjunto, sin ciudad, sin sufijo catastral, separador '-' símbolo). Si solo hay un renglón, emite 1 sola entrada.
 
 Antes de emitir 'inmueble.matricula_inmobiliaria', transcribe en 'inmueble.menciones_matricula[]' cada aparición literal del número de matrícula (encabezado del certificado y pie de cada anotación relevante). Como mínimo el encabezado y una anotación.
 
@@ -1480,6 +1502,7 @@ function mergePoderBanco(
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning, isCedulaValida } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
 import { validateInmuebleCoherencia } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
+import { selectDireccionPorIndice } from "../_shared/isomorphic/direccionCandidatasSelect.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
 
@@ -1525,10 +1548,32 @@ async function annotateInmuebleCoherencia(
   ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
 ): Promise<void> {
   if (!inmueble) return;
+
+  // Fase A — Selección determinista por índice más alto sobre
+  // `direccion_candidatas[]`. Sobreescribe `nomenclatura_predio` ANTES de
+  // que downstream (nomenclaturaBase L~955, docx L~1132, persistencia
+  // L~3111, UI) la lea. Fallback silencioso si el array no viene (dato
+  // histórico o modelo que no lo emitió). Ver
+  // supabase/functions/_shared/isomorphic/direccionCandidatasSelect.ts.
+  const candidatas = (inmueble as Record<string, unknown>).direccion_candidatas as
+    | Array<{ indice: string; valor: string }>
+    | undefined;
+  const nomenclaturaModelo = (inmueble as Record<string, unknown>).nomenclatura_predio as
+    | string
+    | undefined;
+  const sel = selectDireccionPorIndice(candidatas, nomenclaturaModelo);
+  if (sel.seleccionada) {
+    (inmueble as Record<string, unknown>).nomenclatura_predio = sel.seleccionada;
+  }
+
+  // Fase B — Coherencia intra-documento (ruido OCR dentro del ganador y
+  // matrícula). Ortogonal a Fase A.
   const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
-  (inmueble as Record<string, unknown>)._coherencia_warnings = warnings;
-  (inmueble as Record<string, unknown>)._coherencia_suspicious = Array.from(suspicious);
-  if (warnings.length === 0) return;
+  const allWarnings = [...sel.warnings, ...warnings];
+  const allSuspicious = new Set<string>([...sel.suspicious, ...suspicious]);
+  (inmueble as Record<string, unknown>)._coherencia_warnings = allWarnings;
+  (inmueble as Record<string, unknown>)._coherencia_suspicious = Array.from(allSuspicious);
+  if (allWarnings.length === 0) return;
   try {
     await supabase.from("system_events").insert({
       organization_id: ctx.orgId,
@@ -1539,8 +1584,10 @@ async function annotateInmuebleCoherencia(
       categoria: "ocr_certificado",
       detalle: {
         trigger: ctx.trigger,
-        warnings,
-        suspicious: Array.from(suspicious),
+        warnings: allWarnings,
+        suspicious: Array.from(allSuspicious),
+        indice_ganador: sel.indiceGanador,
+        diverge_del_modelo: sel.divergeDelModelo,
       },
     });
   } catch (_) { /* no bloqueante */ }

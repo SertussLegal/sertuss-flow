@@ -1,113 +1,142 @@
+# Plan — Selección determinista de nomenclatura catastral por índice más alto
 
-# Regla 7 — confianza en 4 campos profundos del poder bancario
+## Contexto verificado en código real
 
-Capturar el nivel de confianza que Gemini ya calcula (pero hoy descartamos) para 4 campos profundos, y usarlo para detectar "alucinación confiada" (valor incorrecto pero consistente entre menciones → Reglas 5/6 no lo detectan). Advertencia ámbar, no hard-block.
+Confirmé leyendo `supabase/functions/procesar-cancelacion/index.ts`:
 
-## 0. Cuestiones resueltas con evidencia
+- **L212, L346–373, L426**: la regla "índice más alto" vive SOLO como instrucción de prompt para Gemini. El modelo transcribe `nomenclatura_predio` ya con su propia selección aplicada. No hay verificación determinista. Antipatrón exacto que `blindaje-anti-transposicion-ocr` §7 prohíbe.
+- **L215–217**: `menciones_direccion[]` existe pero mide otra cosa (ruido OCR en la MISMA dirección, comparación por igualdad tras normalizar). En el caso Alejandra las 2 direcciones son legítimamente distintas → esa regla habría (a) no disparado si el modelo omitió el array, (b) disparado por razón equivocada si lo hubiera emitido.
+- **L933**: `nomenclaturaBase = data.inmueble.nomenclatura_predio ?? direccion_completa`. Único punto de lectura del valor "resuelto por el modelo".
+- **L953–957**: `nomenclaturaFinal` = `nomenclaturaBase` + coletilla `(DIRECCION CATASTRAL)` (solo Bogotá) + `DE LA CIUDAD Y/O MUNICIPIO ...`.
+- **L1110, L1112**: `nomenclaturaFinal` se mapea a `nomenclatura_predio` y `direccion_inmueble` (retro-compat) del docx.
+- **L3089**: `direccion_inmueble` de la fila `cancelaciones` se persiste desde `extracted.inmueble.nomenclatura_predio` — el string plano que el modelo eligió. Este es el valor que la UI (`CancelacionValidar.tsx` L174) muestra en el campo editable.
+- **L1521 `annotateInmuebleCoherencia`**: choke-point ideal para agregar warning ámbar nuevo; ya escribe `_coherencia_warnings` y `_coherencia_suspicious` que la UI ya sabe pintar.
 
-### Q1 — Contrato de `PoderBancoDeepPayload` para los 4 campos
+## Diseño
 
-Hoy, en `index.ts:39-64` estos 4 paths se tipan como **string plano**:
-- `apoderado.cedula: string | null`
-- `poderdante.representante_legal_cedula: string | null`
-- `instrumento_poder.escritura_num: string | null`
-- `instrumento_poder.fecha: string | null`
+### 1. Nuevo campo de schema `direccion_candidatas`
 
-Los 8 campos legacy planos (`apoderado_cedula`, `escritura_poder_num`, `fecha_poder`, ...) ya son `{valor, confianza}` y ya pasan por `unwrapConf` — funciona.
+En `supabase/functions/procesar-cancelacion/index.ts` dentro del objeto `inmueble` del tool de Gemini (junto a `nomenclatura_predio` y `menciones_direccion`). Descripción tal como la definió el usuario: transcribir TODOS los renglones numerados, aplicar formato notarial TEXTO (NÚMERO) a cada candidato, NO decidir cuál es vigente. Se agrega un bloque nuevo al prompt (paralelo al de menciones) instruyendo emitir 1 sola entrada cuando solo hay 1 renglón, sin decidir.
 
-### Q2 — CRÍTICO: quiénes leen los 4 paths profundos como string plano
+Se agrega el tipo TS en la interfaz local de `data.inmueble` (`direccion_candidatas?: Array<{indice: string; valor: string}>`).
 
-Enumerado con `rg`, los readers que asumen string plano son:
+**No se toca** el campo `nomenclatura_predio` en el schema — sigue siendo la fuente `fallback` y punto de compatibilidad con datos históricos y con el modelo cuando el nuevo array venga vacío.
 
-| Archivo | Uso |
-|---|---|
-| `supabase/functions/procesar-cancelacion/index.ts:1058,1307-1314,1335` | `pb.instrumento_poder.escritura_num`, `pb.apoderado.cedula`, `poderdante.representante_legal_cedula` para `Nully paths`, docx vars y coherencia |
-| `supabase/functions/_shared/isomorphic/apoderadoClassifier.ts:75,160` | `ctx.instrumento_poder.escritura_num/fecha` para clasificar tipo |
-| `supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts:52,68,74,94,103` | `ctx.apoderado.cedula`, `ctx.poderdante.representante_legal_cedula` para prosa |
-| `supabase/functions/_shared/validatePoderSuficiencia.ts:114` | `poder.instrumento_poder.fecha` |
-| `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts:252-262` | `deepV6.instrumento_poder.escritura_num/fecha`, `apoderadoIn.cedula` para NO_LEGIBLE override |
-| `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts:209-212` | Regla 5, Regla 6, Reglas 2.1/2.2/2.3, Regla 3 |
-| `supabase/functions/_shared/isomorphic/prosaBancos/types.ts:64,102` + `mergeOverride.ts` + `overrideSchema.ts` | Persistencia de override manual (contract) |
-| `src/lib/buildProsaContext.ts:55` | Contexto prosa cliente |
-| `src/components/cancelaciones/PoderViewerTab.tsx:39` | UI viewer |
-| `src/pages/CancelacionValidar.tsx:1474` | Input campo RL cédula |
-| `src/pages/Validacion.tsx:3225` + `PersonaForm.tsx:231` + `DocxPreview.tsx:400,645` + `types.ts:68,179` | Trámites (rama distinta, no toca poder banco pero comparte nombre de campo) |
-| `descubrir-reglas/_patterns.ts:49` | Auditor offline |
+### 2. Selector determinista puro — `direccionCandidatasSelect.ts`
 
-**Migrar el schema y el tipo a `{valor, confianza}` en estos 4 paths tocaría todos estos consumidores** — es cambio invasivo, propenso a regresión, y viola el instinto conservador de la Regla 6 anterior (donde agregamos `menciones_cedula[]` sin tocar el escalar `cedula`).
+**Ubicación**: `supabase/functions/_shared/isomorphic/direccionCandidatasSelect.ts` (isomórfico, igual patrón que `certificadoInmuebleValidate.ts`, importable desde edge y desde frontend vía alias `@shared`).
 
-### Q3 — Decisión de diseño: **sidecar, no wrapper**
+**API**:
 
-En lugar de cambiar el tipo de los 4 campos profundos, el patrón elegido es idéntico al que ya usan las menciones (evidencia forense hermana, no reemplazo del escalar):
+```ts
+export type DireccionCandidata = { indice: string; valor: string };
 
-1. **Schema (`tool.ts`)** — envolver los 4 campos con `confField(...)` (idéntico a los 8 legacy). Los prompts de Gemini ya usan este patrón, así que el modelo ya sabe emitirlo. Descripciones intactas (incluyendo NO_LEGIBLE donde aplica).
+export type SelectResult = {
+  seleccionada: string | undefined;      // valor del candidato ganador; undefined si array vacío/ausente
+  indiceGanador: number | undefined;     // índice numérico normalizado
+  divergeDelModelo: boolean;             // true si nomenclatura_predio del modelo ≠ seleccionada
+  warnings: string[];                    // ['direccion_indice_corregido_por_codigo'] si diverge
+  suspicious: Set<string>;               // 'inmueble.nomenclatura_predio', 'inmueble.direccion_candidatas'
+};
 
-2. **Tipo (`index.ts`)** — cambiar los 4 tipos a `{ valor?: string | null; confianza?: "alta"|"media"|"baja" } | null`.
+export function parseIndice(raw: string): number | null;      // arábigo + romano I-XX
+export function selectDireccionPorIndice(
+  candidatas: DireccionCandidata[] | undefined,
+  nomenclaturaModelo: string | undefined,
+): SelectResult;
+```
 
-3. **Merge (`merge.ts`)** — en `mergePoderBancoV6`, **antes** de retornar, aplicar `unwrapConfDeep` sobre los 4 paths del bloque profundo, colapsándolos a string plano en el mismo lugar donde hoy Gemini los emitiría. Los consumidores downstream (index.ts:1307, davivienda.ts, classifier.ts, ...) **siguen viendo string plano** — cero cambio en readers.
+**Reglas**:
 
-4. **Sidecar `_confianza`** — mismo `mergePoderBancoV6` emite además un mapa nuevo `_confianza: Record<string, "alta"|"media"|"baja">` con las llaves de los 4 paths (más los 4 legacy planos si están disponibles, "gratis" porque ya existen). Vive junto a `_classifier_motivos` en el output.
+- `parseIndice`: acepta `"1".."99"` y romanos `I..XX` (case-insensitive, trim). Retorna `null` si no matchea → ese candidato se ignora (no crash).
+- Filtra candidatas con `indice` no parseable o `valor` vacío / `NULLY_MENCION` (reusar constante del skill).
+- Ordena descendente por índice, toma el primero.
+- **Tie-break** (empate del mismo índice numérico, ej. dos "2)"): **última aparición en el array gana**. Justificación: el orden de emisión del modelo preserva el orden textual del documento; el renglón que aparece más abajo/después en el certificado es el más reciente en el flujo de anotaciones catastrales. Es determinista, no requiere metadata adicional, y coincide con la heurística notarial de "última anotación pertinente".
+- Comparación `divergeDelModelo`: normaliza ambos (`toUpperCase`, colapso de espacios, strip de `(DIRECCION CATASTRAL)` y de la coletilla `DE LA CIUDAD Y/O MUNICIPIO ...` — reusar los mismos regex de L938/L940). NO fuzzy. Diverge si tras normalizar son distintos.
+- Si `candidatas` es `undefined` / `[]` / todas inválidas → `seleccionada: undefined`, sin warnings, sin `suspicious`. Fallback silencioso.
+- Si diverge: `warnings.push("direccion_indice_corregido_por_codigo")` y `suspicious` incluye `"inmueble.nomenclatura_predio"` y `"inmueble.direccion_candidatas"`.
 
-5. **Validate (`validate.ts`)** — nueva Regla 7 lee `merged._confianza[path]`. Si `=== "baja"` y el campo tiene valor no vacío → warning + suspicious (mismo `Set` que Reglas 5/6). Excepción Manual>OCR idéntica.
+**Sufijo del warning**: termina en `_por_codigo`, NO en `_menciones_incoherentes` — por diseño no engancha `HARD_BLOCK_WARNING_SUFFIXES`. Es informativo/ámbar, no bloqueante (el humano puede aceptar la corrección del código o revertirla; ambos comportamientos son válidos, no queremos bloquear generación).
 
-### Q4 — Retrocompatibilidad con cancelaciones históricas
+**Label UI** (agregado a `WARNING_LABELS` en `CancelacionValidar.tsx`):
+`"El certificado tiene varias direcciones numeradas. El sistema seleccionó la de índice más alto; verifica que sea la vigente."`
 
-Registros en BD guardados antes del schema nuevo no tendrán wrapper. Efectos:
+### 3. Wiring en `procesar-cancelacion/index.ts`
 
-- **En Gemini**: los prompts nuevos piden wrapper; si el modelo devuelve string plano (fallback poco probable), `unwrapConfDeep` lo trata como `valor: <str>, confianza: undefined` → sidecar omite ese path → Regla 7 no dispara. **No hay crash.**
-- **En BD**: `data_ia`/`data_final` viejos: `_confianza` ausente → validate lee `undefined` → Regla 7 no dispara. **No hay crash, no hay falso positivo, no hay migración.**
-- **En regen**: `mergeRegenPayload` deep-merge `apoderado`/`poderdante`/`instrumento_poder`. El escalar `cedula`/`escritura_num`/... sigue siendo string plano tras el merge (porque el pipeline los aplanó). El sidecar `_confianza` se recalcula en cada corrida OCR nueva, no se persiste como fuente de verdad — es señal transitoria. **No requiere merge especial.**
+**Un solo punto de inyección real**: `annotateInmuebleCoherencia` (L1521). Ahí se llama al selector, se sobreescribe `inmueble.nomenclatura_predio` con `seleccionada` cuando exista, y se acumulan `warnings` + `suspicious` sobre los que ya calcula `validateInmuebleCoherencia`. Esto propaga automáticamente a:
 
-### Q5 — UI: ¿falta algo?
+- **L933** (`nomenclaturaBase`): lee `data.inmueble.nomenclatura_predio` ya corregido.
+- **L1110, L1112** (`nomenclatura_predio`, `direccion_inmueble` del docx): derivan de `nomenclaturaFinal` → corregidos.
+- **L3089** (`direccion_inmueble` persistido en fila `cancelaciones`): lee `extracted.inmueble.nomenclatura_predio` ya corregido.
+- **UI `CancelacionValidar.tsx`**: el `Set` de `_coherencia_suspicious` ya está conectado al campo `direccion_inmueble` (edición previa del apoderado usó el mismo patrón — solo hay que confirmar que el campo `direccion_inmueble` ya recibe `suspicious`; si no, se agrega igual que se hizo con los 4 del apoderado).
 
-`CancelacionValidar.tsx` ya conecta los 4 `Field` (nombre / cédula / N° escritura / fecha del poder) al mismo `Set` unificado (sesión anterior). Regla 7 alimenta ese mismo Set con nombres de warning distintos → borde ámbar + `suspiciousLabel` aparece automáticamente. **No requiere cambio de UI.** El único ajuste es agregar entradas en `WARNING_LABELS` para los 4 nuevos códigos.
+Un único choke-point, cero duplicación entre callers.
 
----
+### 4. Relación con `menciones_direccion[]` — RECOMENDACIÓN: coexisten, fuera de alcance
 
-## 1. Archivos y orden de edición
+**Recomiendo NO tocar `menciones_direccion` ni `certificadoInmuebleValidate.ts` Regla 1** en este cambio. Razones:
 
-1. `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` — envolver 4 propiedades con `confField(...)` (preservando descripción + NO_LEGIBLE).
-2. `supabase/functions/_shared/isomorphic/poderBancoExtractor/index.ts` — cambiar el tipo TS de los 4 paths a `{valor,confianza}|null`.
-3. `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts`:
-   - Añadir helper `unwrapConfDeep(v): {valor?: string, confianza?: "alta"|"media"|"baja"}` (no rompe `unwrapConf` existente).
-   - En `mergePoderBancoV6`: antes de armar `out`, aplanar los 4 campos profundos de `deepV6` a string plano (para que `apoderadoIn.cedula`, `deepV6.instrumento_poder.escritura_num`, etc., sigan comportándose como hoy en downstream).
-   - Construir sidecar `_confianza` con hasta 8 entradas (4 profundos + 4 planos legacy).
-   - Añadir `_confianza` al `out`.
-4. `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts`:
-   - Añadir 4 entradas a `WARNING_LABELS`: `apoderado_cedula_confianza_baja`, `poderdante_rl_cedula_confianza_baja`, `escritura_poder_confianza_baja`, `fecha_poder_confianza_baja`. Todas ámbar-informativas, texto tipo "Gemini reportó confianza baja en …".
-   - Añadir Regla 7 al final de `validatePoderBancoCoherencia`, antes del return. Recorre 4 tuplas `[warningCode, path, escalarActual]`. Si `_confianza[path] === "baja"` y el escalar no está vacío ni ausente → warning + `suspicious.add(path)`. Excepción Manual>OCR: si `opts.manualReviewConfirmed` y el escalar tiene formato válido (para cédulas: `isCedulaValida`; para escritura: `extractEscrituraDigits`; para fecha: `extractYear`), suprimir warning pero **preservar** el dato en el sidecar.
-5. Confirmar que **NINGUNO** de los 4 sufijos de warning coincide con `HARD_BLOCK_WARNING_SUFFIXES` (`_no_legible`, `_incoherente`, `_placeholder`, `_duplicidad_cruzada`, `_menciones_incoherentes`). El sufijo elegido `_confianza_baja` es nuevo y NO cae en ninguno → automáticamente NO bloquea. Cero cambio en `HARD_BLOCK_WARNING_SUFFIXES`.
-6. Tests nuevos: `src/shared/poderBancoValidateConfianzaBaja.test.ts` — 8 casos:
-   - Cada uno de los 4 campos con `confianza=baja` → warning + suspicious del path correcto.
-   - `confianza=media` o `=alta` → no dispara.
-   - Sidecar ausente (registro histórico) → no dispara.
-   - Excepción Manual>OCR con escalar corregido → suprime warning, `_confianza` intacto.
-   - Escalar vacío/ausente + confianza baja → **no dispara** (Gemini no leyó nada, no hay nada sospechoso).
-   - Contrato: `isHardBlockCoherenciaWarning("apoderado_cedula_confianza_baja") === false`.
-7. Verificar regresión: `poderBancoExtractor.test.ts`, `poderBancoValidate.test.ts`, `poderBancoValidateMencionesRL.test.ts`, `poderBancoValidateMencionesApoderado.test.ts`, `certificadoInmuebleValidate.test.ts`, `mergeRegenPayload.test.ts`, `apoderadoClassifier.test.ts` — todos deben seguir verdes sin modificarse. En particular, el test existente `mergePoderBancoV6 → Ana María NO_LEGIBLE override` debe pasar porque `unwrapConfDeep` produce string plano `"NO_LEGIBLE"` idéntico al comportamiento actual de `unwrapConf`.
+- Miden fenómenos distintos: `direccion_candidatas` = selección entre hechos legítimamente distintos por índice; `menciones_direccion` = detección de ruido OCR sobre el MISMO hecho (transposición de dígitos en repeticiones de la misma dirección en encabezado + anotaciones + firma).
+- Son ortogonales: en un certificado donde el renglón (2) aparezca además repetido con OCR ruidoso en la anotación de traslado, `direccion_candidatas` elige el (2) y `menciones_direccion` detecta el ruido dentro de ese (2). Removerla eliminaría cobertura real.
+- La regla existente tiene tests verdes y una aplicación viva documentada en el skill; tocarla amplía superficie de riesgo sin beneficio.
 
-## 2. Riesgos y mitigaciones
+Decisión: coexisten. `direccion_candidatas` opera antes (selección), `menciones_direccion` sigue operando después (ruido dentro de la selección). Documentar esto como comentario en el nuevo módulo y en la §8 del skill (nueva fila) — pero eso es doc, no código.
 
-| Riesgo | Mitigación |
-|---|---|
-| **Downstream lee `apoderado.cedula` como objeto** (crash `.replace` en davivienda.ts, classifier.ts, index.ts:1307...) | `merge.ts` aplana los 4 profundos ANTES de emitir `out.apoderado/poderdante/instrumento_poder`. Los consumidores siguen viendo string. Tests de merge (`poderBancoExtractor.test.ts`) cubren esto. |
-| **Dato histórico BD sin wrapper** | `unwrapConfDeep` acepta string plano O `{valor,confianza}` (mismo pattern de `unwrapConf`). Sidecar omite path con confianza undefined. Regla 7 lee sidecar → no dispara. |
-| **Gemini emite `confianza=baja` en vacío** | Guard: warning solo si escalar tiene valor no vacío. Evita ruido visual. |
-| **Regla 7 se vuelve hard-block por accidente** | Sufijo `_confianza_baja` no está en `HARD_BLOCK_WARNING_SUFFIXES`. Test contrato explícito. |
-| **`mergeRegenPayload` borra `_confianza`** | `_confianza` no vive dentro de `apoderado`/`poderdante`/`instrumento_poder` — es hermano top-level. Deep-merge existente no lo toca. Si en un regen el usuario NO reenvía OCR, `_confianza` de la corrida anterior se preserva (comportamiento correcto: si no hay OCR nuevo, la confianza previa sigue vigente). |
-| **Prosa/docx recibe el escalar aplanado que puede ser `""` cuando Gemini devuelve `{valor:"", confianza:"baja"}`** | `unwrapConfDeep` retorna `undefined` para valor vacío/nully (idéntico a `sanitizeString`). Mismo comportamiento actual. |
+### 5. Tests — `src/shared/direccionCandidatasSelect.test.ts`
 
-## 3. Fuera de alcance
+Casos:
 
-- No se modifican los 8 legacy planos (ya usan `confField` desde v6).
-- No se agrega Regla 7 para menciones (`menciones_rl[]`, `menciones_cedula[]`) — su confianza no se persiste hoy y no es prioridad.
-- No se toca UI: los `Field` del apoderado ya reciben `suspicious` del `Set` unificado (sesión anterior).
-- No se toca `HARD_BLOCK_WARNING_SUFFIXES` — Regla 7 es informativa por diseño.
-- No se toca schema ni edge de `procesar-cancelacion` (index.ts) — sigue leyendo escalares planos.
+1. **Caso Alejandra**: candidatas `[{indice:"1", valor:"CALLE 10 #91-01..."}, {indice:"2", valor:"KR 92 8 18..."}]`, modelo eligió el (1). Selector devuelve el (2), `divergeDelModelo=true`, warning disparado.
+2. Numeración romana: `[{indice:"I",...},{indice:"II",...},{indice:"III",...}]` → gana III.
+3. Empate mismo índice: `[{indice:"2",valor:"A"},{indice:"2",valor:"B"}]` → gana B (última aparición). Assert explícito del tie-break.
+4. Array ausente / `undefined` → `seleccionada: undefined`, sin warnings.
+5. Array vacío → idem.
+6. 1 sola candidata, matchea con modelo → `divergeDelModelo=false`, sin warnings.
+7. 1 sola candidata, difiere del modelo (caso patológico: modelo re-formateó de forma incompatible) → warning dispara.
+8. Índice no parseable (`"a)"`, `"?"`) → se filtra; si eran las únicas → `seleccionada: undefined`.
+9. `NULLY_MENCION` en valor (`"NO_LEGIBLE"`) → se filtra.
+10. Comparación tolerante a coletilla y a `(DIRECCION CATASTRAL)`: modelo `"KR 92 8 18 (DIRECCION CATASTRAL) DE LA CIUDAD Y/O MUNICIPIO DE BOGOTA"` vs candidata `"KR 92 8 18"` → no diverge.
 
-## 4. Anti-ejemplos evitados
+Además, un test de integración liviano que arme el objeto `inmueble` y verifique que `annotateInmuebleCoherencia` sobreescribe `nomenclatura_predio` y agrega el warning al set — reutilizando fixture estilo `certificadoInmuebleValidate.test.ts`.
 
-- ❌ Envolver los 4 campos y forzar a los 20+ readers a llamar `unwrapConf`.
-- ❌ Persistir `_confianza` en BD como fuente de verdad — es señal transitoria del OCR, se recalcula.
-- ❌ Meter `_confianza_baja` en hard-block — el modelo puede reportar "baja" en campos legibles pero raros. Solo advierte.
-- ❌ Migración de datos históricos — sidecar ausente = silencio, comportamiento seguro.
+### 6. Riesgos
+
+**R1 — Cancelaciones históricas sin `direccion_candidatas`**: el array no existe en `data_ia`/`data_final` viejos. **Mitigación**: guard `if (!candidatas || candidatas.length === 0) return { seleccionada: undefined, ... }`. El wiring solo sobreescribe si `seleccionada !== undefined`, así que histórico queda idéntico. Cero migración de datos.
+
+**R2 — Modelo emite el array pero con formato roto** (índices no parseables, valores vacíos). **Mitigación**: el selector filtra y, si no queda nada válido, devuelve `undefined` → fallback al string plano del modelo. No crash, no falso positivo.
+
+**R3 — Divergencia por diferencias cosméticas** (el modelo aplicó una coletilla de más, o un `(DIRECCION CATASTRAL)` doble). **Mitigación**: normalización agresiva en `divergeDelModelo` (strip de coletillas conocidas). Si aún así diverge, es señal legítima — que el warning ámbar dispare está bien, es informativo.
+
+**R4 — Otros lectores de `nomenclatura_predio` / `direccion_inmueble`**: verificados en grep previo:
+- Docx templater (`nomenclaturaFinal` L1110, L1112) — lee de `data.inmueble.nomenclatura_predio` a través de `nomenclaturaBase` L933 → cubierto.
+- Persistencia BD `cancelaciones.direccion_inmueble` L3089 → cubierto.
+- UI `CancelacionValidar.tsx` L174 → lee de la fila `cancelaciones` → cubierto.
+- `certificadoInmuebleValidate.ts` Regla 1 (`menciones_direccion`) → no lee `nomenclatura_predio`, independiente.
+- Tests de `certificadoInmuebleValidate` → no afectados (no usan `direccion_candidatas`).
+- Prosa: no hay helper `nomenclaturaProsa` — se usa el string plano directamente. Sin impacto.
+
+Todos los lectores consumen el string plano ya resuelto. Sobreescribir en `annotateInmuebleCoherencia` (antes de que cualquiera lo lea) cubre el 100%.
+
+**R5 — Frontend `CancelacionValidar.tsx`**: verificar en implementación que el campo `direccion_inmueble` ya recibe `suspicious` desde el `Set` unificado. Si no lo recibe, agregarlo (patrón idéntico al bloque `apoderado` recién conectado). Esto es la única duda pendiente que el usuario mencionó — se resolverá con `rg` puntual antes de tocar y se aplicará el mismo patrón visual, sin lógica nueva.
+
+## Archivos a tocar (orden de implementación)
+
+1. **CREAR** `supabase/functions/_shared/isomorphic/direccionCandidatasSelect.ts` — función pura + tipos.
+2. **CREAR** `src/shared/direccionCandidatasSelect.test.ts` — 10 casos + integración liviana.
+3. **EDITAR** `supabase/functions/procesar-cancelacion/index.ts`:
+   - Agregar `direccion_candidatas` al tool schema (junto a L215).
+   - Agregar bloque en el prompt (junto a L426) instruyendo transcripción cruda por índice.
+   - Extender interfaz TS de `data.inmueble`.
+   - En `annotateInmuebleCoherencia` (L1521): llamar al selector, sobreescribir `inmueble.nomenclatura_predio`, acumular warnings/suspicious.
+4. **EDITAR** `src/pages/CancelacionValidar.tsx`:
+   - Verificar que `direccion_inmueble` (Field L~174) reciba `suspicious` del Set unificado; si falta, agregar (patrón del apoderado).
+   - Agregar `direccion_indice_corregido_por_codigo` a `WARNING_LABELS` con el texto propuesto.
+5. **EDITAR** `.agents/skills/blindaje-anti-transposicion-ocr/SKILL.md` §8: nueva fila en tabla "Vivas" (ahora 5), actualizar título "Vivas (5)".
+
+No se toca: `merge.ts`, `validate.ts` del poderBancoExtractor, `certificadoInmuebleValidate.ts`, schema `types.ts`, ninguna migración, ningún dato histórico.
+
+## Confirmaciones que necesito antes de implementar
+
+- ¿OK el tie-break "última aparición gana" en empate de índice? (Alternativa: primera aparición; me inclino por última por la razón dada.)
+- ¿OK el nombre del warning `direccion_indice_corregido_por_codigo` y el texto del label?
+- ¿OK dejar `menciones_direccion` intacto (recomendación §4)?

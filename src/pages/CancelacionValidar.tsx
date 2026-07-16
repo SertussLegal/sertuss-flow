@@ -1084,8 +1084,30 @@ export const CancelacionValidar = () => {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Nomenclatura Urbana (Dirección)</Label>
-                  <Field label="" value={data.inmueble.nomenclatura_predio ?? ""}
-                    onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, nomenclatura_predio: v } })} />
+                  {(() => {
+                    const inmuebleSuspicious = new Set(
+                      (((data.inmueble as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious) ?? [])
+                        .filter((s): s is string => typeof s === "string"),
+                    );
+                    const inmuebleWarnings =
+                      (data.inmueble as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings ?? [];
+                    const nomenclaturaWarningKeys = [
+                      "direccion_indice_corregido_por_codigo",
+                      "inmueble_direccion_menciones_incoherentes",
+                    ];
+                    const nomenclaturaSuspiciousLabel =
+                      inmuebleWarnings
+                        .filter((w): w is string => typeof w === "string" && nomenclaturaWarningKeys.includes(w))
+                        .map((w) => WARNING_LABELS[w])
+                        .filter(Boolean)
+                        .join(" / ") || undefined;
+                    return (
+                      <Field label="" value={data.inmueble.nomenclatura_predio ?? ""}
+                        onChange={(v) => setData({ ...data, inmueble: { ...data.inmueble, nomenclatura_predio: v } })}
+                        suspicious={inmuebleSuspicious.has("inmueble.nomenclatura_predio")}
+                        suspiciousLabel={nomenclaturaSuspiciousLabel} />
+                    );
+                  })()}
                   <p className="text-[11px] text-muted-foreground">
                     No incluyas el sufijo <span className="font-mono">(DIRECCION CATASTRAL)</span>; el sistema lo agrega automáticamente.
                   </p>
