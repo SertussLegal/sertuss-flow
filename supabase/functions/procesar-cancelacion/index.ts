@@ -3102,6 +3102,8 @@ if (import.meta.main) serve(async (req) => {
           if (deudoresExtraidos.length > 0) {
             extracted.partes.deudores = deudoresExtraidos.map((d) => ({
               nombre: d.nombre,
+              apellidos: d.apellidos,
+              nombres: d.nombres,
               identificacion: d.identificacion,
               tipo_id: d.tipo_id,
               genero: d.genero,
