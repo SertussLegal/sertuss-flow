@@ -1177,6 +1177,8 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     direccion_inmueble: nomenclaturaFinal,
     direccion_inmueble_cont: "",
     ciudad_inmueble: ciudadInmueble || undefined,
+    oficina_registro_ciudad: oficinaRegistroCiudad || undefined,
+
     descripcion_inmueble: descripcionPredio || undefined,
     // Partes
     deudor_nombre: deudoresNombres || data.partes.deudor_nombre,
