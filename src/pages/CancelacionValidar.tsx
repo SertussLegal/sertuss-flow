@@ -177,6 +177,8 @@ type Data = {
     // Array canónico (preferido). Si no existe, se hidrata desde los singulares.
     deudores?: Array<{
       nombre: string;
+      apellidos?: string;
+      nombres?: string;
       identificacion: string; // SOLO dígitos
       tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
       genero?: "M" | "F" | "";
@@ -442,17 +444,27 @@ export const CancelacionValidar = () => {
             identificacion: onlyDigitsClient(source.partes.deudor_identificacion),
             tipo_id: (source.partes.deudor_tipo_id || "CEDULA DE CIUDADANIA") as
               "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
+            // Género: prefiere el campo `nombres` (nombres de pila aislados). Ver
+            // `inferGeneroFromNombre` docstring — pasarle el string completo con
+            // apellidos primero da inferencias silenciosamente incorrectas.
             genero: (source.partes.deudor_genero ?? inferGeneroFromNombre(source.partes.deudor_nombre ?? "")) as "M" | "F" | "",
           }]
         : [];
       const deudoresHidratados = Array.isArray(existingDeudores) && existingDeudores.length > 0
-        ? (existingDeudores as Array<Record<string, unknown>>).map((d) => ({
-            nombre: String(d?.nombre ?? "").toUpperCase(),
-            identificacion: onlyDigitsClient(d?.identificacion),
-            tipo_id: (typeof d?.tipo_id === "string" && d.tipo_id ? d.tipo_id : "CEDULA DE CIUDADANIA") as
-              "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
-            genero: ((d?.genero as "M" | "F" | "" | undefined) ?? inferGeneroFromNombre(String(d?.nombre ?? ""))) as "M" | "F" | "",
-          }))
+        ? (existingDeudores as Array<Record<string, unknown>>).map((d) => {
+            const apellidos = String(d?.apellidos ?? "").toUpperCase() || undefined;
+            const nombres = String(d?.nombres ?? "").toUpperCase() || undefined;
+            const nombreVerbatim = String(d?.nombre ?? "").toUpperCase();
+            return {
+              nombre: nombreVerbatim,
+              apellidos,
+              nombres,
+              identificacion: onlyDigitsClient(d?.identificacion),
+              tipo_id: (typeof d?.tipo_id === "string" && d.tipo_id ? d.tipo_id : "CEDULA DE CIUDADANIA") as
+                "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE",
+              genero: ((d?.genero as "M" | "F" | "" | undefined) ?? inferGeneroFromNombre(nombres ?? nombreVerbatim)) as "M" | "F" | "",
+            };
+          })
         : hidratadosDesdeSingular;
       const partes = {
         ...source.partes,
@@ -1144,7 +1156,14 @@ export const CancelacionValidar = () => {
                     });
                   };
                   const updateAt = (idx: number, patch: Partial<Deudor>) => {
-                    const next = deudoresArr.map((d, i) => i === idx ? { ...d, ...patch } : d);
+                    // Cuando el humano edita `nombre` manualmente, invalidamos
+                    // `apellidos`/`nombres` para que el ensamblador determinista
+                    // del backend (`normalizeDeudores`) NO reemplace el string
+                    // corregido por una recomposición basada en datos viejos.
+                    const invalidateSeparados = Object.prototype.hasOwnProperty.call(patch, "nombre")
+                      ? { apellidos: undefined, nombres: undefined }
+                      : {};
+                    const next = deudoresArr.map((d, i) => i === idx ? { ...d, ...patch, ...invalidateSeparados } : d);
                     writeDeudores(next);
                   };
                   const addDeudor = () => {

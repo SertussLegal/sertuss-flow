@@ -139,6 +139,8 @@ interface CancelacionData {
     // ── Array canónico (NUEVO) — preferido por buildDocxVars ──
     deudores?: Array<{
       nombre: string;
+      apellidos?: string;
+      nombres?: string;
       identificacion: string; // SOLO DÍGITOS limpios (sin puntos)
       tipo_id: "CEDULA DE CIUDADANIA" | "CEDULA DE EXTRANJERIA" | "PASAPORTE" | string;
       genero?: "M" | "F" | "";
@@ -272,7 +274,9 @@ const tools = [
                 items: {
                   type: "object",
                   properties: {
-                    nombre: { type: "string", description: "Nombre completo en MAYÚSCULAS, idéntico al certificado." },
+                    nombre: { type: "string", description: "Nombre completo VERBATIM tal como aparece en la anotación del certificado (formato registral APELLIDOS NOMBRES). Evidencia cruda. NO reordenar. La minuta usa `nombres` + `apellidos`." },
+                    apellidos: { type: "string", description: "APELLIDOS del deudor en MAYÚSCULAS. En el certificado registral suelen ir PRIMERO (ej. 'DIAZ GARCIA'). Si tienes duda, deja cadena vacía y llena solo `nombre`." },
+                    nombres: { type: "string", description: "NOMBRES DE PILA del deudor en MAYÚSCULAS. En el certificado registral suelen ir DESPUÉS de los apellidos (ej. 'MARGARITA IBETH'). NO incluir apellidos aquí. Si tienes duda, deja cadena vacía y llena solo `nombre`." },
                     identificacion: { type: "string", description: "Número de identificación ESTRICTAMENTE NUMÉRICO sin puntos ni espacios ni letras. Solo dígitos 0-9. Ej: '20549804'. Si es ilegible, devuelve cadena vacía — NO inventes." },
                     tipo_id: {
                       type: "string",
@@ -280,7 +284,7 @@ const tools = [
                       description: "Detéctalo LITERAL del texto del certificado/escritura. 'CC' → CEDULA DE CIUDADANIA; 'CE' → CEDULA DE EXTRANJERIA; 'PA' / 'PASAPORTE' → PASAPORTE. NO asumas CC por defecto."
                     },
                   },
-                  required: ["nombre", "identificacion", "tipo_id"],
+                  required: ["nombre", "apellidos", "nombres", "identificacion", "tipo_id"],
                   additionalProperties: false,
                 }
               },
@@ -837,13 +841,27 @@ function normalizeDeudores(partes: CancelacionData["partes"]) {
         }]
       : [];
   return raw.map((d) => {
-    const nombre = String(d?.nombre ?? "").toUpperCase().trim();
-    const ident = onlyDigits(d?.identificacion);
-    const tipoIn = String(d?.tipo_id ?? "").toUpperCase().trim();
+    const dAny = d as { nombre?: unknown; apellidos?: unknown; nombres?: unknown; identificacion?: unknown; tipo_id?: unknown; genero?: unknown };
+    const apellidos = String(dAny?.apellidos ?? "").toUpperCase().trim();
+    const nombres = String(dAny?.nombres ?? "").toUpperCase().trim();
+    // Ensamblador determinista: NOMBRES APELLIDOS (orden notarial colombiano).
+    // Fallback a `nombre` verbatim para historicos o corridas donde el modelo
+    // no separó (retrocompat total). Espejo de `ensamblarNombreNotarial`.
+    const nombreLegacy = String(dAny?.nombre ?? "").toUpperCase().trim();
+    const nombre = (nombres && apellidos) ? `${nombres} ${apellidos}` : nombreLegacy;
+    const ident = onlyDigits(dAny?.identificacion);
+    const tipoIn = String(dAny?.tipo_id ?? "").toUpperCase().trim();
     const tipo_id = VALID_TIPO_ID.has(tipoIn) ? tipoIn : "CEDULA DE CIUDADANIA";
-    const genero: "M" | "F" | "" = ((d?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(nombre) || "") as "M" | "F" | "";
+    // Género: infiere desde `nombres` (nombres de pila aislados) cuando exista.
+    // Antes se pasaba el string completo y con formato registral (APELLIDOS primero)
+    // la primera palabra era un apellido → devolvía "" silenciosamente, o género
+    // INCORRECTO cuando el apellido coincidía con nombre del set (MARIA, JOSE, ...).
+    const generoInputParaInferencia = nombres || nombreLegacy;
+    const genero: "M" | "F" | "" = ((dAny?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(generoInputParaInferencia) || "") as "M" | "F" | "";
     return {
       nombre,
+      apellidos: apellidos || undefined,
+      nombres: nombres || undefined,
       identificacion: ident,
       identificacion_formateada: formatCC(ident),
       tipo_id,
@@ -3084,6 +3102,8 @@ if (import.meta.main) serve(async (req) => {
           if (deudoresExtraidos.length > 0) {
             extracted.partes.deudores = deudoresExtraidos.map((d) => ({
               nombre: d.nombre,
+              apellidos: d.apellidos,
+              nombres: d.nombres,
               identificacion: d.identificacion,
               tipo_id: d.tipo_id,
               genero: d.genero,

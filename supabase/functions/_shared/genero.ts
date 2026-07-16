@@ -86,7 +86,17 @@ export function bancoTokens(t: TratamientoEntidad | undefined) {
   };
 }
 
-/** Helper de inferencia (espejo del frontend, para casos donde el payload no trae género). */
+/**
+ * Helper de inferencia (espejo del frontend, para casos donde el payload no trae género).
+ *
+ * IMPORTANTE: el input debe ser **nombres de pila** (ej. "MARGARITA IBETH"),
+ * NO el string completo con apellidos primero (formato registral
+ * "DIAZ GARCIA MARGARITA IBETH"). Toma el primer token con `.split(/\s+/)[0]`,
+ * así que si le pasas un string en formato registral la primera palabra será
+ * un apellido y devolverá "" (o el género INCORRECTO si el apellido coincide
+ * con un nombre del set, como MARIA/JOSE/ANDRES/DANIEL). Los callers son
+ * responsables de pasar el campo separado (`d.nombres`) cuando exista.
+ */
 const NOMBRES_F = new Set([
   "MARIA","ANA","ALEJANDRA","CLAUDIA","PATRICIA","SANDRA","DIANA","ANDREA","ANGELA",
   "LAURA","CAROLINA","PAOLA","NATALIA","CAMILA","VALENTINA","ISABELLA","SOFIA",
