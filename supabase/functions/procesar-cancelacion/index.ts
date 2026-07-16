@@ -1096,7 +1096,10 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
   const apoderadoPayload = ((pb as Record<string, unknown>).apoderado || {}) as ApoderadoPayload;
   const poderdantePayload = ((pb as Record<string, unknown>).poderdante || {}) as Record<string, string | null | undefined>;
   const instrumentoPayload = ((pb as Record<string, unknown>).instrumento_poder || {}) as Record<string, string | null | undefined>;
-  const classifierResult = classifyApoderado(apoderadoPayload);
+  const classifierResult = classifyApoderado(apoderadoPayload, {
+    instrumento_poder: instrumentoPayload as Record<string, string | null | undefined>,
+    has_apoderado_banco_v3: (pb as Record<string, unknown>).has_apoderado_banco_v3 as "true" | "false" | "null" | boolean | null | undefined,
+  });
   const bancoNit = (data.partes.banco_nit || "").toString();
   const bancoTemplate = getProsaBanco(bancoNit);
   let comparecenciaProsa: string | undefined;
