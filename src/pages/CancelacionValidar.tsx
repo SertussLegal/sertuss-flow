@@ -1380,6 +1380,101 @@ export const CancelacionValidar = () => {
                       </p>
                     </details>
 
+                    {/* ─── Poderdante (Banco) — 5 escalares editables ───
+                        `menciones_rl` NO se expone editable: es evidencia
+                        forense preservada íntegramente. La cédula escalar
+                        del RL es el punto de arbitraje humano (Manual > OCR)
+                        que suprime el hard-block de Regla 5. */}
+                    {(() => {
+                      const pd = ((pb as unknown as { poderdante?: Record<string, unknown> }).poderdante ?? {}) as Record<string, unknown>;
+                      const suspicious = new Set(
+                        (((pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious) ?? [])
+                          .filter((s): s is string => typeof s === "string"),
+                      );
+                      const setPD = (patch: PoderdanteScalarPatch) => {
+                        // Spread completo del subobjeto actual + patch — nunca
+                        // borra `menciones_rl` u otros campos no tocados.
+                        setPB({ poderdante: setPoderdantePatch(pd, patch) } as never);
+                      };
+                      const menciones = Array.isArray(pd.menciones_rl)
+                        ? (pd.menciones_rl as Array<Record<string, unknown>>)
+                        : [];
+                      const val = (k: string) =>
+                        (typeof pd[k] === "string" ? (pd[k] as string) : "") ?? "";
+                      return (
+                        <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Poderdante (Banco)
+                            </h4>
+                            <span className="text-[10px] text-muted-foreground">
+                              Menciones RL: {menciones.length}
+                            </span>
+                          </div>
+                          <Field
+                            label="Entidad (banco poderdante)"
+                            value={val("entidad_nombre")}
+                            onChange={(v) => setPD({ entidad_nombre: v })}
+                            suspicious={suspicious.has("poderdante.entidad_nombre")}
+                            suspiciousLabel="El nombre del banco poderdante no coincide con el acreedor hipotecario — verifica que el poder aplique."
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Field
+                              label="NIT del banco poderdante"
+                              value={val("entidad_nit")}
+                              onChange={(v) => setPD({ entidad_nit: v })}
+                              suspicious={suspicious.has("poderdante.entidad_nit")}
+                              suspiciousLabel="El NIT del banco poderdante no coincide con el acreedor — verifica manualmente."
+                            />
+                            <Field
+                              label="Cargo del RL"
+                              value={val("representante_legal_cargo")}
+                              onChange={(v) => setPD({ representante_legal_cargo: v })}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Field
+                              label="Nombre RL del banco"
+                              value={val("representante_legal_nombre")}
+                              onChange={(v) => setPD({ representante_legal_nombre: v })}
+                            />
+                            <Field
+                              label="Cédula RL del banco"
+                              value={val("representante_legal_cedula")}
+                              onChange={(v) => setPD({ representante_legal_cedula: v })}
+                              suspicious={suspicious.has("poderdante.representante_legal_cedula")}
+                              suspiciousLabel="Menciones del RL incoherentes entre secciones del PDF — arbitra manualmente contra el original."
+                            />
+                          </div>
+                          {menciones.length >= 1 && (
+                            <details className="rounded-md border border-border/40 bg-background/40 px-2 py-1.5">
+                              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground select-none">
+                                Ver menciones del RL en el PDF (evidencia forense, solo lectura)
+                              </summary>
+                              <ul className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+                                {menciones.map((m, i) => (
+                                  <li key={i} className="flex items-center gap-2 font-mono">
+                                    <span className="rounded bg-muted/60 px-1.5 py-0.5">
+                                      {String(m.seccion ?? "?")}
+                                    </span>
+                                    <span>ced: {String(m.cedula ?? "—")}</span>
+                                    {m.pagina !== undefined && (
+                                      <span className="text-muted-foreground/70">p. {String(m.pagina)}</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                              <p className="mt-1 text-[10px] text-muted-foreground/80">
+                                No se edita desde aquí — se preserva íntegro para trazabilidad. Corrige la cédula escalar del RL arriba y confirma revisión manual.
+                              </p>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+
+
                     {POWER_V5_ENABLED && row && getProsaBanco(data.partes.banco_nit) && (() => {
                       const baseContext = buildProsaContext(pb as never, ne);
                       const override = ((row as { prosa_apoderado_override?: ProsaApoderadoOverride | null })
