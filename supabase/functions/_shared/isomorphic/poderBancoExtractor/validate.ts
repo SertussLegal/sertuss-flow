@@ -408,6 +408,70 @@ export function validatePoderBancoCoherencia(
       }
     }
   }
+  // Regla 7 — Confianza baja reportada por Gemini en 4 campos críticos
+  //           (v7-2026-07, skill blindaje-anti-transposicion-ocr fase 4ª).
+  //
+  // Detecta "alucinación confiada": el modelo lee un valor consistente entre
+  // menciones (Reglas 5/6 no disparan) pero marca `confianza=baja`. Vive en
+  // el sidecar `_confianza` que `mergePoderBancoV6` emite — se recalcula por
+  // corrida OCR, no se persiste como fuente de verdad. Registros históricos
+  // sin sidecar → no dispara.
+  //
+  // Advertencia ámbar, NUNCA hard-block (sufijo `_confianza_baja` no coincide
+  // con `HARD_BLOCK_WARNING_SUFFIXES`). Excepción Manual>OCR idéntica al resto:
+  // si el humano confirmó revisión y el escalar tiene formato válido, suprime
+  // el warning — el sidecar se preserva como evidencia forense.
+  const confianzaMap = (merged._confianza ?? {}) as Record<string, unknown>;
+  const escrituraPlanoLegacy2 = merged.escritura_poder_num as string | undefined;
+  const fechaPlanoLegacy2 = merged.fecha_poder as string | undefined;
+
+  type ConfCheck = {
+    warning: string;
+    path: string;
+    valor: unknown;
+    validFormat: (v: string) => boolean;
+  };
+  const confChecks: ConfCheck[] = [
+    {
+      warning: "apoderado_cedula_confianza_baja",
+      path: "apoderado.cedula",
+      valor: apoderadoCedulaDeep ?? apoderadoCedulaPlano,
+      validFormat: (v) => isCedulaValida(v) && normalizeCedula(v).length > 0,
+    },
+    {
+      warning: "poderdante_rl_cedula_confianza_baja",
+      path: "poderdante.representante_legal_cedula",
+      valor: rlCedula,
+      validFormat: (v) => isCedulaValida(v) && normalizeCedula(v).length > 0,
+    },
+    {
+      warning: "escritura_poder_confianza_baja",
+      path: "instrumento_poder.escritura_num",
+      valor: instrEscritura ?? apoderadoEscritura ?? escrituraPlanoLegacy2,
+      validFormat: (v) => !!extractEscrituraDigits(v),
+    },
+    {
+      warning: "fecha_poder_confianza_baja",
+      path: "instrumento_poder.fecha",
+      valor: instrFecha ?? apoderadoFecha ?? fechaPlanoLegacy2,
+      validFormat: (v) => !!extractYear(v),
+    },
+  ];
+  for (const chk of confChecks) {
+    if (confianzaMap[chk.path] !== "baja") continue;
+    // No emitir warning si el escalar está vacío/ausente/NO_LEGIBLE (Regla 3
+    // ya lo cubre) o si su valor no tiene forma real.
+    if (typeof chk.valor !== "string") continue;
+    const trimmed = chk.valor.trim();
+    if (!trimmed) continue;
+    if (isNoLegible(trimmed)) continue;
+    // Excepción Manual>OCR: humano confirmó y el escalar tiene formato válido.
+    const humanArbitrated =
+      opts?.manualReviewConfirmed === true && chk.validFormat(trimmed);
+    if (humanArbitrated) continue;
+    warnings.push(chk.warning);
+    suspicious.add(chk.path);
+  }
 
   return { warnings, suspicious };
 }
