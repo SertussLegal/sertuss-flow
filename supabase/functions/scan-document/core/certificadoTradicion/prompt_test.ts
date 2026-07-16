@@ -26,3 +26,16 @@ Deno.test("A11: prompt sigue alineado con tool.ts (regla de separador)", async (
   const toolSrc = await Deno.readTextFile(new URL("./tool.ts", import.meta.url));
   assertStringIncludes(toolSrc, "NUNCA se verbaliza como la palabra 'GUION'");
 });
+
+Deno.test("ORIP-ZONA: prompt instruye preservar la zona ORIP de Bogotá en codigo_orip", () => {
+  assertStringIncludes(certificadoTradicionPrompt, "REGLA ORIP");
+  assertStringIncludes(certificadoTradicionPrompt, "BOGOTA ZONA CENTRO");
+  assertStringIncludes(certificadoTradicionPrompt, "PROHIBIDO inventar la zona");
+});
+
+Deno.test("ORIP-ZONA: tool.ts describe la regla de zona en codigo_orip", async () => {
+  const toolSrc = await Deno.readTextFile(new URL("./tool.ts", import.meta.url));
+  assertStringIncludes(toolSrc, "ZONA");
+  assertStringIncludes(toolSrc, "BOGOTA ZONA CENTRO");
+  assertStringIncludes(toolSrc, "PROHIBIDO inventar zona");
+});

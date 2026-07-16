@@ -1,101 +1,45 @@
-## Diagnóstico definitivo (evidencia ejecutada, no estática)
+# Capturar zona ORIP en el certificado de tradición
 
-Ejecuté las funciones reales con los datos exactos del trámite `1c63c1aa-…`. Resultado:
+## Diagnóstico confirmado
 
-### Bug #1 — `classifyApoderado` invocado sin `ctx` (causa raíz del PRIMERO ausente)
+- Schema Gemini (`certificadoTradicion/tool.ts:31`) tiene un solo campo `codigo_orip` con description mínima ("Código o nombre de la Oficina de Registro (ORIP)"). **No se instruye a Gemini a capturar la zona** ("BOGOTA ZONA CENTRO").
+- El texto "Oficina de Registro de Instrumentos Públicos de …" NO se arma en código: vive como placeholder Docxtemplater dentro de la plantilla `.docx` v2. El tag es `{{orip_ciudad}}` (y hay un `{{orip_zona}}` que hoy siempre llega vacío).
+- `src/lib/docxConsolidation.ts:421,441-442`: `orip_ciudad ← inmueble.codigo_orip`, `orip_zona ← ""` hardcoded.
+- Resultado actual: si el OCR devuelve "BOGOTA D.C.", la minuta imprime "BOGOTA D.C." y la operadora agrega la zona a mano.
 
-`supabase/functions/procesar-cancelacion/index.ts:1099`:
+## Enfoque propuesto (mínimo cambio, máximo efecto)
 
+**Opción A — Ampliar la description del OCR únicamente.** Sin schema nuevo, sin migración, sin tocar plantilla.
+
+### Cambio único
+
+`supabase/functions/scan-document/core/certificadoTradicion/tool.ts:31`
+
+Reemplazar:
 ```ts
-const classifierResult = classifyApoderado(apoderadoPayload);
+codigo_orip: confField("Código o nombre de la Oficina de Registro (ORIP)"),
 ```
+por una description explícita que instruya a Gemini a preservar la zona cuando aparezca en el encabezado del certificado. Regla:
 
-Falta el segundo argumento `{ instrumento_poder, has_apoderado_banco_v3 }`. El clasificador entonces evalúa la Regla C ("natural requiere evidencia del poder") **sin acceso a `instrumento_poder`**, y como el apoderado natural moderno tiene los datos del poder en `pb.instrumento_poder` (no como sustitución en `apoderado.escritura_poder_*`), degrada a `null` con motivo `natural_missing_poder_data`.
+- Si el encabezado dice `REGISTRO DE INSTRUMENTOS PUBLICOS DE <CIUDAD> ZONA <ZONA>` → devolver `"<CIUDAD> ZONA <ZONA>"` (ej: `"BOGOTA ZONA CENTRO"`, `"BOGOTA ZONA NORTE"`, `"BOGOTA ZONA SUR"`).
+- Si no aparece zona (ciudades con una sola ORIP) → devolver solo la ciudad tal como aparece.
+- Preservar mayúsculas del certificado. No inventar zona si no está escrita.
 
-Ejecución real:
+Opcionalmente, reforzar la misma regla en `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts` (una línea en la sección INMUEBLE).
 
-```
-Step 1a (código actual, SIN ctx):
-  { tipoEfectivo: null, motivos: ["natural_missing_poder_data"], fromOverride: false }
+### Por qué A y no B/C
 
-Step 1b (CON ctx correcto):
-  { tipoEfectivo: "natural", motivos: [], fromOverride: false }
-```
+- **B** (campo `orip_zona` dedicado) requiere: cambio schema OCR + backfill en `docxConsolidation.ts` + editar plantilla v2 en el bucket `cancelaciones-plantillas` para usar `{{orip_ciudad}} {{orip_zona}}`. Más superficie, más riesgo de romper trámites viejos.
+- **C** (regex post-proceso) es frágil: depende de que Gemini haya conservado la zona en el string, cosa que hoy justamente no hace.
+- Con A, el string "BOGOTA ZONA CENTRO" cae directo en `orip_ciudad` → la plantilla v2 imprime "…de BOGOTA ZONA CENTRO" sin cambiar plantilla ni consolidación.
 
-Con `tipoEfectivo=null`, la guarda en L1105 (`if (bancoTemplate && classifierResult.tipoEfectivo)`) es falsa → `comparecenciaProsa = undefined` → tag `{{comparecencia_prosa}}` vacío en Docxtemplater → párrafo PRIMERO ausente del docx generado (coincide con lo que descargaste).
+## Verificación
 
-`getProsaBanco` funciona correctamente con ambos formatos de NIT (Step 2).
+- Test unitario nuevo en `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` (ya existe el archivo) que asserte contra un fixture con encabezado "ZONA CENTRO" y otro sin zona.
+- Regen manual del trámite `1c63c1aa-…` en preview: confirmar que `codigo_orip` extraído ahora contiene "ZONA CENTRO" y que la minuta lo imprime sin edición manual.
 
-### Bug #2 (latente, más chico) — `comparecenciaNatural` lee del lugar equivocado
+## Fuera de alcance
 
-`supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts:54-60`:
-
-```ts
-const escrituraTxt = nn(ctx.apoderado.escritura_poder_num) ? ... : "___________";
-const fechaTxt    = fechaOTexto(ctx.apoderado.escritura_poder_fecha, null) || "___________";
-const notariaNum  = nn(ctx.apoderado.escritura_poder_notaria_num) ? ... : "___________";
-```
-
-Lee `ctx.apoderado.escritura_poder_*` (campos de sustitución). Cuando el poder es directo (persona natural apoderada directa del banco), los datos viven en `ctx.instrumento.escritura_num/fecha/fecha_texto/notaria_numero` — **no** en `apoderado.escritura_poder_*`. `comparecenciaJuridica` sí lee de `ctx.instrumento.*` (L78-85). Inconsistencia estructural.
-
-Confirmado por Step 3 real: con el bug #1 arreglado (`tipoEfectivo="natural"`), el render arroja:
-
-```
-COMPARECIÓ: ANA MARIA MONTOYA ECHEVERRY, colombiana, mayor de edad, domiciliada y
-residente de Bogotá, identificada con la cédula 41939243, manifestó: PRIMERO.- …
-mediante escritura pública número ___________ del ___________ otorgada en la
-notaría ___________ de Bogotá, …
-```
-
-Los `___________` deberían decir "siete mil trescientos sesenta y cuatro (7364)", "veintiséis (26) de mayo …", "veintinueve (29)". Los datos están en `pb.instrumento_poder`, pero `comparecenciaNatural` no los consulta.
-
-Además, `index.ts:1107` construye `baseCtx.apoderado` como `{ ...apoderadoPayload, tipo: … }` sin hidratar `escritura_poder_*` desde los campos planos legacy (`apoderado_escritura`, `apoderado_fecha`, `apoderado_notaria_poder`) ni desde `instrumento_poder`. `buildProsaContext.ts` del cliente sí hace ese fallback plano→nested, pero la edge no.
-
----
-
-## Plan de fix (mínimo, quirúrgico)
-
-### Cambio 1 — `procesar-cancelacion/index.ts:1099`
-
-Pasar el `ctx` al clasificador:
-
-```ts
-const classifierResult = classifyApoderado(apoderadoPayload, {
-  instrumento_poder: instrumentoPayload as any,
-  has_apoderado_banco_v3: (pb as any).has_apoderado_banco_v3,
-});
-```
-
-Esto por sí solo hace que el párrafo PRIMERO vuelva a emitirse en el docx.
-
-### Cambio 2 — `prosaBancos/davivienda.ts` `comparecenciaNatural` (L50-64)
-
-Preferir `ctx.instrumento.*` cuando esté presente, con fallback a los campos legacy `ctx.apoderado.escritura_poder_*`:
-
-```ts
-const escNum = ctx.instrumento?.escritura_num ?? ctx.apoderado.escritura_poder_num;
-const escFecha = ctx.instrumento?.fecha ?? ctx.apoderado.escritura_poder_fecha;
-const escFechaTexto = ctx.instrumento?.fecha_texto ?? null;
-const notNum = ctx.instrumento?.notaria_numero ?? ctx.apoderado.escritura_poder_notaria_num;
-const notCiu = ctx.instrumento?.notaria_ciudad ?? ctx.ciudad_firma ?? "Bogotá";
-```
-
-Y reemplazar los tres usos de `ctx.apoderado.escritura_poder_*` por estas variables. Añadir la ciudad de la notaría al string final para no quedar diciendo "notaría 29 de Bogotá" cuando el poder puede ser de otra ciudad.
-
-### Cambio 3 — tests
-
-- `src/shared/prosaBancos/__contract__/parity.test.ts`: agregar un caso "natural con `instrumento_poder` directo (no sustitución)" que verifique que el render incluye "7364" y "veintinueve (29)".
-- `src/shared/apoderadoClassifier.test.ts`: agregar caso `classifyApoderado(apo_natural_sin_sustitucion, { instrumento_poder: {…} })` → esperar `tipoEfectivo="natural"`.
-- Snapshot `referencia_davivienda.contract.json`: no cambia porque ese contrato usa persona jurídica.
-
-### No hacer en este cambio
-
-- **No** parchar la plantilla v2 (`{{comparecencia_prosa}}` ya está en ella — el bug es que el mapa de vars lo enviaba vacío; una vez arreglado, la plantilla actual funciona).
-- **No** tocar `POWER_V5_ENABLED` ni v3.
-- **No** modificar `buildProsaContext.ts` del cliente (ya hace bien el fallback plano→nested para el preview visual).
-
-### Detalles técnicos
-
-- Los tres callers de `generateAndUploadCancelacionDocs` (L2395, 2785, 3200) se benefician automáticamente del fix porque el choke point es único.
-- `mergeOverride` no toca `instrumento_poder`, así que no interfiere.
-- Regenerar el docx del trámite `1c63c1aa-…` después del deploy debe imprimir el párrafo PRIMERO correctamente. Verificación: descargar el nuevo docx y confirmar presencia de "COMPARECIÓ: ANA MARIA MONTOYA ECHEVERRY".
+- No se toca la plantilla `.docx` v2.
+- No se añaden columnas nuevas a `inmuebles`.
+- No se retro-corrigen trámites viejos (Alejandra sigue editando a mano los que ya cerró).
