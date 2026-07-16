@@ -1294,7 +1294,10 @@ export async function generateAndUploadCancelacionDocs(
  * Decide si la cancelación debe frenar antes de generar la minuta
  * (Fase E — bloqueo duro con override manual).
  */
-export function detectRequiereRevisionManual(extracted: CancelacionData): {
+export function detectRequiereRevisionManual(
+  extracted: CancelacionData,
+  opts?: { manualReviewConfirmed?: boolean },
+): {
   requiere: boolean;
   paths: string[];
   motivos: string[];
@@ -1319,7 +1322,21 @@ export function detectRequiereRevisionManual(extracted: CancelacionData): {
   const warningsInm = Array.isArray(im._coherencia_warnings)
     ? (im._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
     : [];
-  const motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
+  let motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
+
+  // Excepción "Manual > OCR > BD": si el humano confirmó revisión manual Y
+  // corrigió la cédula escalar del RL del banco a un valor con formato válido,
+  // el warning intra-documento `rl_banco_menciones_incoherentes` heredado del
+  // OCR deja de ser bloqueante. `menciones_rl` se preserva en data_final como
+  // evidencia forense — sólo suprimimos el efecto de hard-block. Ver
+  // `validate.ts::Regla 5` para el mismo criterio en la extracción en vivo.
+  if (opts?.manualReviewConfirmed === true) {
+    const poderdante = (pb.poderdante || {}) as Record<string, unknown>;
+    const rlCed = poderdante.representante_legal_cedula as string | undefined;
+    if (typeof rlCed === "string" && isCedulaValida(rlCed) && rlCed.trim() !== "") {
+      motivos = motivos.filter((m) => m !== "rl_banco_menciones_incoherentes");
+    }
+  }
 
   return {
     requiere: paths.length > 0 || motivos.length > 0,
