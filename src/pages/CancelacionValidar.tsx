@@ -1422,10 +1422,6 @@ export const CancelacionValidar = () => {
                         que suprime el hard-block de Regla 5. */}
                     {(() => {
                       const pd = ((pb as unknown as { poderdante?: Record<string, unknown> }).poderdante ?? {}) as Record<string, unknown>;
-                      const suspicious = new Set(
-                        (((pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious) ?? [])
-                          .filter((s): s is string => typeof s === "string"),
-                      );
                       const setPD = (patch: PoderdanteScalarPatch) => {
                         // Spread completo del subobjeto actual + patch — nunca
                         // borra `menciones_rl` u otros campos no tocados.
