@@ -1,45 +1,84 @@
-# Capturar zona ORIP en el certificado de tradición
+# Plan — Zona ORIP en Cancelaciones (revertir + diseño real)
 
-## Diagnóstico confirmado
+## Parte 1 — Reversión
 
-- Schema Gemini (`certificadoTradicion/tool.ts:31`) tiene un solo campo `codigo_orip` con description mínima ("Código o nombre de la Oficina de Registro (ORIP)"). **No se instruye a Gemini a capturar la zona** ("BOGOTA ZONA CENTRO").
-- El texto "Oficina de Registro de Instrumentos Públicos de …" NO se arma en código: vive como placeholder Docxtemplater dentro de la plantilla `.docx` v2. El tag es `{{orip_ciudad}}` (y hay un `{{orip_zona}}` que hoy siempre llega vacío).
-- `src/lib/docxConsolidation.ts:421,441-442`: `orip_ciudad ← inmueble.codigo_orip`, `orip_zona ← ""` hardcoded.
-- Resultado actual: si el OCR devuelve "BOGOTA D.C.", la minuta imprime "BOGOTA D.C." y la operadora agrega la zona a mano.
+Confirmado: el módulo `scan-document/core/certificadoTradicion/*` es el OCR de **Compraventa** (extractor tipo `certificado_tradicion` para el flujo de tramites de compraventa/hipoteca, no de Cancelaciones). El flujo real de Cancelaciones tiene su propio schema Gemini embebido dentro de `supabase/functions/procesar-cancelacion/index.ts` (líneas 214-266), y ahí NO existe ningún campo `codigo_orip` — la ORIP se infiere implícitamente de `inmueble.ciudad`. Por lo tanto los cambios del turno anterior no llegan al pipeline de Alejandra.
 
-## Enfoque propuesto (mínimo cambio, máximo efecto)
+Reversión a estado previo (`edt-842bf2bd-…`) de:
+- `supabase/functions/scan-document/core/certificadoTradicion/tool.ts` — restaurar `codigo_orip: confField("Código o nombre de la Oficina de Registro (ORIP)")`.
+- `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts` — remover la sección "REGLA ORIP" añadida.
+- `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` — remover los 2 tests `ORIP-ZONA` (dejar los `A11` que ya existían).
 
-**Opción A — Ampliar la description del OCR únicamente.** Sin schema nuevo, sin migración, sin tocar plantilla.
+## Parte 2 — Hallazgos del pipeline real de Cancelaciones
 
-### Cambio único
+Evidencia leída en `procesar-cancelacion/index.ts`:
 
-`supabase/functions/scan-document/core/certificadoTradicion/tool.ts:31`
+- **Schema Gemini `inmueble`** (L214-266): props = `matricula_inmobiliaria`, `descripcion_predio`, `nomenclatura_predio`, **`ciudad`**, `departamento`, `menciones_direccion[]`, `menciones_matricula[]`, `direccion_candidatas[]`. No hay `orip`, `oficina_registro`, ni `zona_orip`. `required: ["matricula_inmobiliaria","descripcion_predio","nomenclatura_predio","ciudad"]`.
+- **`ciudad_inmueble`** se calcula una sola vez (L957: `fixOcrTypos(data.inmueble.ciudad)`) y se usa en 3 sitios:
+  1. Coletilla dirección: `buildNomenclaturaFinal({ ciudad: ciudadInmueble, ... })` → arma `" DE LA CIUDAD Y/O MUNICIPIO DE ${ciudad}..."` (L749).
+  2. Detector `esBogota` regex `/^BOGOTA(\s|,|\.|$|D)/i` (activa sufijo "(DIRECCION CATASTRAL)").
+  3. Se emite como tag Docxtemplater `ciudad_inmueble` (L1157), que es lo que la plantilla v2 imprime en la cláusula "Oficina de Registro de Instrumentos Públicos de {{ciudad_inmueble}}".
+- **Confirmación empírica**: el .docx real del trámite `1c63c1aa-…` imprime "…Instrumentos Públicos de BOGOTA D.C." (sin zona). Coincide 1:1 con `data.inmueble.ciudad = "BOGOTA D.C."` (el OCR nunca capturó la zona porque el schema no la pide).
+- **Colisión de tag**: el mismo `{{ciudad_inmueble}}` se usa tanto en la cláusula ORIP como (potencialmente) en la coletilla de dirección expandida dentro de `nomenclatura_predio`. Si se contamina con "BOGOTA D.C. ZONA CENTRO", la coletilla quedaría "...DE LA CIUDAD Y/O MUNICIPIO DE BOGOTA D.C. ZONA CENTRO..." — incorrecto. Por lo tanto **no se puede reutilizar `ciudad_inmueble`** con el valor concatenado.
 
-Reemplazar:
+## Parte 3 — Diseño propuesto (a implementar tras aprobación)
+
+### 3.1 Schema Gemini (`procesar-cancelacion/index.ts`, bloque `inmueble` L214+)
+
+Añadir campo **opcional** (no en `required`):
 ```ts
-codigo_orip: confField("Código o nombre de la Oficina de Registro (ORIP)"),
+oficina_registro_zona: {
+  type: "string",
+  description: "Zona de la Oficina de Registro de Instrumentos Públicos (ORIP), SOLO si el encabezado del certificado la menciona explícitamente. Bogotá tiene múltiples zonas ORIP legalmente distintas (CENTRO/NORTE/SUR/OCCIDENTE/ZIPAQUIRA/FACATATIVA/FUSAGASUGA). Si el encabezado dice 'REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTA ZONA CENTRO' → devuelve 'ZONA CENTRO' (SOLO la zona, sin repetir ciudad — la ciudad va en 'ciudad'). Si el certificado NO menciona zona → cadena vacía ''. PROHIBIDO inventar la zona."
+}
 ```
-por una description explícita que instruya a Gemini a preservar la zona cuando aparezca en el encabezado del certificado. Regla:
 
-- Si el encabezado dice `REGISTRO DE INSTRUMENTOS PUBLICOS DE <CIUDAD> ZONA <ZONA>` → devolver `"<CIUDAD> ZONA <ZONA>"` (ej: `"BOGOTA ZONA CENTRO"`, `"BOGOTA ZONA NORTE"`, `"BOGOTA ZONA SUR"`).
-- Si no aparece zona (ciudades con una sola ORIP) → devolver solo la ciudad tal como aparece.
-- Preservar mayúsculas del certificado. No inventar zona si no está escrita.
+Además, una línea en el prompt (`generateExtractionPrompt` alrededor de L370-395) que refuerce la regla y aclare que la zona va SOLO en `oficina_registro_zona`, nunca dentro de `ciudad`.
 
-Opcionalmente, reforzar la misma regla en `supabase/functions/scan-document/core/certificadoTradicion/prompt.ts` (una línea en la sección INMUEBLE).
+### 3.2 Backend `buildDocxVars` (procesar-cancelacion/index.ts)
 
-### Por qué A y no B/C
+Nueva variable derivada (sin tocar `ciudad_inmueble` — preserva los otros 2 usos):
+```ts
+const zonaOrip = fixOcrTypos((data.inmueble.oficina_registro_zona || "").trim());
+const oficinaRegistroCiudad = zonaOrip
+  ? `${ciudadInmueble} ${zonaOrip}`
+  : ciudadInmueble;
+```
+Y emitirla en `vars`:
+```ts
+oficina_registro_ciudad: oficinaRegistroCiudad || undefined,
+```
 
-- **B** (campo `orip_zona` dedicado) requiere: cambio schema OCR + backfill en `docxConsolidation.ts` + editar plantilla v2 en el bucket `cancelaciones-plantillas` para usar `{{orip_ciudad}} {{orip_zona}}`. Más superficie, más riesgo de romper trámites viejos.
-- **C** (regex post-proceso) es frágil: depende de que Gemini haya conservado la zona en el string, cosa que hoy justamente no hace.
-- Con A, el string "BOGOTA ZONA CENTRO" cae directo en `orip_ciudad` → la plantilla v2 imprime "…de BOGOTA ZONA CENTRO" sin cambiar plantilla ni consolidación.
+### 3.3 Plantilla v2 — SÍ requiere edición (esta es la parte incómoda)
 
-## Verificación
+Como el tag actual en la cláusula ORIP es `{{ciudad_inmueble}}` (mismo tag que se usa dentro de la coletilla que arma `nomenclatura_predio`), **la plantilla `formato cancelacion hipoteca blanqueado v2.docx` en el bucket `cancelaciones-plantillas` necesita cambiar SOLO ese `{{ciudad_inmueble}}` específico** (el de la cláusula "Oficina de Registro de Instrumentos Públicos de …") por `{{oficina_registro_ciudad}}`.
 
-- Test unitario nuevo en `supabase/functions/scan-document/core/certificadoTradicion/prompt_test.ts` (ya existe el archivo) que asserte contra un fixture con encabezado "ZONA CENTRO" y otro sin zona.
-- Regen manual del trámite `1c63c1aa-…` en preview: confirmar que `codigo_orip` extraído ahora contiene "ZONA CENTRO" y que la minuta lo imprime sin edición manual.
+Opciones para hacerlo:
+- **Opción A (recomendada, humana)**: Alejandra (o quien maneja plantillas) descarga v2, edita en Word ese único tag y sube reemplazando. Cero riesgo de dañar estilos. Requiere coordinación fuera de este chat.
+- **Opción B (script)**: escribir un edge/script one-shot que baje v2, use `pizzip` para reemplazar textualmente `{{ciudad_inmueble}}` **por ocurrencia posicional** (no globalmente — el otro uso legítimo dentro de la coletilla debe quedar intacto). Requiere identificar el `<w:t>` exacto por contexto ("Oficina de Registro de Instrumentos Públicos de "). Frágil si el tag está partido entre runs.
 
-## Fuera de alcance
+### 3.4 Fallback de compatibilidad
 
-- No se toca la plantilla `.docx` v2.
-- No se añaden columnas nuevas a `inmuebles`.
-- No se retro-corrigen trámites viejos (Alejandra sigue editando a mano los que ya cerró).
+Para no romper trámites/plantillas viejas mientras se propaga el cambio de plantilla: emitir **ambos** tags con el mismo valor consolidado en la cláusula ORIP, pero mantener `ciudad_inmueble` puro (sin zona) para la coletilla. Es decir:
+- `ciudad_inmueble` = solo ciudad, sin zona (compat retro para coletilla y plantillas antiguas).
+- `oficina_registro_ciudad` = ciudad + zona (nuevo tag dedicado, plantilla v2 editada lo consumirá).
+
+Trámites viejos que sigan usando la plantilla antigua imprimirán "BOGOTA D.C." (comportamiento actual). Trámites nuevos con plantilla v2 editada imprimirán "BOGOTA D.C. ZONA CENTRO".
+
+### 3.5 Tests
+
+- `procesar-cancelacion/index_test.ts` (o test nuevo): con `inmueble.ciudad="BOGOTA D.C."` + `oficina_registro_zona="ZONA CENTRO"` → `vars.oficina_registro_ciudad === "BOGOTA D.C. ZONA CENTRO"` y `vars.ciudad_inmueble === "BOGOTA D.C."`.
+- Caso sin zona: `vars.oficina_registro_ciudad === vars.ciudad_inmueble === "MEDELLIN"`.
+- Verificar que `nomenclaturaFinal` (coletilla) NO contiene "ZONA".
+
+## Respuestas a tus 3 preguntas
+
+1. **¿Cuál es la variable actual en la plantilla v2?** Es `{{ciudad_inmueble}}` — el mismo tag que se usa en la coletilla de dirección. No hay tag independiente hoy.
+2. **¿La plantilla necesita edición?** Sí, obligatoriamente, porque el tag actual está compartido y sobrecargarlo con la zona rompería la coletilla. No hay forma limpia de resolverlo solo con código sin ensuciar los otros 2 usos.
+3. **¿Otro punto de lectura de `ciudad`/`ciudad_inmueble` que se escape?** Los 3 usos identificados (coletilla, esBogota, tag docx) son los únicos en `procesar-cancelacion/index.ts`. `ciudad_inmueble` también se copia a la fila persistida en `cancelaciones` (L3160) para display en UI — ese uso queda intacto porque no incluimos la zona ahí.
+
+## Confirmaciones pendientes antes de implementar
+
+- ¿Ok con **mantener `ciudad_inmueble` limpio + nuevo tag `oficina_registro_ciudad`** (opción de menor riesgo, retrocompatible)?
+- ¿Quién edita la plantilla v2 en el bucket — Alejandra manualmente (A) o script one-shot con pizzip (B)?
+- ¿Persistimos `oficina_registro_zona` en la tabla `cancelaciones` (columna nueva) o solo lo mantenemos volátil dentro de `data_final` JSON? Recomendación: solo dentro de `data_final` (evita migración).
