@@ -456,8 +456,17 @@ export const CancelacionValidar = () => {
             const apellidos = String(d?.apellidos ?? "").toUpperCase() || undefined;
             const nombres = String(d?.nombres ?? "").toUpperCase() || undefined;
             const nombreVerbatim = String(d?.nombre ?? "").toUpperCase();
-            return {
+            // Ensamblador determinista: mismo helper que usa `normalizeDeudores`
+            // en el backend. Cuando `nombres`+`apellidos` están poblados devuelve
+            // el orden notarial "NOMBRES APELLIDOS"; si no, cae al verbatim.
+            // Garantiza que lo que ve/aprueba el notario = lo que imprime la minuta.
+            const nombreEnsamblado = ensamblarNombreNotarial({
+              nombres,
+              apellidos,
               nombre: nombreVerbatim,
+            });
+            return {
+              nombre: nombreEnsamblado,
               apellidos,
               nombres,
               identificacion: onlyDigitsClient(d?.identificacion),
