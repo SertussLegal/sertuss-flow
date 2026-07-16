@@ -1,11 +1,6 @@
 ---
 name: blindaje-anti-transposicion-ocr
-description: Cuándo y cómo redundar extracciones OCR sobre un mismo campo crítico
-  para detectar transposiciones de dígitos y ruido de reconocimiento comparando
-  N menciones independientes del mismo dato dentro de un documento. Patrón
-  arquitectónico reutilizable (ya aplicado 3 veces en Sertuss: menciones_rl del
-  RL del banco, menciones_direccion e menciones_matricula del inmueble en
-  cancelaciones).
+description: "Cuándo y cómo redundar extracciones OCR sobre un mismo campo crítico para detectar transposiciones de dígitos y ruido de reconocimiento comparando N menciones independientes del mismo dato dentro de un documento. Patrón arquitectónico reutilizable (ya aplicado 3 veces en Sertuss: menciones_rl del RL del banco, menciones_direccion e menciones_matricula del inmueble en cancelaciones)."
 ---
 
 # Blindaje anti-transposición OCR
