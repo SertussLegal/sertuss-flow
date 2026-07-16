@@ -149,10 +149,22 @@ export interface CoherenciaResult {
   suspicious: Set<string>;
 }
 
+/** Opciones de contexto. `manualReviewConfirmed` refleja que el operador
+ *  humano ya confirmó revisión manual (`cancelaciones.revision_manual_confirmada_at`
+ *  no nulo) y por lo tanto la señal Manual > OCR aplica: si además corrigió
+ *  la cédula escalar del RL del banco a un valor con formato válido, la
+ *  incoherencia intra-documento de `menciones_rl[]` (Regla 5) deja de ser
+ *  bloqueante — `menciones_rl` se preserva íntegro como evidencia forense,
+ *  pero no se emite el warning que dispara el hard-block. */
+export interface CoherenciaOpts {
+  manualReviewConfirmed?: boolean;
+}
+
 /** Ejecuta las 4 reglas de coherencia sobre un payload `poder_banco` ya
  *  mergeado. Nunca lanza; devuelve resultado vacío si no hay señales. */
 export function validatePoderBancoCoherencia(
   merged: Record<string, unknown> | null | undefined,
+  opts?: CoherenciaOpts,
 ): CoherenciaResult {
   const warnings: string[] = [];
   const suspicious = new Set<string>();
