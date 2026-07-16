@@ -7,6 +7,8 @@ export const certificadoTradicionPrompt = `Eres un sistema OCR especializado en 
 
 2. INMUEBLE: matrícula inmobiliaria, ORIP, dirección, municipio, departamento, linderos completos (transcribir TEXTUALMENTE cada palabra), NUPRE/CHIP (código que suele comenzar con AAA), áreas (diferencia entre construida CONST y privada PRIV), tipo de predio, y si tiene propiedad horizontal con su escritura de constitución y reformas.
 
+REGLA ORIP — ZONA: el campo \`codigo_orip\` DEBE preservar la zona cuando el encabezado del certificado la incluya. Bogotá tiene múltiples zonas ORIP legalmente distintas (CENTRO, NORTE, SUR, OCCIDENTE, ZIPAQUIRÁ, FACATATIVÁ, FUSAGASUGÁ). Si lees "REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTA ZONA CENTRO" en el encabezado → codigo_orip = "BOGOTA ZONA CENTRO". Si el encabezado no menciona ZONA → devolver solo la ciudad. PROHIBIDO inventar la zona; PROHIBIDO omitirla cuando aparece literalmente.
+
 INFERENCIA JURÍDICA PH: Si detectas las palabras "Régimen de Propiedad Horizontal", "P.H.", "PH" o "PROPIEDAD HORIZONTAL" en cualquier anotación:
 - Marca es_propiedad_horizontal: true
 - Busca OBLIGATORIAMENTE: nombre del conjunto/edificio/agrupación, coeficiente de copropiedad, matrícula inmobiliaria matriz, escritura de constitución PH con su número, fecha, notaría y ciudad
