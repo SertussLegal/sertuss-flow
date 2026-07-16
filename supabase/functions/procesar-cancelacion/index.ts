@@ -2942,6 +2942,13 @@ if (import.meta.main) serve(async (req) => {
           delete (extracted as { poder_banco?: unknown }).poder_banco;
         }
 
+        // Coherencia intra-documento del inmueble (transposiciones dirección/matrícula).
+        await annotateInmuebleCoherencia(
+          supabaseService,
+          extracted.inmueble as unknown as Record<string, unknown>,
+          { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+        );
+
         // Telemetría no bloqueante (Eje A v3 + Plan v5/B5).
         const pbFilled = extracted.poder_banco
           ? Object.values(extracted.poder_banco).filter((v) => v != null && String(v).trim() !== "").length
