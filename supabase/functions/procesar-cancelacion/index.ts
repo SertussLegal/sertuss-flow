@@ -1391,18 +1391,15 @@ export function detectRequiereRevisionManual(
     : [];
   let motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
 
-  // Excepción "Manual > OCR > BD": si el humano confirmó revisión manual Y
-  // corrigió la cédula escalar del RL del banco a un valor con formato válido,
-  // el warning intra-documento `rl_banco_menciones_incoherentes` heredado del
-  // OCR deja de ser bloqueante. `menciones_rl` se preserva en data_final como
+  // Excepción "Manual > OCR > BD" generalizada: si el humano confirmó revisión
+  // manual Y corrigió el/los escalar(es) relacionado(s) con un warning
+  // `*_menciones_incoherentes` a valores con formato válido, ese warning deja
+  // de ser bloqueante. Las menciones crudas se preservan en data_final como
   // evidencia forense — sólo suprimimos el efecto de hard-block. Ver
-  // `validate.ts::Regla 5` para el mismo criterio en la extracción en vivo.
+  // `validate.ts` (Regla 5 RL banco, Regla 6 apoderado cédula, Reglas 1/2/3
+  // inmueble) para el mismo criterio en la extracción en vivo.
   if (opts?.manualReviewConfirmed === true) {
-    const poderdante = (pb.poderdante || {}) as Record<string, unknown>;
-    const rlCed = poderdante.representante_legal_cedula as string | undefined;
-    if (typeof rlCed === "string" && isCedulaValida(rlCed) && rlCed.trim() !== "") {
-      motivos = motivos.filter((m) => m !== "rl_banco_menciones_incoherentes");
-    }
+    motivos = applyManualOverrideExceptions(motivos, extracted);
   }
 
   return {
