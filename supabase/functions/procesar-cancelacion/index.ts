@@ -1008,7 +1008,7 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     .replace(/\s+/g, " ")
     .trim();
 
-  const departamentoInmueble = fixOcrTypos(((data.inmueble as Record<string, string>).departamento || "").trim().toUpperCase());
+  const departamentoInmueble = fixOcrTypos(((data.inmueble as unknown as Record<string, string>).departamento || "").trim().toUpperCase());
   const coletillaCiudad = ciudadInmueble
     ? ` DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble.toUpperCase()}${departamentoInmueble ? ` DEPARTAMENTO DE ${departamentoInmueble}` : ""}`
     : "";
