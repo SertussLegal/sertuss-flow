@@ -1347,8 +1347,12 @@ export const CancelacionValidar = () => {
                       </div>
                     )}
 
-                    <Field label="Nombre apoderado" value={pb.apoderado_nombre ?? ""}
-                      onChange={(v) => setPB({ apoderado_nombre: v })} />
+                    <Field
+                      label="Nombre apoderado"
+                      value={pb.apoderado_nombre ?? ""}
+                      onChange={(v) => setPB({ apoderado_nombre: v })}
+                      suspicious={suspicious.has("apoderado_nombre")}
+                    />
                     <SegmentedChoice
                       label="Género del apoderado"
                       options={[
@@ -1360,14 +1364,27 @@ export const CancelacionValidar = () => {
                       helper={`"el señor apoderado identificado" vs "la señora apoderada identificada".`}
                     />
                     <div className="grid grid-cols-2 gap-2">
-                      <Field label="Cédula" value={pb.apoderado_cedula ?? ""}
-                        onChange={(v) => setPB({ apoderado_cedula: v })} />
-                      <Field label="N° escritura del poder" value={pb.apoderado_escritura ?? ""}
-                        onChange={(v) => setPB({ apoderado_escritura: v })} />
+                      <Field
+                        label="Cédula"
+                        value={pb.apoderado_cedula ?? ""}
+                        onChange={(v) => setPB({ apoderado_cedula: v })}
+                        suspicious={suspicious.has("apoderado_cedula")}
+                        suspiciousLabel={cedulaSuspiciousLabel}
+                      />
+                      <Field
+                        label="N° escritura del poder"
+                        value={pb.apoderado_escritura ?? ""}
+                        onChange={(v) => setPB({ apoderado_escritura: v })}
+                        suspicious={suspicious.has("apoderado_escritura")}
+                      />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <Field label="Fecha del poder" value={pb.apoderado_fecha ?? ""}
-                        onChange={setFechaString} />
+                      <Field
+                        label="Fecha del poder"
+                        value={pb.apoderado_fecha ?? ""}
+                        onChange={setFechaString}
+                        suspicious={suspicious.has("apoderado_fecha")}
+                      />
                       <Field label="Notaría del poder" value={pb.apoderado_notaria_poder ?? ""}
                         onChange={(v) => setPB({ apoderado_notaria_poder: v })} />
                     </div>
