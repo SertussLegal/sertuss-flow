@@ -286,6 +286,12 @@ export function validatePoderBancoCoherencia(
   // Compara las cédulas normalizadas de todas las menciones independientes del
   // RL leídas en distintas secciones del MISMO PDF. Si ≥2 difieren, warning +
   // suspicious. Caso real que motivó la regla: 79392406 vs 79382406.
+  //
+  // Excepción "Manual > OCR > BD" (2026-07-16): cuando el operador ya
+  // confirmó revisión manual (opts.manualReviewConfirmed) Y corrigió la cédula
+  // escalar del RL a un valor con formato válido, la incoherencia entre
+  // menciones deja de ser bloqueante — el humano ya arbitró. `menciones_rl`
+  // no se toca: se preserva íntegro como evidencia forense en `data_final`.
   const menciones = (poderdante?.menciones_rl ?? []) as Array<Record<string, unknown>>;
   if (Array.isArray(menciones) && menciones.length >= 2) {
     const cedulasNorm = menciones
@@ -297,9 +303,16 @@ export function validatePoderBancoCoherencia(
       .filter((c) => c);
     const distintas = new Set(cedulasNorm);
     if (distintas.size >= 2) {
-      warnings.push("rl_banco_menciones_incoherentes");
-      suspicious.add("poderdante.menciones_rl");
-      suspicious.add("poderdante.representante_legal_cedula");
+      const humanArbitrated =
+        opts?.manualReviewConfirmed === true &&
+        typeof rlCedula === "string" &&
+        isCedulaValida(rlCedula) &&
+        normalizeCedula(rlCedula).length > 0;
+      if (!humanArbitrated) {
+        warnings.push("rl_banco_menciones_incoherentes");
+        suspicious.add("poderdante.menciones_rl");
+        suspicious.add("poderdante.representante_legal_cedula");
+      }
     }
   }
 
