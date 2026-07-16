@@ -2328,7 +2328,7 @@ if (import.meta.main) serve(async (req) => {
       try {
         const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
         const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-          supabaseService, cancelacionId, data, prosaOv,
+          supabaseService, cancelacionId, data, prosaOv, { manualReviewConfirmed: true },
         );
         const nowIso = new Date().toISOString();
         const { error: updErr } = await supabaseService.from("cancelaciones").update({
