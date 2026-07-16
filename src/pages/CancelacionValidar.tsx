@@ -34,6 +34,7 @@ import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/Pros
 import { getProsaBanco } from "@shared/prosaBancos";
 import { WARNING_LABELS } from "@shared/poderBancoExtractor/validate";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
+import { ensamblarNombreNotarial } from "@shared/ensamblarNombreNotarial";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
 // cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
@@ -455,8 +456,17 @@ export const CancelacionValidar = () => {
             const apellidos = String(d?.apellidos ?? "").toUpperCase() || undefined;
             const nombres = String(d?.nombres ?? "").toUpperCase() || undefined;
             const nombreVerbatim = String(d?.nombre ?? "").toUpperCase();
-            return {
+            // Ensamblador determinista: mismo helper que usa `normalizeDeudores`
+            // en el backend. Cuando `nombres`+`apellidos` están poblados devuelve
+            // el orden notarial "NOMBRES APELLIDOS"; si no, cae al verbatim.
+            // Garantiza que lo que ve/aprueba el notario = lo que imprime la minuta.
+            const nombreEnsamblado = ensamblarNombreNotarial({
+              nombres,
+              apellidos,
               nombre: nombreVerbatim,
+            });
+            return {
+              nombre: nombreEnsamblado,
               apellidos,
               nombres,
               identificacion: onlyDigitsClient(d?.identificacion),

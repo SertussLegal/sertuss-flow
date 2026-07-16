@@ -1352,6 +1352,83 @@ export async function generateAndUploadCancelacionDocs(
   return { minutaPath, certPath };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Excepción "Manual > OCR > BD" — reglas declarativas por warning.
+// Cuando el humano confirma revisión manual, cada warning con sufijo
+// `_menciones_incoherentes` se suprime SI Y SOLO SI el/los escalar(es)
+// relacionado(s) tienen formato válido tras la edición humana. Las
+// menciones crudas se preservan como evidencia forense.
+// ─────────────────────────────────────────────────────────────────────
+
+function isCedulaEditadaValida(v: unknown): boolean {
+  return typeof v === "string" && v.trim() !== "" && isCedulaValida(v);
+}
+
+function isMatriculaValida(v: unknown): boolean {
+  if (typeof v !== "string") return false;
+  const s = sanitizeMatricula(v);
+  return !!s && /^\d{1,4}[A-Z]?-\d{3,}$/.test(s);
+}
+
+function isDireccionEditadaValida(v: unknown): boolean {
+  if (typeof v !== "string") return false;
+  const s = v.trim();
+  return s.length >= 8 && s !== "NO_LEGIBLE" && !/^_+$/.test(s);
+}
+
+type ManualOverrideRule = {
+  warning: string;
+  canSuppress: (d: CancelacionData) => boolean;
+};
+
+const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
+  {
+    warning: "rl_banco_menciones_incoherentes",
+    canSuppress: (d) => {
+      const pb = (d.poder_banco || {}) as Record<string, unknown>;
+      const poderdante = (pb.poderdante || {}) as Record<string, unknown>;
+      return isCedulaEditadaValida(poderdante.representante_legal_cedula);
+    },
+  },
+  {
+    warning: "apoderado_cedula_menciones_incoherentes",
+    canSuppress: (d) => {
+      const pb = (d.poder_banco || {}) as Record<string, unknown>;
+      const apo = (pb.apoderado || {}) as Record<string, unknown>;
+      // Ambos escalares (plano + detalle) deben ser válidos: si sólo uno lo es,
+      // la incoherencia persiste DENTRO del propio data_final editado.
+      return isCedulaEditadaValida(pb.apoderado_cedula)
+          && isCedulaEditadaValida(apo.cedula);
+    },
+  },
+  {
+    warning: "inmueble_matricula_menciones_incoherentes",
+    canSuppress: (d) => {
+      const im = (d.inmueble || {}) as Record<string, unknown>;
+      return isMatriculaValida(im.matricula_inmobiliaria);
+    },
+  },
+  {
+    warning: "inmueble_direccion_menciones_incoherentes",
+    canSuppress: (d) => {
+      const im = (d.inmueble || {}) as Record<string, unknown>;
+      return isDireccionEditadaValida(im.nomenclatura_predio);
+    },
+  },
+];
+
+export function applyManualOverrideExceptions(
+  motivos: string[],
+  data: CancelacionData,
+): string[] {
+  return motivos.filter((m) => {
+    const rule = MANUAL_OVERRIDE_RULES.find((r) => r.warning === m);
+    if (!rule) return true;              // warning no cubierto → sigue bloqueando
+    return !rule.canSuppress(data);      // escalar válido → filtra el motivo
+  });
+}
+
+
 /**
  * Detector NO_LEGIBLE + coherencia post-merge. Inspecciona:
  *  1) los 6 paths del prompt v7 con centinela textual "NO_LEGIBLE".
@@ -1391,18 +1468,15 @@ export function detectRequiereRevisionManual(
     : [];
   let motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
 
-  // Excepción "Manual > OCR > BD": si el humano confirmó revisión manual Y
-  // corrigió la cédula escalar del RL del banco a un valor con formato válido,
-  // el warning intra-documento `rl_banco_menciones_incoherentes` heredado del
-  // OCR deja de ser bloqueante. `menciones_rl` se preserva en data_final como
+  // Excepción "Manual > OCR > BD" generalizada: si el humano confirmó revisión
+  // manual Y corrigió el/los escalar(es) relacionado(s) con un warning
+  // `*_menciones_incoherentes` a valores con formato válido, ese warning deja
+  // de ser bloqueante. Las menciones crudas se preservan en data_final como
   // evidencia forense — sólo suprimimos el efecto de hard-block. Ver
-  // `validate.ts::Regla 5` para el mismo criterio en la extracción en vivo.
+  // `validate.ts` (Regla 5 RL banco, Regla 6 apoderado cédula, Reglas 1/2/3
+  // inmueble) para el mismo criterio en la extracción en vivo.
   if (opts?.manualReviewConfirmed === true) {
-    const poderdante = (pb.poderdante || {}) as Record<string, unknown>;
-    const rlCed = poderdante.representante_legal_cedula as string | undefined;
-    if (typeof rlCed === "string" && isCedulaValida(rlCed) && rlCed.trim() !== "") {
-      motivos = motivos.filter((m) => m !== "rl_banco_menciones_incoherentes");
-    }
+    motivos = applyManualOverrideExceptions(motivos, extracted);
   }
 
   return {
