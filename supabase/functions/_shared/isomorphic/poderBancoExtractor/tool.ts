@@ -130,6 +130,32 @@ export const poderBancoTool = {
               additionalProperties: false,
             },
             sociedad_reformas: { type: "string", description: "Si tipo='juridica': reformas relevantes (ej: razón social). null si no aplica." },
+            menciones_cedula: {
+              type: "array",
+              description:
+                "TRAZABILIDAD ANTI-ALUCINACIÓN. Registra cada aparición INDEPENDIENTE de la cédula de un apoderado firmante dentro del MISMO PDF (cuerpo del poder, firma manuscrita, notas de identificación al pie, anexos). Cuando hay varios apoderados/suplentes (tipo='juridica' con representantes[]), transcribe el NOMBRE tal como aparece pegado a cada cédula para que el validador determinista agrupe por persona antes de comparar. NO inventes menciones; solo las que efectivamente leas. Si solo hay una mención legible, emite 1 sola entrada.",
+              items: {
+                type: "object",
+                properties: {
+                  seccion: {
+                    type: "string",
+                    enum: ["cuerpo_poder", "firma", "identificacion_al_pie", "anexo", "otro"],
+                    description: "Sección del PDF donde aparece esta mención.",
+                  },
+                  nombre: {
+                    type: "string",
+                    description: "Nombre tal como aparece pegado a la cédula en ESTA sección, MAYÚSCULAS. Sirve al backend para agrupar menciones del mismo firmante.",
+                  },
+                  cedula: {
+                    type: "string",
+                    description: "Cédula tal como aparece en esta sección. Solo dígitos. Si es ilegible, 'NO_LEGIBLE'.",
+                  },
+                  pagina: { type: "number", description: "Página del PDF (1-indexed) donde se leyó." },
+                },
+                required: ["seccion"],
+                additionalProperties: false,
+              },
+            },
             representantes: {
               type: "array",
               description: "Si tipo='juridica': RLs y suplentes designados para firmar la cancelación.",
