@@ -1323,10 +1323,22 @@ export const CancelacionValidar = () => {
                   "apoderado_cedula_placeholder",
                   "apoderado_cedula_menciones_incoherentes",
                   "apoderado_coincide_con_rl_banco",
+                  "apoderado_cedula_divergencia_plano_anidado",
                 ];
                 const cedulaSuspiciousLabel =
                   warnings
                     .filter((w): w is string => typeof w === "string" && cedulaWarningKeys.includes(w))
+                    .map((w) => WARNING_LABELS[w])
+                    .filter(Boolean)
+                    .join(" / ") || undefined;
+                const nombreWarningKeys = [
+                  "apoderado_nombre_duplicidad_cruzada",
+                  "apoderado_nombre_divergencia_plano_anidado",
+                  "apoderado_multiple_firmantes_ambiguo",
+                ];
+                const nombreSuspiciousLabel =
+                  warnings
+                    .filter((w): w is string => typeof w === "string" && nombreWarningKeys.includes(w))
                     .map((w) => WARNING_LABELS[w])
                     .filter(Boolean)
                     .join(" / ") || undefined;
