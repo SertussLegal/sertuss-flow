@@ -66,7 +66,7 @@ export const poderBancoTool = {
             entidad_nit: { type: "string", description: "NIT con DV en formato '900123456-7'. Sin puntos de miles. null si no es legible." },
             entidad_constitucion_escritura: { type: "string", description: "Escritura pública de constitución del banco, si aparece. Ej: '3892/1972 Notaría 14'. null si no aparece." },
             representante_legal_nombre: { type: "string", description: "Nombre completo del RL que firma EN NOMBRE del banco al otorgar este poder (NO confundir con el apoderado destinatario). null si no aparece." },
-            representante_legal_cedula: { type: "string", description: "Cédula del RL del banco. Solo dígitos. null si no es legible." },
+            representante_legal_cedula: confField("Cédula del RL del banco. Solo dígitos. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'."),
             representante_legal_cargo: { type: "string", description: "Cargo del firmante en el banco. Ej: 'SUPLENTE DEL PRESIDENTE'. null si no aparece." },
             representante_legal_cedula_expedida_en: { type: "string", description: "Ciudad de expedición de la cédula del RL del banco. Ej: 'BOGOTA D.C.'. null si no aparece." },
             menciones_rl: {
