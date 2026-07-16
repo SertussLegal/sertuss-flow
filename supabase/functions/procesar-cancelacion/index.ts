@@ -1548,10 +1548,32 @@ async function annotateInmuebleCoherencia(
   ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
 ): Promise<void> {
   if (!inmueble) return;
+
+  // Fase A — Selección determinista por índice más alto sobre
+  // `direccion_candidatas[]`. Sobreescribe `nomenclatura_predio` ANTES de
+  // que downstream (nomenclaturaBase L~955, docx L~1132, persistencia
+  // L~3111, UI) la lea. Fallback silencioso si el array no viene (dato
+  // histórico o modelo que no lo emitió). Ver
+  // supabase/functions/_shared/isomorphic/direccionCandidatasSelect.ts.
+  const candidatas = (inmueble as Record<string, unknown>).direccion_candidatas as
+    | Array<{ indice: string; valor: string }>
+    | undefined;
+  const nomenclaturaModelo = (inmueble as Record<string, unknown>).nomenclatura_predio as
+    | string
+    | undefined;
+  const sel = selectDireccionPorIndice(candidatas, nomenclaturaModelo);
+  if (sel.seleccionada) {
+    (inmueble as Record<string, unknown>).nomenclatura_predio = sel.seleccionada;
+  }
+
+  // Fase B — Coherencia intra-documento (ruido OCR dentro del ganador y
+  // matrícula). Ortogonal a Fase A.
   const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
-  (inmueble as Record<string, unknown>)._coherencia_warnings = warnings;
-  (inmueble as Record<string, unknown>)._coherencia_suspicious = Array.from(suspicious);
-  if (warnings.length === 0) return;
+  const allWarnings = [...sel.warnings, ...warnings];
+  const allSuspicious = new Set<string>([...sel.suspicious, ...suspicious]);
+  (inmueble as Record<string, unknown>)._coherencia_warnings = allWarnings;
+  (inmueble as Record<string, unknown>)._coherencia_suspicious = Array.from(allSuspicious);
+  if (allWarnings.length === 0) return;
   try {
     await supabase.from("system_events").insert({
       organization_id: ctx.orgId,
@@ -1562,8 +1584,10 @@ async function annotateInmuebleCoherencia(
       categoria: "ocr_certificado",
       detalle: {
         trigger: ctx.trigger,
-        warnings,
-        suspicious: Array.from(suspicious),
+        warnings: allWarnings,
+        suspicious: Array.from(allSuspicious),
+        indice_ganador: sel.indiceGanador,
+        diverge_del_modelo: sel.divergeDelModelo,
       },
     });
   } catch (_) { /* no bloqueante */ }
