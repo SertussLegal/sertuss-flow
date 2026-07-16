@@ -42,8 +42,21 @@ export function mergeRegenPayload<T extends Record<string, unknown>>(args: {
     (ovPB && "poderdante" in ovPB);
   const mergedPD = hasPD ? { ...iaPD, ...basePD, ...ovPD } : undefined;
 
+  // Merge por-clave DENTRO de `apoderado` — un override parcial del frontend
+  // (ej. solo `cedula`) NUNCA debe borrar `menciones_cedula` ni el resto de
+  // escalares/subobjetos heredados. Mismo criterio que `poderdante`.
+  const iaAp = (iaPB.apoderado ?? {}) as Record<string, unknown>;
+  const baseAp = (basePB.apoderado ?? {}) as Record<string, unknown>;
+  const ovAp = (ovPB.apoderado ?? {}) as Record<string, unknown>;
+  const hasAp =
+    (iaPB && "apoderado" in iaPB) ||
+    (basePB && "apoderado" in basePB) ||
+    (ovPB && "apoderado" in ovPB);
+  const mergedAp = hasAp ? { ...iaAp, ...baseAp, ...ovAp } : undefined;
+
   const mergedPB: Record<string, unknown> = { ...iaPB, ...basePB, ...ovPB };
   if (mergedPD !== undefined) mergedPB.poderdante = mergedPD;
+  if (mergedAp !== undefined) mergedPB.apoderado = mergedAp;
 
   return { ...base, ...overrides, poder_banco: mergedPB } as unknown as T;
 }

@@ -51,6 +51,33 @@ export function normalizeCedula(c: string | undefined | null): string {
   return c.replace(/[.\s-]/g, "").replace(/\D/g, "");
 }
 
+/** Normaliza un nombre de firmante para AGRUPAR menciones de la MISMA persona
+ *  antes de compararlas. Determinista, sin fuzzy match:
+ *   - uppercase
+ *   - strip de tildes
+ *   - strip de coletillas de cargo comunes (", SUPLENTE", "(PRIMER SUPLENTE)",
+ *     "- REPRESENTANTE LEGAL")
+ *   - colapso de espacios
+ *  Devuelve cadena vacía si el input es vacío/nully — el llamador filtra.
+ *  Nunca colapsa iniciales ni acorta nombres: transposición de nombre entre
+ *  firmantes distintos (Lina vs Kleitman) NUNCA debe unificarse. */
+export function normalizeNombreFirmante(raw: unknown): string {
+  if (raw == null) return "";
+  const s = typeof raw === "string" ? raw : String(raw);
+  const stripped = s
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // tildes
+    .toUpperCase()
+    .replace(/\([^)]*\)/g, " ")                       // coletillas entre paréntesis
+    .replace(/[,\-–]\s*(PRIMER |SEGUNDO |TERCER )?SUPLENTE\b/g, " ")
+    .replace(/[,\-–]\s*REPRESENTANTE LEGAL\b/g, " ")
+    .replace(/[,\-–]\s*GERENTE\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stripped) return "";
+  if (["", "NO_LEGIBLE", "N/A", "NULL", "UNDEFINED"].includes(stripped)) return "";
+  return stripped;
+}
+
 /** Cédulas "placeholder" observadas empíricamente como alucinaciones
  *  recurrentes del OCR (patrones tipo "79.123.456"). Se comparan tras
  *  normalizar (`normalizeCedula`). Ampliable sin migración — mantener
@@ -116,6 +143,8 @@ export const WARNING_LABELS: Record<string, string> = {
     "La dirección catastral se lee distinta en ≥2 secciones del mismo certificado (posible transposición de dígitos) — verifica manualmente contra el PDF original antes de firmar.",
   inmueble_matricula_menciones_incoherentes:
     "El número de matrícula inmobiliaria aparece distinto en ≥2 secciones del mismo certificado — verifica manualmente contra el PDF original antes de firmar.",
+  apoderado_cedula_menciones_incoherentes:
+    "La cédula del apoderado se lee distinta en ≥2 secciones del mismo poder (posible transposición de dígitos o atribución cruzada entre firmantes) — verifica manualmente contra el PDF original antes de firmar.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -141,6 +170,7 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "inmueble.nomenclatura_predio": "Dirección catastral (nomenclatura del predio)",
   "inmueble.menciones_matricula": "Menciones de matrícula inmobiliaria en el certificado",
   "inmueble.matricula_inmobiliaria": "Matrícula inmobiliaria",
+  "apoderado.menciones_cedula": "Menciones de la cédula del apoderado en el poder",
 };
 
 
@@ -312,6 +342,61 @@ export function validatePoderBancoCoherencia(
         warnings.push("rl_banco_menciones_incoherentes");
         suspicious.add("poderdante.menciones_rl");
         suspicious.add("poderdante.representante_legal_cedula");
+      }
+    }
+  }
+
+  // Regla 6 — Coherencia intra-documento de la cédula del apoderado
+  //           (Fase 3ª anti-transposición, skill blindaje-anti-transposicion-ocr).
+  //
+  // A diferencia de Regla 5 (RL del banco, un solo firmante), un poder puede
+  // designar VARIOS firmantes: RL principal + suplente(s). Comparar todas las
+  // menciones en un set plano produciría falsos positivos legítimos (Lina vs
+  // Kleitman). Por eso agrupamos por NOMBRE normalizado y comparamos solo
+  // dentro de cada grupo. Nombres vacíos/no legibles se descartan del set.
+  //
+  // Excepción "Manual > OCR": si el operador ya confirmó revisión manual y
+  // dejó la cédula escalar del apoderado en formato válido (natural:
+  // apoderado.cedula; juridica: todas las representantes[].cedula), el
+  // warning se suprime — la evidencia forense `menciones_cedula` se
+  // preserva íntegra.
+  const mAp = (apoderado?.menciones_cedula ?? []) as Array<Record<string, unknown>>;
+  if (Array.isArray(mAp) && mAp.length >= 2) {
+    const groups = new Map<string, Set<string>>();
+    for (const m of mAp) {
+      const nom = normalizeNombreFirmante(m?.nombre);
+      if (!nom) continue;
+      const raw = m?.cedula as string | undefined;
+      if (isNoLegible(raw)) continue;
+      const ced = normalizeCedula(raw);
+      if (!ced) continue;
+      if (!groups.has(nom)) groups.set(nom, new Set());
+      groups.get(nom)!.add(ced);
+    }
+    const inconsistente = Array.from(groups.values()).some((s) => s.size >= 2);
+    if (inconsistente) {
+      const tipoAp = apoderado?.tipo as string | undefined;
+      const escalaresValidos = (() => {
+        if (tipoAp === "juridica") {
+          if (!Array.isArray(representantes) || representantes.length === 0) return false;
+          return representantes.every((rep) => {
+            const c = rep?.cedula as string | undefined;
+            return isCedulaValida(c) && normalizeCedula(c).length > 0;
+          });
+        }
+        // natural o desconocido → validar escalar plano/profundo.
+        const anyValid = [apoderadoCedulaPlano, apoderadoCedulaDeep].some(
+          (c) => isCedulaValida(c) && normalizeCedula(c).length > 0,
+        );
+        return anyValid;
+      })();
+      const humanArbitrated =
+        opts?.manualReviewConfirmed === true && escalaresValidos;
+      if (!humanArbitrated) {
+        warnings.push("apoderado_cedula_menciones_incoherentes");
+        suspicious.add("apoderado.menciones_cedula");
+        suspicious.add("apoderado.cedula");
+        suspicious.add("apoderado_cedula");
       }
     }
   }

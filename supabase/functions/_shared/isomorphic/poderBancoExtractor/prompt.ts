@@ -118,6 +118,26 @@ verificación humana. NUNCA armonices menciones que difieren.
 Si solo hay 1 mención legible, devuelve 1 sola entrada (no rellenes).
 Si no hay ninguna mención legible, omite el array.
 
+═══════════════════════════════════════════════════════════════════════════════
+TRAZABILIDAD DE LA CÉDULA DEL APODERADO (apoderado.menciones_cedula[])
+═══════════════════════════════════════════════════════════════════════════════
+
+Antes de emitir apoderado.cedula (tipo='natural') o cada
+apoderado.representantes[].cedula (tipo='juridica'), transcribe ADEMÁS en
+apoderado.menciones_cedula[] cada aparición LITERAL de una cédula de firmante
+en el MISMO PDF (cuerpo del poder, firma manuscrita, identificación al pie de
+firma, anexos). En cada entrada incluye el NOMBRE tal como aparece pegado a
+esa cédula — sin reformatear, sin deducir, sin inventar.
+
+Objetivo: permitir al backend detectar transposiciones de dígitos Y
+atribuciones cruzadas cuando el poder designa varios firmantes (RL principal
++ suplente). El validador agrupa las menciones por nombre y compara solo
+dentro de cada grupo, así que nombres bien copiados son críticos.
+
+Si solo hay 1 mención legible, devuelve 1 sola entrada.
+Si la cédula está borrosa/tachada/cortada, escribe "NO_LEGIBLE" en cedula.
+Si no hay ninguna mención legible, omite el array.
+
 
 ═══════════════════════════════════════════════════════════════════════════════
 COMPATIBILIDAD LEGACY (mantener SIEMPRE)
