@@ -319,5 +319,60 @@ export function validatePoderBancoCoherencia(
     }
   }
 
+  // Regla 6 — Coherencia intra-documento de la cédula del apoderado
+  //           (Fase 3ª anti-transposición, skill blindaje-anti-transposicion-ocr).
+  //
+  // A diferencia de Regla 5 (RL del banco, un solo firmante), un poder puede
+  // designar VARIOS firmantes: RL principal + suplente(s). Comparar todas las
+  // menciones en un set plano produciría falsos positivos legítimos (Lina vs
+  // Kleitman). Por eso agrupamos por NOMBRE normalizado y comparamos solo
+  // dentro de cada grupo. Nombres vacíos/no legibles se descartan del set.
+  //
+  // Excepción "Manual > OCR": si el operador ya confirmó revisión manual y
+  // dejó la cédula escalar del apoderado en formato válido (natural:
+  // apoderado.cedula; juridica: todas las representantes[].cedula), el
+  // warning se suprime — la evidencia forense `menciones_cedula` se
+  // preserva íntegra.
+  const mAp = (apoderado?.menciones_cedula ?? []) as Array<Record<string, unknown>>;
+  if (Array.isArray(mAp) && mAp.length >= 2) {
+    const groups = new Map<string, Set<string>>();
+    for (const m of mAp) {
+      const nom = normalizeNombreFirmante(m?.nombre);
+      if (!nom) continue;
+      const raw = m?.cedula as string | undefined;
+      if (isNoLegible(raw)) continue;
+      const ced = normalizeCedula(raw);
+      if (!ced) continue;
+      if (!groups.has(nom)) groups.set(nom, new Set());
+      groups.get(nom)!.add(ced);
+    }
+    const inconsistente = Array.from(groups.values()).some((s) => s.size >= 2);
+    if (inconsistente) {
+      const tipoAp = apoderado?.tipo as string | undefined;
+      const escalaresValidos = (() => {
+        if (tipoAp === "juridica") {
+          if (!Array.isArray(representantes) || representantes.length === 0) return false;
+          return representantes.every((rep) => {
+            const c = rep?.cedula as string | undefined;
+            return isCedulaValida(c) && normalizeCedula(c).length > 0;
+          });
+        }
+        // natural o desconocido → validar escalar plano/profundo.
+        const anyValid = [apoderadoCedulaPlano, apoderadoCedulaDeep].some(
+          (c) => isCedulaValida(c) && normalizeCedula(c).length > 0,
+        );
+        return anyValid;
+      })();
+      const humanArbitrated =
+        opts?.manualReviewConfirmed === true && escalaresValidos;
+      if (!humanArbitrated) {
+        warnings.push("apoderado_cedula_menciones_incoherentes");
+        suspicious.add("apoderado.menciones_cedula");
+        suspicious.add("apoderado.cedula");
+        suspicious.add("apoderado_cedula");
+      }
+    }
+  }
+
   return { warnings, suspicious };
 }
