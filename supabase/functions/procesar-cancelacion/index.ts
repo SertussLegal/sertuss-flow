@@ -245,6 +245,19 @@ const tools = [
                   additionalProperties: false,
                 },
               },
+              direccion_candidatas: {
+                type: "array",
+                description: "BLINDAJE ANTI-SELECCIÓN-ALUCINADA. Transcribe TODOS los renglones numerados del bloque 'DIRECCION DEL INMUEBLE/PREDIO' del certificado de tradición, uno por renglón (arábigos '1)','2)','3)' o romanos 'I)','II)','III)'). Aplica el MISMO formato notarial TEXTO (NÚMERO) que aplicarías a nomenclatura_predio a CADA candidato (no dejes texto crudo sin formatear; misma limpieza: sin apartamento/torre/interior/conjunto, sin ciudad, sin sufijo '(DIRECCION CATASTRAL)', separador '-' símbolo nunca palabra 'GUION'). NO decidas cuál es el vigente — eso lo hace el backend por índice más alto. Si solo hay 1 renglón, emite 1 sola entrada — está bien.",
+                items: {
+                  type: "object",
+                  properties: {
+                    indice: { type: "string", description: "Índice tal como aparece: '1','2','3'… o romano 'I','II','III'…. Sin paréntesis final." },
+                    valor: { type: "string", description: "Dirección de ESTE renglón, ya formateada en notarial TEXTO (NÚMERO). Si el renglón es humanamente ilegible, emite 'NO_LEGIBLE'." },
+                  },
+                  required: ["indice", "valor"],
+                  additionalProperties: false,
+                },
+              },
             },
             required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
             additionalProperties: false,
