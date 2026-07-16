@@ -112,6 +112,10 @@ export const WARNING_LABELS: Record<string, string> = {
     "El NIT del banco que otorga el poder no coincide con el NIT del acreedor hipotecario extraído de la escritura/certificado — el poder podría no aplicar a esta cancelación.",
   poder_entidad_nombre_incoherente:
     "El nombre del banco que otorga el poder no coincide con el acreedor hipotecario extraído de la escritura/certificado — verifica que el poder corresponda a esta cancelación.",
+  inmueble_direccion_menciones_incoherentes:
+    "La dirección catastral se lee distinta en ≥2 secciones del mismo certificado (posible transposición de dígitos) — verifica manualmente contra el PDF original antes de firmar.",
+  inmueble_matricula_menciones_incoherentes:
+    "El número de matrícula inmobiliaria aparece distinto en ≥2 secciones del mismo certificado — verifica manualmente contra el PDF original antes de firmar.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -133,6 +137,10 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "poderdante.entidad_nombre": "Nombre del banco que otorga el poder",
   "partes.banco_nit": "NIT del banco acreedor (escritura/certificado)",
   "partes.banco_acreedor": "Nombre del banco acreedor (escritura/certificado)",
+  "inmueble.menciones_direccion": "Menciones de dirección catastral en el certificado",
+  "inmueble.nomenclatura_predio": "Dirección catastral (nomenclatura del predio)",
+  "inmueble.menciones_matricula": "Menciones de matrícula inmobiliaria en el certificado",
+  "inmueble.matricula_inmobiliaria": "Matrícula inmobiliaria",
 };
 
 
