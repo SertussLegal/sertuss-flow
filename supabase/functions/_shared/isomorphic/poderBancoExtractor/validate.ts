@@ -145,6 +145,14 @@ export const WARNING_LABELS: Record<string, string> = {
     "El número de matrícula inmobiliaria aparece distinto en ≥2 secciones del mismo certificado — verifica manualmente contra el PDF original antes de firmar.",
   apoderado_cedula_menciones_incoherentes:
     "La cédula del apoderado se lee distinta en ≥2 secciones del mismo poder (posible transposición de dígitos o atribución cruzada entre firmantes) — verifica manualmente contra el PDF original antes de firmar.",
+  apoderado_cedula_confianza_baja:
+    "El OCR reportó confianza baja al leer la cédula del apoderado — verifícala manualmente contra el PDF original antes de firmar.",
+  poderdante_rl_cedula_confianza_baja:
+    "El OCR reportó confianza baja al leer la cédula del representante legal del banco — verifícala manualmente contra el PDF original antes de firmar.",
+  escritura_poder_confianza_baja:
+    "El OCR reportó confianza baja al leer el número de escritura del poder — verifícalo manualmente contra el PDF original antes de firmar.",
+  fecha_poder_confianza_baja:
+    "El OCR reportó confianza baja al leer la fecha del poder — verifícala manualmente contra el PDF original antes de firmar.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
