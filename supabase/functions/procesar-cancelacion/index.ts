@@ -970,6 +970,17 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toUpperCase().trim();
   const esBogota = /^BOGOTA(\s|,|\.|$|D)/i.test(ciudadNorm);
+  // Zona ORIP (opcional): SOLO cuando el encabezado del certificado la menciona
+  // literalmente. NO se mezcla con `ciudadInmueble` para preservar la coletilla
+  // "DE LA CIUDAD Y/O MUNICIPIO DE ..." y el detector esBogota. Se emite como
+  // tag Docxtemplater dedicado `oficina_registro_ciudad` que consume la
+  // plantilla v2 en la cláusula "Oficina de Registro de Instrumentos Públicos de …".
+  const zonaOripRaw = fixOcrTypos((data.inmueble.oficina_registro_zona || "").trim());
+  const zonaOrip = zonaOripRaw.toUpperCase();
+  const oficinaRegistroCiudad = zonaOrip
+    ? `${ciudadInmueble} ${zonaOrip}`.replace(/\s+/g, " ").trim()
+    : ciudadInmueble;
+
 
   // Red de seguridad determinista: aunque Gemini se desborde, descartamos áreas,
   // linderos y coeficientes en el servidor antes de mapear a la plantilla.
