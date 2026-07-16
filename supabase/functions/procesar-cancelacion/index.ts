@@ -398,6 +398,13 @@ e) STRIP DE BASURA — qué NO incluir en 'nomenclatura_predio':
    - NO incluyas complementos arquitectónicos (TORRE, APARTAMENTO, INTERIOR, BLOQUE, MANZANA, CASA): esos van en 'descripcion_predio' aplicando el mismo formato TEXTO (NÚMERO) — TO/TORRE → "TORRE <letras> (N)"; AP/APTO/APARTAMENTO → "APARTAMENTO <letras> (N)"; INT/INTERIOR → "INTERIOR <letras> (N)"; BL/BLOQUE → "BLOQUE <letras> (N)"; MZ/MANZANA → "MANZANA <letras> (N)"; CS/CASA → "CASA <letras> (N)".
    Si el renglón del índice más alto trae cualquiera de estos elementos, elimínalos del valor devuelto en 'nomenclatura_predio' y reubícalos en su campo correspondiente.
 
+REGLA ORIP — ZONA REGISTRAL (campo 'oficina_registro_zona'):
+- Si el encabezado del certificado de tradición dice "REGISTRO DE INSTRUMENTOS PUBLICOS DE <CIUDAD> ZONA <ZONA>" (típico de Bogotá: CENTRO/NORTE/SUR/OCCIDENTE/ZIPAQUIRA/FACATATIVA/FUSAGASUGA), devuelve SOLO la zona en 'oficina_registro_zona' (ej: "ZONA CENTRO"). La ciudad va SIEMPRE en el campo 'ciudad' (ej: "BOGOTA D.C."), NUNCA concatenes la zona dentro de 'ciudad'.
+- Si el encabezado NO menciona zona (la mayoría de municipios), deja 'oficina_registro_zona' como cadena vacía "".
+- PROHIBIDO inventar la zona; PROHIBIDO omitir la zona cuando aparece literalmente en el encabezado.
+
+
+
 PODER GENERAL DEL BANCO (cuando se adjunte):
 - ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
 - Palabras clave para localizar al apoderado: 'CONFIERE PODER', 'APODERADO', 'REPRESENTANTE LEGAL', 'OTORGA PODER GENERAL', 'FACULTA A', 'ESCRITURA PÚBLICA No.', 'NOTARÍA'.
