@@ -155,6 +155,12 @@ export const WARNING_LABELS: Record<string, string> = {
     "El OCR reportó confianza baja al leer el número de escritura del poder — verifícalo manualmente contra el PDF original antes de firmar.",
   fecha_poder_confianza_baja:
     "El OCR reportó confianza baja al leer la fecha del poder — verifícala manualmente contra el PDF original antes de firmar.",
+  apoderado_nombre_divergencia_plano_anidado:
+    "El nombre del apoderado que corregiste no coincidía con el que se iba a usar en la redacción de la comparecencia/antefirma — se usó tu corrección en todo el documento.",
+  apoderado_cedula_divergencia_plano_anidado:
+    "La cédula del apoderado que corregiste no coincidía con la que se iba a usar en la redacción de la comparecencia/antefirma — se usó tu corrección en todo el documento.",
+  apoderado_multiple_firmantes_ambiguo:
+    "El poder tiene más de un firmante marcado — se usó el primero. Verifica que corresponda al que efectivamente firma.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
