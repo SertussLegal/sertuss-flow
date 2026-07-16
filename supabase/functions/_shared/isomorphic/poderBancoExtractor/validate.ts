@@ -51,6 +51,33 @@ export function normalizeCedula(c: string | undefined | null): string {
   return c.replace(/[.\s-]/g, "").replace(/\D/g, "");
 }
 
+/** Normaliza un nombre de firmante para AGRUPAR menciones de la MISMA persona
+ *  antes de compararlas. Determinista, sin fuzzy match:
+ *   - uppercase
+ *   - strip de tildes
+ *   - strip de coletillas de cargo comunes (", SUPLENTE", "(PRIMER SUPLENTE)",
+ *     "- REPRESENTANTE LEGAL")
+ *   - colapso de espacios
+ *  Devuelve cadena vacía si el input es vacío/nully — el llamador filtra.
+ *  Nunca colapsa iniciales ni acorta nombres: transposición de nombre entre
+ *  firmantes distintos (Lina vs Kleitman) NUNCA debe unificarse. */
+export function normalizeNombreFirmante(raw: unknown): string {
+  if (raw == null) return "";
+  const s = typeof raw === "string" ? raw : String(raw);
+  const stripped = s
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // tildes
+    .toUpperCase()
+    .replace(/\([^)]*\)/g, " ")                       // coletillas entre paréntesis
+    .replace(/[,\-–]\s*(PRIMER |SEGUNDO |TERCER )?SUPLENTE\b/g, " ")
+    .replace(/[,\-–]\s*REPRESENTANTE LEGAL\b/g, " ")
+    .replace(/[,\-–]\s*GERENTE\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stripped) return "";
+  if (["", "NO_LEGIBLE", "N/A", "NULL", "UNDEFINED"].includes(stripped)) return "";
+  return stripped;
+}
+
 /** Cédulas "placeholder" observadas empíricamente como alucinaciones
  *  recurrentes del OCR (patrones tipo "79.123.456"). Se comparan tras
  *  normalizar (`normalizeCedula`). Ampliable sin migración — mantener
