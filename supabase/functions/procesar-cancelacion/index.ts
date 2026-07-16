@@ -841,13 +841,27 @@ function normalizeDeudores(partes: CancelacionData["partes"]) {
         }]
       : [];
   return raw.map((d) => {
-    const nombre = String(d?.nombre ?? "").toUpperCase().trim();
-    const ident = onlyDigits(d?.identificacion);
-    const tipoIn = String(d?.tipo_id ?? "").toUpperCase().trim();
+    const dAny = d as { nombre?: unknown; apellidos?: unknown; nombres?: unknown; identificacion?: unknown; tipo_id?: unknown; genero?: unknown };
+    const apellidos = String(dAny?.apellidos ?? "").toUpperCase().trim();
+    const nombres = String(dAny?.nombres ?? "").toUpperCase().trim();
+    // Ensamblador determinista: NOMBRES APELLIDOS (orden notarial colombiano).
+    // Fallback a `nombre` verbatim para historicos o corridas donde el modelo
+    // no separó (retrocompat total). Espejo de `ensamblarNombreNotarial`.
+    const nombreLegacy = String(dAny?.nombre ?? "").toUpperCase().trim();
+    const nombre = (nombres && apellidos) ? `${nombres} ${apellidos}` : nombreLegacy;
+    const ident = onlyDigits(dAny?.identificacion);
+    const tipoIn = String(dAny?.tipo_id ?? "").toUpperCase().trim();
     const tipo_id = VALID_TIPO_ID.has(tipoIn) ? tipoIn : "CEDULA DE CIUDADANIA";
-    const genero: "M" | "F" | "" = ((d?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(nombre) || "") as "M" | "F" | "";
+    // Género: infiere desde `nombres` (nombres de pila aislados) cuando exista.
+    // Antes se pasaba el string completo y con formato registral (APELLIDOS primero)
+    // la primera palabra era un apellido → devolvía "" silenciosamente, o género
+    // INCORRECTO cuando el apellido coincidía con nombre del set (MARIA, JOSE, ...).
+    const generoInputParaInferencia = nombres || nombreLegacy;
+    const genero: "M" | "F" | "" = ((dAny?.genero as "M" | "F" | "" | undefined) || inferGeneroFromNombre(generoInputParaInferencia) || "") as "M" | "F" | "";
     return {
       nombre,
+      apellidos: apellidos || undefined,
+      nombres: nombres || undefined,
       identificacion: ident,
       identificacion_formateada: formatCC(ident),
       tipo_id,
