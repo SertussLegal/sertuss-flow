@@ -1415,6 +1415,7 @@ export const CancelacionValidar = () => {
                       value={pb.apoderado_nombre ?? ""}
                       onChange={(v) => setPB({ apoderado_nombre: v })}
                       suspicious={suspicious.has("apoderado_nombre")}
+                      suspiciousLabel={nombreSuspiciousLabel}
                     />
                     <SegmentedChoice
                       label="Género del apoderado"
