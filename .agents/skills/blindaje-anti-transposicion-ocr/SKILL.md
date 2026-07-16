@@ -210,13 +210,14 @@ test correspondiente.
 
 ## 8) Aplicaciones vivas y pendientes
 
-### Vivas (3)
+### Vivas (4)
 
 | # | Campo | Módulo | Warning | Tests |
 |---|---|---|---|---|
 | 1 | `poderdante.menciones_rl` (cédula RL banco) | `poderBancoExtractor/validate.ts` Regla 5 | `rl_banco_menciones_incoherentes` | `poderBancoValidateMencionesRL.test.ts` |
 | 2 | `inmueble.menciones_direccion` (cancelaciones) | `_shared/isomorphic/certificadoInmuebleValidate.ts` | `inmueble_direccion_menciones_incoherentes` | `certificadoInmuebleValidate.test.ts` |
 | 3 | `inmueble.menciones_matricula` (cancelaciones) | `_shared/isomorphic/certificadoInmuebleValidate.ts` | `inmueble_matricula_menciones_incoherentes` | `certificadoInmuebleValidate.test.ts` |
+| 4 | `apoderado.menciones_cedula` (cédula del apoderado, con desambiguación por nombre para múltiples firmantes) | `poderBancoExtractor/validate.ts` Regla 6 | `apoderado_cedula_menciones_incoherentes` | `poderBancoValidateMencionesApoderado.test.ts` |
 
 ### 4ª aplicación identificada — PAUSADA
 
