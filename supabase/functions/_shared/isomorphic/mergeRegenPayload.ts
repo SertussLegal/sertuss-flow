@@ -28,7 +28,22 @@ export function mergeRegenPayload<T extends Record<string, unknown>>(args: {
   const iaPB = (dataIa.poder_banco ?? {}) as Record<string, unknown>;
   const basePB = (base.poder_banco ?? {}) as Record<string, unknown>;
   const ovPB = (overrides.poder_banco ?? {}) as Record<string, unknown>;
-  const mergedPB = { ...iaPB, ...basePB, ...ovPB };
+
+  // Merge por-clave DENTRO de `poderdante` — un override parcial del frontend
+  // (ej. solo `representante_legal_cedula`) NUNCA debe borrar `menciones_rl`
+  // ni el resto de escalares heredados de data_ia/data_final. Aplica la misma
+  // filosofía que ya rige a nivel de `poder_banco`.
+  const iaPD = (iaPB.poderdante ?? {}) as Record<string, unknown>;
+  const basePD = (basePB.poderdante ?? {}) as Record<string, unknown>;
+  const ovPD = (ovPB.poderdante ?? {}) as Record<string, unknown>;
+  const hasPD =
+    (iaPB && "poderdante" in iaPB) ||
+    (basePB && "poderdante" in basePB) ||
+    (ovPB && "poderdante" in ovPB);
+  const mergedPD = hasPD ? { ...iaPD, ...basePD, ...ovPD } : undefined;
+
+  const mergedPB: Record<string, unknown> = { ...iaPB, ...basePB, ...ovPB };
+  if (mergedPD !== undefined) mergedPB.poderdante = mergedPD;
 
   return { ...base, ...overrides, poder_banco: mergedPB } as unknown as T;
 }

@@ -1253,11 +1253,14 @@ export async function generateAndUploadCancelacionDocs(
   cancelacionId: string,
   data: CancelacionData,
   prosaApoderadoOverride: ProsaApoderadoOverride | null,
+  opts?: { manualReviewConfirmed?: boolean },
 ): Promise<{ minutaPath: string; certPath: string }> {
   // Fail-safe por construcción: bloquear si persiste NO_LEGIBLE o hard-block.
   // Cubre los 3 call sites (flujo normal, confirm_manual_review, regen)
   // y cualquier call site futuro.
-  const revision = detectRequiereRevisionManual(data);
+  const revision = detectRequiereRevisionManual(data, {
+    manualReviewConfirmed: opts?.manualReviewConfirmed === true,
+  });
   if (revision.requiere) {
     throw new ManualReviewRequiredError(revision.paths, revision.motivos);
   }
@@ -1291,7 +1294,10 @@ export async function generateAndUploadCancelacionDocs(
  * Decide si la cancelación debe frenar antes de generar la minuta
  * (Fase E — bloqueo duro con override manual).
  */
-export function detectRequiereRevisionManual(extracted: CancelacionData): {
+export function detectRequiereRevisionManual(
+  extracted: CancelacionData,
+  opts?: { manualReviewConfirmed?: boolean },
+): {
   requiere: boolean;
   paths: string[];
   motivos: string[];
@@ -1316,7 +1322,21 @@ export function detectRequiereRevisionManual(extracted: CancelacionData): {
   const warningsInm = Array.isArray(im._coherencia_warnings)
     ? (im._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
     : [];
-  const motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
+  let motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
+
+  // Excepción "Manual > OCR > BD": si el humano confirmó revisión manual Y
+  // corrigió la cédula escalar del RL del banco a un valor con formato válido,
+  // el warning intra-documento `rl_banco_menciones_incoherentes` heredado del
+  // OCR deja de ser bloqueante. `menciones_rl` se preserva en data_final como
+  // evidencia forense — sólo suprimimos el efecto de hard-block. Ver
+  // `validate.ts::Regla 5` para el mismo criterio en la extracción en vivo.
+  if (opts?.manualReviewConfirmed === true) {
+    const poderdante = (pb.poderdante || {}) as Record<string, unknown>;
+    const rlCed = poderdante.representante_legal_cedula as string | undefined;
+    if (typeof rlCed === "string" && isCedulaValida(rlCed) && rlCed.trim() !== "") {
+      motivos = motivos.filter((m) => m !== "rl_banco_menciones_incoherentes");
+    }
+  }
 
   return {
     requiere: paths.length > 0 || motivos.length > 0,
@@ -1458,7 +1478,7 @@ function mergePoderBanco(
 // (el archivo actual tiene imports Deno + errores TS preexistentes que
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
-import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
+import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning, isCedulaValida } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
 import { validateInmuebleCoherencia } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
@@ -2308,7 +2328,7 @@ if (import.meta.main) serve(async (req) => {
       try {
         const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
         const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-          supabaseService, cancelacionId, data, prosaOv,
+          supabaseService, cancelacionId, data, prosaOv, { manualReviewConfirmed: true },
         );
         const nowIso = new Date().toISOString();
         const { error: updErr } = await supabaseService.from("cancelaciones").update({

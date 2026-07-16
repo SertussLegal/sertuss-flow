@@ -76,4 +76,49 @@ describe("Regla 5 — rl_banco_menciones_incoherentes", () => {
     expect(isHardBlockCoherenciaWarning("apoderado_cedula_no_legible")).toBe(true);
     expect(isHardBlockCoherenciaWarning("algun_warning_random")).toBe(false);
   });
+
+  it("8. Excepción Manual>OCR: humano confirmó + cédula RL escalar válida → warning suprimido, menciones_rl intactas", () => {
+    // Menciones incoherentes (dispararían Regla 5 en flujo normal).
+    const merged = baseMerged([
+      { seccion: "cuerpo_poder", cedula: "79392406" },
+      { seccion: "certificado_superfinanciera", cedula: "79382406" },
+    ]);
+    // Con confirmación humana Y cédula escalar de formato válido → suprimir.
+    const { warnings, suspicious } = validatePoderBancoCoherencia(merged, {
+      manualReviewConfirmed: true,
+    });
+    expect(warnings).not.toContain("rl_banco_menciones_incoherentes");
+    expect(suspicious.has("poderdante.menciones_rl")).toBe(false);
+    // El input de `menciones_rl` NO se muta: sigue siendo evidencia forense.
+    expect((merged.poderdante as any).menciones_rl).toHaveLength(2);
+    expect((merged.poderdante as any).menciones_rl[1].cedula).toBe("79382406");
+  });
+
+  it("9. Sin confirmación humana → warning sigue activo (no se suprime prematuramente)", () => {
+    const merged = baseMerged([
+      { seccion: "cuerpo_poder", cedula: "79392406" },
+      { seccion: "certificado_superfinanciera", cedula: "79382406" },
+    ]);
+    const { warnings } = validatePoderBancoCoherencia(merged, {
+      manualReviewConfirmed: false,
+    });
+    expect(warnings).toContain("rl_banco_menciones_incoherentes");
+  });
+
+  it("10. Confirmación humana + cédula escalar inválida (letras) → NO se suprime", () => {
+    const merged = {
+      poderdante: {
+        representante_legal_nombre: "FELIX",
+        representante_legal_cedula: "ABC-123", // formato inválido
+        menciones_rl: [
+          { seccion: "cuerpo_poder", cedula: "79392406" },
+          { seccion: "certificado_superfinanciera", cedula: "79382406" },
+        ],
+      },
+    };
+    const { warnings } = validatePoderBancoCoherencia(merged, {
+      manualReviewConfirmed: true,
+    });
+    expect(warnings).toContain("rl_banco_menciones_incoherentes");
+  });
 });
