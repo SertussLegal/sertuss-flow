@@ -72,4 +72,70 @@ describe("A1 backend — mergeRegenPayload", () => {
     const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides: null }) as Record<string, any>;
     expect(out.poder_banco.apoderado_nombre).toBe("IA");
   });
+
+  it("poderdante deep-merge: override parcial no borra menciones_rl ni otros escalares", () => {
+    const dataIa = {
+      poder_banco: {
+        poderdante: {
+          entidad_nombre: "DAVIVIENDA S.A.",
+          entidad_nit: "860.034.313-7",
+          representante_legal_nombre: "FELIX ROZO CAGUA",
+          representante_legal_cedula: "79392406",
+          menciones_rl: [
+            { seccion: "cuerpo_poder", cedula: "79392406", pagina: 1 },
+            { seccion: "certificado_superfinanciera", cedula: "79382406", pagina: 12 },
+          ],
+        },
+      },
+    };
+    const dataFinal = {
+      poder_banco: {
+        poderdante: {
+          entidad_nombre: "DAVIVIENDA S.A.",
+          entidad_nit: "860.034.313-7",
+          representante_legal_nombre: "FELIX ROZO CAGUA",
+          representante_legal_cedula: "79392406",
+          menciones_rl: [
+            { seccion: "cuerpo_poder", cedula: "79392406", pagina: 1 },
+            { seccion: "certificado_superfinanciera", cedula: "79382406", pagina: 12 },
+          ],
+        },
+      },
+    };
+    // El frontend solo edita la cédula escalar del RL.
+    const overrides = {
+      poder_banco: {
+        poderdante: { representante_legal_cedula: "79382406" },
+      },
+    };
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    const pd = out.poder_banco.poderdante;
+    // Override aplicado.
+    expect(pd.representante_legal_cedula).toBe("79382406");
+    // Escalares no tocados preservados.
+    expect(pd.entidad_nombre).toBe("DAVIVIENDA S.A.");
+    expect(pd.entidad_nit).toBe("860.034.313-7");
+    expect(pd.representante_legal_nombre).toBe("FELIX ROZO CAGUA");
+    // Evidencia forense intacta.
+    expect(Array.isArray(pd.menciones_rl)).toBe(true);
+    expect(pd.menciones_rl).toHaveLength(2);
+    expect(pd.menciones_rl[1].cedula).toBe("79382406");
+  });
+
+  it("poderdante: sin overrides.poderdante, no se pierde el bloque de data_ia", () => {
+    const dataIa = {
+      poder_banco: {
+        poderdante: {
+          entidad_nombre: "BANCO",
+          menciones_rl: [{ seccion: "cuerpo_poder", cedula: "1" }],
+        },
+      },
+    };
+    const dataFinal = null;
+    const overrides = { poder_banco: { apoderado_nombre: "X" } };
+    const out = mergeRegenPayload<any>({ dataIa, dataFinal, overrides }) as Record<string, any>;
+    expect(out.poder_banco.apoderado_nombre).toBe("X");
+    expect(out.poder_banco.poderdante.entidad_nombre).toBe("BANCO");
+    expect(out.poder_banco.poderdante.menciones_rl).toHaveLength(1);
+  });
 });
