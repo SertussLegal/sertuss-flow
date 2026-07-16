@@ -443,6 +443,10 @@ BLINDAJE ANTI-TRANSPOSICIÓN (dirección y matrícula):
 
 Antes de emitir 'inmueble.nomenclatura_predio' (que resulta de aplicar el "índice más alto" + formato TEXTO (NÚMERO)), transcribe ADEMÁS en 'inmueble.menciones_direccion[]' cada mención de dirección catastral tal como aparece LITERALMENTE en el bloque "DIRECCION DEL INMUEBLE" — sin reformatear, sin verbalizar, sin reordenar. Una entrada por renglón numerado (1), 2), 3)…).
 
+BLINDAJE ANTI-SELECCIÓN-ALUCINADA (dirección por índice):
+
+Además, emite 'inmueble.direccion_candidatas[]' con TODOS los renglones numerados del bloque "DIRECCION DEL INMUEBLE" ya formateados en notarial TEXTO (NÚMERO) — uno por renglón, con su índice ('1','2','3'… o romano 'I','II','III'…) en el campo 'indice'. NO decidas cuál es el vigente: el backend elige el de índice más alto. Aplica la misma limpieza que a 'nomenclatura_predio' (sin apartamento/torre/interior/conjunto, sin ciudad, sin sufijo catastral, separador '-' símbolo). Si solo hay un renglón, emite 1 sola entrada.
+
 Antes de emitir 'inmueble.matricula_inmobiliaria', transcribe en 'inmueble.menciones_matricula[]' cada aparición literal del número de matrícula (encabezado del certificado y pie de cada anotación relevante). Como mínimo el encabezado y una anotación.
 
 Objetivo: permitir al backend detectar transposiciones de dígitos (ej: 13C-05 vs 13C-09, 1572091 vs 1572081) comparando las menciones entre sí. Emite HONESTAMENTE lo que ves — si solo hay una mención legible, emite una. NO inventes menciones extra para llenar el arreglo. Si una mención es humanamente ilegible, emite "NO_LEGIBLE" como valor y continúa con las demás.
