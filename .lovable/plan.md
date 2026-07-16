@@ -1,64 +1,101 @@
-# Diagnóstico: PRIMERO ausente en la minuta
+## Diagnóstico definitivo (evidencia ejecutada, no estática)
 
-## Evidencia leída (sin cambios)
+Ejecuté las funciones reales con los datos exactos del trámite `1c63c1aa-…`. Resultado:
 
-### 1) `selectMinutaTemplate` — `procesar-cancelacion/index.ts` L47-75
+### Bug #1 — `classifyApoderado` invocado sin `ctx` (causa raíz del PRIMERO ausente)
+
+`supabase/functions/procesar-cancelacion/index.ts:1099`:
 
 ```ts
-const BUCKET_PLANTILLAS = "cancelaciones-plantillas";
-const TEMPLATE_MINUTA    = "formato cancelacion hipoteca blanqueado v2.docx";
-const TEMPLATE_MINUTA_V3 = "formato cancelacion hipoteca v3.docx";
-const TEMPLATE_CERT      = "CERTIFICADO can hipo blanqueado.docx";
-
-export function selectMinutaTemplate(data: CancelacionData): string {
-  if (!POWER_V5_ENABLED) return TEMPLATE_MINUTA;          // ← corta aquí
-  const pb  = (data.poder_banco || {}) as Record<string, unknown>;
-  const apo = (pb.apoderado    || {}) as Record<string, unknown>;
-  const tipo = typeof apo.tipo === "string" ? apo.tipo : "";
-  if (tipo === "natural" || tipo === "juridica") return TEMPLATE_MINUTA_V3;
-  return TEMPLATE_MINUTA;
-}
+const classifierResult = classifyApoderado(apoderadoPayload);
 ```
 
-### 2) Flag `POWER_V5_ENABLED` — `_shared/poderBancoSchemaVersion.ts`
+Falta el segundo argumento `{ instrumento_poder, has_apoderado_banco_v3 }`. El clasificador entonces evalúa la Regla C ("natural requiere evidencia del poder") **sin acceso a `instrumento_poder`**, y como el apoderado natural moderno tiene los datos del poder en `pb.instrumento_poder` (no como sustitución en `apoderado.escritura_poder_*`), degrada a `null` con motivo `natural_missing_poder_data`.
 
-- `POWER_DEEP_SCHEMA_ENABLED = readBoolEnv("POWER_DEEP_SCHEMA_ENABLED","POWER_V5_ENABLED", false)` — **default OFF**.
-- `POWER_V5_ENABLED` es alias de la anterior.
-- La lista de secrets del proyecto muestra `POWER_V6_EXTRACTOR_ENABLED` pero **no** hay `POWER_V5_ENABLED` ni `POWER_DEEP_SCHEMA_ENABLED` → resuelve a `false`.
+Ejecución real:
 
-⇒ `selectMinutaTemplate` retorna **siempre** `"formato cancelacion hipoteca blanqueado v2.docx"`, sin importar que `poder_banco.apoderado.tipo === "natural"` ni el flag de datos `has_apoderado_banco_v3="true"`. Ese último flag es del extractor (datos OCR), no del selector de plantilla — no se confunden en el código.
+```
+Step 1a (código actual, SIN ctx):
+  { tipoEfectivo: null, motivos: ["natural_missing_poder_data"], fromOverride: false }
 
-### 3) Plantillas presentes en `cancelaciones-plantillas` (query real a `storage.objects`)
+Step 1b (CON ctx correcto):
+  { tipoEfectivo: "natural", motivos: [], fromOverride: false }
+```
 
-| archivo | tamaño | modificado |
-|---|---:|---|
-| `davivienda/formato cancelacion hipoteca blanqueado v2.docx` | 23,679 B | 2026-07-15 |
-| `davivienda/formato cancelacion hipoteca v3.docx` | **14,135 B** | 2026-07-04 |
-| `davivienda/CERTIFICADO can hipo blanqueado.docx` | 28,444 B | 2026-05-21 |
-| `davivienda/EJEMPLO_REFERENCIA_PROSA_{NATURAL,JURIDICA}_DAVIVIENDA.docx` | 82K / 42K | 2026-07-05 |
+Con `tipoEfectivo=null`, la guarda en L1105 (`if (bancoTemplate && classifierResult.tipoEfectivo)`) es falsa → `comparecenciaProsa = undefined` → tag `{{comparecencia_prosa}}` vacío en Docxtemplater → párrafo PRIMERO ausente del docx generado (coincide con lo que descargaste).
 
-Nota: los nombres tienen prefijo `davivienda/`; el código los carga con nombre pelado — habría que confirmar cómo se resuelve el path completo en `fillTemplate` (línea 1224+), pero eso es tangencial: la clave es qué archivo se pide.
+`getProsaBanco` funciona correctamente con ambos formatos de NIT (Step 2).
 
-### 4) Conclusión con evidencia
+### Bug #2 (latente, más chico) — `comparecenciaNatural` lee del lugar equivocado
 
-- El trámite `1c63c1aa-…` fue generado con **v2** (`formato cancelacion hipoteca blanqueado v2.docx`).
-- Coincide con la memoria del proyecto: v3 sigue **dormida detrás de `POWER_V5_ENABLED=false`**, sin test de estructura, 14 KB vs 282 KB de otras plantillas — nota pendiente registrada en `poderBancoSchemaVersion.ts` L57-62.
-- La prosa `comparecencia_prosa` **sí se calcula** en el mapa `vars` (L1101-1117), pero **v2 no tiene el tag** `{{comparecencia_prosa}}` → Docxtemplater no la imprime → el párrafo PRIMERO desaparece completo del docx.
-- 100% consistente con lo que ya observaste en el XML del documento generado.
+`supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts:54-60`:
 
-## Opciones de corrección (para elegir; no implementar aún)
+```ts
+const escrituraTxt = nn(ctx.apoderado.escritura_poder_num) ? ... : "___________";
+const fechaTxt    = fechaOTexto(ctx.apoderado.escritura_poder_fecha, null) || "___________";
+const notariaNum  = nn(ctx.apoderado.escritura_poder_notaria_num) ? ... : "___________";
+```
 
-### Opción A — Encender v3 en preview y auditar
-Setear `POWER_V5_ENABLED=true` (edge) y `VITE_POWER_DEEP_UI_ENABLED` ya está ON. Regenerar el trámite. Requiere **antes** validar que `v3.docx` (14 KB) contiene todos los tags que `buildDocxVars` emite — probable riesgo de otros campos vacíos. La memoria advierte explícitamente contra encender el flag sin auditar.
+Lee `ctx.apoderado.escritura_poder_*` (campos de sustitución). Cuando el poder es directo (persona natural apoderada directa del banco), los datos viven en `ctx.instrumento.escritura_num/fecha/fecha_texto/notaria_numero` — **no** en `apoderado.escritura_poder_*`. `comparecenciaJuridica` sí lee de `ctx.instrumento.*` (L78-85). Inconsistencia estructural.
 
-### Opción B — Parchar la plantilla v2 (recomendado, quirúrgico)
-Insertar en `v2.docx` un párrafo con `{{comparecencia_prosa}}` (y opcionalmente `{{antefirma_prosa}}` / `{{nota_autorizacion_prosa}}` donde corresponda). Cero código, cero flags. Solo edición de plantilla en el bucket. `nullGetter` ya cubre trámites legacy sin `poder_banco` (queda vacío ≡ estado actual).
+Confirmado por Step 3 real: con el bug #1 arreglado (`tipoEfectivo="natural"`), el render arroja:
 
-### Opción C — Emitir la prosa por otro tag legacy ya presente en v2
-Si v2 tiene algún tag actualmente vacío que se imprime en la posición de PRIMERO (p.ej. `apoderado_nombre` u otro), mapear `comparecencia_prosa` a ese tag como fallback. Frágil — puede pisar contenido en trámites viejos. **No recomendado**.
+```
+COMPARECIÓ: ANA MARIA MONTOYA ECHEVERRY, colombiana, mayor de edad, domiciliada y
+residente de Bogotá, identificada con la cédula 41939243, manifestó: PRIMERO.- …
+mediante escritura pública número ___________ del ___________ otorgada en la
+notaría ___________ de Bogotá, …
+```
 
-## Lo que necesito de ti antes de implementar
+Los `___________` deberían decir "siete mil trescientos sesenta y cuatro (7364)", "veintiséis (26) de mayo …", "veintinueve (29)". Los datos están en `pb.instrumento_poder`, pero `comparecenciaNatural` no los consulta.
 
-1. ¿Vamos con **B** (parchar v2 subiendo una nueva versión al bucket, sin tocar código)? Es lo más seguro.
-2. Si sí — ¿me subes tú el `.docx` con el placeholder ya insertado, o quieres que en modo build baje v2, le inserte `{{comparecencia_prosa}}` en la posición correcta con `docx`/`pizzip`, y lo re-suba? Lo segundo requiere que yo edite un `.docx` binario a ciegas (posición del párrafo, formato) — más frágil que hacerlo tú en Word.
-3. ¿O prefieres **A** y auditamos v3 primero (ver qué tags faltan)?
+Además, `index.ts:1107` construye `baseCtx.apoderado` como `{ ...apoderadoPayload, tipo: … }` sin hidratar `escritura_poder_*` desde los campos planos legacy (`apoderado_escritura`, `apoderado_fecha`, `apoderado_notaria_poder`) ni desde `instrumento_poder`. `buildProsaContext.ts` del cliente sí hace ese fallback plano→nested, pero la edge no.
+
+---
+
+## Plan de fix (mínimo, quirúrgico)
+
+### Cambio 1 — `procesar-cancelacion/index.ts:1099`
+
+Pasar el `ctx` al clasificador:
+
+```ts
+const classifierResult = classifyApoderado(apoderadoPayload, {
+  instrumento_poder: instrumentoPayload as any,
+  has_apoderado_banco_v3: (pb as any).has_apoderado_banco_v3,
+});
+```
+
+Esto por sí solo hace que el párrafo PRIMERO vuelva a emitirse en el docx.
+
+### Cambio 2 — `prosaBancos/davivienda.ts` `comparecenciaNatural` (L50-64)
+
+Preferir `ctx.instrumento.*` cuando esté presente, con fallback a los campos legacy `ctx.apoderado.escritura_poder_*`:
+
+```ts
+const escNum = ctx.instrumento?.escritura_num ?? ctx.apoderado.escritura_poder_num;
+const escFecha = ctx.instrumento?.fecha ?? ctx.apoderado.escritura_poder_fecha;
+const escFechaTexto = ctx.instrumento?.fecha_texto ?? null;
+const notNum = ctx.instrumento?.notaria_numero ?? ctx.apoderado.escritura_poder_notaria_num;
+const notCiu = ctx.instrumento?.notaria_ciudad ?? ctx.ciudad_firma ?? "Bogotá";
+```
+
+Y reemplazar los tres usos de `ctx.apoderado.escritura_poder_*` por estas variables. Añadir la ciudad de la notaría al string final para no quedar diciendo "notaría 29 de Bogotá" cuando el poder puede ser de otra ciudad.
+
+### Cambio 3 — tests
+
+- `src/shared/prosaBancos/__contract__/parity.test.ts`: agregar un caso "natural con `instrumento_poder` directo (no sustitución)" que verifique que el render incluye "7364" y "veintinueve (29)".
+- `src/shared/apoderadoClassifier.test.ts`: agregar caso `classifyApoderado(apo_natural_sin_sustitucion, { instrumento_poder: {…} })` → esperar `tipoEfectivo="natural"`.
+- Snapshot `referencia_davivienda.contract.json`: no cambia porque ese contrato usa persona jurídica.
+
+### No hacer en este cambio
+
+- **No** parchar la plantilla v2 (`{{comparecencia_prosa}}` ya está en ella — el bug es que el mapa de vars lo enviaba vacío; una vez arreglado, la plantilla actual funciona).
+- **No** tocar `POWER_V5_ENABLED` ni v3.
+- **No** modificar `buildProsaContext.ts` del cliente (ya hace bien el fallback plano→nested para el preview visual).
+
+### Detalles técnicos
+
+- Los tres callers de `generateAndUploadCancelacionDocs` (L2395, 2785, 3200) se benefician automáticamente del fix porque el choke point es único.
+- `mergeOverride` no toca `instrumento_poder`, así que no interfiere.
+- Regenerar el docx del trámite `1c63c1aa-…` después del deploy debe imprimir el párrafo PRIMERO correctamente. Verificación: descargar el nuevo docx y confirmar presencia de "COMPARECIÓ: ANA MARIA MONTOYA ECHEVERRY".
