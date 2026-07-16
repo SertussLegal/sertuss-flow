@@ -66,7 +66,7 @@ export const poderBancoTool = {
             entidad_nit: { type: "string", description: "NIT con DV en formato '900123456-7'. Sin puntos de miles. null si no es legible." },
             entidad_constitucion_escritura: { type: "string", description: "Escritura pública de constitución del banco, si aparece. Ej: '3892/1972 Notaría 14'. null si no aparece." },
             representante_legal_nombre: { type: "string", description: "Nombre completo del RL que firma EN NOMBRE del banco al otorgar este poder (NO confundir con el apoderado destinatario). null si no aparece." },
-            representante_legal_cedula: { type: "string", description: "Cédula del RL del banco. Solo dígitos. null si no es legible." },
+            representante_legal_cedula: confField("Cédula del RL del banco. Solo dígitos. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'."),
             representante_legal_cargo: { type: "string", description: "Cargo del firmante en el banco. Ej: 'SUPLENTE DEL PRESIDENTE'. null si no aparece." },
             representante_legal_cedula_expedida_en: { type: "string", description: "Ciudad de expedición de la cédula del RL del banco. Ej: 'BOGOTA D.C.'. null si no aparece." },
             menciones_rl: {
@@ -106,7 +106,7 @@ export const poderBancoTool = {
                 "'natural' = persona natural firma directamente. 'juridica' = sociedad apoderada con sus propios representantes (cadena de 3 niveles).",
             },
             nombre: { type: "string", description: "Si tipo='natural': nombre completo en MAYÚSCULAS." },
-            cedula: { type: "string", description: "Si tipo='natural': cédula. Solo dígitos. Si aparece en el documento pero es ilegible (borrosa/tachada/cortada), devuelve exactamente 'NO_LEGIBLE' en vez de inventar." },
+            cedula: confField("Si tipo='natural': cédula. Solo dígitos. Si aparece en el documento pero es ilegible (borrosa/tachada/cortada), devuelve exactamente 'NO_LEGIBLE' en vez de inventar."),
             sociedad_razon_social: { type: "string", description: "Si tipo='juridica': razón social en MAYÚSCULAS. Ej: 'CONECTIVA GLOBAL S.A.S.'" },
             sociedad_nit: { type: "string", description: "Si tipo='juridica': NIT con DV. Ej: '900666582-8'." },
             sociedad_constitucion: {
@@ -180,8 +180,8 @@ export const poderBancoTool = {
           type: "object",
           description: "Datos de la escritura pública que constituye el poder.",
           properties: {
-            escritura_num: { type: "string", description: "Número de escritura. Solo dígitos. Ej: '16390'. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'." },
-            fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD si se puede inferir. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'." },
+            escritura_num: confField("Número de escritura. Solo dígitos. Ej: '16390'. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'."),
+            fecha: confField("Fecha en formato YYYY-MM-DD si se puede inferir. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'."),
             fecha_texto: { type: "string", description: "Fecha tal como aparece, formato notarial libre. Si aparece pero es ilegible, devuelve exactamente 'NO_LEGIBLE'." },
             notaria_numero: { type: "string", description: "Número de notaría. Solo dígitos." },
             notaria_ciudad: { type: "string", description: "Ciudad. MAYÚSCULAS." },

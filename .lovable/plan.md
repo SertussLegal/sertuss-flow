@@ -1,190 +1,113 @@
 
-# Blindaje anti-transposición cédula apoderado — extensión skill al 3er GAP
+# Regla 7 — confianza en 4 campos profundos del poder bancario
 
-Extiende el patrón `menciones_X` (skill `blindaje-anti-transposicion-ocr`, ya vivo en `menciones_rl`, `menciones_direccion`, `menciones_matricula`) al **apoderado destinatario del poder**, cuya cédula hoy no tiene comparador de menciones — solo Reglas 2.2/2.3/3/4 (formato, longitud, NO_LEGIBLE, placeholder).
-
-> Este plan es idéntico al aprobado e implementado en el turno anterior (11 tests nuevos verdes + 68 de regresión intactos, total 79). Se re-emite sin cambios por estar de vuelta en plan mode.
-
----
+Capturar el nivel de confianza que Gemini ya calcula (pero hoy descartamos) para 4 campos profundos, y usarlo para detectar "alucinación confiada" (valor incorrecto pero consistente entre menciones → Reglas 5/6 no lo detectan). Advertencia ámbar, no hard-block.
 
 ## 0. Cuestiones resueltas con evidencia
 
-### Q1 — ¿Colisión con `representantes[]` o con `apoderado.cedula`?
+### Q1 — Contrato de `PoderBancoDeepPayload` para los 4 campos
 
-Evidencia (`poderBancoExtractor/tool.ts`):
+Hoy, en `index.ts:39-64` estos 4 paths se tipan como **string plano**:
+- `apoderado.cedula: string | null`
+- `poderdante.representante_legal_cedula: string | null`
+- `instrumento_poder.escritura_num: string | null`
+- `instrumento_poder.fecha: string | null`
 
-- `apoderado.tipo` ∈ {`natural`, `juridica`}.
-- `natural`: escalares `apoderado.nombre`, `apoderado.cedula` (+ legacy plano `apoderado_cedula`).
-- `juridica`: `apoderado.representantes[]` con `{nombre, cedula, cargo, es_firmante}` — cada item es un firmante independiente (RL principal + suplentes, ej. Lina + Kleitman).
+Los 8 campos legacy planos (`apoderado_cedula`, `escritura_poder_num`, `fecha_poder`, ...) ya son `{valor, confianza}` y ya pasan por `unwrapConf` — funciona.
 
-**No hay colisión** con `menciones_rl` (que vive en `poderdante`, otra rama). El nombre nuevo será `apoderado.menciones_cedula[]` — array de **evidencia forense cruda**, hermano de escalares y `representantes[]`, no reemplazo. Sigue el contrato del skill §2 (`menciones_X`), §6 (deep-merge preserva menciones).
+### Q2 — CRÍTICO: quiénes leen los 4 paths profundos como string plano
 
-### Q2 — Múltiples apoderados / suplentes (crítico)
+Enumerado con `rg`, los readers que asumen string plano son:
 
-**Sí existen simultáneamente** cuando `apoderado.tipo='juridica'` (caso real Lina Magaly + Kleitman como Primer Suplente). Un array plano `[{seccion, cedula, pagina}]` produciría **falsos positivos**: la cédula de Lina y la de Kleitman son legítimamente distintas → dispararía `menciones_incoherentes` siempre que haya suplente.
+| Archivo | Uso |
+|---|---|
+| `supabase/functions/procesar-cancelacion/index.ts:1058,1307-1314,1335` | `pb.instrumento_poder.escritura_num`, `pb.apoderado.cedula`, `poderdante.representante_legal_cedula` para `Nully paths`, docx vars y coherencia |
+| `supabase/functions/_shared/isomorphic/apoderadoClassifier.ts:75,160` | `ctx.instrumento_poder.escritura_num/fecha` para clasificar tipo |
+| `supabase/functions/_shared/isomorphic/prosaBancos/davivienda.ts:52,68,74,94,103` | `ctx.apoderado.cedula`, `ctx.poderdante.representante_legal_cedula` para prosa |
+| `supabase/functions/_shared/validatePoderSuficiencia.ts:114` | `poder.instrumento_poder.fecha` |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts:252-262` | `deepV6.instrumento_poder.escritura_num/fecha`, `apoderadoIn.cedula` para NO_LEGIBLE override |
+| `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts:209-212` | Regla 5, Regla 6, Reglas 2.1/2.2/2.3, Regla 3 |
+| `supabase/functions/_shared/isomorphic/prosaBancos/types.ts:64,102` + `mergeOverride.ts` + `overrideSchema.ts` | Persistencia de override manual (contract) |
+| `src/lib/buildProsaContext.ts:55` | Contexto prosa cliente |
+| `src/components/cancelaciones/PoderViewerTab.tsx:39` | UI viewer |
+| `src/pages/CancelacionValidar.tsx:1474` | Input campo RL cédula |
+| `src/pages/Validacion.tsx:3225` + `PersonaForm.tsx:231` + `DocxPreview.tsx:400,645` + `types.ts:68,179` | Trámites (rama distinta, no toca poder banco pero comparte nombre de campo) |
+| `descubrir-reglas/_patterns.ts:49` | Auditor offline |
 
-**Solución (idéntica al espejo `menciones_rl`, que ya lleva `nombre` en cada item)**: cada mención transcribe **también el nombre** que aparece pegado a esa cédula en el PDF. El comparador agrupa por **nombre normalizado** (uppercase + strip tildes + strip coletillas de cargo + colapso de espacios) y aplica la regla de coherencia **dentro de cada grupo**. Grupos distintos no se comparan entre sí. Menciones con nombre no legible o vacío se descartan del set (mismo criterio `NULLY_MENCION` §3 del skill).
+**Migrar el schema y el tipo a `{valor, confianza}` en estos 4 paths tocaría todos estos consumidores** — es cambio invasivo, propenso a regresión, y viola el instinto conservador de la Regla 6 anterior (donde agregamos `menciones_cedula[]` sin tocar el escalar `cedula`).
 
-Funciona sin ceremonia para `tipo='natural'` (un solo grupo con un solo nombre).
+### Q3 — Decisión de diseño: **sidecar, no wrapper**
 
-### Q3 — ¿Alejandra reportó confusión sobre "cuál apoderado firma"?
+En lugar de cambiar el tipo de los 4 campos profundos, el patrón elegido es idéntico al que ya usan las menciones (evidencia forense hermana, no reemplazo del escalar):
 
-**No tengo evidencia en el codebase** de un reporte suyo específicamente sobre atribución cédula↔persona cuando hay suplente. Lo declaro honestamente. El diseño con `nombre` por mención **de todos modos** cubre ese caso lateral (si una mención atribuye la cédula de Kleitman al nombre de Lina, cae dentro del grupo "LINA" con dos cédulas distintas → dispara). Beneficio derivado, no motivación.
+1. **Schema (`tool.ts`)** — envolver los 4 campos con `confField(...)` (idéntico a los 8 legacy). Los prompts de Gemini ya usan este patrón, así que el modelo ya sabe emitirlo. Descripciones intactas (incluyendo NO_LEGIBLE donde aplica).
 
-### Q4 — ¿`confField` sigue siendo necesario tras este blindaje?
+2. **Tipo (`index.ts`)** — cambiar los 4 tipos a `{ valor?: string | null; confianza?: "alta"|"media"|"baja" } | null`.
 
-**No en cancelaciones**. El único caso residual sería "una sola mención + tinta ilegible", ya cubierto por `NO_LEGIBLE` + Regla 3 hard-block (`isNoLegible()`). `menciones_cedula` cierra el 3er GAP prioritario. Los GAPs 2 (`escritura_poder`, `fecha_poder`) siguen abiertos pero tienen Regla 2.1/2.1b plano-vs-profundo — atender en turno posterior con este mismo patrón.
+3. **Merge (`merge.ts`)** — en `mergePoderBancoV6`, **antes** de retornar, aplicar `unwrapConfDeep` sobre los 4 paths del bloque profundo, colapsándolos a string plano en el mismo lugar donde hoy Gemini los emitiría. Los consumidores downstream (index.ts:1307, davivienda.ts, classifier.ts, ...) **siguen viendo string plano** — cero cambio en readers.
 
----
+4. **Sidecar `_confianza`** — mismo `mergePoderBancoV6` emite además un mapa nuevo `_confianza: Record<string, "alta"|"media"|"baja">` con las llaves de los 4 paths (más los 4 legacy planos si están disponibles, "gratis" porque ya existen). Vive junto a `_classifier_motivos` en el output.
 
-## 1. Schema — `poderBancoExtractor/tool.ts`
+5. **Validate (`validate.ts`)** — nueva Regla 7 lee `merged._confianza[path]`. Si `=== "baja"` y el campo tiene valor no vacío → warning + suspicious (mismo `Set` que Reglas 5/6). Excepción Manual>OCR idéntica.
 
-Dentro de `apoderado` (después de `sociedad_reformas`, antes de `representantes`):
+### Q4 — Retrocompatibilidad con cancelaciones históricas
 
-```ts
-menciones_cedula: {
-  type: "array",
-  description:
-    "TRAZABILIDAD ANTI-ALUCINACIÓN. Registra cada aparición INDEPENDIENTE de la cédula de un apoderado firmante dentro del MISMO PDF (cuerpo del poder, firma manuscrita, notas de identificación al pie, anexos). Cuando hay varios apoderados/suplentes (tipo='juridica' con representantes[]), transcribe el NOMBRE tal como aparece pegado a cada cédula para que el validador determinista agrupe por persona antes de comparar. NO inventes menciones; solo las que efectivamente leas. Si solo hay una mención legible, emite 1 sola entrada.",
-  items: {
-    type: "object",
-    properties: {
-      seccion: {
-        type: "string",
-        enum: ["cuerpo_poder", "firma", "identificacion_al_pie", "anexo", "otro"],
-      },
-      nombre: { type: "string", description: "Nombre tal como aparece en ESTA sección, MAYÚSCULAS. Agrupa menciones del mismo firmante." },
-      cedula: { type: "string", description: "Cédula tal como aparece. Solo dígitos. Si es ilegible, 'NO_LEGIBLE'." },
-      pagina: { type: "number" },
-    },
-    required: ["seccion"],
-    additionalProperties: false,
-  },
-},
-```
+Registros en BD guardados antes del schema nuevo no tendrán wrapper. Efectos:
 
-**No** tocar `required` del objeto raíz. **No** tocar `representantes[]` ni escalares.
+- **En Gemini**: los prompts nuevos piden wrapper; si el modelo devuelve string plano (fallback poco probable), `unwrapConfDeep` lo trata como `valor: <str>, confianza: undefined` → sidecar omite ese path → Regla 7 no dispara. **No hay crash.**
+- **En BD**: `data_ia`/`data_final` viejos: `_confianza` ausente → validate lee `undefined` → Regla 7 no dispara. **No hay crash, no hay falso positivo, no hay migración.**
+- **En regen**: `mergeRegenPayload` deep-merge `apoderado`/`poderdante`/`instrumento_poder`. El escalar `cedula`/`escritura_num`/... sigue siendo string plano tras el merge (porque el pipeline los aplanó). El sidecar `_confianza` se recalcula en cada corrida OCR nueva, no se persiste como fuente de verdad — es señal transitoria. **No requiere merge especial.**
 
----
+### Q5 — UI: ¿falta algo?
 
-## 2. Prompt — `poderBancoExtractor/prompt.ts`
-
-Nuevo bloque "TRAZABILIDAD DE LA CÉDULA DEL APODERADO", espejo del bloque `menciones_rl`:
-
-```
-Antes de emitir apoderado.cedula (natural) o cada apoderado.representantes[].cedula
-(juridica), transcribe ADEMÁS en apoderado.menciones_cedula[] cada aparición
-literal de una cédula de firmante en el MISMO PDF. En cada entrada incluye el
-NOMBRE pegado a esa cédula tal como está escrito. NO reformatees, NO deduzcas,
-NO inventes. Si solo hay 1 mención legible, emite 1. Si la cédula está
-borrosa/tachada, escribe 'NO_LEGIBLE'.
-
-Objetivo: detectar transposiciones de dígitos Y atribuciones cruzadas cuando
-hay varios firmantes (RL + suplente).
-```
+`CancelacionValidar.tsx` ya conecta los 4 `Field` (nombre / cédula / N° escritura / fecha del poder) al mismo `Set` unificado (sesión anterior). Regla 7 alimenta ese mismo Set con nombres de warning distintos → borde ámbar + `suspiciousLabel` aparece automáticamente. **No requiere cambio de UI.** El único ajuste es agregar entradas en `WARNING_LABELS` para los 4 nuevos códigos.
 
 ---
 
-## 3. Regla de coherencia — `poderBancoExtractor/validate.ts`
+## 1. Archivos y orden de edición
 
-Nuevo bloque **Regla 6**, gemelo estructural de Regla 5. Vive en el mismo archivo para reutilizar `normalizeCedula`, `isNoLegible`, `isCedulaValida`, y la excepción Manual>OCR (`opts.manualReviewConfirmed`).
+1. `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` — envolver 4 propiedades con `confField(...)` (preservando descripción + NO_LEGIBLE).
+2. `supabase/functions/_shared/isomorphic/poderBancoExtractor/index.ts` — cambiar el tipo TS de los 4 paths a `{valor,confianza}|null`.
+3. `supabase/functions/_shared/isomorphic/poderBancoExtractor/merge.ts`:
+   - Añadir helper `unwrapConfDeep(v): {valor?: string, confianza?: "alta"|"media"|"baja"}` (no rompe `unwrapConf` existente).
+   - En `mergePoderBancoV6`: antes de armar `out`, aplanar los 4 campos profundos de `deepV6` a string plano (para que `apoderadoIn.cedula`, `deepV6.instrumento_poder.escritura_num`, etc., sigan comportándose como hoy en downstream).
+   - Construir sidecar `_confianza` con hasta 8 entradas (4 profundos + 4 planos legacy).
+   - Añadir `_confianza` al `out`.
+4. `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts`:
+   - Añadir 4 entradas a `WARNING_LABELS`: `apoderado_cedula_confianza_baja`, `poderdante_rl_cedula_confianza_baja`, `escritura_poder_confianza_baja`, `fecha_poder_confianza_baja`. Todas ámbar-informativas, texto tipo "Gemini reportó confianza baja en …".
+   - Añadir Regla 7 al final de `validatePoderBancoCoherencia`, antes del return. Recorre 4 tuplas `[warningCode, path, escalarActual]`. Si `_confianza[path] === "baja"` y el escalar no está vacío ni ausente → warning + `suspicious.add(path)`. Excepción Manual>OCR: si `opts.manualReviewConfirmed` y el escalar tiene formato válido (para cédulas: `isCedulaValida`; para escritura: `extractEscrituraDigits`; para fecha: `extractYear`), suprimir warning pero **preservar** el dato en el sidecar.
+5. Confirmar que **NINGUNO** de los 4 sufijos de warning coincide con `HARD_BLOCK_WARNING_SUFFIXES` (`_no_legible`, `_incoherente`, `_placeholder`, `_duplicidad_cruzada`, `_menciones_incoherentes`). El sufijo elegido `_confianza_baja` es nuevo y NO cae en ninguno → automáticamente NO bloquea. Cero cambio en `HARD_BLOCK_WARNING_SUFFIXES`.
+6. Tests nuevos: `src/shared/poderBancoValidateConfianzaBaja.test.ts` — 8 casos:
+   - Cada uno de los 4 campos con `confianza=baja` → warning + suspicious del path correcto.
+   - `confianza=media` o `=alta` → no dispara.
+   - Sidecar ausente (registro histórico) → no dispara.
+   - Excepción Manual>OCR con escalar corregido → suprime warning, `_confianza` intacto.
+   - Escalar vacío/ausente + confianza baja → **no dispara** (Gemini no leyó nada, no hay nada sospechoso).
+   - Contrato: `isHardBlockCoherenciaWarning("apoderado_cedula_confianza_baja") === false`.
+7. Verificar regresión: `poderBancoExtractor.test.ts`, `poderBancoValidate.test.ts`, `poderBancoValidateMencionesRL.test.ts`, `poderBancoValidateMencionesApoderado.test.ts`, `certificadoInmuebleValidate.test.ts`, `mergeRegenPayload.test.ts`, `apoderadoClassifier.test.ts` — todos deben seguir verdes sin modificarse. En particular, el test existente `mergePoderBancoV6 → Ana María NO_LEGIBLE override` debe pasar porque `unwrapConfDeep` produce string plano `"NO_LEGIBLE"` idéntico al comportamiento actual de `unwrapConf`.
 
-Pseudocódigo:
+## 2. Riesgos y mitigaciones
 
-```ts
-// Regla 6 — Coherencia intra-documento de la cédula del apoderado.
-// Agrupa por nombre normalizado (no mezcla cédulas de firmantes distintos).
-const mAp = (apoderado?.menciones_cedula ?? []) as Array<Record<string, unknown>>;
-if (Array.isArray(mAp) && mAp.length >= 2) {
-  const groups = new Map<string, Set<string>>();
-  for (const m of mAp) {
-    const nom = normalizeNombreFirmante(m?.nombre);
-    if (!nom) continue;
-    if (isNoLegible(m?.cedula)) continue;
-    const ced = normalizeCedula(m?.cedula);
-    if (!ced) continue;
-    if (!groups.has(nom)) groups.set(nom, new Set());
-    groups.get(nom)!.add(ced);
-  }
-  const inconsistente = Array.from(groups.values()).some((s) => s.size >= 2);
-  if (inconsistente) {
-    // Excepción Manual>OCR:
-    //  - natural: apoderado.cedula o apoderado_cedula con isCedulaValida.
-    //  - juridica: TODOS los representantes[].cedula con isCedulaValida.
-    const humanArbitrated = opts?.manualReviewConfirmed === true &&
-      escalaresApoderadoValidos(apoderado, apoderadoCedulaPlano);
-    if (!humanArbitrated) {
-      warnings.push("apoderado_cedula_menciones_incoherentes");
-      suspicious.add("apoderado.menciones_cedula");
-      suspicious.add("apoderado.cedula");
-      suspicious.add("apoderado_cedula");
-    }
-  }
-}
-```
+| Riesgo | Mitigación |
+|---|---|
+| **Downstream lee `apoderado.cedula` como objeto** (crash `.replace` en davivienda.ts, classifier.ts, index.ts:1307...) | `merge.ts` aplana los 4 profundos ANTES de emitir `out.apoderado/poderdante/instrumento_poder`. Los consumidores siguen viendo string. Tests de merge (`poderBancoExtractor.test.ts`) cubren esto. |
+| **Dato histórico BD sin wrapper** | `unwrapConfDeep` acepta string plano O `{valor,confianza}` (mismo pattern de `unwrapConf`). Sidecar omite path con confianza undefined. Regla 7 lee sidecar → no dispara. |
+| **Gemini emite `confianza=baja` en vacío** | Guard: warning solo si escalar tiene valor no vacío. Evita ruido visual. |
+| **Regla 7 se vuelve hard-block por accidente** | Sufijo `_confianza_baja` no está en `HARD_BLOCK_WARNING_SUFFIXES`. Test contrato explícito. |
+| **`mergeRegenPayload` borra `_confianza`** | `_confianza` no vive dentro de `apoderado`/`poderdante`/`instrumento_poder` — es hermano top-level. Deep-merge existente no lo toca. Si en un regen el usuario NO reenvía OCR, `_confianza` de la corrida anterior se preserva (comportamiento correcto: si no hay OCR nuevo, la confianza previa sigue vigente). |
+| **Prosa/docx recibe el escalar aplanado que puede ser `""` cuando Gemini devuelve `{valor:"", confianza:"baja"}`** | `unwrapConfDeep` retorna `undefined` para valor vacío/nully (idéntico a `sanitizeString`). Mismo comportamiento actual. |
 
-**Helper nuevo `normalizeNombreFirmante`**: uppercase + strip tildes (NFD) + strip coletillas de cargo entre paréntesis y tras coma/guion (`", PRIMER SUPLENTE"`, `"(REPRESENTANTE LEGAL)"`, `"- GERENTE"`) + colapso de espacios. **Sin fuzzy match**, sin colapsar iniciales — nombres distintos (Lina vs Kleitman) NUNCA deben unificarse (§4/§7 skill).
+## 3. Fuera de alcance
 
-**Sufijo `_menciones_incoherentes`** → engancha automáticamente `HARD_BLOCK_WARNING_SUFFIXES` (validate.ts:73-84). **Cero migración**.
+- No se modifican los 8 legacy planos (ya usan `confField` desde v6).
+- No se agrega Regla 7 para menciones (`menciones_rl[]`, `menciones_cedula[]`) — su confianza no se persiste hoy y no es prioridad.
+- No se toca UI: los `Field` del apoderado ya reciben `suspicious` del `Set` unificado (sesión anterior).
+- No se toca `HARD_BLOCK_WARNING_SUFFIXES` — Regla 7 es informativa por diseño.
+- No se toca schema ni edge de `procesar-cancelacion` (index.ts) — sigue leyendo escalares planos.
 
-**Labels**:
+## 4. Anti-ejemplos evitados
 
-- `WARNING_LABELS["apoderado_cedula_menciones_incoherentes"]` = "La cédula del apoderado se lee distinta en ≥2 secciones del mismo poder (posible transposición o atribución cruzada) — verifica manualmente contra el PDF original."
-- `SUSPICIOUS_FIELD_LABELS["apoderado.menciones_cedula"]` = "Menciones de la cédula del apoderado en el poder".
-- Los paths `apoderado.cedula` y `apoderado_cedula` ya existen en el mapa.
-
----
-
-## 4. Wiring — sin cambios estructurales
-
-- `procesar-cancelacion/index.ts` ya llama a `validatePoderBancoCoherencia` dentro de `annotatePoderCoherencia`. La nueva Regla 6 emerge en el mismo `warnings`/`suspicious`. **Sin nuevo `annotate*`**.
-- `detectRequiereRevisionManual` ya filtra por `isHardBlockCoherenciaWarning` → hard-block automático.
-- `mergeRegenPayload` hoy sólo hace deep-merge key-by-key de `poderdante`. **Agregar `apoderado`** al mismo patrón (o cualquier override parcial del frontend borraría `menciones_cedula`).
-- UI `PoderBannersV5` / highlighting ya renderiza cualquier código en `WARNING_LABELS` / `SUSPICIOUS_FIELD_LABELS`.
-
----
-
-## 5. Tests — `src/shared/poderBancoValidateMencionesApoderado.test.ts` (nuevo)
-
-Matriz canónica del skill:
-
-1. 1 apoderado natural, 3 menciones consistentes → no dispara.
-2. 1 apoderado natural, 2 menciones con transposición (`79392406` vs `79382406`) → dispara + suspicious `apoderado.menciones_cedula` + `apoderado.cedula` + `apoderado_cedula`.
-3. 1 sola mención legible → no dispara (§3.1 skill).
-4. NO_LEGIBLE parcial + resto consistente → no dispara.
-5. **2 apoderados juridica (Lina + Kleitman suplente)**, cada grupo internamente consistente, cédulas distintas entre grupos → **no dispara** (validación crítica del agrupamiento).
-6. 2 apoderados, transposición dentro del grupo Kleitman → dispara; grupo Lina intacto.
-7. Formato distinto sin cambio de dígitos (`52.123.456` vs `52 123 456` vs `52123456`) → no dispara.
-8. Payload legacy sin `menciones_cedula` → no dispara (guard `Array.isArray && length >= 2`).
-9. Excepción Manual>OCR: `manualReviewConfirmed=true` + escalar `apoderado.cedula` corregido a cédula válida → suprime warning; `menciones_cedula` se preserva íntegro.
-10. Contrato hard-block: `isHardBlockCoherenciaWarning("apoderado_cedula_menciones_incoherentes") === true`.
-11. `normalizeNombreFirmante` — coletillas colapsan, tildes desaparecen, `""` y `"NO_LEGIBLE"` devuelven cadena vacía.
-
-Regresión: `poderBancoValidateMencionesRL.test.ts`, `poderBancoValidate.test.ts`, `poderBancoValidateIntraTramite.test.ts`, `certificadoInmuebleValidate.test.ts`, `mergeRegenPayload.test.ts` deben seguir verdes sin tocarlos.
-
----
-
-## 6. Archivos afectados
-
-1. `supabase/functions/_shared/isomorphic/poderBancoExtractor/tool.ts` — schema `apoderado.menciones_cedula`.
-2. `supabase/functions/_shared/isomorphic/poderBancoExtractor/prompt.ts` — bloque TRAZABILIDAD APODERADO.
-3. `supabase/functions/_shared/isomorphic/poderBancoExtractor/validate.ts` — Regla 6 + `normalizeNombreFirmante` + labels.
-4. `supabase/functions/_shared/isomorphic/mergeRegenPayload.ts` — agregar deep-merge de `apoderado` (mismo patrón que `poderdante`).
-5. **Nuevo**: `src/shared/poderBancoValidateMencionesApoderado.test.ts`.
-
-### Fuera de alcance
-
-- GAPs 2 (`menciones_escritura_poder`, `menciones_fecha_poder`): siguiente turno.
-- Fase 4ª compraventa: pausada (§8 skill).
-- UI de edición de `menciones_cedula`: se preservan como evidencia forense; el humano edita el escalar canónico (§5 skill).
-
----
-
-## 7. Anti-ejemplos evitados
-
-- ❌ Array plano sin `nombre` → falso positivo con suplente. **Resuelto** con agrupamiento por nombre.
-- ❌ Fuzzy match sobre nombres → prohibido §7 skill. Normalización determinista estricta.
-- ❌ Pedirle al modelo que "verifique si las cédulas coinciden" → regla es código, no IA.
-- ❌ Borrar `menciones_cedula` al confirmar humano → §5/§7 skill. Se preservan siempre.
-- ❌ Migrar `HARD_BLOCK_WARNING_SUFFIXES` → sufijo `_menciones_incoherentes` engancha solo.
-
+- ❌ Envolver los 4 campos y forzar a los 20+ readers a llamar `unwrapConf`.
+- ❌ Persistir `_confianza` en BD como fuente de verdad — es señal transitoria del OCR, se recalcula.
+- ❌ Meter `_confianza_baja` en hard-block — el modelo puede reportar "baja" en campos legibles pero raros. Solo advierte.
+- ❌ Migración de datos históricos — sidecar ausente = silencio, comportamiento seguro.

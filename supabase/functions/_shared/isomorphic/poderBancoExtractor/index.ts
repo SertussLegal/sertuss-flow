@@ -16,15 +16,22 @@ import { poderBancoPrompt } from "./prompt.ts";
 export { poderBancoTools, PODER_BANCO_TOOL_NAME, poderBancoPrompt };
 export { poderBancoTool } from "./tool.ts";
 
+/** Wrapper `{valor, confianza}` que Gemini emite para campos con nivel de
+ *  confianza. Isomórfico — usado por schema v6 tanto en legacy planos como
+ *  en 4 campos profundos (apoderado.cedula, poderdante.representante_legal_cedula,
+ *  instrumento_poder.escritura_num, instrumento_poder.fecha). Regla 7 lee
+ *  este `confianza` vía sidecar `_confianza` sin cambiar los readers. */
+export type ConfWrapped = { valor?: string | null; confianza?: "alta" | "media" | "baja" | string } | null;
+
 export interface PoderBancoDeepPayload {
-  entidad_bancaria?: { valor?: string | null; confianza?: string } | null;
-  apoderado_nombre?: { valor?: string | null; confianza?: string } | null;
-  apoderado_cedula?: { valor?: string | null; confianza?: string } | null;
-  escritura_poder_num?: { valor?: string | null; confianza?: string } | null;
-  fecha_poder?: { valor?: string | null; confianza?: string } | null;
-  notaria_poder?: { valor?: string | null; confianza?: string } | null;
-  notaria_poder_ciudad?: { valor?: string | null; confianza?: string } | null;
-  apoderado_email?: { valor?: string | null; confianza?: string } | null;
+  entidad_bancaria?: ConfWrapped;
+  apoderado_nombre?: ConfWrapped;
+  apoderado_cedula?: ConfWrapped;
+  escritura_poder_num?: ConfWrapped;
+  fecha_poder?: ConfWrapped;
+  notaria_poder?: ConfWrapped;
+  notaria_poder_ciudad?: ConfWrapped;
+  apoderado_email?: ConfWrapped;
   has_apoderado_banco_v3?: "true" | "false" | "null";
   motivos_incompletitud?: string[];
   poderdante?: {
@@ -32,14 +39,18 @@ export interface PoderBancoDeepPayload {
     entidad_nit?: string | null;
     entidad_constitucion_escritura?: string | null;
     representante_legal_nombre?: string | null;
-    representante_legal_cedula?: string | null;
+    // Regla 7 (v7-2026-07): wrapper `{valor,confianza}`. Se aplana a string
+    // plano en `mergePoderBancoV6` antes de emitirse a downstream — los
+    // readers siguen viéndolo como string. La confianza va al sidecar.
+    representante_legal_cedula?: ConfWrapped | string | null;
     representante_legal_cargo?: string | null;
     representante_legal_cedula_expedida_en?: string | null;
   } | null;
   apoderado?: {
     tipo?: "natural" | "juridica" | null;
     nombre?: string | null;
-    cedula?: string | null;
+    // Regla 7: wrapper — aplanado en merge antes de exponerse.
+    cedula?: ConfWrapped | string | null;
     sociedad_razon_social?: string | null;
     sociedad_nit?: string | null;
     sociedad_constitucion?: Record<string, string | null> | null;
@@ -53,8 +64,9 @@ export interface PoderBancoDeepPayload {
     }>;
   } | null;
   instrumento_poder?: {
-    escritura_num?: string | null;
-    fecha?: string | null;
+    // Regla 7: wrappers — aplanados en merge antes de exponerse.
+    escritura_num?: ConfWrapped | string | null;
+    fecha?: ConfWrapped | string | null;
     fecha_texto?: string | null;
     notaria_numero?: string | null;
     notaria_ciudad?: string | null;
