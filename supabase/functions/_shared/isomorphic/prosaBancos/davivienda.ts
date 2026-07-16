@@ -51,15 +51,23 @@ function comparecenciaNatural(ctx: ProsaContext): string {
   const nombre = up(ctx.apoderado.nombre);
   const cedula = ced(ctx.apoderado.cedula);
   const ciudadFirma = low(ctx.ciudad_firma) || "Bogotá";
-  const escrituraTxt = nn(ctx.apoderado.escritura_poder_num)
-    ? `escritura pública número ${numeroConLetras(ctx.apoderado.escritura_poder_num!, "masculine")}`
-    : "escritura pública número ___________";
-  const fechaTxt = fechaOTexto(ctx.apoderado.escritura_poder_fecha, null) || "___________";
-  const notariaNum = nn(ctx.apoderado.escritura_poder_notaria_num)
-    ? numeroConLetras(ctx.apoderado.escritura_poder_notaria_num!, "feminine")
-    : "___________";
 
-  const s = `COMPARECIÓ: ${nombre}, colombiana, mayor de edad, domiciliada y residente de ${ciudadFirma}, identificada con la cédula de ciudadanía número ${cedula || "___________"}, manifestó: PRIMERO.- Que en su calidad de APODERADA GENERAL del ${NOMBRE_BANCO} NIT: ${NIT_BANCO}, establecimiento Bancario con domicilio principal en la ciudad de ${ciudadFirma}. En virtud del poder general a el otorgado mediante ${escrituraTxt} del ${fechaTxt} otorgada en la notaría ${notariaNum} de ${ciudadFirma}, documento cuya copia se presenta para su protocolización con este instrumento público.${notasSufijo(ctx)}`;
+  // Fuente del poder: preferir `ctx.instrumento` (poder directo del banco a la
+  // persona natural, extractor v6). Fallback a `ctx.apoderado.escritura_poder_*`
+  // para el caso de sustitución (cadena de poderes). Alineado con comparecenciaJuridica.
+  const escNum = ctx.instrumento?.escritura_num ?? ctx.apoderado.escritura_poder_num;
+  const escFecha = ctx.instrumento?.fecha ?? ctx.apoderado.escritura_poder_fecha;
+  const escFechaTexto = ctx.instrumento?.fecha_texto ?? null;
+  const notNum = ctx.instrumento?.notaria_numero ?? ctx.apoderado.escritura_poder_notaria_num;
+  const notCiu = low(ctx.instrumento?.notaria_ciudad) || ciudadFirma;
+
+  const escrituraTxt = nn(escNum)
+    ? `escritura pública número ${numeroConLetras(escNum!, "masculine")}`
+    : "escritura pública número ___________";
+  const fechaTxt = fechaOTexto(escFecha, escFechaTexto) || "___________";
+  const notariaNum = nn(notNum) ? numeroConLetras(notNum!, "feminine") : "___________";
+
+  const s = `COMPARECIÓ: ${nombre}, colombiana, mayor de edad, domiciliada y residente de ${ciudadFirma}, identificada con la cédula de ciudadanía número ${cedula || "___________"}, manifestó: PRIMERO.- Que en su calidad de APODERADA GENERAL del ${NOMBRE_BANCO} NIT: ${NIT_BANCO}, establecimiento Bancario con domicilio principal en la ciudad de ${ciudadFirma}. En virtud del poder general a el otorgado mediante ${escrituraTxt} del ${fechaTxt} otorgada en la notaría ${notariaNum} de ${notCiu}, documento cuya copia se presenta para su protocolización con este instrumento público.${notasSufijo(ctx)}`;
   return collapseSpaces(s);
 }
 
