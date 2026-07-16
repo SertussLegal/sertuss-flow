@@ -429,7 +429,7 @@ Antes de emitir 'inmueble.matricula_inmobiliaria', transcribe en 'inmueble.menci
 
 Objetivo: permitir al backend detectar transposiciones de dígitos (ej: 13C-05 vs 13C-09, 1572091 vs 1572081) comparando las menciones entre sí. Emite HONESTAMENTE lo que ves — si solo hay una mención legible, emite una. NO inventes menciones extra para llenar el arreglo. Si una mención es humanamente ilegible, emite "NO_LEGIBLE" como valor y continúa con las demás.
 
-Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.\`;
+Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
 
 // Helpers
 function splitValor(valor: string): { letras: string; numeros: string } {
