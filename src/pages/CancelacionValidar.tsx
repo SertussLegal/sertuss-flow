@@ -32,6 +32,7 @@ import { POWER_V5_ENABLED } from "@/lib/featureFlags";
 import { buildProsaContext } from "@/lib/buildProsaContext";
 import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/ProsaApoderadoPreviewCard";
 import { getProsaBanco } from "@shared/prosaBancos";
+import { WARNING_LABELS } from "@shared/poderBancoExtractor/validate";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
