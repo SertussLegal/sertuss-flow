@@ -38,18 +38,34 @@ export interface SyncApoderadoResult {
 }
 
 /** Normalización para comparar plano vs anidado: uppercase + trim.
- *  Trata `null`/`undefined`/"" y los literales tóxicos "null"/"undefined"
- *  como vacío (mismo criterio que `stripNullyStrings` en el extractor). */
+ *  Trata "null"/"undefined" literales como valores corruptos pero DISTINTOS
+ *  de "" (absent) — así podemos diferenciar "anidado ausente → no tocar" de
+ *  "anidado corrupto con null literal → sí sincronizar".
+ *  El literal se colapsa a la cadena "\0NULLY\0" para forzar la desigualdad
+ *  contra cualquier plano real. */
 function normalize(v: unknown): string {
   if (v == null) return "";
   const s = String(v).trim();
-  if (s === "" || s.toLowerCase() === "null" || s.toLowerCase() === "undefined") return "";
+  if (s === "") return "";
+  if (s.toLowerCase() === "null" || s.toLowerCase() === "undefined") return "\0NULLY\0";
   return s.toUpperCase();
 }
 
-/** True si el valor está poblado (tras normalizar). */
+/** True si el valor está realmente poblado (no vacío, no null/undefined).
+ *  Los literales tóxicos "null"/"undefined" cuentan como poblados-corruptos. */
 function isPoblado(v: unknown): boolean {
-  return normalize(v) !== "";
+  if (v == null) return false;
+  const s = String(v).trim();
+  return s !== "";
+}
+
+/** True si el campo anidado está SEMÁNTICAMENTE ausente (ni valor real ni
+ *  literal tóxico). En ese caso no hay divergencia — no hay nada que
+ *  sincronizar y no se emite warning. */
+function isAnidadoAusente(v: unknown): boolean {
+  if (v == null) return true;
+  const s = String(v).trim();
+  return s === "";
 }
 
 interface Firmante {
