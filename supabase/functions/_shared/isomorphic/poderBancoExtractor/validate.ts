@@ -143,6 +143,7 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "inmueble.nomenclatura_predio": "Dirección catastral (nomenclatura del predio)",
   "inmueble.menciones_matricula": "Menciones de matrícula inmobiliaria en el certificado",
   "inmueble.matricula_inmobiliaria": "Matrícula inmobiliaria",
+  "apoderado.menciones_cedula": "Menciones de la cédula del apoderado en el poder",
 };
 
 
