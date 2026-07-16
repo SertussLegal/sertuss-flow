@@ -1312,7 +1312,11 @@ export function detectRequiereRevisionManual(extracted: CancelacionData): {
   const warnings = Array.isArray(pb._coherencia_warnings)
     ? (pb._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
     : [];
-  const motivos = warnings.filter(isHardBlockCoherenciaWarning);
+  const im = (extracted.inmueble || {}) as Record<string, unknown>;
+  const warningsInm = Array.isArray(im._coherencia_warnings)
+    ? (im._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+    : [];
+  const motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
 
   return {
     requiere: paths.length > 0 || motivos.length > 0,
@@ -1455,6 +1459,7 @@ function mergePoderBanco(
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
+import { validateInmuebleCoherencia } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
 
