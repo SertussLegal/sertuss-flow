@@ -129,6 +129,8 @@ interface CancelacionData {
     nomenclatura_predio?: string;
     ciudad: string;
     departamento?: string;
+    oficina_registro_zona?: string;
+
     // Blindaje anti-selección-alucinada: transcripción cruda por índice de
     // los renglones del bloque "DIRECCION DEL INMUEBLE" del certificado.
     // El backend elige el vigente (índice más alto) vía
@@ -219,6 +221,8 @@ const tools = [
               nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio, MAYÚSCULAS, en formato notarial TEXTO (NÚMERO). Tomada EXCLUSIVAMENTE del renglón de ÍNDICE MÁS ALTO de la sección 'DIRECCION DEL INMUEBLE' del certificado de tradición (renglones '1)','2)','3)' o romanos — la vigente es la del índice mayor). Vía y números en letras con dígito entre paréntesis, sufijos cardinales SUR/NORTE/ESTE/OESTE en MAYÚSCULA pegados al número. SEPARADOR DE PLACA: se conserva como el SÍMBOLO '-' (un guion ASCII rodeado de espacios), NUNCA se verbaliza como la palabra 'GUION'. Letras pegadas (62A, 53B, 'BIS') se transcriben literales en MAYÚSCULA. Cardinales masculinos ('UNO','DOS','VEINTIUNO'). Ej: 'CL 59 SUR 60 84' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)'. PROHIBIDO incluir apartamento/torre/interior/bloque/manzana/casa (van en descripcion_predio), ciudad (va en ciudad), nombre de conjunto/edificio, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los inyecta." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
               departamento: { type: "string", description: "Departamento del inmueble en mayúsculas, ej: 'CUNDINAMARCA'. Opcional." },
+              oficina_registro_zona: { type: "string", description: "Zona de la Oficina de Registro de Instrumentos Públicos (ORIP), SOLO si el encabezado del certificado la menciona explícitamente (ej: 'ZONA CENTRO', 'ZONA NORTE', 'ZONA SUR', 'ZONA OCCIDENTE'). Bogotá tiene múltiples zonas ORIP legalmente distintas (CENTRO, NORTE, SUR, OCCIDENTE, ZIPAQUIRA, FACATATIVA, FUSAGASUGA). Si el encabezado dice 'REGISTRO DE INSTRUMENTOS PUBLICOS DE BOGOTA ZONA CENTRO' → devolver 'ZONA CENTRO' (SOLO la zona, en mayúsculas, sin repetir la ciudad — la ciudad ya va en el campo 'ciudad'). Si el certificado NO menciona ninguna zona (mayoría de ciudades fuera de Bogotá) → cadena vacía ''. PROHIBIDO inventar la zona si no aparece literalmente." },
+
               menciones_direccion: {
                 type: "array",
                 description: "BLINDAJE ANTI-TRANSPOSICIÓN. TODAS las menciones INDEPENDIENTES de la dirección catastral tal como aparecen LITERALMENTE en el certificado, ANTES de aplicar la regla de índice más alto o cualquier reformateo. Una entrada por renglón numerado del bloque 'DIRECCION DEL INMUEBLE' (1), 2), 3)…). Si solo hay un renglón, emite 1 sola entrada — está bien. NO reemplaza a nomenclatura_predio; alimenta la verificación cruzada del backend.",
@@ -393,6 +397,13 @@ e) STRIP DE BASURA — qué NO incluir en 'nomenclatura_predio':
    - NO incluyas la coletilla "(DIRECCION CATASTRAL)" (la inyecta el backend solo si la ciudad es Bogotá).
    - NO incluyas complementos arquitectónicos (TORRE, APARTAMENTO, INTERIOR, BLOQUE, MANZANA, CASA): esos van en 'descripcion_predio' aplicando el mismo formato TEXTO (NÚMERO) — TO/TORRE → "TORRE <letras> (N)"; AP/APTO/APARTAMENTO → "APARTAMENTO <letras> (N)"; INT/INTERIOR → "INTERIOR <letras> (N)"; BL/BLOQUE → "BLOQUE <letras> (N)"; MZ/MANZANA → "MANZANA <letras> (N)"; CS/CASA → "CASA <letras> (N)".
    Si el renglón del índice más alto trae cualquiera de estos elementos, elimínalos del valor devuelto en 'nomenclatura_predio' y reubícalos en su campo correspondiente.
+
+REGLA ORIP — ZONA REGISTRAL (campo 'oficina_registro_zona'):
+- Si el encabezado del certificado de tradición dice "REGISTRO DE INSTRUMENTOS PUBLICOS DE <CIUDAD> ZONA <ZONA>" (típico de Bogotá: CENTRO/NORTE/SUR/OCCIDENTE/ZIPAQUIRA/FACATATIVA/FUSAGASUGA), devuelve SOLO la zona en 'oficina_registro_zona' (ej: "ZONA CENTRO"). La ciudad va SIEMPRE en el campo 'ciudad' (ej: "BOGOTA D.C."), NUNCA concatenes la zona dentro de 'ciudad'.
+- Si el encabezado NO menciona zona (la mayoría de municipios), deja 'oficina_registro_zona' como cadena vacía "".
+- PROHIBIDO inventar la zona; PROHIBIDO omitir la zona cuando aparece literalmente en el encabezado.
+
+
 
 PODER GENERAL DEL BANCO (cuando se adjunte):
 - ANALIZA TODAS LAS PÁGINAS del PDF, incluyendo las finales. La cláusula de designación del apoderado suele estar al final del documento.
@@ -959,6 +970,17 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toUpperCase().trim();
   const esBogota = /^BOGOTA(\s|,|\.|$|D)/i.test(ciudadNorm);
+  // Zona ORIP (opcional): SOLO cuando el encabezado del certificado la menciona
+  // literalmente. NO se mezcla con `ciudadInmueble` para preservar la coletilla
+  // "DE LA CIUDAD Y/O MUNICIPIO DE ..." y el detector esBogota. Se emite como
+  // tag Docxtemplater dedicado `oficina_registro_ciudad` que consume la
+  // plantilla v2 en la cláusula "Oficina de Registro de Instrumentos Públicos de …".
+  const zonaOripRaw = fixOcrTypos((data.inmueble.oficina_registro_zona || "").trim());
+  const zonaOrip = zonaOripRaw.toUpperCase();
+  const oficinaRegistroCiudad = zonaOrip
+    ? `${ciudadInmueble} ${zonaOrip}`.replace(/\s+/g, " ").trim()
+    : ciudadInmueble;
+
 
   // Red de seguridad determinista: aunque Gemini se desborde, descartamos áreas,
   // linderos y coeficientes en el servidor antes de mapear a la plantilla.
@@ -986,7 +1008,7 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     .replace(/\s+/g, " ")
     .trim();
 
-  const departamentoInmueble = fixOcrTypos(((data.inmueble as Record<string, string>).departamento || "").trim().toUpperCase());
+  const departamentoInmueble = fixOcrTypos(((data.inmueble as unknown as Record<string, string>).departamento || "").trim().toUpperCase());
   const coletillaCiudad = ciudadInmueble
     ? ` DE LA CIUDAD Y/O MUNICIPIO DE ${ciudadInmueble.toUpperCase()}${departamentoInmueble ? ` DEPARTAMENTO DE ${departamentoInmueble}` : ""}`
     : "";
@@ -1155,6 +1177,8 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     direccion_inmueble: nomenclaturaFinal,
     direccion_inmueble_cont: "",
     ciudad_inmueble: ciudadInmueble || undefined,
+    oficina_registro_ciudad: oficinaRegistroCiudad || undefined,
+
     descripcion_inmueble: descripcionPredio || undefined,
     // Partes
     deudor_nombre: deudoresNombres || data.partes.deudor_nombre,

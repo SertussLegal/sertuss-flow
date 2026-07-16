@@ -454,4 +454,32 @@ Deno.test("E1-promptPoder) prompt refuerza cargo obligatorio y consistencia inte
 });
 
 
+Deno.test("ORIP-ZONA) buildDocxVars: zona explícita → oficina_registro_ciudad = ciudad + zona, ciudad_inmueble intacto", () => {
+  const data = minimalData();
+  data.inmueble.ciudad = "BOGOTA D.C.";
+  data.inmueble.oficina_registro_zona = "ZONA CENTRO";
+  const vars = buildDocxVars(data) as Record<string, unknown>;
+  assertEquals(vars.oficina_registro_ciudad, "BOGOTA D.C. ZONA CENTRO");
+  assertEquals(vars.ciudad_inmueble, "BOGOTA D.C.");
+});
+
+Deno.test("ORIP-ZONA) buildDocxVars: sin zona → oficina_registro_ciudad = ciudad_inmueble", () => {
+  const data = minimalData();
+  data.inmueble.ciudad = "MEDELLIN";
+  data.inmueble.oficina_registro_zona = "";
+  const vars = buildDocxVars(data) as Record<string, unknown>;
+  assertEquals(vars.oficina_registro_ciudad, "MEDELLIN");
+  assertEquals(vars.ciudad_inmueble, "MEDELLIN");
+});
+
+Deno.test("ORIP-ZONA) buildDocxVars: zona en minúsculas se normaliza a MAYÚSCULAS", () => {
+  const data = minimalData();
+  data.inmueble.ciudad = "BOGOTA D.C.";
+  data.inmueble.oficina_registro_zona = "zona norte";
+  const vars = buildDocxVars(data) as Record<string, unknown>;
+  assertEquals(vars.oficina_registro_ciudad, "BOGOTA D.C. ZONA NORTE");
+});
+
+
+
 
