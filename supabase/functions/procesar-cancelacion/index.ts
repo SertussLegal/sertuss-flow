@@ -1493,6 +1493,39 @@ async function annotatePoderCoherencia(
   } catch (_) { /* no bloqueante */ }
 }
 
+/** Anota `_coherencia_warnings` y `_coherencia_suspicious` en la sección
+ *  `inmueble` extraída del certificado. Detecta transposiciones de dígitos
+ *  en dirección catastral / matrícula comparando `menciones_direccion[]` y
+ *  `menciones_matricula[]`. Nunca bloquea aquí; el hard-block lo aplica
+ *  `detectRequiereRevisionManual` leyendo estos warnings. */
+async function annotateInmuebleCoherencia(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  inmueble: Record<string, unknown> | undefined | null,
+  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
+): Promise<void> {
+  if (!inmueble) return;
+  const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
+  (inmueble as Record<string, unknown>)._coherencia_warnings = warnings;
+  (inmueble as Record<string, unknown>)._coherencia_suspicious = Array.from(suspicious);
+  if (warnings.length === 0) return;
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: ctx.orgId,
+      tramite_id: ctx.cancelacionId,
+      user_id: ctx.userId,
+      evento: "procesar-cancelacion.inmueble.coherencia",
+      resultado: "warnings",
+      categoria: "ocr_certificado",
+      detalle: {
+        trigger: ctx.trigger,
+        warnings,
+        suspicious: Array.from(suspicious),
+      },
+    });
+  } catch (_) { /* no bloqueante */ }
+}
+
 /** Fase 2 — Coherencia intra-trámite: valida que el banco que otorga el poder
  *  coincida con el acreedor hipotecario extraído de la escritura/certificado
  *  del MISMO trámite. Acumula sobre `_coherencia_warnings`/`_coherencia_suspicious`
