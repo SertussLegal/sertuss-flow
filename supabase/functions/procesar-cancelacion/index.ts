@@ -18,6 +18,7 @@ import { POWER_V5_ENABLED, POWER_V6_EXTRACTOR_ENABLED } from "../_shared/poderBa
 import { runWithPoderCache } from "../_shared/poderBancoCache.ts";
 import { classifyApoderado, type ApoderadoPayload } from "../_shared/isomorphic/apoderadoClassifier.ts";
 import { getProsaBanco, type ProsaContext, mergeOverride, type ProsaApoderadoOverride } from "../_shared/isomorphic/prosaBancos/index.ts";
+import { syncApoderadoFlatWithNested } from "../_shared/isomorphic/prosaBancos/syncApoderadoFlatNested.ts";
 import {
   buildPoderBancoRequest,
   PODER_BANCO_TOOL_NAME,
