@@ -32,6 +32,7 @@ import { POWER_V5_ENABLED } from "@/lib/featureFlags";
 import { buildProsaContext } from "@/lib/buildProsaContext";
 import { ProsaApoderadoPreviewCard } from "@/components/cancelaciones/prosa/ProsaApoderadoPreviewCard";
 import { getProsaBanco } from "@shared/prosaBancos";
+import { WARNING_LABELS } from "@shared/poderBancoExtractor/validate";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
@@ -1261,6 +1262,23 @@ export const CancelacionValidar = () => {
                   && !pb.apoderado_fecha && !pb.apoderado_notaria_poder;
                 // Eje A v3 — bandera de verdad emitida por el cliente al subir.
                 const poderAdjuntado = (row as { poder_adjuntado?: boolean })?.poder_adjuntado === true;
+                const suspicious = new Set(
+                  (((pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious) ?? [])
+                    .filter((s): s is string => typeof s === "string"),
+                );
+                const warnings = (pb as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings ?? [];
+                const cedulaWarningKeys = [
+                  "apoderado_cedula_no_legible",
+                  "apoderado_cedula_placeholder",
+                  "apoderado_cedula_menciones_incoherentes",
+                  "apoderado_coincide_con_rl_banco",
+                ];
+                const cedulaSuspiciousLabel =
+                  warnings
+                    .filter((w): w is string => typeof w === "string" && cedulaWarningKeys.includes(w))
+                    .map((w) => WARNING_LABELS[w])
+                    .filter(Boolean)
+                    .join(" / ") || undefined;
                 return (
                   <Section title="Apoderado del Banco (Poder General)">
                     {/* Plan v5/B4 — Banners K3 (ambigüedad) + L3 (vigencia) + v7/C1 (tipo). */}
@@ -1329,8 +1347,12 @@ export const CancelacionValidar = () => {
                       </div>
                     )}
 
-                    <Field label="Nombre apoderado" value={pb.apoderado_nombre ?? ""}
-                      onChange={(v) => setPB({ apoderado_nombre: v })} />
+                    <Field
+                      label="Nombre apoderado"
+                      value={pb.apoderado_nombre ?? ""}
+                      onChange={(v) => setPB({ apoderado_nombre: v })}
+                      suspicious={suspicious.has("apoderado_nombre")}
+                    />
                     <SegmentedChoice
                       label="Género del apoderado"
                       options={[
@@ -1342,14 +1364,27 @@ export const CancelacionValidar = () => {
                       helper={`"el señor apoderado identificado" vs "la señora apoderada identificada".`}
                     />
                     <div className="grid grid-cols-2 gap-2">
-                      <Field label="Cédula" value={pb.apoderado_cedula ?? ""}
-                        onChange={(v) => setPB({ apoderado_cedula: v })} />
-                      <Field label="N° escritura del poder" value={pb.apoderado_escritura ?? ""}
-                        onChange={(v) => setPB({ apoderado_escritura: v })} />
+                      <Field
+                        label="Cédula"
+                        value={pb.apoderado_cedula ?? ""}
+                        onChange={(v) => setPB({ apoderado_cedula: v })}
+                        suspicious={suspicious.has("apoderado_cedula")}
+                        suspiciousLabel={cedulaSuspiciousLabel}
+                      />
+                      <Field
+                        label="N° escritura del poder"
+                        value={pb.apoderado_escritura ?? ""}
+                        onChange={(v) => setPB({ apoderado_escritura: v })}
+                        suspicious={suspicious.has("apoderado_escritura")}
+                      />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <Field label="Fecha del poder" value={pb.apoderado_fecha ?? ""}
-                        onChange={setFechaString} />
+                      <Field
+                        label="Fecha del poder"
+                        value={pb.apoderado_fecha ?? ""}
+                        onChange={setFechaString}
+                        suspicious={suspicious.has("apoderado_fecha")}
+                      />
                       <Field label="Notaría del poder" value={pb.apoderado_notaria_poder ?? ""}
                         onChange={(v) => setPB({ apoderado_notaria_poder: v })} />
                     </div>
@@ -1387,10 +1422,6 @@ export const CancelacionValidar = () => {
                         que suprime el hard-block de Regla 5. */}
                     {(() => {
                       const pd = ((pb as unknown as { poderdante?: Record<string, unknown> }).poderdante ?? {}) as Record<string, unknown>;
-                      const suspicious = new Set(
-                        (((pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious) ?? [])
-                          .filter((s): s is string => typeof s === "string"),
-                      );
                       const setPD = (patch: PoderdanteScalarPatch) => {
                         // Spread completo del subobjeto actual + patch — nunca
                         // borra `menciones_rl` u otros campos no tocados.
