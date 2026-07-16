@@ -143,15 +143,18 @@ export function syncApoderadoFlatWithNested(
       const repOut: Firmante = { ...repIn };
       let repTouched = false;
 
-      // Nombre
-      if (isPoblado(planoNombre) && normalize(planoNombre) !== normalize(repIn.nombre)) {
+      // Nombre — solo sync si el anidado NO está semánticamente ausente
+      // (evitamos "primer poblado" cuando el OCR simplemente no leyó ese campo).
+      if (isPoblado(planoNombre) && !isAnidadoAusente(repIn.nombre)
+        && normalize(planoNombre) !== normalize(repIn.nombre)) {
         repOut.nombre = String(planoNombre);
         repTouched = true;
         warnings.push("apoderado_nombre_divergencia_plano_anidado");
         suspicious.add("apoderado_nombre");
       }
       // Cédula
-      if (isPoblado(planoCedula) && normalize(planoCedula) !== normalize(repIn.cedula)) {
+      if (isPoblado(planoCedula) && !isAnidadoAusente(repIn.cedula)
+        && normalize(planoCedula) !== normalize(repIn.cedula)) {
         repOut.cedula = String(planoCedula);
         repTouched = true;
         warnings.push("apoderado_cedula_divergencia_plano_anidado");
@@ -166,26 +169,32 @@ export function syncApoderadoFlatWithNested(
       }
 
       // Mantener el invariante que ya cumple mergePoderBancoV6: el snapshot
-      // desnormalizado `apoderado.nombre`/`cedula` refleja al firmante.
-      if (isPoblado(planoNombre) && normalize(planoNombre) !== normalize(apoderadoIn.nombre)) {
+      // desnormalizado `apoderado.nombre`/`cedula` refleja al firmante. Solo
+      // se sobrescribe si el snapshot no está ausente Y difiere.
+      if (isPoblado(planoNombre) && !isAnidadoAusente(apoderadoIn.nombre)
+        && normalize(planoNombre) !== normalize(apoderadoIn.nombre)) {
         apoderadoOut.nombre = String(planoNombre);
         apoderadoTouched = true;
       }
-      if (isPoblado(planoCedula) && normalize(planoCedula) !== normalize(apoderadoIn.cedula)) {
+      if (isPoblado(planoCedula) && !isAnidadoAusente(apoderadoIn.cedula)
+        && normalize(planoCedula) !== normalize(apoderadoIn.cedula)) {
         apoderadoOut.cedula = String(planoCedula);
         apoderadoTouched = true;
       }
     }
   } else {
     // Persona natural o tipo desconocido (V6 apagado pero anidado poblado):
-    // sincronizar directamente contra `apoderado.nombre`/`cedula`.
-    if (isPoblado(planoNombre) && normalize(planoNombre) !== normalize(apoderadoIn.nombre)) {
+    // sincronizar directamente contra `apoderado.nombre`/`cedula`. Si el
+    // anidado está ausente (V6 off puro), no hay divergencia real.
+    if (isPoblado(planoNombre) && !isAnidadoAusente(apoderadoIn.nombre)
+      && normalize(planoNombre) !== normalize(apoderadoIn.nombre)) {
       apoderadoOut.nombre = String(planoNombre);
       apoderadoTouched = true;
       warnings.push("apoderado_nombre_divergencia_plano_anidado");
       suspicious.add("apoderado_nombre");
     }
-    if (isPoblado(planoCedula) && normalize(planoCedula) !== normalize(apoderadoIn.cedula)) {
+    if (isPoblado(planoCedula) && !isAnidadoAusente(apoderadoIn.cedula)
+      && normalize(planoCedula) !== normalize(apoderadoIn.cedula)) {
       apoderadoOut.cedula = String(planoCedula);
       apoderadoTouched = true;
       warnings.push("apoderado_cedula_divergencia_plano_anidado");
