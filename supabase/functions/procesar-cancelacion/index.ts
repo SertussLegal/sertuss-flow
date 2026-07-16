@@ -212,6 +212,34 @@ const tools = [
               nomenclatura_predio: { type: "string", description: "Dirección postal urbana del predio, MAYÚSCULAS, en formato notarial TEXTO (NÚMERO). Tomada EXCLUSIVAMENTE del renglón de ÍNDICE MÁS ALTO de la sección 'DIRECCION DEL INMUEBLE' del certificado de tradición (renglones '1)','2)','3)' o romanos — la vigente es la del índice mayor). Vía y números en letras con dígito entre paréntesis, sufijos cardinales SUR/NORTE/ESTE/OESTE en MAYÚSCULA pegados al número. SEPARADOR DE PLACA: se conserva como el SÍMBOLO '-' (un guion ASCII rodeado de espacios), NUNCA se verbaliza como la palabra 'GUION'. Letras pegadas (62A, 53B, 'BIS') se transcriben literales en MAYÚSCULA. Cardinales masculinos ('UNO','DOS','VEINTIUNO'). Ej: 'CL 59 SUR 60 84' → 'CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)'. PROHIBIDO incluir apartamento/torre/interior/bloque/manzana/casa (van en descripcion_predio), ciudad (va en ciudad), nombre de conjunto/edificio, ni el sufijo '(DIRECCION CATASTRAL)' — el backend los inyecta." },
               ciudad: { type: "string", description: "Ciudad del inmueble en mayúsculas, ej: 'BOGOTA D.C.'" },
               departamento: { type: "string", description: "Departamento del inmueble en mayúsculas, ej: 'CUNDINAMARCA'. Opcional." },
+              menciones_direccion: {
+                type: "array",
+                description: "BLINDAJE ANTI-TRANSPOSICIÓN. TODAS las menciones INDEPENDIENTES de la dirección catastral tal como aparecen LITERALMENTE en el certificado, ANTES de aplicar la regla de índice más alto o cualquier reformateo. Una entrada por renglón numerado del bloque 'DIRECCION DEL INMUEBLE' (1), 2), 3)…). Si solo hay un renglón, emite 1 sola entrada — está bien. NO reemplaza a nomenclatura_predio; alimenta la verificación cruzada del backend.",
+                items: {
+                  type: "object",
+                  properties: {
+                    seccion: { type: "string", description: "Sección de origen: 'direccion_inmueble_1', 'direccion_inmueble_2', 'encabezado', 'anotacion_XXXX', etc." },
+                    valor: { type: "string", description: "Transcripción LITERAL de esa mención, sin reformatear ni verbalizar." },
+                    pagina: { type: "number", description: "Página del PDF donde aparece (opcional)." },
+                  },
+                  required: ["seccion", "valor"],
+                  additionalProperties: false,
+                },
+              },
+              menciones_matricula: {
+                type: "array",
+                description: "BLINDAJE ANTI-TRANSPOSICIÓN. TODAS las menciones INDEPENDIENTES del número de matrícula inmobiliaria tal como aparecen literalmente (encabezado del certificado y pie de cada anotación relevante). Si solo hay 1, emite 1 — está bien. NO inventes menciones extra para llenar el arreglo.",
+                items: {
+                  type: "object",
+                  properties: {
+                    seccion: { type: "string", description: "'encabezado', 'anotacion_0205', 'pie_pagina_1', etc." },
+                    valor: { type: "string", description: "Matrícula LITERAL tal como se lee (ej: '50C-1572091', '50C 1572091')." },
+                    pagina: { type: "number", description: "Página del PDF donde aparece (opcional)." },
+                  },
+                  required: ["seccion", "valor"],
+                  additionalProperties: false,
+                },
+              },
             },
             required: ["matricula_inmobiliaria", "descripcion_predio", "nomenclatura_predio", "ciudad"],
             additionalProperties: false,
@@ -393,7 +421,15 @@ En el Certificado de Tradición y Libertad, EXAMINA TODAS LAS ANOTACIONES en bus
 
 Si una limitación NO concurre con la escritura de la hipoteca a cancelar (es de otra escritura), el campo concurrente DEBE ser false aunque la anotación exista en el certificado.
 
-Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.`;
+BLINDAJE ANTI-TRANSPOSICIÓN (dirección y matrícula):
+
+Antes de emitir 'inmueble.nomenclatura_predio' (que resulta de aplicar el "índice más alto" + formato TEXTO (NÚMERO)), transcribe ADEMÁS en 'inmueble.menciones_direccion[]' cada mención de dirección catastral tal como aparece LITERALMENTE en el bloque "DIRECCION DEL INMUEBLE" — sin reformatear, sin verbalizar, sin reordenar. Una entrada por renglón numerado (1), 2), 3)…).
+
+Antes de emitir 'inmueble.matricula_inmobiliaria', transcribe en 'inmueble.menciones_matricula[]' cada aparición literal del número de matrícula (encabezado del certificado y pie de cada anotación relevante). Como mínimo el encabezado y una anotación.
+
+Objetivo: permitir al backend detectar transposiciones de dígitos (ej: 13C-05 vs 13C-09, 1572091 vs 1572081) comparando las menciones entre sí. Emite HONESTAMENTE lo que ves — si solo hay una mención legible, emite una. NO inventes menciones extra para llenar el arreglo. Si una mención es humanamente ilegible, emite "NO_LEGIBLE" como valor y continúa con las demás.
+
+Llama SIEMPRE a la herramienta extract_cancelacion_hipoteca.\`;
 
 // Helpers
 function splitValor(valor: string): { letras: string; numeros: string } {
@@ -1276,7 +1312,11 @@ export function detectRequiereRevisionManual(extracted: CancelacionData): {
   const warnings = Array.isArray(pb._coherencia_warnings)
     ? (pb._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
     : [];
-  const motivos = warnings.filter(isHardBlockCoherenciaWarning);
+  const im = (extracted.inmueble || {}) as Record<string, unknown>;
+  const warningsInm = Array.isArray(im._coherencia_warnings)
+    ? (im._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+    : [];
+  const motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
 
   return {
     requiere: paths.length > 0 || motivos.length > 0,
@@ -1419,6 +1459,7 @@ function mergePoderBanco(
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
+import { validateInmuebleCoherencia } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
 
@@ -1443,6 +1484,39 @@ async function annotatePoderCoherencia(
       evento: "procesar-cancelacion.poder.coherencia",
       resultado: "warnings",
       categoria: "ocr_poder_banco",
+      detalle: {
+        trigger: ctx.trigger,
+        warnings,
+        suspicious: Array.from(suspicious),
+      },
+    });
+  } catch (_) { /* no bloqueante */ }
+}
+
+/** Anota `_coherencia_warnings` y `_coherencia_suspicious` en la sección
+ *  `inmueble` extraída del certificado. Detecta transposiciones de dígitos
+ *  en dirección catastral / matrícula comparando `menciones_direccion[]` y
+ *  `menciones_matricula[]`. Nunca bloquea aquí; el hard-block lo aplica
+ *  `detectRequiereRevisionManual` leyendo estos warnings. */
+async function annotateInmuebleCoherencia(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  inmueble: Record<string, unknown> | undefined | null,
+  ctx: { orgId: string; cancelacionId: string; userId: string; trigger: string },
+): Promise<void> {
+  if (!inmueble) return;
+  const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
+  (inmueble as Record<string, unknown>)._coherencia_warnings = warnings;
+  (inmueble as Record<string, unknown>)._coherencia_suspicious = Array.from(suspicious);
+  if (warnings.length === 0) return;
+  try {
+    await supabase.from("system_events").insert({
+      organization_id: ctx.orgId,
+      tramite_id: ctx.cancelacionId,
+      user_id: ctx.userId,
+      evento: "procesar-cancelacion.inmueble.coherencia",
+      resultado: "warnings",
+      categoria: "ocr_certificado",
       detalle: {
         trigger: ctx.trigger,
         warnings,
@@ -2867,6 +2941,13 @@ if (import.meta.main) serve(async (req) => {
           // No se adjuntó poder → no debe existir el objeto.
           delete (extracted as { poder_banco?: unknown }).poder_banco;
         }
+
+        // Coherencia intra-documento del inmueble (transposiciones dirección/matrícula).
+        await annotateInmuebleCoherencia(
+          supabaseService,
+          extracted.inmueble as unknown as Record<string, unknown>,
+          { orgId, cancelacionId, userId, trigger: "live_pipeline" },
+        );
 
         // Telemetría no bloqueante (Eje A v3 + Plan v5/B5).
         const pbFilled = extracted.poder_banco
