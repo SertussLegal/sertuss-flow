@@ -1253,11 +1253,14 @@ export async function generateAndUploadCancelacionDocs(
   cancelacionId: string,
   data: CancelacionData,
   prosaApoderadoOverride: ProsaApoderadoOverride | null,
+  opts?: { manualReviewConfirmed?: boolean },
 ): Promise<{ minutaPath: string; certPath: string }> {
   // Fail-safe por construcción: bloquear si persiste NO_LEGIBLE o hard-block.
   // Cubre los 3 call sites (flujo normal, confirm_manual_review, regen)
   // y cualquier call site futuro.
-  const revision = detectRequiereRevisionManual(data);
+  const revision = detectRequiereRevisionManual(data, {
+    manualReviewConfirmed: opts?.manualReviewConfirmed === true,
+  });
   if (revision.requiere) {
     throw new ManualReviewRequiredError(revision.paths, revision.motivos);
   }
