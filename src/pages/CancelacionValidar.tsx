@@ -129,6 +129,30 @@ export function hydratePoderBanco(ia_pb: PoderBanco, src_pb: PoderBanco): PoderB
   };
 }
 
+/** Contrato mínimo editable del bloque `poderdante`. `menciones_rl` NO se
+ *  edita desde UI — se preserva como evidencia forense. */
+export type PoderdanteScalarPatch = Partial<{
+  entidad_nombre: string;
+  entidad_nit: string;
+  representante_legal_nombre: string;
+  representante_legal_cedula: string;
+  representante_legal_cargo: string;
+}>;
+
+/** Aplica un patch escalar al bloque `poderdante` preservando SIEMPRE claves
+ *  no tocadas (incluyendo `menciones_rl` y cualquier campo profundo v6 que la
+ *  UI no conozca). Pura: testeable en aislamiento — replica en el frontend
+ *  el mismo blindaje que `mergeRegenPayload` aplica en la edge para evitar
+ *  regresiones del bug histórico de "bloque profundo borrado por override".
+ */
+export function setPoderdantePatch(
+  prev: Record<string, unknown> | null | undefined,
+  patch: PoderdanteScalarPatch,
+): Record<string, unknown> {
+  const base = (prev ?? {}) as Record<string, unknown>;
+  return { ...base, ...patch };
+}
+
 type Data = {
   hipoteca_anterior: {
     numero_escritura_hipoteca: string;
