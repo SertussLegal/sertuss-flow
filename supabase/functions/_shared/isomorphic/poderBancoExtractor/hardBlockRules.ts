@@ -7,7 +7,7 @@
 // `HARD_BLOCK_WARNING_SUFFIXES` desde este módulo para que auditorías de
 // código estático puedan importar ambas listas desde un único punto.
 
-import { isCedulaValida } from "./validate.ts";
+import { isCedulaValida, normalizeCedula, PODER_CEDULAS_PLACEHOLDER } from "./validate.ts";
 export { HARD_BLOCK_WARNING_SUFFIXES } from "./validate.ts";
 
 // ── Predicados locales (idénticos a los de index.ts) ────────────────────
