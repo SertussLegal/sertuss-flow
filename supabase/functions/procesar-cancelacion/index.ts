@@ -1412,6 +1412,11 @@ import {
   MANUAL_OVERRIDE_RULES as _MANUAL_OVERRIDE_RULES,
 } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
 export { applyManualOverrideExceptions, MANUAL_OVERRIDE_RULES } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
+import {
+  filterMotivosByScalarRecompute,
+  SCALAR_COHERENCE_GATING_CODES as _SCALAR_COHERENCE_GATING_CODES,
+} from "../_shared/isomorphic/scalarGatingRecompute.ts";
+export { SCALAR_COHERENCE_GATING_CODES, recomputeScalarCoherenceForGating } from "../_shared/isomorphic/scalarGatingRecompute.ts";
 
 
 /**
