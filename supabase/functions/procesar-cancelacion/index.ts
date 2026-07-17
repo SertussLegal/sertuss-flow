@@ -1403,57 +1403,15 @@ function isDireccionEditadaValida(v: unknown): boolean {
   return s.length >= 8 && s !== "NO_LEGIBLE" && !/^_+$/.test(s);
 }
 
-type ManualOverrideRule = {
-  warning: string;
-  canSuppress: (d: CancelacionData) => boolean;
-};
-
-const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
-  {
-    warning: "rl_banco_menciones_incoherentes",
-    canSuppress: (d) => {
-      const pb = (d.poder_banco || {}) as Record<string, unknown>;
-      const poderdante = (pb.poderdante || {}) as Record<string, unknown>;
-      return isCedulaEditadaValida(poderdante.representante_legal_cedula);
-    },
-  },
-  {
-    warning: "apoderado_cedula_menciones_incoherentes",
-    canSuppress: (d) => {
-      const pb = (d.poder_banco || {}) as Record<string, unknown>;
-      const apo = (pb.apoderado || {}) as Record<string, unknown>;
-      // Ambos escalares (plano + detalle) deben ser válidos: si sólo uno lo es,
-      // la incoherencia persiste DENTRO del propio data_final editado.
-      return isCedulaEditadaValida(pb.apoderado_cedula)
-          && isCedulaEditadaValida(apo.cedula);
-    },
-  },
-  {
-    warning: "inmueble_matricula_menciones_incoherentes",
-    canSuppress: (d) => {
-      const im = (d.inmueble || {}) as Record<string, unknown>;
-      return isMatriculaValida(im.matricula_inmobiliaria);
-    },
-  },
-  {
-    warning: "inmueble_direccion_menciones_incoherentes",
-    canSuppress: (d) => {
-      const im = (d.inmueble || {}) as Record<string, unknown>;
-      return isDireccionEditadaValida(im.nomenclatura_predio);
-    },
-  },
-];
-
-export function applyManualOverrideExceptions(
-  motivos: string[],
-  data: CancelacionData,
-): string[] {
-  return motivos.filter((m) => {
-    const rule = MANUAL_OVERRIDE_RULES.find((r) => r.warning === m);
-    if (!rule) return true;              // warning no cubierto → sigue bloqueando
-    return !rule.canSuppress(data);      // escalar válido → filtra el motivo
-  });
-}
+// `ManualOverrideRule`, `MANUAL_OVERRIDE_RULES` y `applyManualOverrideExceptions`
+// viven en `_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts` para que
+// auditorías estáticas puedan importarlos sin duplicar la lista. Se re-exporta
+// aquí para preservar la API pública previa del módulo.
+import {
+  applyManualOverrideExceptions,
+  MANUAL_OVERRIDE_RULES as _MANUAL_OVERRIDE_RULES,
+} from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
+export { applyManualOverrideExceptions, MANUAL_OVERRIDE_RULES } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
 
 
 /**
