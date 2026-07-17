@@ -28,6 +28,18 @@ function isCedulaEditadaValida(v: unknown): boolean {
   return typeof v === "string" && v.trim() !== "" && isCedulaValida(v);
 }
 
+/** Predicado más estricto que `isCedulaEditadaValida`: además del formato,
+ *  exige que la cédula normalizada NO esté en el catálogo de placeholders
+ *  conocidos (`PODER_CEDULAS_PLACEHOLDER`). Sin esto, un notario podría
+ *  "confirmar revisión manual" dejando la misma cédula placeholder (ej.
+ *  79.123.456, que pasa el regex de 6-10 dígitos) y desbloquear una
+ *  alucinación documentada del OCR. */
+function isCedulaEditadaValidaNoPlaceholder(v: unknown): boolean {
+  if (!isCedulaEditadaValida(v)) return false;
+  const norm = normalizeCedula(v as string);
+  return !!norm && !PODER_CEDULAS_PLACEHOLDER.has(norm);
+}
+
 function isMatriculaValida(v: unknown): boolean {
   if (typeof v !== "string") return false;
   const s = sanitizeMatriculaLocal(v);
