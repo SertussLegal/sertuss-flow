@@ -93,6 +93,19 @@ export const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
       return isDireccionEditadaValida(im.nomenclatura_predio);
     },
   },
+  {
+    // `apoderado_cedula_placeholder` (Regla 4 de validate.ts): el OCR
+    // reportó una cédula que coincide con el catálogo de alucinaciones
+    // conocidas. Se suprime SOLO si el humano editó `apoderado_cedula`
+    // plano a un valor con formato válido Y que NO pertenece al catálogo
+    // de placeholders. Reutilizar el predicado normal sería un bypass
+    // trivial — ver `isCedulaEditadaValidaNoPlaceholder` arriba.
+    warning: "apoderado_cedula_placeholder",
+    canSuppress: (d) => {
+      const pb = ((d as Record<string, unknown>).poder_banco || {}) as Record<string, unknown>;
+      return isCedulaEditadaValidaNoPlaceholder(pb.apoderado_cedula);
+    },
+  },
 ];
 
 export function applyManualOverrideExceptions<D>(
