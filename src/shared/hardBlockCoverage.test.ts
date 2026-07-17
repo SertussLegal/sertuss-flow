@@ -47,19 +47,24 @@ const KNOWN_UNRESOLVABLE_HARD_BLOCKS: Record<string, string> = {
 };
 
 /** Extrae todos los códigos de warning emitidos por los archivos fuente.
- *  Cubre 2 patrones:
- *    (a) `warnings.push("literal")` — directo en el cuerpo de funciones.
- *    (b) `warning: "literal",` — valor de campo en tablas declarativas
- *        (Regla 3 no-legible y Regla 7 confianza en validate.ts). */
+ *  Enfoque: en lugar de intentar cazar el patrón de push (frágil — hay al
+ *  menos 3 formas: literal directo, valor de campo `warning:`, y variable
+ *  cargada desde tabla `[["codigo", ...]]`), extraemos TODOS los string
+ *  literals cortos y filtramos por sufijo hard-block conocido o
+ *  `_confianza_baja`. Sacrifica algo de precisión (podría incluir paths
+ *  que terminen igual, aunque en este código base no ocurre) a cambio de
+ *  cobertura total garantizada. */
 function extractEmittedCodes(): Set<string> {
   const codes = new Set<string>();
-  const pushRe = /warnings\.push\(\s*"([a-z_]+)"\s*\)/g;
-  const fieldRe = /\bwarning\s*:\s*"([a-z_]+)"\s*,/g;
+  const literalRe = /"([a-z][a-z_]+)"/g;
+  const eligibleSuffixes = [...HARD_BLOCK_WARNING_SUFFIXES, "_confianza_baja"];
   for (const rel of SOURCES) {
     const src = readFileSync(resolve(ROOT, rel), "utf8");
     let m: RegExpExecArray | null;
-    while ((m = pushRe.exec(src)) !== null) codes.add(m[1]);
-    while ((m = fieldRe.exec(src)) !== null) codes.add(m[1]);
+    while ((m = literalRe.exec(src)) !== null) {
+      const s = m[1];
+      if (eligibleSuffixes.some((suf) => s.endsWith(suf))) codes.add(s);
+    }
   }
   return codes;
 }
