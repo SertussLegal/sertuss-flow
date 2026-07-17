@@ -1412,6 +1412,11 @@ import {
   MANUAL_OVERRIDE_RULES as _MANUAL_OVERRIDE_RULES,
 } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
 export { applyManualOverrideExceptions, MANUAL_OVERRIDE_RULES } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
+import {
+  filterMotivosByScalarRecompute,
+  SCALAR_COHERENCE_GATING_CODES as _SCALAR_COHERENCE_GATING_CODES,
+} from "../_shared/isomorphic/scalarGatingRecompute.ts";
+export { SCALAR_COHERENCE_GATING_CODES, recomputeScalarCoherenceForGating } from "../_shared/isomorphic/scalarGatingRecompute.ts";
 
 
 /**
@@ -1453,13 +1458,28 @@ export function detectRequiereRevisionManual(
     : [];
   let motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
 
+  // Recálculo escalar (independiente de manualReviewConfirmed): los códigos
+  // gating (`SCALAR_COHERENCE_GATING_CODES`) se re-evalúan contra los datos
+  // EDITADOS en `extracted`. Si el snapshot persistido en
+  // `_coherencia_warnings` está desactualizado y el recálculo fresco YA no
+  // los emite, dejan de bloquear. Cero persistencia — la UI sigue mostrando
+  // el snapshot viejo hasta la próxima extracción OCR real. Ver
+  // `_shared/isomorphic/scalarGatingRecompute.ts`.
+  motivos = filterMotivosByScalarRecompute(motivos, {
+    poder_banco: extracted.poder_banco,
+    partes: extracted.partes
+      ? { banco_nit: extracted.partes.banco_nit, banco_acreedor: extracted.partes.banco_acreedor }
+      : null,
+  });
+
   // Excepción "Manual > OCR > BD" generalizada: si el humano confirmó revisión
   // manual Y corrigió el/los escalar(es) relacionado(s) con un warning
-  // `*_menciones_incoherentes` a valores con formato válido, ese warning deja
-  // de ser bloqueante. Las menciones crudas se preservan en data_final como
-  // evidencia forense — sólo suprimimos el efecto de hard-block. Ver
-  // `validate.ts` (Regla 5 RL banco, Regla 6 apoderado cédula, Reglas 1/2/3
-  // inmueble) para el mismo criterio en la extracción en vivo.
+  // `*_menciones_incoherentes` (o `apoderado_cedula_placeholder`) a valores
+  // con formato válido, ese warning deja de ser bloqueante. Las menciones
+  // crudas se preservan en data_final como evidencia forense — sólo
+  // suprimimos el efecto de hard-block. Ver `validate.ts` (Regla 5 RL banco,
+  // Regla 6 apoderado cédula, Reglas 1/2/3 inmueble, Regla 4 placeholder)
+  // para el mismo criterio en la extracción en vivo.
   if (opts?.manualReviewConfirmed === true) {
     motivos = applyManualOverrideExceptions(motivos, extracted);
   }

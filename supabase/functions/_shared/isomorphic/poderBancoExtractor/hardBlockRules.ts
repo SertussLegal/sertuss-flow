@@ -7,7 +7,7 @@
 // `HARD_BLOCK_WARNING_SUFFIXES` desde este módulo para que auditorías de
 // código estático puedan importar ambas listas desde un único punto.
 
-import { isCedulaValida } from "./validate.ts";
+import { isCedulaValida, normalizeCedula, PODER_CEDULAS_PLACEHOLDER } from "./validate.ts";
 export { HARD_BLOCK_WARNING_SUFFIXES } from "./validate.ts";
 
 // ── Predicados locales (idénticos a los de index.ts) ────────────────────
@@ -26,6 +26,18 @@ function sanitizeMatriculaLocal(raw?: unknown): string | undefined {
 
 function isCedulaEditadaValida(v: unknown): boolean {
   return typeof v === "string" && v.trim() !== "" && isCedulaValida(v);
+}
+
+/** Predicado más estricto que `isCedulaEditadaValida`: además del formato,
+ *  exige que la cédula normalizada NO esté en el catálogo de placeholders
+ *  conocidos (`PODER_CEDULAS_PLACEHOLDER`). Sin esto, un notario podría
+ *  "confirmar revisión manual" dejando la misma cédula placeholder (ej.
+ *  79.123.456, que pasa el regex de 6-10 dígitos) y desbloquear una
+ *  alucinación documentada del OCR. */
+function isCedulaEditadaValidaNoPlaceholder(v: unknown): boolean {
+  if (!isCedulaEditadaValida(v)) return false;
+  const norm = normalizeCedula(v as string);
+  return !!norm && !PODER_CEDULAS_PLACEHOLDER.has(norm);
 }
 
 function isMatriculaValida(v: unknown): boolean {
@@ -79,6 +91,19 @@ export const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
     canSuppress: (d) => {
       const im = ((d as Record<string, unknown>).inmueble || {}) as Record<string, unknown>;
       return isDireccionEditadaValida(im.nomenclatura_predio);
+    },
+  },
+  {
+    // `apoderado_cedula_placeholder` (Regla 4 de validate.ts): el OCR
+    // reportó una cédula que coincide con el catálogo de alucinaciones
+    // conocidas. Se suprime SOLO si el humano editó `apoderado_cedula`
+    // plano a un valor con formato válido Y que NO pertenece al catálogo
+    // de placeholders. Reutilizar el predicado normal sería un bypass
+    // trivial — ver `isCedulaEditadaValidaNoPlaceholder` arriba.
+    warning: "apoderado_cedula_placeholder",
+    canSuppress: (d) => {
+      const pb = ((d as Record<string, unknown>).poder_banco || {}) as Record<string, unknown>;
+      return isCedulaEditadaValidaNoPlaceholder(pb.apoderado_cedula);
     },
   },
 ];

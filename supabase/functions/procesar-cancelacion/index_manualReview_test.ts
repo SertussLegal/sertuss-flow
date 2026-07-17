@@ -110,7 +110,13 @@ for (const [pathName, mutate] of CRITICAL_PATHS) {
 
 Deno.test("hard-block: _coherencia_warnings con sufijo hard-block → lanza con motivos", async () => {
   const data = cleanData();
-  data.poder_banco._coherencia_warnings = ["apoderado_cedula_no_legible"];
+  // Warning hard-block que NO está en SCALAR_COHERENCE_GATING_CODES (Parte A
+  // 2026-07-17) — los códigos gating se re-evalúan contra los datos actuales
+  // y, si los datos limpios de cleanData() ya no los emiten, se filtran.
+  // `rl_banco_menciones_incoherentes` se resuelve por MANUAL_OVERRIDE_RULES
+  // solo si `manualReviewConfirmed=true`, y aquí lo llamamos sin ese flag,
+  // por lo que sigue siendo bloqueante — comportamiento estable del test.
+  data.poder_banco._coherencia_warnings = ["rl_banco_menciones_incoherentes"];
   const sb = stubSupabase();
   const err = await assertRejects(
     () => generateAndUploadCancelacionDocs(sb, "test-id", data, null),
