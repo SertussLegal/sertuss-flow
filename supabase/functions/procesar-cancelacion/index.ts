@@ -1407,8 +1407,11 @@ function isDireccionEditadaValida(v: unknown): boolean {
 // viven en `_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts` para que
 // auditorías estáticas puedan importarlos sin duplicar la lista. Se re-exporta
 // aquí para preservar la API pública previa del módulo.
-export { applyManualOverrideExceptions } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
-import { applyManualOverrideExceptions as _applyManualOverrideExceptions } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
+import {
+  applyManualOverrideExceptions,
+  MANUAL_OVERRIDE_RULES as _MANUAL_OVERRIDE_RULES,
+} from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
+export { applyManualOverrideExceptions, MANUAL_OVERRIDE_RULES } from "../_shared/isomorphic/poderBancoExtractor/hardBlockRules.ts";
 
 
 /**
