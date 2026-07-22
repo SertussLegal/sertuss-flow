@@ -15,6 +15,14 @@ interface SaveStatusChipProps {
    * banner y no espere a que se genere sola.
    */
   blocked?: boolean;
+  /**
+   * Cuando el .docx generado ya no refleja `data_final` (el usuario
+   * editó pero aún no se regeneró la vista) el estado global NO está
+   * "todo al día" aunque el formulario esté guardado. En ese caso el
+   * chip se oculta y dejamos que el badge naranja "Vista desactualizada"
+   * sea el único indicador de estado a la derecha de la barra.
+   */
+  previewStale?: boolean;
 }
 
 /**
@@ -24,7 +32,8 @@ interface SaveStatusChipProps {
  *  - Rojo (error)    → "No se pudo guardar — Reintentar"
  *  - Azul (saving)   → "Guardando…"
  *  - Ámbar (dirty)   → "Cambios pendientes…"
- *  - Verde (ok)      → "Documento actualizado"
+ *  - Verde (ok)      → "Guardado"
+ *  - Oculto          → previewStale (el badge naranja externo manda)
  */
 export function SaveStatusChip({
   isDirty,
@@ -33,8 +42,9 @@ export function SaveStatusChip({
   lastError,
   onRetry,
   blocked,
+  previewStale,
 }: SaveStatusChipProps) {
-  // Prioridad: bloqueo > error > saving > dirty > sincronizado.
+  // Prioridad: bloqueo > error > saving > dirty > previewStale (oculto) > sincronizado.
   if (blocked && !saving) {
     return (
       <div
@@ -97,6 +107,12 @@ export function SaveStatusChip({
     );
   }
 
+  // Formulario guardado pero el .docx generado quedó atrás: no pintamos
+  // el chip verde para no contradecir al badge naranja "Vista desactualizada".
+  if (previewStale) {
+    return null;
+  }
+
   return (
     <div
       role="status"
@@ -104,7 +120,7 @@ export function SaveStatusChip({
       className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-300"
     >
       <CheckCircle2 className="h-3.5 w-3.5" />
-      <span>Documento actualizado</span>
+      <span>Guardado</span>
     </div>
   );
 }
