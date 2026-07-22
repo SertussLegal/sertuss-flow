@@ -949,6 +949,60 @@ export const CancelacionValidar = () => {
         </div>
       </div>
 
+      {/* Banner de revisión manual pendiente — CTA sticky visible arriba del
+          formulario. Sin esto el usuario tenía que hacer scroll hasta el
+          bloque "Apoderado del Banco" para encontrar el botón de desbloqueo,
+          mientras el autosave loopeaba en 409. */}
+      {row?.status === "requiere_revision_manual" && (() => {
+        const inmWarns = ((data?.inmueble as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
+        const pbWarns = ((data?.poder_banco as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
+        const motivos = [...inmWarns, ...pbWarns].filter((w): w is string => typeof w === "string");
+        return (
+          <div
+            role="alert"
+            className="sticky top-[57px] z-40 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  Revisión manual pendiente — el documento aún no se genera
+                </p>
+                <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
+                  Corrige los campos marcados en el formulario y luego pulsa
+                  <span className="font-medium"> Confirmar revisión manual y generar</span> para desbloquear la minuta y el certificado. El autoguardado no puede regenerar mientras haya alertas activas.
+                </p>
+                {motivos.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5 text-[11px] text-amber-800/80 dark:text-amber-200/80 list-disc pl-4">
+                    {motivos.map((m) => (
+                      <li key={m}>{WARNING_LABELS[m] ?? m}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                onClick={handleConfirmManualReview}
+                disabled={confirmingReview || saving || previewRefreshing}
+                className="gap-1.5 shrink-0 bg-amber-600 hover:bg-amber-600/90 text-white"
+              >
+                {confirmingReview ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar revisión manual y generar
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Visor (izq) + Form (der) con scrolls independientes */}
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_450px]">
         {/* Visor */}
