@@ -15,6 +15,14 @@ interface SaveStatusChipProps {
    * banner y no espere a que se genere sola.
    */
   blocked?: boolean;
+  /**
+   * Cuando el .docx generado ya no refleja `data_final` (el usuario
+   * editó pero aún no se regeneró la vista) el estado global NO está
+   * "todo al día" aunque el formulario esté guardado. En ese caso el
+   * chip se oculta y dejamos que el badge naranja "Vista desactualizada"
+   * sea el único indicador de estado a la derecha de la barra.
+   */
+  previewStale?: boolean;
 }
 
 /**
