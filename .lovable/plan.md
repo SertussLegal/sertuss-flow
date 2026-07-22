@@ -1,50 +1,45 @@
-Este plan es respuesta a una pregunta de investigación. No hay archivos a modificar; presento los hallazgos + opciones para que decidas.
 
-## Respuestas con evidencia
+## Qué le pasa a Alejandra AHORA (evidencia)
 
-### 1. ¿Existe un action de "re-extracción completa"?
+- Cancelación `a8af7200`: `status='requiere_revision_manual'`, `revision_manual_requerida=true`, `error_message=null`, sin `url_minuta_generada`.
+- `data_final.inmueble._coherencia_warnings` = `["inmueble_direccion_menciones_incoherentes","inmueble_matricula_menciones_incoherentes"]` (persistidos en el primer procesado a las 01:57:30 UTC).
+- Últimas invocaciones a `procesar-cancelacion` en los últimos 30 min: **4× POST → 409** (todas del autosave, tiempos 1.1–1.3 s). Cero timeouts, cero 5xx, backend sano.
+- `activity_logs`: un único `MANUAL_REVIEW_REQUIRED` con esos 2 motivos.
+- La editión humana ya está sana: `nomenclatura_predio='CALLE 61 A SUR No. 100A-73 …'` y `matricula='50S-40470079'` pasan `isDireccionEditadaValida` y `isMatriculaValida`. Las menciones crudas divergentes (`50S-4043221` en cabida y una segunda variante en dirección catastral) siguen ahí como evidencia forense — es correcto.
 
-**No hay un action con nombre dedicado.** Los `action` declarados en `procesar-cancelacion/index.ts` (línea 2361) son solo:
-- `reprocess_poder` — re-extrae SOLO el Poder (línea 2575)
-- `reprocess_cuantia` — re-extrae SOLO la cuantía del crédito (línea 2741)
-- `confirm_manual_review` — no re-extrae, solo regenera docs desde `data_final` (línea 2488)
-- `regression_cuantia` — batch de testing, no toca datos (línea 2381)
+## Causa raíz (código actual, no una regresión de hoy)
 
-**PERO** el flujo por defecto (sin `action` y sin `regen`) sí ejecuta una re-extracción completa si le pasas `cancelacionId` + `certificadoImagePaths/escrituraImagePaths/poderImagePaths` de un trámite existente. En `index.ts:2445` desestructura esos parámetros, y en `index.ts:2929` (`MODO NORMAL: cobro + IA + docx + persistencia`) arranca Gemini contra las imágenes recibidas — **no hay guard de `status`** que impida hacerlo sobre un trámite `completed`.
+`generateAndUploadCancelacionDocs` corre el fail-safe `detectRequiereRevisionManual(data, { manualReviewConfirmed })` y aplica `MANUAL_OVERRIDE_RULES` **sólo cuando `manualReviewConfirmed===true`**. Esa flag únicamente se pasa desde la acción `confirm_manual_review`. El path `regen: true` que dispara el autosave cada 1500 ms **no** la pasa → el detector re-emite los 2 motivos → `ManualReviewRequiredError` → 409 → `parseManualReviewError` marca `previewStale=true` y sale silencioso. Resultado UX: chip "Guardando…" que reaparece con cada tecla, "Vista desactualizada" persistente, panel central vacío, y no aparece el botón de descarga porque los docs nunca se generan por esa ruta. El botón que sí desbloquea (`handleConfirmManualReview` → action `confirm_manual_review`) existe pero Alejandra no lo está tocando.
 
-### 2. ¿Sobrescribe data_ia/data_final o crea trámite nuevo?
+Los cambios de hoy (banner coherencia, merge V6, `syncApoderadoFlatWithNested`) no participan en este loop — el bloqueo es 100 % de los 2 warnings de inmueble y la asimetría flag `manualReviewConfirmed`.
 
-**Sobrescribe la MISMA fila.** En `index.ts:3255` la persistencia final hace:
-```
-data_ia: cleanedExtracted,
-data_final: cleanedExtracted,
-```
-sobre `cancelacionId`. Eso significa que **cualquier edición manual previa en `data_final` se pierde**. También sobrescribe `url_minuta_generada` / `url_certificado_generado` con los nuevos docs.
+## Qué decirle a Alejandra AHORA (respuesta inmediata, sin código)
 
-### 3. Costo real en créditos
+1. Los datos que ya editó (dirección y matrícula) están correctos y son suficientes para desbloquear.
+2. Debe pulsar el botón **"Confirmar revisión manual"** (Fase E) — no "Previsualizar/Generar". Con `confirm_manual_review` el servidor aplica `MANUAL_OVERRIDE_RULES`, suprime los 2 warnings y genera minuta + certificado en una sola llamada. No cobra créditos extra.
+3. Si no encuentra el botón, hacer scroll dentro de `CancelacionValidar` — está gated por `row.status === "requiere_revision_manual"` y `revision_manual_requerida=true`, ambos true en su fila.
+4. Backend sano, sin datos perdidos: `data_ia` y `data_final` completos con `poder_banco` presente. Nada que restaurar.
 
-`credit_prices` (consultado en vivo):
-```
-GENERACION_DOCX · cancelacion_hipoteca · 2 créditos · active
-```
-El cobro ocurre en `index.ts:2947` vía `consume_credit_v2` **antes** de llamar a Gemini. Costo IA subyacente (Gemini 2.5 Pro sobre ~33 imágenes) queda absorbido en esos 2 créditos — el precio al usuario final es fijo: **2 créditos**.
+## Fix real (build posterior, requiere aprobación)
 
-### 4. Alternativa: trámite nuevo con imágenes ya rasterizadas
+### Problema de diseño
+Autosave silencioso regenera vía `regen:true` mientras el row está en `requiere_revision_manual`. Cada intento revive los mismos motivos y produce 409 + "Vista desactualizada" hasta que el usuario adivine que debe usar otro botón.
 
-Es viable y no requiere re-rasterizar:
-- `CancelacionNueva.tsx` hoy rasteriza en cliente y sube a `expediente-files/{cancelacionId}/cancelaciones/soportes/{kind}/pNN.png`, luego invoca `procesar-cancelacion` con esos paths.
-- La edge function acepta `certificadoImagePaths` como array de rutas de storage arbitrarias — no valida que estén bajo el `cancelacionId` recibido.
-- Por tanto: crear un `cancelaciones` row nuevo (status `draft`) e invocar `procesar-cancelacion` pasándole los paths existentes `1c63c1aa-…/cancelaciones/soportes/certificado/p01-03.png` etc. dispararía la extracción sin re-rasterizar.
-- Costo: también **2 créditos** (mismo `GENERACION_DOCX`).
+### Cambios propuestos (frontend-only, mínimos)
 
-## Opciones sobre la mesa (elige tú, no ejecuto nada)
+1. **`CancelacionValidar.tsx` — `persistData({silent:true})`:** cuando `row?.status === "requiere_revision_manual"`, saltar la llamada a `procesar-cancelacion` con `regen:true`. Persistir `data_final` con una escritura directa (update simple) o vía un nuevo modo `save_only` en la edge function. El objetivo: no regenerar el docx mientras el row esté bloqueado; sólo guardar campos.
 
-| Opción | Efecto | Costo | Riesgo |
-|---|---|---|---|
-| **A. Re-invocar el flujo default sobre el mismo `cancelacionId`** con los `imagePaths` existentes | Sobrescribe `data_ia`/`data_final`/docs del trámite `1c63c1aa` | 2 créditos | Se pierde toda edición manual previa en `data_final` |
-| **B. Crear un `cancelaciones` nuevo apuntando a los mismos paths de storage** | Trámite nuevo, el original queda intacto | 2 créditos | Ninguno — el original queda como respaldo comparable |
-| **C. Añadir un `action: "reextract_full"` con guard explícito** que respalde `data_final` previo antes de sobrescribir | Requiere código nuevo | 2 créditos por corrida | Trabajo de dev + tests |
+2. **Banner visible cuando `revision_manual_requerida=true`:** mostrar un aviso persistente arriba del formulario con el CTA "Confirmar revisión manual y generar" (usa el handler existente `handleConfirmManualReview`), y listar los 2 motivos crudos con hint de qué campo editar. Reutiliza `parseManualReviewError` para el shape.
 
-Mi recomendación por defecto es **B** para el caso puntual del trámite `1c63c1aa` (no destruye evidencia). Si esto va a ser recurrente, entonces **C** para dejarlo como capacidad de primera clase.
+3. **Chip de estado:** cuando el row está bloqueado, `SaveStatusChip` debe mostrar "Bloqueado — falta confirmar revisión" en vez de "Guardando…". Un estado extra opcional (`blocked`) para no confundir con el ciclo dirty/saving/saved actual.
 
-Confirma cuál (A / B / C) apruebas y cambio a modo build para ejecutarla.
+### Fuera de alcance de este plan
+- Cambiar la semántica de `applyManualOverrideExceptions` para aplicarla también en `regen` (rompería el principio "Manual > OCR sólo cuando el humano confirmó explícitamente" y quitaría el gate de auditoría).
+- Tocar `syncApoderadoFlatWithNested`, banners de coherencia u OCR — no participan en el bug.
+
+### Verificación
+- Manual: reproducir con `a8af7200` (o clonarlo) → editar dirección → confirmar que autosave ya no dispara 409, banner aparece, CTA genera docs, `status → completed` y `url_minuta_generada` poblado.
+- Test: agregar caso en `index_manualOverride_test.ts` que valide que el path `regen:true` sigue devolviendo 409 (para no romper el gate) y un test de UI (opcional) que confirme el banner.
+
+## Recomendación inmediata
+Mandarle a Alejandra el paso 1–3 de arriba por chat ya mismo. El fix del banner + supresión de autosave-regen entra en un turno de build corto cuando ella confirme que pudo desbloquear.
