@@ -920,8 +920,10 @@ export const CancelacionValidar = () => {
             )}
             {previewStale && !previewRefreshing && (
               <span
+                role="status"
+                aria-live="polite"
                 className="text-[11px] flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-600 dark:text-amber-400"
-                title="Los cambios se guardaron, pero el documento mostrado puede estar desactualizado. Pulsa Regenerar."
+                aria-label="Vista desactualizada: los cambios se guardaron, pero el documento mostrado puede estar desactualizado. Pulsa Regenerar."
               >
                 <AlertTriangle className="h-3 w-3" /> Vista desactualizada
               </span>
@@ -945,7 +947,9 @@ export const CancelacionValidar = () => {
               lastError={saveError}
               onRetry={handleManualSave}
               blocked={row?.status === "requiere_revision_manual"}
+              previewStale={previewStale}
             />
+
 
           </div>
         </div>
