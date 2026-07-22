@@ -547,6 +547,16 @@ export const CancelacionValidar = () => {
         setSaveError(null);
         lastSavedSnapshotRef.current = snapshot;
         setIsDirty(false);
+        // Fix "atascada": mientras el row esté en `requiere_revision_manual`,
+        // NO disparamos `regen` — el backend re-emitiría los mismos motivos
+        // hard-block (sólo `confirm_manual_review` aplica MANUAL_OVERRIDE_RULES)
+        // y el autosave entraría en loop de 409 con chip "Guardando…" y
+        // "Vista desactualizada" permanente. El usuario debe pulsar el CTA
+        // "Confirmar revisión manual" para desbloquear.
+        if (row?.status === "requiere_revision_manual") {
+          setPreviewStale(false);
+          return true;
+        }
         // Regen silencioso con SSOT del frontend (manualOverrides).
         if (isRegenInFlightRef.current) {
           // Otro regen en curso: marcamos stale y dejamos que el siguiente
