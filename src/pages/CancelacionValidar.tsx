@@ -609,7 +609,7 @@ export const CancelacionValidar = () => {
         return false;
       }
     },
-    [id, data, queryClient],
+    [id, data, row?.status, queryClient],
   );
 
   // Debounce unificado: 1500ms para todo el formulario. El chip vivo
