@@ -944,7 +944,9 @@ export const CancelacionValidar = () => {
               previewRefreshing={previewRefreshing}
               lastError={saveError}
               onRetry={handleManualSave}
+              blocked={row?.status === "requiere_revision_manual"}
             />
+
           </div>
         </div>
       </div>
