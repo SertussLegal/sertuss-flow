@@ -32,7 +32,8 @@ interface SaveStatusChipProps {
  *  - Rojo (error)    → "No se pudo guardar — Reintentar"
  *  - Azul (saving)   → "Guardando…"
  *  - Ámbar (dirty)   → "Cambios pendientes…"
- *  - Verde (ok)      → "Documento actualizado"
+ *  - Verde (ok)      → "Guardado"
+ *  - Oculto          → previewStale (el badge naranja externo manda)
  */
 export function SaveStatusChip({
   isDirty,
@@ -41,8 +42,9 @@ export function SaveStatusChip({
   lastError,
   onRetry,
   blocked,
+  previewStale,
 }: SaveStatusChipProps) {
-  // Prioridad: bloqueo > error > saving > dirty > sincronizado.
+  // Prioridad: bloqueo > error > saving > dirty > previewStale (oculto) > sincronizado.
   if (blocked && !saving) {
     return (
       <div
