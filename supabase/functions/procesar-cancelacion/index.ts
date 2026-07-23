@@ -830,6 +830,11 @@ const TIPO_ID_LABEL: Record<string, string> = {
   "CEDULA DE EXTRANJERIA": "cédula de extranjería",
   "PASAPORTE": "pasaporte",
 };
+const TIPO_ID_LABEL_CAP: Record<string, string> = {
+  "CEDULA DE CIUDADANIA": "Cédula de Ciudadanía",
+  "CEDULA DE EXTRANJERIA": "Cédula de Extranjería",
+  "PASAPORTE": "Pasaporte",
+};
 const onlyDigits = (s: unknown): string => String(s ?? "").replace(/\D+/g, "");
 const formatCC = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
@@ -943,6 +948,17 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
       return `${t.art_deudor.toUpperCase()} ${d.nombre}, ${t.id_deudor} con ${tipoLabel} número ${d.identificacion_formateada}`;
     })
     .join(", Y ");
+  const nDeudoresCount = deudoresArr.length;
+  const verboConstituirDeudores = nDeudoresCount > 1 ? "constituyeron" : "constituyó";
+  const verboPagarDeudores = nDeudoresCount > 1 ? "han pagado" : "ha pagado";
+  const hipotecanteLabelDeudores = nDeudoresCount > 1 ? "hipotecantes" : "hipotecante";
+  const deudoresBloqueIdentificacion = deudoresArr
+    .map((d) => {
+      const t = deudorTokens(d.genero);
+      const tipoLabel = TIPO_ID_LABEL_CAP[d.tipo_id] || "Cédula de Ciudadanía";
+      return `${d.nombre}, mayor de edad, ${t.id_deudor} con ${tipoLabel} número ${d.identificacion_formateada}.`;
+    })
+    .join("\n");
   // Bloque de firmas — orden alfabético estable en español, INDEPENDIENTE
   // del orden registral. Tag opcional para plantillas futuras.
   const firmasDeudoresProsa = [...deudoresArr]
@@ -1187,6 +1203,10 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     deudor_tipo_id: deudorTipoIdMostrado,
     comparecientes_deudores_prosa: comparecientesDeudoresProsa || undefined,
     firmas_deudores_prosa: firmasDeudoresProsa || undefined,
+    deudores_bloque_identificacion: deudoresBloqueIdentificacion || undefined,
+    verbo_constituir_deudores: verboConstituirDeudores,
+    verbo_pagar_deudores: verboPagarDeudores,
+    hipotecante_label_deudores: hipotecanteLabelDeudores,
     banco_acreedor: data.partes.banco_acreedor,
     banco_nit: data.partes.banco_nit,
     // Ley 546
