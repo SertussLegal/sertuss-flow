@@ -952,6 +952,7 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
   const verboConstituirDeudores = nDeudoresCount > 1 ? "constituyeron" : "constituyó";
   const verboPagarDeudores = nDeudoresCount > 1 ? "han pagado" : "ha pagado";
   const hipotecanteLabelDeudores = nDeudoresCount > 1 ? "hipotecantes" : "hipotecante";
+  const verboCancelarDeudores = nDeudoresCount > 1 ? "han cancelado" : "ha cancelado";
   const deudoresBloqueIdentificacion = deudoresArr
     .map((d) => {
       const t = deudorTokens(d.genero);
@@ -1207,6 +1208,7 @@ export function buildDocxVars(data: CancelacionData, prosaOverride?: ProsaApoder
     verbo_constituir_deudores: verboConstituirDeudores,
     verbo_pagar_deudores: verboPagarDeudores,
     hipotecante_label_deudores: hipotecanteLabelDeudores,
+    verbo_cancelar_deudores: verboCancelarDeudores,
     banco_acreedor: data.partes.banco_acreedor,
     banco_nit: data.partes.banco_nit,
     // Ley 546
