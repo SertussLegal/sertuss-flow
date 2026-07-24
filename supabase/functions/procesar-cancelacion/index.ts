@@ -53,25 +53,31 @@ const TEMPLATE_MINUTA_V3 = "formato cancelacion hipoteca v3.docx";
 const TEMPLATE_CERT = "CERTIFICADO can hipo blanqueado.docx";
 
 /**
- * Selector de plantilla de minuta (Fase B3 del plan v5).
+ * Selector de plantilla de minuta.
  *
- * Reglas:
- *   - v3 SOLO cuando el flag global `POWER_V5_ENABLED` está encendido Y
- *     el trámite trae la estructura v5 extraída (`poder_banco.apoderado.tipo`
- *     poblado con 'natural' o 'juridica'). Esa forma solo aparece cuando el
- *     schema de OCR v5 corrió sobre el Poder General.
- *   - v2 en cualquier otro caso: flag apagado, trámite legacy, o Poder
- *     ausente. Mantiene compatibilidad retro sin sorpresas para tenants.
+ * DECISIÓN 2026-07-23 (investigación exhaustiva, ver historial de chat):
+ * v3 fue creada el 4-jul basándose en la hipótesis de que v2 no podía
+ * renderizar apoderados persona jurídica. Esa hipótesis resultó incorrecta:
+ * la causa raíz real (18-jul) fue que `classifyApoderado` se llamaba sin
+ * argumentos y degradaba silenciosamente a null, dejando vacíos los tags
+ * de prosa — se corrigió en código, no en plantilla. v2 YA contiene
+ * {comparecencia_prosa}/{antefirma_prosa}/{nota_autorizacion_prosa} y maneja
+ * correctamente ambos casos (confirmado en producción real 2026-07-23 con
+ * apoderado jurídico CONECTIVA GLOBAL S.A.S.). v3 quedó abandonada desde su
+ * creación con solo 3 de ~43 tags conectados (el resto son placeholders
+ * literales "XXXXXXXXXXXXXXXXXXX") y NUNCA se usó en un trámite real.
  *
- * NO lanza: si el bucket no tiene la plantilla v3 aún, el error se
- * materializa en `fillTemplate` con mensaje claro por nombre de archivo.
+ * Por eso esta función siempre devuelve v2, independiente de
+ * POWER_V5_ENABLED/POWER_DEEP_SCHEMA_ENABLED (esa bandera sigue siendo
+ * válida para su otro propósito: caché inmutable del OCR del Poder en
+ * `runWithPoderCache`, ver poderBancoSchemaVersion.ts). Esto evita que
+ * activar la bandera por el caché active también, sin querer, una
+ * plantilla incompleta.
+ *
+ * v3 NO se borra del bucket ni la constante TEMPLATE_MINUTA_V3 se elimina
+ * del código — quedan inertes, documentadas, sin ruta de ejecución.
  */
-export function selectMinutaTemplate(data: CancelacionData): string {
-  if (!POWER_V5_ENABLED) return TEMPLATE_MINUTA;
-  const pb = (data.poder_banco || {}) as Record<string, unknown>;
-  const apo = (pb.apoderado || {}) as Record<string, unknown>;
-  const tipo = typeof apo.tipo === "string" ? apo.tipo : "";
-  if (tipo === "natural" || tipo === "juridica") return TEMPLATE_MINUTA_V3;
+export function selectMinutaTemplate(_data: CancelacionData): string {
   return TEMPLATE_MINUTA;
 }
 
