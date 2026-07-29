@@ -2491,57 +2491,73 @@ if (import.meta.main) serve(async (req) => {
       });
     }
 
-    const TEST_SYSTEM_PROMPT = `Eres un asistente jurídico experto en formato notarial colombiano. Tu única tarea es tomar el bloque "DIRECCION DEL INMUEBLE" de un Certificado de Tradición y devolver 'nomenclatura_predio' en formato notarial.
+    // Copia local del SYSTEM_PROMPT real de producción con SOLO 3 reemplazos
+    // de texto acotados a los ejemplos de nomenclatura_predio. Todo el resto
+    // del prompt queda idéntico al que corre en el flujo normal.
+    const TEST_SYSTEM_PROMPT = SYSTEM_PROMPT
+      .replace(
+        `(59 SUR No. 60-84)".`,
+        `(CALLE 59 SUR No. 60-84)". El paréntesis corto SIEMPRE debe incluir la palabra de la vía (CALLE/CARRERA/AVENIDA/DIAGONAL/TRANSVERSAL/etc.) inmediatamente antes del número — igual que en la parte de letras, para que letras y número describan EXACTAMENTE lo mismo.`,
+      )
+      .replace(`(62A No. 53B-21)".`, `(CALLE 62A No. 53B-21)".`)
+      .replace(`(13 BIS No. 85-32)".`, `(CARRERA 13 BIS No. 85-32)".`);
 
-REGLA DE FORMATO (bajo prueba):
-- Selecciona el renglón de ÍNDICE MÁS ALTO del bloque "DIRECCION DEL INMUEBLE".
-- Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
-- Formato completo: "<VIA EN LETRAS> <NUMERO EN LETRAS> NÚMERO <PLACA EN LETRAS - LETRAS> (<VIA ABREVIADA CANONICA EN MAYUSCULA> <NUMERO> No. <PLACA>)".
-- IMPORTANTE (cambio bajo prueba): el paréntesis corto DEBE incluir la palabra de la vía tal como aparece en la parte de letras, para que letras y número describan EXACTAMENTE lo mismo. Ejemplos:
-  - "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (CALLE 59 SUR No. 60-84)"
-  - "KR 106A 156 98" → "CARRERA CIENTO SEIS A NÚMERO CIENTO CINCUENTA Y SEIS - NOVENTA Y OCHO (CARRERA 106A No. 156-98)"
-  - "CL 11B BIS A 78 23" → "CALLE ONCE B BIS A NÚMERO SETENTA Y OCHO - VEINTITRES (CALLE 11B BIS A No. 78-23)"
-- Conserva letras pegadas (62A, BIS) y sufijos cardinales (SUR/NORTE/ESTE/OESTE) tal como aparecen.
-- NO incluyas apartamento/torre/interior/bloque/manzana/casa, ciudad, ni "(DIRECCION CATASTRAL)".
-
-Devuelve SOLO JSON: {"nomenclatura_predio": "..."}. Sin texto adicional.`;
+    const listImages = async (prefix: string): Promise<string[]> => {
+      const { data: files, error } = await supabaseService.storage.from(BUCKET_OUTPUT).list(prefix);
+      if (error || !files) return [];
+      return files
+        .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
+        .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
+        .map((f: { name: string }) => `${prefix}/${f.name}`);
+    };
 
     const results: Array<Record<string, unknown>> = [];
     for (const id of ids) {
       try {
-        const prefix = `${id}/cancelaciones/soportes/certificado`;
-        const { data: files, error: listErr } = await supabaseService.storage.from(BUCKET_OUTPUT).list(prefix);
-        if (listErr || !files || files.length === 0) {
-          results.push({ tramite_id: id, error: `no_pages prefix=${prefix}` });
+        const certPrefix = `${id}/cancelaciones/soportes/certificado`;
+        const escPrefix = `${id}/cancelaciones/soportes/escritura`;
+        const certPaths = await listImages(certPrefix);
+        const escPaths = await listImages(escPrefix);
+        if (certPaths.length === 0) {
+          results.push({ tramite_id: id, error: `no_cert_images prefix=${certPrefix}` });
           continue;
         }
-        const paths = files
-          .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
-          .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
-          .map((f: { name: string }) => `${prefix}/${f.name}`);
-        if (paths.length === 0) {
-          results.push({ tramite_id: id, error: `no_jpg prefix=${prefix}` });
+        if (escPaths.length === 0) {
+          results.push({ tramite_id: id, error: `no_esc_images prefix=${escPrefix}` });
           continue;
         }
-        const urls = await Promise.all(paths.map((p) => createSignedStorageUrl(supabaseService, p)));
+        const certUrls = await Promise.all(certPaths.map((p) => createSignedStorageUrl(supabaseService, p)));
+        const escUrls = await Promise.all(escPaths.map((p) => createSignedStorageUrl(supabaseService, p)));
+
         const userContent: Array<Record<string, unknown>> = [
-          { type: "text", text: "Extrae 'nomenclatura_predio' del bloque DIRECCION DEL INMUEBLE de este certificado. Responde SOLO el JSON pedido." },
-          ...urls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+          {
+            type: "text",
+            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden); los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). NO se adjuntó Poder General; OMITE el objeto 'poder_banco' por completo. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
+          },
+          ...certUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+          ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
         ];
+
         const aiResp = await fetchAiGateway({
           apiKey: LOVABLE_API_KEY_TEST,
           body: {
-            model: "google/gemini-2.5-flash",
+            model: "google/gemini-2.5-pro",
             messages: [
               { role: "system", content: TEST_SYSTEM_PROMPT },
               { role: "user", content: userContent },
             ],
+            tools,
+            tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
           },
           tag: "test.nomenclatura",
         });
-        const aiJson = await aiResp.json();
-        const textOut = aiJson?.choices?.[0]?.message?.content ?? "";
-        results.push({ tramite_id: id, raw_response: textOut });
+        const extracted = await parseToolCallArguments<CancelacionData>(aiResp, "test.nomenclatura");
+        const inm = (extracted as { inmueble?: Record<string, unknown> })?.inmueble ?? {};
+        results.push({
+          tramite_id: id,
+          nomenclatura_predio: (inm as Record<string, unknown>).nomenclatura_predio ?? null,
+          direccion_candidatas: (inm as Record<string, unknown>).direccion_candidatas ?? null,
+        });
       } catch (e) {
         results.push({ tramite_id: id, error: (e as Error).message });
       }
