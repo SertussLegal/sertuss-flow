@@ -2511,7 +2511,7 @@ if (import.meta.main) serve(async (req) => {
         .map((f: { name: string }) => `${prefix}/${f.name}`);
     };
 
-    const results: Array<Record<string, unknown>> = [];
+    
     const runOne = async (id: string): Promise<Record<string, unknown>> => {
       try {
         const certPrefix = `${id}/cancelaciones/soportes/certificado`;
