@@ -389,11 +389,14 @@ b) FORMATO TEXTO (NÚMERO) OBLIGATORIO con concordancia colombiana:
    - Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
    - Número de la vía en letras + "(N)". Conserva el sufijo cardinal (SUR/NORTE/ESTE/OESTE) en MAYÚSCULAS inmediatamente después del número.
    - Placa: literal "NÚMERO" + primer número en letras + " - " (SÍMBOLO GUION ASCII rodeado de espacios, NUNCA la palabra 'GUION') + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
-   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)".
+   - El paréntesis corto SIEMPRE debe incluir la palabra COMPLETA de la vía (CALLE/CARRERA/AVENIDA/DIAGONAL/TRANSVERSAL/CIRCULAR/AUTOPISTA — la misma forma canónica usada en la parte de letras, NUNCA una abreviatura como CL/CR/KR/AV/DG/TV), inmediatamente antes del número, para que letras y número describan EXACTAMENTE lo mismo.
+   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (CALLE 59 SUR No. 60-84)".
+   - Ej Avenida: "AV 68 25 45" → "AVENIDA SESENTA Y OCHO NÚMERO VEINTICINCO - CUARENTA Y CINCO (AVENIDA 68 No. 25-45)".
+   - Ej Transversal: "TV 79 11B 15" → "TRANSVERSAL SETENTA Y NUEVE NÚMERO ONCE B - QUINCE (TRANSVERSAL 79 No. 11B-15)".
 
 c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número): si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL. El separador sigue siendo el símbolo "-", NO la palabra "GUION".
-   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)".
-   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (13 BIS No. 85-32)".
+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (CALLE 62A No. 53B-21)".
+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (CARRERA 13 BIS No. 85-32)".
    PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA", "DOBLE" o "GUION": la letra/sufijo se transcribe literal en mayúscula y el separador queda como el símbolo "-".
 
 d) CARDINALES MASCULINOS: los números van en cardinales masculinos ("UNO", "DOS", "VEINTIUNO", "TREINTA Y UNO"…). La concordancia femenina de ordinales 1-10 NO aplica a direcciones.
@@ -2470,101 +2473,8 @@ if (import.meta.main) serve(async (req) => {
     });
   }
 
-  if (bodyAny?.action === "test_nomenclatura_prompt") {
-    const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
-    if (isAdminErr || isAdminData !== true) {
-      return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    const ids = Array.isArray(bodyAny.tramite_ids) ? (bodyAny.tramite_ids as unknown[]).filter((x) => typeof x === "string") as string[] : [];
-    if (ids.length === 0) {
-      return new Response(JSON.stringify({ error: "tramite_ids (string[]) requerido" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const LOVABLE_API_KEY_TEST = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY_TEST) {
-      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    // Copia local del SYSTEM_PROMPT real de producción con SOLO 3 reemplazos
-    // de texto acotados a los ejemplos de nomenclatura_predio. Todo el resto
-    // del prompt queda idéntico al que corre en el flujo normal.
-    const TEST_SYSTEM_PROMPT = SYSTEM_PROMPT
-      .replace(
-        `(59 SUR No. 60-84)".`,
-        `(CALLE 59 SUR No. 60-84)". El paréntesis corto SIEMPRE debe incluir la palabra de la vía (CALLE/CARRERA/AVENIDA/DIAGONAL/TRANSVERSAL/etc.) inmediatamente antes del número — igual que en la parte de letras, para que letras y número describan EXACTAMENTE lo mismo.`,
-      )
-      .replace(`(62A No. 53B-21)".`, `(CALLE 62A No. 53B-21)".`)
-      .replace(`(13 BIS No. 85-32)".`, `(CARRERA 13 BIS No. 85-32)".`);
-
-    const listImages = async (prefix: string): Promise<string[]> => {
-      const { data: files, error } = await supabaseService.storage.from(BUCKET_OUTPUT).list(prefix);
-      if (error || !files) return [];
-      return files
-        .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
-        .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
-        .map((f: { name: string }) => `${prefix}/${f.name}`);
-    };
-
-    
-    const runOne = async (id: string): Promise<Record<string, unknown>> => {
-      try {
-        const certPrefix = `${id}/cancelaciones/soportes/certificado`;
-        const escPrefix = `${id}/cancelaciones/soportes/escritura`;
-        const certPaths = await listImages(certPrefix);
-        const escPaths = await listImages(escPrefix);
-        if (certPaths.length === 0) {
-          return { tramite_id: id, error: `no_cert_images prefix=${certPrefix}` };
-        }
-        if (escPaths.length === 0) {
-          return { tramite_id: id, error: `no_esc_images prefix=${escPrefix}` };
-        }
-        const certUrls = await Promise.all(certPaths.map((p) => createSignedStorageUrl(supabaseService, p)));
-        const escUrls = await Promise.all(escPaths.map((p) => createSignedStorageUrl(supabaseService, p)));
-
-        const userContent: Array<Record<string, unknown>> = [
-          {
-            type: "text",
-            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden); los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden). NO se adjuntó Poder General; OMITE el objeto 'poder_banco' por completo. Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
-          },
-          ...certUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
-          ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
-        ];
-
-        const aiResp = await fetchAiGateway({
-          apiKey: LOVABLE_API_KEY_TEST,
-          body: {
-            model: "google/gemini-2.5-pro",
-            messages: [
-              { role: "system", content: TEST_SYSTEM_PROMPT },
-              { role: "user", content: userContent },
-            ],
-            tools,
-            tool_choice: { type: "function", function: { name: "extract_cancelacion_hipoteca" } },
-          },
-          tag: "test.nomenclatura",
-        });
-        const extracted = await parseToolCallArguments<CancelacionData>(aiResp, "test.nomenclatura");
-        const inm = (extracted as { inmueble?: Record<string, unknown> })?.inmueble ?? {};
-        return {
-          tramite_id: id,
-          nomenclatura_predio: (inm as Record<string, unknown>).nomenclatura_predio ?? null,
-          direccion_candidatas: (inm as Record<string, unknown>).direccion_candidatas ?? null,
-        };
-      } catch (e) {
-        return { tramite_id: id, error: (e as Error).message };
-      }
-    };
-    const results = await Promise.all(ids.map(runOne));
-    return new Response(JSON.stringify({ ok: true, results }, null, 2), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
 
 
 
