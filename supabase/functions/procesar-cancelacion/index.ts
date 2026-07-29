@@ -2571,16 +2571,22 @@ if (import.meta.main) serve(async (req) => {
       }
     };
 
+    const onlyCondition = typeof bodyAny.condition === "string" ? bodyAny.condition : null;
     const results: Record<string, unknown> = {};
     for (const id of ids) {
       results[id] = { default: [], temperature_0: [] };
-      for (let i = 0; i < runsPerCondition; i++) {
-        (results[id] as Record<string, unknown[]>).default.push(await runOnce(id, null));
+      if (onlyCondition === null || onlyCondition === "default") {
+        for (let i = 0; i < runsPerCondition; i++) {
+          (results[id] as Record<string, unknown[]>).default.push(await runOnce(id, null));
+        }
       }
-      for (let i = 0; i < runsPerCondition; i++) {
-        (results[id] as Record<string, unknown[]>).temperature_0.push(await runOnce(id, 0));
+      if (onlyCondition === null || onlyCondition === "temperature_0") {
+        for (let i = 0; i < runsPerCondition; i++) {
+          (results[id] as Record<string, unknown[]>).temperature_0.push(await runOnce(id, 0));
+        }
       }
     }
+
 
     return new Response(JSON.stringify({ ok: true, runs_per_condition: runsPerCondition, results }, null, 2), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
