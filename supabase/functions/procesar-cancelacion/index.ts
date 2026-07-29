@@ -2439,7 +2439,7 @@ if (import.meta.main) serve(async (req) => {
           return { tramite_id: id, error: `no_pages (${listErr?.message ?? "empty"}) prefix=${prefix}` };
         }
         const paths = files
-          .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+          .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
           .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
           .map((f: { name: string }) => `${prefix}/${f.name}`);
         if (paths.length === 0) {
@@ -2623,7 +2623,7 @@ if (import.meta.main) serve(async (req) => {
         return biz("no_poder_attached", "No se encontraron páginas del Poder General para re-procesar.");
       }
       const poderPaths = poderFiles
-        .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+        .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
         .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
         .map((f: { name: string }) => `${poderPrefix}/${f.name}`);
 
@@ -2788,7 +2788,7 @@ if (import.meta.main) serve(async (req) => {
         return biz("no_escritura_attached", "No se encontraron páginas de la escritura antecedente para re-procesar.");
       }
       const escPaths = escFiles
-        .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+        .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
         .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
         .map((f: { name: string }) => `${escPrefix}/${f.name}`);
       if (escPaths.length === 0) {
