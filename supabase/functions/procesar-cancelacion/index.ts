@@ -2470,6 +2470,89 @@ if (import.meta.main) serve(async (req) => {
     });
   }
 
+  if (bodyAny?.action === "test_nomenclatura_prompt") {
+    const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
+    if (isAdminErr || isAdminData !== true) {
+      return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const ids = Array.isArray(bodyAny.tramite_ids) ? (bodyAny.tramite_ids as unknown[]).filter((x) => typeof x === "string") as string[] : [];
+    if (ids.length === 0) {
+      return new Response(JSON.stringify({ error: "tramite_ids (string[]) requerido" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const LOVABLE_API_KEY_TEST = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY_TEST) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const TEST_SYSTEM_PROMPT = `Eres un asistente jurídico experto en formato notarial colombiano. Tu única tarea es tomar el bloque "DIRECCION DEL INMUEBLE" de un Certificado de Tradición y devolver 'nomenclatura_predio' en formato notarial.
+
+REGLA DE FORMATO (bajo prueba):
+- Selecciona el renglón de ÍNDICE MÁS ALTO del bloque "DIRECCION DEL INMUEBLE".
+- Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
+- Formato completo: "<VIA EN LETRAS> <NUMERO EN LETRAS> NÚMERO <PLACA EN LETRAS - LETRAS> (<VIA ABREVIADA CANONICA EN MAYUSCULA> <NUMERO> No. <PLACA>)".
+- IMPORTANTE (cambio bajo prueba): el paréntesis corto DEBE incluir la palabra de la vía tal como aparece en la parte de letras, para que letras y número describan EXACTAMENTE lo mismo. Ejemplos:
+  - "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (CALLE 59 SUR No. 60-84)"
+  - "KR 106A 156 98" → "CARRERA CIENTO SEIS A NÚMERO CIENTO CINCUENTA Y SEIS - NOVENTA Y OCHO (CARRERA 106A No. 156-98)"
+  - "CL 11B BIS A 78 23" → "CALLE ONCE B BIS A NÚMERO SETENTA Y OCHO - VEINTITRES (CALLE 11B BIS A No. 78-23)"
+- Conserva letras pegadas (62A, BIS) y sufijos cardinales (SUR/NORTE/ESTE/OESTE) tal como aparecen.
+- NO incluyas apartamento/torre/interior/bloque/manzana/casa, ciudad, ni "(DIRECCION CATASTRAL)".
+
+Devuelve SOLO JSON: {"nomenclatura_predio": "..."}. Sin texto adicional.`;
+
+    const results: Array<Record<string, unknown>> = [];
+    for (const id of ids) {
+      try {
+        const prefix = `${id}/cancelaciones/soportes/certificado`;
+        const { data: files, error: listErr } = await supabaseService.storage.from(BUCKET_OUTPUT).list(prefix);
+        if (listErr || !files || files.length === 0) {
+          results.push({ tramite_id: id, error: `no_pages prefix=${prefix}` });
+          continue;
+        }
+        const paths = files
+          .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+          .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
+          .map((f: { name: string }) => `${prefix}/${f.name}`);
+        if (paths.length === 0) {
+          results.push({ tramite_id: id, error: `no_jpg prefix=${prefix}` });
+          continue;
+        }
+        const urls = await Promise.all(paths.map((p) => createSignedStorageUrl(supabaseService, p)));
+        const userContent: Array<Record<string, unknown>> = [
+          { type: "text", text: "Extrae 'nomenclatura_predio' del bloque DIRECCION DEL INMUEBLE de este certificado. Responde SOLO el JSON pedido." },
+          ...urls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+        ];
+        const aiResp = await fetchAiGateway({
+          apiKey: LOVABLE_API_KEY_TEST,
+          body: {
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "system", content: TEST_SYSTEM_PROMPT },
+              { role: "user", content: userContent },
+            ],
+          },
+          tag: "test.nomenclatura",
+        });
+        const aiJson = await aiResp.json();
+        const textOut = aiJson?.choices?.[0]?.message?.content ?? "";
+        results.push({ tramite_id: id, raw_response: textOut });
+      } catch (e) {
+        results.push({ tramite_id: id, error: (e as Error).message });
+      }
+    }
+    return new Response(JSON.stringify({ ok: true, results }, null, 2), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+
+
   const { cancelacionId, certificadoPath, certificadoImagePaths, escrituraPath, escrituraImagePaths, poderPath, poderImagePaths, regen, manualOverrides, action } = body;
 
   if (!cancelacionId) {
