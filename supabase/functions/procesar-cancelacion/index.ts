@@ -389,11 +389,14 @@ b) FORMATO TEXTO (NÚMERO) OBLIGATORIO con concordancia colombiana:
    - Vía: CL/CLL/CALLE → "CALLE"; CR/CRA/KR/KRA/CARRERA → "CARRERA"; AV/AVENIDA → "AVENIDA"; DG/DIAGONAL → "DIAGONAL"; TV/TRANSVERSAL → "TRANSVERSAL"; CIRCULAR; AUTOPISTA.
    - Número de la vía en letras + "(N)". Conserva el sufijo cardinal (SUR/NORTE/ESTE/OESTE) en MAYÚSCULAS inmediatamente después del número.
    - Placa: literal "NÚMERO" + primer número en letras + " - " (SÍMBOLO GUION ASCII rodeado de espacios, NUNCA la palabra 'GUION') + segundo número en letras, y cerrar con "(N SUR? No. N-N)".
-   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (59 SUR No. 60-84)".
+   - El paréntesis corto SIEMPRE debe incluir la palabra COMPLETA de la vía (CALLE/CARRERA/AVENIDA/DIAGONAL/TRANSVERSAL/CIRCULAR/AUTOPISTA — la misma forma canónica usada en la parte de letras, NUNCA una abreviatura como CL/CR/KR/AV/DG/TV), inmediatamente antes del número, para que letras y número describan EXACTAMENTE lo mismo.
+   - Ej canónico: "CL 59 SUR 60 84" → "CALLE CINCUENTA Y NUEVE SUR NÚMERO SESENTA - OCHENTA Y CUATRO (CALLE 59 SUR No. 60-84)".
+   - Ej Avenida: "AV 68 25 45" → "AVENIDA SESENTA Y OCHO NÚMERO VEINTICINCO - CUARENTA Y CINCO (AVENIDA 68 No. 25-45)".
+   - Ej Transversal: "TV 79 11B 15" → "TRANSVERSAL SETENTA Y NUEVE NÚMERO ONCE B - QUINCE (TRANSVERSAL 79 No. 11B-15)".
 
 c) BLINDAJE ALFANUMÉRICO (sufijos pegados al número): si el número de la vía o de la placa trae una letra de adición pegada (62A, 53B, 45C) o el marcador "BIS", escribe el número en letras y mantén la letra/marca en MAYÚSCULA LITERAL. El separador sigue siendo el símbolo "-", NO la palabra "GUION".
-   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (62A No. 53B-21)".
-   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (13 BIS No. 85-32)".
+   - "CALLE 62A # 53B-21" → "CALLE SESENTA Y DOS A NÚMERO CINCUENTA Y TRES B - VEINTIUNO (CALLE 62A No. 53B-21)".
+   - "KR 13 BIS # 85-32" → "CARRERA TRECE BIS NÚMERO OCHENTA Y CINCO - TREINTA Y DOS (CARRERA 13 BIS No. 85-32)".
    PROHIBIDO inventar palabras como "ALFA", "BETA", "GAMMA", "DOBLE" o "GUION": la letra/sufijo se transcribe literal en mayúscula y el separador queda como el símbolo "-".
 
 d) CARDINALES MASCULINOS: los números van en cardinales masculinos ("UNO", "DOS", "VEINTIUNO", "TREINTA Y UNO"…). La concordancia femenina de ordinales 1-10 NO aplica a direcciones.
