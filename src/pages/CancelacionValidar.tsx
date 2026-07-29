@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Copy, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Clock, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 import { SaveStatusChip } from "@/components/cancelaciones/SaveStatusChip";
 import { toast } from "sonner";
 // Catálogo de campos obligatorios para cancelación Davivienda.
@@ -810,13 +810,13 @@ export const CancelacionValidar = () => {
       return (
         <div className="h-screen bg-muted/30 flex items-center justify-center p-8 overflow-hidden">
           <div className="max-w-md text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10">
-              <AlertTriangle className="h-6 w-6 text-amber-500" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Clock className="h-6 w-6 text-primary" />
             </div>
-            <p className="text-base font-semibold">Procesamiento demorado</p>
+            <p className="text-base font-semibold">Esto está tomando más tiempo de lo usual</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              El análisis lleva más de 5 minutos. Puede haber un problema con el servicio de IA.
-              Vuelve al listado y reintenta más tarde o contacta a soporte.
+              Los documentos extensos pueden tardar varios minutos en analizarse. El trámite sigue
+              procesándose en segundo plano — puedes volver al listado y retomarlo cuando quieras.
             </p>
             <div className="mt-6 flex justify-center gap-2">
               <Button variant="outline" onClick={() => navigate("/cancelaciones")} className="gap-2">
@@ -835,6 +835,9 @@ export const CancelacionValidar = () => {
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
           <p className="mt-4 text-sm text-muted-foreground">Procesando documentos con IA…</p>
+          <p className="mt-1 text-xs text-muted-foreground/70">
+            Puede tardar varios minutos si tus documentos son extensos.
+          </p>
         </div>
       </div>
     );

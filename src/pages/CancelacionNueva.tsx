@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { emitCreditsBlocked, isCreditsBlockedError } from "@/lib/creditsBus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { FileDropzone } from "@/components/shared/FileDropzone";
 import { pdfToImages, UniformDocumentError, EmptyCanvasError } from "@/lib/pdfToImages";
 import * as pdfjs from "pdfjs-dist";
@@ -41,6 +42,7 @@ export const CancelacionNueva = () => {
   const [poder, setPoder] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [stepLabel, setStepLabel] = useState<string>("");
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
 
   const handleCancel = () => {
     if (saving) return;
@@ -62,7 +64,8 @@ export const CancelacionNueva = () => {
     const basePath = `${cancelacionId}/cancelaciones/soportes/${kind}`;
     const results: { pageNumber: number; path: string }[] = [];
     let completed = 0;
-    setStepLabel(`Subiendo 0 de ${pages.length} páginas de ${kind}…`);
+    setStepLabel(`Subiendo páginas de ${kind}…`);
+    setUploadProgress({ completed: 0, total: pages.length });
 
     for (let i = 0; i < pages.length; i += UPLOAD_CONCURRENCY) {
       const lote = pages.slice(i, i + UPLOAD_CONCURRENCY);
@@ -76,7 +79,7 @@ export const CancelacionNueva = () => {
           if (error) throw new Error(`Subiendo página ${p.pageNumber} de ${kind}: ${error.message}`);
           results.push({ pageNumber: p.pageNumber, path });
           completed += 1;
-          setStepLabel(`Subiendo ${completed} de ${pages.length} páginas de ${kind}…`);
+          setUploadProgress({ completed, total: pages.length });
         }),
       );
     }
@@ -84,6 +87,7 @@ export const CancelacionNueva = () => {
     // Orden estable por número de página — Promise.all dentro de cada lote
     // puede resolver en cualquier orden interno.
     results.sort((a, b) => a.pageNumber - b.pageNumber);
+    setUploadProgress(null);
     return results.map((r) => r.path);
   };
 
@@ -386,7 +390,23 @@ export const CancelacionNueva = () => {
       <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-end gap-3 px-4 py-4 sm:px-6 lg:px-8">
           {saving && stepLabel && (
-            <span className="mr-auto text-xs text-muted-foreground">{stepLabel}</span>
+            <div className="mr-auto max-w-sm flex-1">
+              <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                <span>{stepLabel}</span>
+                {uploadProgress && (
+                  <span className="tabular-nums">{uploadProgress.completed}/{uploadProgress.total}</span>
+                )}
+              </div>
+              {uploadProgress && (
+                <Progress
+                  value={(uploadProgress.completed / uploadProgress.total) * 100}
+                  className="h-1.5"
+                />
+              )}
+              <p className="mt-1 text-[11px] text-muted-foreground/70">
+                Esto puede tardar más si tus documentos son extensos o tu conexión es lenta.
+              </p>
+            </div>
           )}
           <Button variant="ghost" onClick={handleCancel} disabled={saving}>
             Cancelar
