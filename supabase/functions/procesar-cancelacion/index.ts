@@ -2512,19 +2512,17 @@ if (import.meta.main) serve(async (req) => {
     };
 
     const results: Array<Record<string, unknown>> = [];
-    for (const id of ids) {
+    const runOne = async (id: string): Promise<Record<string, unknown>> => {
       try {
         const certPrefix = `${id}/cancelaciones/soportes/certificado`;
         const escPrefix = `${id}/cancelaciones/soportes/escritura`;
         const certPaths = await listImages(certPrefix);
         const escPaths = await listImages(escPrefix);
         if (certPaths.length === 0) {
-          results.push({ tramite_id: id, error: `no_cert_images prefix=${certPrefix}` });
-          continue;
+          return { tramite_id: id, error: `no_cert_images prefix=${certPrefix}` };
         }
         if (escPaths.length === 0) {
-          results.push({ tramite_id: id, error: `no_esc_images prefix=${escPrefix}` });
-          continue;
+          return { tramite_id: id, error: `no_esc_images prefix=${escPrefix}` };
         }
         const certUrls = await Promise.all(certPaths.map((p) => createSignedStorageUrl(supabaseService, p)));
         const escUrls = await Promise.all(escPaths.map((p) => createSignedStorageUrl(supabaseService, p)));
@@ -2553,15 +2551,16 @@ if (import.meta.main) serve(async (req) => {
         });
         const extracted = await parseToolCallArguments<CancelacionData>(aiResp, "test.nomenclatura");
         const inm = (extracted as { inmueble?: Record<string, unknown> })?.inmueble ?? {};
-        results.push({
+        return {
           tramite_id: id,
           nomenclatura_predio: (inm as Record<string, unknown>).nomenclatura_predio ?? null,
           direccion_candidatas: (inm as Record<string, unknown>).direccion_candidatas ?? null,
-        });
+        };
       } catch (e) {
-        results.push({ tramite_id: id, error: (e as Error).message });
+        return { tramite_id: id, error: (e as Error).message };
       }
-    }
+    };
+    const results = await Promise.all(ids.map(runOne));
     return new Response(JSON.stringify({ ok: true, results }, null, 2), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
