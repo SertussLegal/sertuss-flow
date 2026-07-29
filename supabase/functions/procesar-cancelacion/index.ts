@@ -2516,7 +2516,7 @@ Devuelve SOLO JSON: {"nomenclatura_predio": "..."}. Sin texto adicional.`;
           continue;
         }
         const paths = files
-          .filter((f: { name?: string }) => f.name && /\.jpe?g$/i.test(f.name))
+          .filter((f: { name?: string }) => f.name && /\.(jpe?g|png)$/i.test(f.name))
           .sort((a: { name?: string }, b: { name?: string }) => (a.name ?? "").localeCompare(b.name ?? ""))
           .map((f: { name: string }) => `${prefix}/${f.name}`);
         if (paths.length === 0) {
