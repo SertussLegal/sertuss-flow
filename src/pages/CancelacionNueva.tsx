@@ -47,6 +47,8 @@ export const CancelacionNueva = () => {
     navigate("/cancelaciones");
   };
 
+  const UPLOAD_CONCURRENCY = 4;
+
   const uploadPdfAsImages = async (
     cancelacionId: string,
     file: File,
@@ -57,19 +59,32 @@ export const CancelacionNueva = () => {
     const pages = await pdfToImages(file, { maxPages });
     if (pages.length === 0) throw new Error(`El ${kind} no contiene páginas válidas.`);
 
-    setStepLabel(`Subiendo ${pages.length} imágenes de ${kind}…`);
     const basePath = `${cancelacionId}/cancelaciones/soportes/${kind}`;
-    const paths: string[] = [];
-    for (const p of pages) {
-      const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.png`;
-      const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, p.blob, {
-        contentType: "image/png",
-        upsert: true,
-      });
-      if (error) throw new Error(`Subiendo página ${p.pageNumber} de ${kind}: ${error.message}`);
-      paths.push(path);
+    const results: { pageNumber: number; path: string }[] = [];
+    let completed = 0;
+    setStepLabel(`Subiendo 0 de ${pages.length} páginas de ${kind}…`);
+
+    for (let i = 0; i < pages.length; i += UPLOAD_CONCURRENCY) {
+      const lote = pages.slice(i, i + UPLOAD_CONCURRENCY);
+      await Promise.all(
+        lote.map(async (p) => {
+          const path = `${basePath}/p${String(p.pageNumber).padStart(2, "0")}.png`;
+          const { error } = await supabase.storage.from(BUCKET_OUTPUT).upload(path, p.blob, {
+            contentType: "image/png",
+            upsert: true,
+          });
+          if (error) throw new Error(`Subiendo página ${p.pageNumber} de ${kind}: ${error.message}`);
+          results.push({ pageNumber: p.pageNumber, path });
+          completed += 1;
+          setStepLabel(`Subiendo ${completed} de ${pages.length} páginas de ${kind}…`);
+        }),
+      );
     }
-    return paths;
+
+    // Orden estable por número de página — Promise.all dentro de cada lote
+    // puede resolver en cualquier orden interno.
+    results.sort((a, b) => a.pageNumber - b.pageNumber);
+    return results.map((r) => r.path);
   };
 
   const handleSubmit = async () => {
