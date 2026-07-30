@@ -2474,9 +2474,97 @@ if (import.meta.main) serve(async (req) => {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // ACCIÓN TEMPORAL DE PRUEBA: test_apoderado_candidatos
+  // No escribe en cancelaciones, no cobra créditos. Eliminar al terminar.
+  // ─────────────────────────────────────────────────────────────
+  if (bodyAny?.action === "test_apoderado_candidatos") {
+    const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
+    if (isAdminErr || isAdminData !== true) {
+      return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const imagesB64 = Array.isArray(bodyAny.images_base64) ? (bodyAny.images_base64 as unknown[]).filter((x) => typeof x === "string") as string[] : [];
+    if (imagesB64.length === 0) {
+      return new Response(JSON.stringify({ error: "images_base64 (string[]) requerido" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const LOVABLE_API_KEY_CAND = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY_CAND) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const TEST_PRODUCT_SCHEMA = {
+      type: "object",
+      properties: {
+        apoderado_nombre: { type: "string" },
+        apoderado_cedula: { type: "string" },
+        apoderado_candidatos: {
+          type: "array",
+          description: "TODAS las personas nombradas como posibles apoderados en el bloque de otorgamiento VIGENTE del Poder (NO el que se revoca). Si el documento contiene bloques 'REVOCACION PODER GENERAL' o 'REVOCACION PODER ESPECIAL', las personas mencionadas ahí pertenecen a un poder ANTERIOR ya revocado — NO son candidatos válidos, NO las incluyas. Solo incluye a las personas del bloque de otorgamiento vigente (el que NO tiene la palabra REVOCACION antes de PODER GENERAL/PODER ESPECIAL, normalmente al final del documento). Si el Poder vigente nombra 1 sola persona, igual emite 1 entrada.",
+          items: {
+            type: "object",
+            properties: {
+              nombre: { type: "string", description: "Nombre completo en MAYÚSCULAS." },
+              cedula: { type: "string", description: "Cédula estrictamente numérica con puntos de miles." },
+            },
+            required: ["nombre", "cedula"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["apoderado_nombre", "apoderado_cedula", "apoderado_candidatos"],
+      additionalProperties: false,
+    };
+
+    const TEST_SYSTEM_PROMPT_CAND = `Eres un asistente jurídico experto en derecho notarial colombiano. Tu tarea es leer un Poder General/Especial y extraer quién(es) tienen poder VIGENTE (no revocado) para actuar en nombre del banco otorgante.
+
+REGLA CRÍTICA: Este documento puede contener, en un mismo instrumento, (a) bloques de REVOCACIÓN de poderes anteriores (que anulan un otorgamiento previo a OTRAS personas) y (b) un bloque de otorgamiento NUEVO y VIGENTE. Las personas mencionadas en bloques de revocación NO tienen poder vigente — ignóralas por completo para efectos de apoderado_candidatos. Solo el bloque de otorgamiento vigente (usualmente el último del documento, el que NO dice "REVOCACION" antes de "PODER GENERAL"/"PODER ESPECIAL") define quiénes son los candidatos válidos.
+
+apoderado_nombre/apoderado_cedula: tu mejor estimación de UNA persona (la primera nombrada en el bloque vigente, como comportamiento por defecto).
+apoderado_candidatos: TODAS las personas del bloque vigente (puede ser 1 o varias).
+
+Responde SOLO llamando a la función con el JSON pedido.`;
+
+    const userContent: Array<Record<string, unknown>> = [
+      { type: "text", text: "Analiza este Poder General/Especial y extrae los datos según las instrucciones del sistema." },
+      ...imagesB64.map((b64) => ({ type: "image_url" as const, image_url: { url: `data:image/png;base64,${b64}` } })),
+    ];
+
+    try {
+      const aiResp = await fetchAiGateway({
+        apiKey: LOVABLE_API_KEY_CAND,
+        body: {
+          model: "google/gemini-2.5-pro",
+          messages: [
+            { role: "system", content: TEST_SYSTEM_PROMPT_CAND },
+            { role: "user", content: userContent },
+          ],
+          tools: [{ type: "function", function: { name: "extract_apoderado_candidatos", description: "Extrae apoderado(s) vigente(s)", parameters: TEST_PRODUCT_SCHEMA } }],
+          tool_choice: { type: "function", function: { name: "extract_apoderado_candidatos" } },
+        },
+        tag: "test.apoderado_candidatos",
+      });
+      const extracted = await parseToolCallArguments<Record<string, unknown>>(aiResp, "test.apoderado_candidatos");
+      return new Response(JSON.stringify({ ok: true, result: extracted }, null, 2), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // ACCIÓN TEMPORAL DE PRUEBA: test_temperature_stability
   // No escribe en cancelaciones, no cobra créditos. Eliminar al terminar.
   // ─────────────────────────────────────────────────────────────
+
   if (bodyAny?.action === "test_temperature_stability") {
     const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
     if (isAdminErr || isAdminData !== true) {
