@@ -102,6 +102,10 @@ const Login = () => {
       // Honeypot activado: salida silenciosa, sin llamar a supabase ni mostrar error.
       return;
     }
+    if (!captchaToken) {
+      toast({ title: "Verificación requerida", description: "Completa la verificación de seguridad antes de continuar.", variant: "destructive" });
+      return;
+    }
     setLoading(true);
     try {
       if (isRegister) {
