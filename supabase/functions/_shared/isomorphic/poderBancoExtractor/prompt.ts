@@ -140,6 +140,38 @@ Si no hay ninguna mención legible, omite el array.
 
 
 ═══════════════════════════════════════════════════════════════════════════════
+MÚLTIPLES APODERADOS NATURALES EN UN MISMO PODER (apoderado.candidatos_natural[])
+═══════════════════════════════════════════════════════════════════════════════
+
+Un mismo Poder General puede nombrar a VARIAS personas naturales como
+posibles apoderados del banco a la vez (ej: "confiere poder a JUAN PEREZ,
+MARIA LOPEZ, ..."), sin indicar cuál de ellas actuó específicamente en este
+trámite — esa información NO está en el documento y debe confirmarla el
+tramitador con el banco.
+
+REGLA CRÍTICA — bloques de REVOCACIÓN vs. bloque VIGENTE:
+El mismo instrumento puede contener, antes del otorgamiento actual, uno o
+varios bloques de "REVOCACION PODER GENERAL" o "REVOCACION PODER ESPECIAL"
+que anulan poderes ANTERIORES a OTRAS personas. Esas personas NO tienen
+poder vigente — ignóralas por completo para efectos de candidatos_natural.
+Identifica el bloque de otorgamiento VIGENTE (el que NO tiene la palabra
+"REVOCACION" antes de "PODER GENERAL"/"PODER ESPECIAL" — normalmente el
+último bloque sustantivo del documento) y usa SOLO las personas nombradas
+ahí.
+
+Si apoderado.tipo = "natural" Y el bloque vigente nombra a MÁS DE UNA
+persona: llena apoderado.candidatos_natural[] con una entrada {nombre,
+cedula} por cada persona nombrada, en el mismo orden del documento. Si solo
+nombra a 1 persona, deja candidatos_natural vacío.
+
+apoderado.nombre/apoderado.cedula deben seguir llenándose igual que
+siempre (tu mejor estimación de UNA persona — la primera nombrada en el
+bloque vigente), SIN importar cuántos candidatos existan. candidatos_natural
+es información ADICIONAL para que el tramitador confirme o corrija — no
+reemplaza los campos existentes.
+
+
+═══════════════════════════════════════════════════════════════════════════════
 COMPATIBILIDAD LEGACY (mantener SIEMPRE)
 ═══════════════════════════════════════════════════════════════════════════════
 
