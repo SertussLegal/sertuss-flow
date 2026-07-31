@@ -103,6 +103,7 @@ export const HARD_BLOCK_WARNING_SUFFIXES = [
   "_placeholder",
   "_duplicidad_cruzada",
   "_menciones_incoherentes",
+  "_requiere_confirmacion",
 ] as const;
 
 export function isHardBlockCoherenciaWarning(w: string | undefined | null): boolean {
@@ -161,6 +162,8 @@ export const WARNING_LABELS: Record<string, string> = {
     "La cédula del apoderado que corregiste no coincidía con la que se iba a usar en la redacción de la comparecencia/antefirma — se usó tu corrección en todo el documento.",
   apoderado_multiple_firmantes_ambiguo:
     "El poder tiene más de un firmante marcado — se usó el primero. Verifica que corresponda al que efectivamente firma.",
+  apoderado_natural_candidatos_requiere_confirmacion:
+    "El Poder nombra a varias personas como posibles apoderados — confirma con el banco cuál actuó en este trámite y selecciónala antes de continuar.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -187,6 +190,7 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "inmueble.menciones_matricula": "Menciones de matrícula inmobiliaria en el certificado",
   "inmueble.matricula_inmobiliaria": "Matrícula inmobiliaria",
   "apoderado.menciones_cedula": "Menciones de la cédula del apoderado en el poder",
+  "apoderado.candidatos_natural": "Lista de posibles apoderados nombrados en el Poder",
 };
 
 
