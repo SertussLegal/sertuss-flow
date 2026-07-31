@@ -292,6 +292,7 @@ const Login = () => {
                     <p className="text-xs text-muted-foreground">Mínimo 8 caracteres.</p>
                   )}
                 </div>
+                <div ref={turnstileRef} className="flex justify-center" />
                 <Button type="submit" className="w-full bg-notarial-blue hover:bg-notarial-blue/90" disabled={loading}>
                   {loading ? "Procesando..." : isRegister ? "Registrarse" : "Ingresar"}
                 </Button>
