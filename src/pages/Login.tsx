@@ -216,8 +216,11 @@ const Login = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={6}
+                    minLength={isRegister ? 8 : undefined}
                   />
+                  {isRegister && (
+                    <p className="text-xs text-muted-foreground">Mínimo 8 caracteres.</p>
+                  )}
                 </div>
                 <Button type="submit" className="w-full bg-notarial-blue hover:bg-notarial-blue/90" disabled={loading}>
                   {loading ? "Procesando..." : isRegister ? "Registrarse" : "Ingresar"}
