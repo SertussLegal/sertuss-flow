@@ -171,6 +171,19 @@ export const poderBancoTool = {
                 additionalProperties: false,
               },
             },
+            candidatos_natural: {
+              type: "array",
+              description: "SOLO si tipo='natural' y el bloque de otorgamiento VIGENTE del Poder nombra a MÁS DE UNA persona (ignora personas mencionadas en bloques 'REVOCACION PODER GENERAL' o 'REVOCACION PODER ESPECIAL', que pertenecen a un poder anterior ya revocado). Una entrada por persona nombrada en el bloque vigente, en el orden del documento. Si el bloque vigente nombra a 1 sola persona, deja este arreglo vacío (usa apoderado.nombre/cedula normalmente).",
+              items: {
+                type: "object",
+                properties: {
+                  nombre: { type: "string", description: "Nombre completo en MAYÚSCULAS." },
+                  cedula: { type: "string", description: "Cédula. Solo dígitos." },
+                },
+                required: ["nombre", "cedula"],
+                additionalProperties: false,
+              },
+            },
           },
           additionalProperties: false,
         },
