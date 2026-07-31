@@ -106,6 +106,19 @@ export const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
       return isCedulaEditadaValidaNoPlaceholder(pb.apoderado_cedula);
     },
   },
+  {
+    warning: "apoderado_natural_candidatos_requiere_confirmacion",
+    canSuppress: (d) => {
+      const pb = ((d as Record<string, unknown>).poder_banco || {}) as Record<string, unknown>;
+      const apo = (pb.apoderado || {}) as Record<string, unknown>;
+      const candidatos = (apo.candidatos_natural || []) as Array<Record<string, unknown>>;
+      const confirmada = apo.candidato_confirmado_cedula as string | undefined;
+      const confirmadaNorm = normalizeCedula(confirmada);
+      return !!confirmadaNorm && candidatos.some(
+        (c) => normalizeCedula(c?.cedula as string | undefined) === confirmadaNorm,
+      );
+    },
+  },
 ];
 
 export function applyManualOverrideExceptions<D>(

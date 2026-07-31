@@ -485,5 +485,32 @@ export function validatePoderBancoCoherencia(
     suspicious.add(chk.path);
   }
 
+  // Regla 8 — Apoderado natural con múltiples candidatos sin confirmar
+  //           (hallazgo 2026-07-30). Cuando el Poder nombra a más de una
+  //           persona natural posible en el bloque vigente, el sistema NO
+  //           puede saber cuál actuó realmente — requiere confirmación
+  //           explícita del tramitador (banner en UI). Se considera
+  //           "confirmado" cuando `apoderado.candidato_confirmado_cedula`
+  //           coincide con una cédula PRESENTE en `candidatos_natural`
+  //           actual — así, si el documento se reprocesa y la lista de
+  //           candidatos cambia, una confirmación vieja NUNCA suprime el
+  //           warning silenciosamente; se re-activa sola.
+  const candidatosNatural = (apoderado?.candidatos_natural ?? []) as Array<Record<string, unknown>>;
+  const tipoApoderado = apoderado?.tipo as string | undefined;
+  if (tipoApoderado === "natural" && Array.isArray(candidatosNatural) && candidatosNatural.length > 1) {
+    const cedulaConfirmada = apoderado?.candidato_confirmado_cedula as string | undefined;
+    const cedulaConfirmadaNorm = normalizeCedula(cedulaConfirmada);
+    const siguePresente = !!cedulaConfirmadaNorm && candidatosNatural.some(
+      (c) => normalizeCedula(c?.cedula as string | undefined) === cedulaConfirmadaNorm,
+    );
+    const humanArbitrated8 = opts?.manualReviewConfirmed === true && siguePresente;
+    if (!humanArbitrated8) {
+      warnings.push("apoderado_natural_candidatos_requiere_confirmacion");
+      suspicious.add("apoderado.candidatos_natural");
+      suspicious.add("apoderado_nombre");
+      suspicious.add("apoderado_cedula");
+    }
+  }
+
   return { warnings, suspicious };
 }

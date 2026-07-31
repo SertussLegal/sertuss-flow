@@ -145,6 +145,18 @@ describe("Cobertura permanente de warnings hard-block", () => {
     }
   });
 
+  // ── Aserción 5: cobertura _requiere_confirmacion → MANUAL_OVERRIDE_RULES
+  it("Aserción 5 — todo `*_requiere_confirmacion` tiene entrada en MANUAL_OVERRIDE_RULES", () => {
+    const confirmaciones = [...EMITTED].filter((c) => c.endsWith("_requiere_confirmacion"));
+    expect(confirmaciones.length).toBeGreaterThan(0);
+    for (const code of confirmaciones) {
+      expect(
+        OVERRIDE_WARNINGS.has(code),
+        `Warning "${code}" no tiene entrada en MANUAL_OVERRIDE_RULES — deja el trámite bloqueado para siempre tras la corrección humana.`,
+      ).toBe(true);
+    }
+  });
+
   // ── Sanidad cruzada: los códigos gating NO deben overlap con override rules
   it("no-overlap — SCALAR_COHERENCE_GATING_CODES y MANUAL_OVERRIDE_RULES son disjuntos", () => {
     for (const code of GATING) {
