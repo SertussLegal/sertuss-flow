@@ -54,6 +54,9 @@ const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [website, setWebsite] = useState(""); // honeypot anti-bot — invisible para humanos
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -61,6 +64,33 @@ const Login = () => {
   // Same-origin relative path only; ignore anything else.
   const rawNext = searchParams.get("next") ?? "";
   const nextPath = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const renderWidget = () => {
+      if (window.turnstile && turnstileRef.current && !widgetIdRef.current) {
+        widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: (token: string) => setCaptchaToken(token),
+          "expired-callback": () => setCaptchaToken(null),
+          "error-callback": () => setCaptchaToken(null),
+        });
+      }
+    };
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      interval = setInterval(() => {
+        if (window.turnstile) {
+          if (interval) clearInterval(interval);
+          renderWidget();
+        }
+      }, 200);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
   const handleNitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNit(formatNit(e.target.value));
