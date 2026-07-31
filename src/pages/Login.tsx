@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,17 @@ const FEATURES = [
   },
 ];
 
+const TURNSTILE_SITE_KEY = "0x4AAAAAAEDBKFp8VFyTZQ7n";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      reset: (widgetId: string) => void;
+    };
+  }
+}
+
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,6 +54,9 @@ const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [website, setWebsite] = useState(""); // honeypot anti-bot — invisible para humanos
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -50,6 +64,33 @@ const Login = () => {
   // Same-origin relative path only; ignore anything else.
   const rawNext = searchParams.get("next") ?? "";
   const nextPath = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const renderWidget = () => {
+      if (window.turnstile && turnstileRef.current && !widgetIdRef.current) {
+        widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: (token: string) => setCaptchaToken(token),
+          "expired-callback": () => setCaptchaToken(null),
+          "error-callback": () => setCaptchaToken(null),
+        });
+      }
+    };
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      interval = setInterval(() => {
+        if (window.turnstile) {
+          if (interval) clearInterval(interval);
+          renderWidget();
+        }
+      }, 200);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
   const handleNitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNit(formatNit(e.target.value));
@@ -59,6 +100,10 @@ const Login = () => {
     e.preventDefault();
     if (website.trim() !== "") {
       // Honeypot activado: salida silenciosa, sin llamar a supabase ni mostrar error.
+      return;
+    }
+    if (!captchaToken) {
+      toast({ title: "Verificación requerida", description: "Completa la verificación de seguridad antes de continuar.", variant: "destructive" });
       return;
     }
     setLoading(true);
@@ -92,13 +137,14 @@ const Login = () => {
               org_name: orgName.trim(),
               nit: nit.trim(),
             },
+            captchaToken,
           },
         });
         if (signUpError) throw signUpError;
 
         toast({ title: "Registro exitoso", description: "Revisa tu correo para confirmar tu cuenta." });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } });
         if (error) throw error;
         navigate(nextPath);
       }
@@ -106,6 +152,10 @@ const Login = () => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
+      if (window.turnstile && widgetIdRef.current) {
+        window.turnstile.reset(widgetIdRef.current);
+      }
+      setCaptchaToken(null);
     }
   };
 
@@ -242,6 +292,7 @@ const Login = () => {
                     <p className="text-xs text-muted-foreground">Mínimo 8 caracteres.</p>
                   )}
                 </div>
+                <div ref={turnstileRef} className="flex justify-center" />
                 <Button type="submit" className="w-full bg-notarial-blue hover:bg-notarial-blue/90" disabled={loading}>
                   {loading ? "Procesando..." : isRegister ? "Registrarse" : "Ingresar"}
                 </Button>
