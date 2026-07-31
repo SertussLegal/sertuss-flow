@@ -6,3 +6,6 @@ verify_jwt = false
 [functions.validar-con-claude]
 [functions.validar-con-claude]
 verify_jwt = false
+
+[functions.auth-captcha-proxy]
+verify_jwt = false
