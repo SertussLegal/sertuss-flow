@@ -126,26 +126,38 @@ const Login = () => {
           return;
         }
 
-        // Store full_name + org data in user_metadata — read by handle_new_user trigger
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}${nextPath}`,
-            data: {
-              full_name: fullName.trim(),
-              org_name: orgName.trim(),
-              nit: nit.trim(),
-            },
+        // La verificación de Turnstile y el signUp real ahora ocurren dentro
+        // de la edge function auth-captcha-proxy, del lado del servidor.
+        const { data: fnData, error: fnError } = await supabase.functions.invoke("auth-captcha-proxy", {
+          body: {
+            action: "signup",
+            email,
+            password,
             captchaToken,
+            fullName: fullName.trim(),
+            orgName: orgName.trim(),
+            nit: nit.trim(),
+            emailRedirectTo: `${window.location.origin}${nextPath}`,
           },
         });
-        if (signUpError) throw signUpError;
+        if (fnError) throw fnError;
+        if (fnData?.error) throw new Error(fnData.error.message);
 
         toast({ title: "Registro exitoso", description: "Revisa tu correo para confirmar tu cuenta." });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } });
-        if (error) throw error;
+        const { data: fnData, error: fnError } = await supabase.functions.invoke("auth-captcha-proxy", {
+          body: { action: "signin", email, password, captchaToken },
+        });
+        if (fnError) throw fnError;
+        if (fnData?.error) throw new Error(fnData.error.message);
+
+        if (fnData?.session) {
+          const { error: setSessionError } = await supabase.auth.setSession({
+            access_token: fnData.session.access_token,
+            refresh_token: fnData.session.refresh_token,
+          });
+          if (setSessionError) throw setSessionError;
+        }
         navigate(nextPath);
       }
     } catch (error: any) {
