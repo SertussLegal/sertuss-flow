@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
 import { PoderViewerTab } from "@/components/cancelaciones/PoderViewerTab";
-import { PoderBannersV5 } from "@/components/cancelaciones/PoderBannersV5";
+import { PoderBannersV5, ApoderadoCandidatosBanner, type CandidatoNatural } from "@/components/cancelaciones/PoderBannersV5";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
@@ -1482,6 +1482,26 @@ export const CancelacionValidar = () => {
                         </div>
                       </div>
                     )}
+
+                    {(() => {
+                      const ap = (pb.apoderado ?? {}) as Record<string, unknown>;
+                      const cands = (Array.isArray(ap.candidatos_natural)
+                        ? (ap.candidatos_natural as CandidatoNatural[])
+                        : []);
+                      if (ap.tipo !== "natural" || cands.length <= 1) return null;
+                      return (
+                        <ApoderadoCandidatosBanner
+                          candidatos={cands}
+                          onSelect={(c) =>
+                            setPB({
+                              apoderado_nombre: c.nombre,
+                              apoderado_cedula: c.cedula,
+                              apoderado: { ...(pb.apoderado || {}), candidato_confirmado_cedula: c.cedula },
+                            })
+                          }
+                        />
+                      );
+                    })()}
 
                     <Field
                       label="Nombre apoderado"
