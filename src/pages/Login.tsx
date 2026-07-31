@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
 import { Scale, Shield, Zap, ShieldCheck } from "lucide-react";
 
@@ -35,6 +36,18 @@ const FEATURES = [
 ];
 
 const TURNSTILE_SITE_KEY = "0x4AAAAAAEDBKFp8VFyTZQ7n";
+
+async function extractFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body = await error.context.json();
+      if (body?.error?.message) return body.error.message as string;
+    } catch {
+      // sigue con el mensaje genérico
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
 declare global {
   interface Window {
