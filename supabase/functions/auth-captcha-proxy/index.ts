@@ -8,7 +8,14 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
+type TurnstileOutcome = {
+  success: boolean;
+  errorCodes: string[];
+  hostname: string | null;
+  challengeTs: string | null;
+};
+
+async function verifyTurnstile(token: string, ip: string): Promise<TurnstileOutcome> {
   const secret = Deno.env.get("TURNSTILE_SECRET_KEY") ?? "";
   const formData = new FormData();
   formData.append("secret", secret);
@@ -19,7 +26,12 @@ async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
     body: formData,
   });
   const outcome = await result.json();
-  return outcome?.success === true;
+  return {
+    success: outcome?.success === true,
+    errorCodes: Array.isArray(outcome?.["error-codes"]) ? outcome["error-codes"] : [],
+    hostname: outcome?.hostname ?? null,
+    challengeTs: outcome?.challenge_ts ?? null,
+  };
 }
 
 Deno.serve(async (req) => {
