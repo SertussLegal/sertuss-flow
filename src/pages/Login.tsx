@@ -137,13 +137,14 @@ const Login = () => {
               org_name: orgName.trim(),
               nit: nit.trim(),
             },
+            captchaToken,
           },
         });
         if (signUpError) throw signUpError;
 
         toast({ title: "Registro exitoso", description: "Revisa tu correo para confirmar tu cuenta." });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } });
         if (error) throw error;
         navigate(nextPath);
       }
@@ -151,6 +152,10 @@ const Login = () => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
+      if (window.turnstile && widgetIdRef.current) {
+        window.turnstile.reset(widgetIdRef.current);
+      }
+      setCaptchaToken(null);
     }
   };
 
