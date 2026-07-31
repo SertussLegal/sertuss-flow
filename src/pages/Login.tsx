@@ -153,7 +153,7 @@ const Login = () => {
             emailRedirectTo: `${window.location.origin}${nextPath}`,
           },
         });
-        if (fnError) throw fnError;
+        if (fnError) throw new Error(await extractFunctionErrorMessage(fnError, "No se pudo completar el registro."));
         if (fnData?.error) throw new Error(fnData.error.message);
 
         toast({ title: "Registro exitoso", description: "Revisa tu correo para confirmar tu cuenta." });
@@ -161,7 +161,7 @@ const Login = () => {
         const { data: fnData, error: fnError } = await supabase.functions.invoke("auth-captcha-proxy", {
           body: { action: "signin", email, password, captchaToken },
         });
-        if (fnError) throw fnError;
+        if (fnError) throw new Error(await extractFunctionErrorMessage(fnError, "No se pudo iniciar sesión."));
         if (fnData?.error) throw new Error(fnData.error.message);
 
         if (fnData?.session) {
