@@ -15,7 +15,8 @@
 // ============================================================================
 
 import { AlertTriangle, CheckCircle2, ShieldQuestion, UserRoundCog, ShieldAlert } from "lucide-react";
-import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS, isHardBlockCoherenciaWarning } from "@shared/poderBancoExtractor/validate";
+import { useState } from "react";
+import { WARNING_LABELS, SUSPICIOUS_FIELD_LABELS, isHardBlockCoherenciaWarning, isCedulaValida } from "@shared/poderBancoExtractor/validate";
 import { Button } from "@/components/ui/button";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import {
@@ -281,6 +282,78 @@ export function PoderBannersV5({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// ApoderadoCandidatosBanner — un mismo Poder General puede nombrar a varias
+// personas naturales como posibles apoderados. El documento NO dice cuál actuó:
+// el tramitador debe confirmarlo con el banco. Ningún candidato viene
+// preseleccionado ni marcado como "recomendado".
+// ============================================================================
+
+export interface CandidatoNatural {
+  nombre?: string;
+  cedula?: string;
+}
+
+export interface ApoderadoCandidatosBannerProps {
+  candidatos: CandidatoNatural[];
+  onSelect: (c: CandidatoNatural) => void;
+}
+
+export function ApoderadoCandidatosBanner({ candidatos, onSelect }: ApoderadoCandidatosBannerProps) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed || candidatos.length <= 1) return null;
+
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-[12px] leading-snug"
+    >
+      <div className="flex items-start gap-2">
+        <ShieldQuestion className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+        <div className="space-y-2 flex-1">
+          <p className="text-foreground/90">
+            El Poder General nombra a varias personas posibles — confirma con el banco cuál actuó en este trámite.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {candidatos.map((c, i) => {
+              const cedulaOk = isCedulaValida(c.cedula);
+              return (
+                <Button
+                  key={`${c.cedula ?? ""}-${i}`}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="justify-start gap-1.5 text-xs h-auto py-1.5 whitespace-normal text-left"
+                  onClick={() => onSelect(c)}
+                >
+                  {!cedulaOk && (
+                    <AlertTriangle
+                      className="h-3.5 w-3.5 text-amber-500 shrink-0"
+                      aria-label="Cédula con formato dudoso"
+                    />
+                  )}
+                  <span>
+                    {c.nombre || "(sin nombre)"} — C.C. {c.cedula || "—"}
+                  </span>
+                </Button>
+              );
+            })}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="justify-start text-xs h-auto py-1.5"
+              onClick={() => setDismissed(true)}
+            >
+              Ninguno de estos — escribir manualmente
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
