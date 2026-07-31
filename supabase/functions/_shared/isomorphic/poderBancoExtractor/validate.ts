@@ -103,6 +103,7 @@ export const HARD_BLOCK_WARNING_SUFFIXES = [
   "_placeholder",
   "_duplicidad_cruzada",
   "_menciones_incoherentes",
+  "_requiere_confirmacion",
 ] as const;
 
 export function isHardBlockCoherenciaWarning(w: string | undefined | null): boolean {
@@ -161,6 +162,8 @@ export const WARNING_LABELS: Record<string, string> = {
     "La cédula del apoderado que corregiste no coincidía con la que se iba a usar en la redacción de la comparecencia/antefirma — se usó tu corrección en todo el documento.",
   apoderado_multiple_firmantes_ambiguo:
     "El poder tiene más de un firmante marcado — se usó el primero. Verifica que corresponda al que efectivamente firma.",
+  apoderado_natural_candidatos_requiere_confirmacion:
+    "El Poder nombra a varias personas como posibles apoderados — confirma con el banco cuál actuó en este trámite y selecciónala antes de continuar.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
@@ -187,6 +190,7 @@ export const SUSPICIOUS_FIELD_LABELS: Record<string, string> = {
   "inmueble.menciones_matricula": "Menciones de matrícula inmobiliaria en el certificado",
   "inmueble.matricula_inmobiliaria": "Matrícula inmobiliaria",
   "apoderado.menciones_cedula": "Menciones de la cédula del apoderado en el poder",
+  "apoderado.candidatos_natural": "Lista de posibles apoderados nombrados en el Poder",
 };
 
 
@@ -479,6 +483,33 @@ export function validatePoderBancoCoherencia(
     if (humanArbitrated) continue;
     warnings.push(chk.warning);
     suspicious.add(chk.path);
+  }
+
+  // Regla 8 — Apoderado natural con múltiples candidatos sin confirmar
+  //           (hallazgo 2026-07-30). Cuando el Poder nombra a más de una
+  //           persona natural posible en el bloque vigente, el sistema NO
+  //           puede saber cuál actuó realmente — requiere confirmación
+  //           explícita del tramitador (banner en UI). Se considera
+  //           "confirmado" cuando `apoderado.candidato_confirmado_cedula`
+  //           coincide con una cédula PRESENTE en `candidatos_natural`
+  //           actual — así, si el documento se reprocesa y la lista de
+  //           candidatos cambia, una confirmación vieja NUNCA suprime el
+  //           warning silenciosamente; se re-activa sola.
+  const candidatosNatural = (apoderado?.candidatos_natural ?? []) as Array<Record<string, unknown>>;
+  const tipoApoderado = apoderado?.tipo as string | undefined;
+  if (tipoApoderado === "natural" && Array.isArray(candidatosNatural) && candidatosNatural.length > 1) {
+    const cedulaConfirmada = apoderado?.candidato_confirmado_cedula as string | undefined;
+    const cedulaConfirmadaNorm = normalizeCedula(cedulaConfirmada);
+    const siguePresente = !!cedulaConfirmadaNorm && candidatosNatural.some(
+      (c) => normalizeCedula(c?.cedula as string | undefined) === cedulaConfirmadaNorm,
+    );
+    const humanArbitrated8 = opts?.manualReviewConfirmed === true && siguePresente;
+    if (!humanArbitrated8) {
+      warnings.push("apoderado_natural_candidatos_requiere_confirmacion");
+      suspicious.add("apoderado.candidatos_natural");
+      suspicious.add("apoderado_nombre");
+      suspicious.add("apoderado_cedula");
+    }
   }
 
   return { warnings, suspicious };
