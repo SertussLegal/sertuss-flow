@@ -42,6 +42,7 @@ const Login = () => {
   const [nit, setNit] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [website, setWebsite] = useState(""); // honeypot anti-bot — invisible para humanos
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -56,6 +57,10 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (website.trim() !== "") {
+      // Honeypot activado: salida silenciosa, sin llamar a supabase ni mostrar error.
+      return;
+    }
     setLoading(true);
     try {
       if (isRegister) {
@@ -157,6 +162,21 @@ const Login = () => {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
+                <div
+                  style={{ position: "absolute", left: "-9999px", top: "-9999px" }}
+                  aria-hidden="true"
+                >
+                  <Label htmlFor="website">Sitio web</Label>
+                  <Input
+                    id="website"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                  />
+                </div>
                 {isRegister && (
                   <fieldset className="space-y-4 rounded-md border border-border p-4">
                     <legend className="px-2 text-sm font-semibold text-foreground">Datos Legales</legend>
