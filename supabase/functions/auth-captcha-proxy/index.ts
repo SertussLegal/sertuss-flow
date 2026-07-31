@@ -51,13 +51,27 @@ Deno.serve(async (req) => {
     }
 
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
-    const captchaOk = await verifyTurnstile(captchaToken, ip);
-    if (!captchaOk) {
+    const turnstile = await verifyTurnstile(captchaToken, ip);
+    if (!turnstile.success) {
+      console.error(
+        "turnstile_verify_failed",
+        JSON.stringify({
+          action,
+          error_codes: turnstile.errorCodes,
+          cf_hostname: turnstile.hostname,
+          challenge_ts: turnstile.challengeTs,
+          token_length: typeof captchaToken === "string" ? captchaToken.length : null,
+          secret_present: (Deno.env.get("TURNSTILE_SECRET_KEY") ?? "").length > 0,
+          origin: req.headers.get("origin"),
+          referer: req.headers.get("referer"),
+        }),
+      );
       return new Response(JSON.stringify({ error: { message: "Verificación de seguridad fallida. Intenta de nuevo." } }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    console.log("turnstile_verify_ok", JSON.stringify({ action, cf_hostname: turnstile.hostname }));
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
