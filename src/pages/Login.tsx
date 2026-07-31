@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,17 @@ const FEATURES = [
     description: "La IA propone; el profesional del derecho siempre decide.",
   },
 ];
+
+const TURNSTILE_SITE_KEY = "0x4AAAAAAEDBKFp8VFyTZQ7n";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      reset: (widgetId: string) => void;
+    };
+  }
+}
 
 const Login = () => {
   const [email, setEmail] = useState("");
