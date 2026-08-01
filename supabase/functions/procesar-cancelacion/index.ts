@@ -28,10 +28,12 @@ import { sanitizeString, stripNullyStrings, CANCELACION_NULLY_PATHS } from "../_
 import { mergeRegenPayload } from "../_shared/isomorphic/mergeRegenPayload.ts";
 import {
   detectarConflictoCuantia,
+  buildCuantiaCandidatosUi,
   CUANTIA_CONFLICTO_WARNING,
   CUANTIA_CONFLICTO_ORIGEN,
 } from "../_shared/isomorphic/cuantiaConflicto.ts";
-export { detectarConflictoCuantia, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
+export { detectarConflictoCuantia, buildCuantiaCandidatosUi, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
+
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
