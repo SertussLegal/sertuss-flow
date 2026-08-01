@@ -206,11 +206,22 @@ const AdminPruebaCalidad = () => {
               <Input id="pagina" value={pagina} onChange={(e) => setPagina(e.target.value)} />
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="debug-only"
+              checked={debugOnly}
+              onCheckedChange={(v) => setDebugOnly(v === true)}
+            />
+            <Label htmlFor="debug-only" className="cursor-pointer text-sm font-normal">
+              Solo ver imágenes (sin invocar IA)
+            </Label>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={run} disabled={running}>
               {running && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ejecutar Ronda 1 (3 corridas)
+              {debugOnly ? "Ver imágenes (sin IA)" : "Ejecutar Ronda 1 (3 corridas)"}
             </Button>
+
             {(metrics || runs.length > 0) && (
               <Button variant="outline" onClick={copyAll}>
                 <Copy className="mr-2 h-4 w-4" /> Copiar todo
