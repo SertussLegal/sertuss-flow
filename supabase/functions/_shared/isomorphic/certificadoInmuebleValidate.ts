@@ -43,6 +43,33 @@ export function normalizeMatriculaForCompare(s: string): string {
   return (s ?? "").toUpperCase().replace(/[.\s-]/g, "").trim();
 }
 
+/** Clave de agrupamiento de una mención de dirección.
+ *  Los renglones del bloque "DIRECCION DEL INMUEBLE" del certificado de
+ *  tradición (SNR) son categorías DISTINTAS por diseño: `direccion_inmueble_1`
+ *  suele ser la nomenclatura urbanística/comercial y `direccion_inmueble_2`
+ *  la catastral. NO son repeticiones del mismo hecho.
+ *  Si la sección trae índice numérico al final (`direccion_inmueble_2`) se usa
+ *  ese índice; si no, la sección completa normalizada. */
+function grupoMencion(seccion: unknown): string {
+  const s = String(seccion ?? "").trim().toUpperCase();
+  const m = s.match(/(\d+)\s*$/);
+  return m ? `IDX:${parseInt(m[1]!, 10)}` : `SEC:${s}`;
+}
+
+/** Sub-cadena que marca la mención como dirección catastral. Se usa SOLO para
+ *  decidir si mostrar el aviso informativo no bloqueante, nunca para bloquear. */
+const MARCADOR_CATASTRAL = /DIRECCI[OÓ]N\s+CATASTRAL/i;
+
+/** ¿Hay al menos una mención marcada como dirección catastral? Habilita el
+ *  aviso suave de verificación manual (`_avisos_procesamiento`). */
+export function tieneMencionCatastral(
+  inmueble: Record<string, unknown> | null | undefined,
+): boolean {
+  const mDir = (inmueble?.menciones_direccion ?? []) as Array<Record<string, unknown>>;
+  if (!Array.isArray(mDir)) return false;
+  return mDir.some((m) => MARCADOR_CATASTRAL.test(String(m?.valor ?? "")));
+}
+
 export interface InmuebleCoherenciaResult {
   warnings: string[];
   suspicious: Set<string>;
