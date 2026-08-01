@@ -2409,6 +2409,68 @@ if (import.meta.main) serve(async (req) => {
   // ─────────────────────────────────────────────────────────────
   // deno-lint-ignore no-explicit-any
   const bodyAny = body as any;
+
+  // ─── TEMPORAL: prueba de calidad de codificación (RGBA vs gris) ───
+  if (bodyAny?.action === "test_calidad_grayscale") {
+    const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
+    if (isAdminErr || isAdminData !== true) {
+      return new Response(JSON.stringify({ error: "Forbidden: platform admin required" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { image_rgba_b64, image_gray_b64 } = bodyAny ?? {};
+    if (typeof image_rgba_b64 !== "string" || typeof image_gray_b64 !== "string") {
+      return new Response(JSON.stringify({ error: "image_rgba_b64 e image_gray_b64 (string) requeridos" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const LOVABLE_API_KEY_QC = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY_QC) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const PROMPT_QC = `Esta es una página de una escritura pública notarial colombiana. Transcribe EXACTAMENTE, carácter por carácter, el párrafo que contiene una cifra en pesos colombianos (formato "TEXTO EN LETRAS ($NUMERO,00) MONEDA CORRIENTE"). Si hay varios párrafos con cifras, transcribe TODOS. Responde SOLO con el/los párrafo(s) transcritos, sin comentarios adicionales.`;
+
+    const runOnce = async (label: string, b64: string) => {
+      const aiResp = await fetchAiGateway({
+        apiKey: LOVABLE_API_KEY_QC,
+        body: {
+          model: "google/gemini-2.5-pro",
+          messages: [
+            { role: "system", content: "Eres un asistente de transcripción notarial de precisión exacta." },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: PROMPT_QC },
+                { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } },
+              ],
+            },
+          ],
+        },
+        tag: `test.calidad.${label}`,
+      });
+      const json = await aiResp.json();
+      const text = json?.choices?.[0]?.message?.content ?? "";
+      return text;
+    };
+
+    try {
+      const [rgbaResult, grayResult] = await Promise.all([
+        runOnce("rgba", image_rgba_b64),
+        runOnce("gray", image_gray_b64),
+      ]);
+      return new Response(JSON.stringify({ ok: true, rgba: rgbaResult, gray: grayResult }, null, 2), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   if (bodyAny?.action === "regression_cuantia") {
     const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
     if (isAdminErr || isAdminData !== true) {
