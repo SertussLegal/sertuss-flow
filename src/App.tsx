@@ -123,6 +123,8 @@ const App = () => (
                 {/* Administración / cuenta (siempre visibles) */}
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/admin/entidad/:id" element={<AdminOrgEdit />} />
+                {/* ⚠️ TEMPORAL: herramienta de diagnóstico de calidad de imagen (sin enlace en menú) */}
+                <Route path="/admin/prueba-calidad" element={<AdminPruebaCalidad />} />
                 <Route path="/notaria" element={<NotariaSettings />} />
                 <Route path="/equipo" element={<Team />} />
                 
