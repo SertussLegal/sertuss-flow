@@ -28,10 +28,12 @@ import { sanitizeString, stripNullyStrings, CANCELACION_NULLY_PATHS } from "../_
 import { mergeRegenPayload } from "../_shared/isomorphic/mergeRegenPayload.ts";
 import {
   detectarConflictoCuantia,
+  buildCuantiaCandidatosUi,
   CUANTIA_CONFLICTO_WARNING,
   CUANTIA_CONFLICTO_ORIGEN,
 } from "../_shared/isomorphic/cuantiaConflicto.ts";
-export { detectarConflictoCuantia, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
+export { detectarConflictoCuantia, buildCuantiaCandidatosUi, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
+
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -2834,11 +2836,23 @@ if (import.meta.main) serve(async (req) => {
       // 2) Ejecutar OCR dedicado (con head+tail si la escritura es larga).
       const tStart = Date.now();
       const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
+      // Desempate determinista — mismo criterio que el flujo auto: si el modelo
+      // enumeró 2+ montos distintos como cuantia_credito, su elección no es
+      // confiable. No aplicamos ningún monto; decide el humano.
+      const confRC = detectarConflictoCuantia(cuantiaRun.result?.candidatos_vistos);
+      const candidatosUiRC = buildCuantiaCandidatosUi(cuantiaRun.result?.candidatos_vistos);
+      if (confRC.conflicto && cuantiaRun.result) {
+        cuantiaRun.result.valor_hipoteca_original = null;
+        cuantiaRun.result.valor_hipoteca_es_indeterminada = false;
+        cuantiaRun.result.hipoteca_garantia_abierta = false;
+        cuantiaRun.result.motivo_null = "ambigua_multiple";
+      }
       const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
       const dedicadaAbierta = dedicada?.hipoteca_garantia_abierta === true
         || dedicada?.valor_hipoteca_es_indeterminada === true
         || dedicada?.motivo_null === "escritura_declara_abierta";
+
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
       //    valor vacío, marcado indeterminado, o basura ("null"/"undefined"/"nan").
@@ -2882,8 +2896,25 @@ if (import.meta.main) serve(async (req) => {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
       }
+      // Conflicto irresoluble: estampamos origen, evidencia y hard-block en
+      // ambas capas, sólo si el humano no tiene ya un monto real escrito.
+      if (confRC.conflicto) {
+        for (const ha of [finalVacioOSustituible ? finalHA : null, newDataIaHA]) {
+          if (!ha) continue;
+          const h = ha as Record<string, unknown>;
+          h.valor_hipoteca_original = "";
+          h.valor_hipoteca_es_indeterminada = true;
+          h.cuantia_origen = CUANTIA_CONFLICTO_ORIGEN;
+          h.cuantia_candidatos = candidatosUiRC;
+          const prevW = Array.isArray(h._coherencia_warnings)
+            ? (h._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+            : [];
+          h._coherencia_warnings = Array.from(new Set([...prevW, CUANTIA_CONFLICTO_WARNING]));
+        }
+      }
       const newDataIa = { ...cleanedIa, hipoteca_anterior: newDataIaHA };
       const newDataFinal = { ...prevDataFinal, hipoteca_anterior: finalHA };
+
 
       const updatePayload: Record<string, unknown> = {
         data_ia: newDataIa,
@@ -2891,7 +2922,9 @@ if (import.meta.main) serve(async (req) => {
         updated_at: new Date().toISOString(),
       };
       // Espejo en columna plana — solo si efectivamente aplicamos el nuevo valor.
-      if (aplicado && !aplicadoIndet) {
+      if (confRC.conflicto && finalVacioOSustituible) {
+        updatePayload.valor_hipoteca_original = null;
+      } else if (aplicado && !aplicadoIndet) {
         updatePayload.valor_hipoteca_original = dedicadaMonto;
       } else if (aplicadoIndet) {
         // Limpiamos el espejo plano cuando confirmamos indeterminada; jamás dejar basura.
@@ -3300,6 +3333,10 @@ if (import.meta.main) serve(async (req) => {
             haConf.valor_hipoteca_original = "";
             haConf.valor_hipoteca_es_indeterminada = true;
             haConf.cuantia_origen = CUANTIA_CONFLICTO_ORIGEN;
+            // Evidencia forense para la UI: el humano necesita ver los montos
+            // en conflicto con su fragmento textual para poder decidir.
+            haConf.cuantia_candidatos = buildCuantiaCandidatosUi(cuantiaRun.result?.candidatos_vistos);
+
             const prevHaW = Array.isArray(haConf._coherencia_warnings)
               ? (haConf._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
               : [];

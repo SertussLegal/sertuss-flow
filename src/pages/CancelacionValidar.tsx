@@ -27,6 +27,7 @@ import { PoderBannersV5, ApoderadoCandidatosBanner, type CandidatoNatural } from
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
+import { formatMonedaLegal } from "@/lib/legalFormatters";
 import { useSaveStatus } from "@/contexts/SaveStatusContext";
 import { POWER_V5_ENABLED } from "@/lib/featureFlags";
 import { buildProsaContext } from "@/lib/buildProsaContext";
@@ -162,9 +163,15 @@ type Data = {
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
     valor_hipoteca_es_indeterminada?: boolean;
+    hipoteca_garantia_abierta?: boolean;
     /** Metadata UI: "escritura" cuando el monto vino del OCR dedicado a la
-     *  escritura antecedente porque el certificado estaba indeterminado. */
-    cuantia_origen?: "escritura" | "certificado" | "manual";
+     *  escritura antecedente porque el certificado estaba indeterminado.
+     *  "conflicto_candidatos_no_resuelto" = la escritura trae 2+ montos
+     *  distintos como valor del crédito y decide el humano. */
+    cuantia_origen?: "escritura" | "certificado" | "manual" | "conflicto_candidatos_no_resuelto";
+    /** Evidencia forense del conflicto — nunca se borra al resolver. */
+    cuantia_candidatos?: Array<{ monto: number; texto_fragmento?: string; pagina_aprox?: number | null }>;
+    _coherencia_warnings?: string[];
   };
   inmueble: {
     matricula_inmobiliaria: string;
@@ -1017,7 +1024,12 @@ export const CancelacionValidar = () => {
       {row?.status === "requiere_revision_manual" && (() => {
         const inmWarns = ((data?.inmueble as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
         const pbWarns = ((data?.poder_banco as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
-        const motivos = [...inmWarns, ...pbWarns].filter((w): w is string => typeof w === "string");
+        // La hipoteca también emite hard-blocks (conflicto de cuantía): sin
+        // esto el usuario no veía el tercer motivo y quedaba atascado.
+        const haWarns = data?.hipoteca_anterior?._coherencia_warnings ?? [];
+        const motivos = Array.from(
+          new Set([...inmWarns, ...pbWarns, ...haWarns].filter((w): w is string => typeof w === "string")),
+        );
         return (
           <div
             role="alert"
@@ -1209,12 +1221,110 @@ export const CancelacionValidar = () => {
                       <span className="font-mono">HIPOTECA DE CUANTÍA INDETERMINADA</span>.
                     </div>
                   )}
+                  {(() => {
+                    const ha = data.hipoteca_anterior;
+                    const enConflicto = ha.cuantia_origen === "conflicto_candidatos_no_resuelto";
+                    if (!enConflicto || (ha.valor_hipoteca_original ?? "").trim() !== "") return null;
+                    const candidatos = ha.cuantia_candidatos ?? [];
+                    // Handler único: los botones y el input libre producen el
+                    // mismo shape. `cuantia_origen: "manual"` = "el humano
+                    // decidió" (no "el monto es correcto") — es el escape que
+                    // el servidor ya acepta para liberar el hard-block.
+                    const resolver = (patch: Partial<typeof ha>) =>
+                      setData({
+                        ...data,
+                        hipoteca_anterior: { ...ha, ...patch, cuantia_origen: "manual" },
+                      });
+                    return (
+                      <div
+                        role="alert"
+                        className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 space-y-2.5 text-[12px] leading-snug"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <p className="font-semibold text-amber-900 dark:text-amber-100">
+                              La escritura trae varias cifras distintas como valor del crédito
+                            </p>
+                            <p className="text-foreground/90">
+                              La IA no elige cuando hay conflicto: decides tú. Escoge una de las opciones,
+                              escribe el monto correcto en el campo de arriba, o confirma que la hipoteca
+                              es de cuantía indeterminada.
+                            </p>
+                          </div>
+                        </div>
+
+                        {candidatos.length > 0 ? (
+                          <ul className="space-y-2">
+                            {candidatos.map((cand) => (
+                              <li
+                                key={cand.monto}
+                                className="rounded-md border border-border bg-background/70 p-2.5 space-y-1.5"
+                              >
+                                <p className="font-semibold text-foreground">
+                                  ${cand.monto.toLocaleString("es-CO").replace(/,/g, ".")}
+                                  {cand.pagina_aprox != null && (
+                                    <span className="ml-2 font-normal text-muted-foreground">
+                                      pág. aprox. {cand.pagina_aprox}
+                                    </span>
+                                  )}
+                                </p>
+                                {cand.texto_fragmento && (
+                                  <p className="text-[11px] italic text-muted-foreground">
+                                    “{cand.texto_fragmento}”
+                                  </p>
+                                )}
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() =>
+                                    resolver({
+                                      valor_hipoteca_original: formatMonedaLegal(String(cand.monto)),
+                                      valor_hipoteca_es_indeterminada: false,
+                                    })
+                                  }
+                                >
+                                  Usar este monto
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-foreground/90">
+                            Este trámite no guardó las cifras detectadas (es anterior a esta función):
+                            escribe el monto real en el campo de arriba, o usa el botón de cuantía
+                            indeterminada.
+                          </p>
+                        )}
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-7 text-xs"
+                          onClick={() =>
+                            resolver({
+                              valor_hipoteca_original: "",
+                              valor_hipoteca_es_indeterminada: true,
+                            })
+                          }
+                        >
+                          Confirmar como cuantía indeterminada
+                        </Button>
+                      </div>
+                    );
+                  })()}
                   <p className="text-[11px] text-muted-foreground leading-snug">
                     Monto que el banco le prestó al deudor. Búscalo en la escritura antecedente: cláusula de constitución
                     de hipoteca, cláusula de pago de la compraventa ("el saldo se cubrirá con el producto del crédito…"),
                     o en la hoja de calificación. <span className="font-medium">No es el precio de venta ni el avalúo.</span>
-                    Si la hipoteca es abierta, escribe exactamente <span className="font-mono">HIPOTECA DE CUANTÍA INDETERMINADA</span>.
+                    Si la hipoteca es abierta, deja el campo vacío y usa el botón
+                    <span className="font-medium"> Confirmar como cuantía indeterminada</span> cuando aparezca; escribir
+                    el texto dentro del campo no libera la revisión manual.
                   </p>
+
 
                 </div>
               </Section>
