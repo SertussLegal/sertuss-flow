@@ -404,7 +404,7 @@ export function validatePoderBancoCoherencia(
   if (Array.isArray(mAp) && mAp.length >= 2) {
     const groups = new Map<string, Set<string>>();
     for (const m of mAp) {
-      const nom = normalizeNombreFirmante(m?.nombre);
+      const nom = normalizeNombreGrupo(m?.nombre);
       if (!nom) continue;
       const raw = m?.cedula as string | undefined;
       if (isNoLegible(raw)) continue;
