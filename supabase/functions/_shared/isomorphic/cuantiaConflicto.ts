@@ -47,3 +47,38 @@ export function detectarConflictoCuantia(
   }
   return { conflicto: montos.size >= 2, montosDistintos: [...montos] };
 }
+
+/** Candidato expuesto a la UI para que el HUMANO elija (la IA nunca elige
+ *  cuando hay conflicto). Es evidencia forense: se persiste en
+ *  `hipoteca_anterior.cuantia_candidatos` y nunca se borra al resolver. */
+export interface CuantiaCandidatoUi {
+  monto: number;
+  texto_fragmento?: string;
+  pagina_aprox?: number | null;
+}
+
+/**
+ * Proyecta los `candidatos_vistos` del extractor dedicado al arreglo que
+ * consume la UI: sólo `cuantia_credito`, sin montos null/0, deduplicado por
+ * monto (se conserva el PRIMER fragmento visto por monto), orden estable
+ * descendente por monto.
+ */
+export function buildCuantiaCandidatosUi(
+  candidatos: CuantiaCandidatoLike[] | undefined | null,
+): CuantiaCandidatoUi[] {
+  const porMonto = new Map<number, CuantiaCandidatoUi>();
+  for (const c of candidatos ?? []) {
+    if (!c || c.clasificacion !== "cuantia_credito") continue;
+    const monto = c.monto;
+    if (monto == null || monto === 0) continue;
+    if (typeof monto !== "number" || !Number.isFinite(monto)) continue;
+    if (porMonto.has(monto)) continue;
+    porMonto.set(monto, {
+      monto,
+      texto_fragmento: c.texto_fragmento,
+      pagina_aprox: c.pagina_aprox ?? null,
+    });
+  }
+  return [...porMonto.values()].sort((a, b) => b.monto - a.monto);
+}
+
