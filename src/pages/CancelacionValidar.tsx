@@ -958,6 +958,31 @@ export const CancelacionValidar = () => {
         </div>
       </div>
 
+      {/* Aviso: la escritura se recortó para el análisis por límite de payload
+          del gateway. Lo emite procesar-cancelacion dentro de data_ia/data_final. */}
+      {(() => {
+        const aviso = (data as unknown as {
+          _avisos_procesamiento?: { escritura_truncada?: { paginas_en_storage?: number; paginas_usadas?: number } };
+        } | null)?._avisos_procesamiento?.escritura_truncada;
+        if (!aviso) return null;
+        return (
+          <div role="alert" className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  La escritura se analizó parcialmente
+                </p>
+                <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
+                  Por límite de tamaño del análisis se usaron {aviso.paginas_usadas} de {aviso.paginas_en_storage} páginas
+                  (primeras y últimas). Verifica manualmente los datos tomados de la escritura antes de firmar.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Banner de revisión manual pendiente — CTA sticky visible arriba del
           formulario. Sin esto el usuario tenía que hacer scroll hasta el
           bloque "Apoderado del Banco" para encontrar el botón de desbloqueo,
