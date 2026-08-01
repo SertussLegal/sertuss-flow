@@ -149,4 +149,42 @@ describe("Regla 6 — apoderado_cedula_menciones_incoherentes", () => {
     expect(normalizeNombreFirmante("")).toBe("");
     expect(normalizeNombreFirmante("NO_LEGIBLE")).toBe("");
   });
+
+  it("12. Regresión bug real (29-jul): mismo apoderado con orden invertido + Ñ/tilde → SÍ dispara", () => {
+    const merged = naturalMerged([
+      { seccion: "cuerpo_poder", nombre: "LUIS GABRIEL LOPEZ URUENA", cedula: "19022753" },
+      { seccion: "anexo", nombre: "LOPEZ URUEÑA LUIS GABRIEL", cedula: "1019022753" },
+    ]);
+    const { warnings, suspicious } = validatePoderBancoCoherencia(merged);
+    expect(warnings).toContain("apoderado_cedula_menciones_incoherentes");
+    expect(suspicious.has("apoderado.menciones_cedula")).toBe(true);
+  });
+
+  it("13. Acentos/Ñ con mismo orden siguen agrupando (blindaje anti-regresión)", () => {
+    const merged = naturalMerged([
+      { seccion: "cuerpo_poder", nombre: "KLEITMAN RAFAEL MUÑOZ AVILA", cedula: "80123456" },
+      { seccion: "firma", nombre: "KLEITMAN RAFAEL MUNOZ AVILA", cedula: "80123465" },
+    ]);
+    const { warnings } = validatePoderBancoCoherencia(merged);
+    expect(warnings).toContain("apoderado_cedula_menciones_incoherentes");
+  });
+
+  it("14. Personas distintas con cédulas distintas → NO fusiona ni dispara", () => {
+    const merged = naturalMerged([
+      { seccion: "cuerpo_poder", nombre: "LINA MAGALY CAMPOS LOSADA", cedula: "52123456" },
+      { seccion: "firma", nombre: "KLEITMAN RAFAEL MUÑOZ AVILA", cedula: "80123456" },
+    ]);
+    const { warnings } = validatePoderBancoCoherencia(merged);
+    expect(warnings).not.toContain("apoderado_cedula_menciones_incoherentes");
+  });
+
+  it("15. Mismo nombre, mismo orden, cédula consistente → no dispara", () => {
+    const merged = naturalMerged([
+      { seccion: "cuerpo_poder", nombre: "LUIS GABRIEL LOPEZ URUEÑA", cedula: "1019022753" },
+      { seccion: "firma", nombre: "LUIS GABRIEL LOPEZ URUEÑA", cedula: "1019022753" },
+    ]);
+    const { warnings } = validatePoderBancoCoherencia(merged);
+    expect(warnings).not.toContain("apoderado_cedula_menciones_incoherentes");
+  });
 });
+

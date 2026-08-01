@@ -78,6 +78,26 @@ export function normalizeNombreFirmante(raw: unknown): string {
   return stripped;
 }
 
+/**
+ * Clave de agrupación conmutativa respecto al orden de palabras: normaliza con
+ * normalizeNombreFirmante (acentos/Ñ, coletillas de cargo, etc.) y luego ordena
+ * alfabéticamente las palabras resultantes. Esto hace que "LUIS GABRIEL LOPEZ
+ * URUENA" y "LOPEZ URUEÑA LUIS GABRIEL" (mismo nombre, distinto orden apellido/
+ * nombre u OCR) agrupen igual, sin fusionar nombres de personas distintas
+ * (conjuntos de palabras distintos siguen siendo distintos).
+ * Bug real confirmado 2026-08-01: el mismo patrón de alucinación de cédula
+ * (dígito inicial perdido) se detectó el 26-jul (nombres idénticos, agrupó
+ * correctamente) pero pasó inadvertido el 29-jul (mismo dígito perdido, pero
+ * nombres en orden distinto → grupos separados → sin comparación).
+ */
+function normalizeNombreGrupo(raw: unknown): string {
+  const base = normalizeNombreFirmante(raw);
+  if (!base) return base;
+  return base.split(/\s+/).filter(Boolean).sort().join(" ");
+}
+
+
+
 /** Cédulas "placeholder" observadas empíricamente como alucinaciones
  *  recurrentes del OCR (patrones tipo "79.123.456"). Se comparan tras
  *  normalizar (`normalizeCedula`). Ampliable sin migración — mantener
@@ -384,7 +404,7 @@ export function validatePoderBancoCoherencia(
   if (Array.isArray(mAp) && mAp.length >= 2) {
     const groups = new Map<string, Set<string>>();
     for (const m of mAp) {
-      const nom = normalizeNombreFirmante(m?.nombre);
+      const nom = normalizeNombreGrupo(m?.nombre);
       if (!nom) continue;
       const raw = m?.cedula as string | undefined;
       if (isNoLegible(raw)) continue;
