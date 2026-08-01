@@ -177,6 +177,19 @@ describe("validateInmuebleCoherencia", () => {
     expect(suspicious.size).toBe(0);
   });
 
+  it("11. tieneMencionCatastral: true en los 5 históricos con certificado, false sin marcador", () => {
+    for (const h of HISTORICOS.slice(0, 5)) {
+      expect(tieneMencionCatastral(inmuebleWith({ menciones_direccion: h.menciones }))).toBe(true);
+    }
+    expect(tieneMencionCatastral(inmuebleWith({ menciones_direccion: HISTORICOS[5]!.menciones }))).toBe(false);
+    expect(tieneMencionCatastral(inmuebleWith({}))).toBe(false);
+    expect(tieneMencionCatastral(null)).toBe(false);
+    expect(
+      tieneMencionCatastral(inmuebleWith({ menciones_direccion: [{ seccion: "x", valor: "KR 1 2 3 (DIRECCIÓN CATASTRAL)" }] })),
+    ).toBe(true);
+  });
+
+
   it("10. Normalizadores exportados funcionan aislados", () => {
     expect(normalizeDireccionForCompare("KR 104 13C-05 CA 119"))
       .toBe(normalizeDireccionForCompare("kr 104 13c 05 ca 119"));
