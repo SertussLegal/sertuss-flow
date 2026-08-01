@@ -22,7 +22,7 @@ const BUCKET_OUTPUT = "expediente-files";
 const MAX_ESCRITURA_BYTES = 80 * 1024 * 1024; // 80 MB
 const MAX_CERTIFICADO_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_PODER_BYTES = 40 * 1024 * 1024; // 40 MB
-const ESCRITURA_MAX_PAGES = 10;
+const ESCRITURA_MAX_PAGES = 50;
 const CERTIFICADO_MAX_PAGES = 3;
 const PODER_MAX_PAGES = 50;
 
@@ -49,7 +49,7 @@ export const CancelacionNueva = () => {
     navigate("/cancelaciones");
   };
 
-  const UPLOAD_CONCURRENCY = 4;
+  const UPLOAD_CONCURRENCY = 6;
 
   const uploadPdfAsImages = async (
     cancelacionId: string,
@@ -57,9 +57,12 @@ export const CancelacionNueva = () => {
     kind: "certificado" | "escritura" | "poder",
     maxPages: number,
   ): Promise<string[]> => {
-    setStepLabel(`Renderizando ${kind} (primeras ${maxPages} páginas)…`);
+    setStepLabel(`Renderizando ${kind} (hasta ${maxPages} páginas)…`);
     const pages = await pdfToImages(file, { maxPages });
     if (pages.length === 0) throw new Error(`El ${kind} no contiene páginas válidas.`);
+    if (pages.length >= maxPages) {
+      setStepLabel(`${kind} extenso (${pages.length}+ páginas) — esto tomará más tiempo de lo usual…`);
+    }
 
     const basePath = `${cancelacionId}/cancelaciones/soportes/${kind}`;
     const results: { pageNumber: number; path: string }[] = [];
