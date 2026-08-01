@@ -2836,11 +2836,23 @@ if (import.meta.main) serve(async (req) => {
       // 2) Ejecutar OCR dedicado (con head+tail si la escritura es larga).
       const tStart = Date.now();
       const cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY_RC);
+      // Desempate determinista — mismo criterio que el flujo auto: si el modelo
+      // enumeró 2+ montos distintos como cuantia_credito, su elección no es
+      // confiable. No aplicamos ningún monto; decide el humano.
+      const confRC = detectarConflictoCuantia(cuantiaRun.result?.candidatos_vistos);
+      const candidatosUiRC = buildCuantiaCandidatosUi(cuantiaRun.result?.candidatos_vistos);
+      if (confRC.conflicto && cuantiaRun.result) {
+        cuantiaRun.result.valor_hipoteca_original = null;
+        cuantiaRun.result.valor_hipoteca_es_indeterminada = false;
+        cuantiaRun.result.hipoteca_garantia_abierta = false;
+        cuantiaRun.result.motivo_null = "ambigua_multiple";
+      }
       const dedicada = cuantiaRun.result;
       const dedicadaMonto = (dedicada?.valor_hipoteca_original ?? "").trim();
       const dedicadaAbierta = dedicada?.hipoteca_garantia_abierta === true
         || dedicada?.valor_hipoteca_es_indeterminada === true
         || dedicada?.motivo_null === "escritura_declara_abierta";
+
 
       // 3) Merge: humano > dedicado. Sólo escribimos si el humano dejó el
       //    valor vacío, marcado indeterminado, o basura ("null"/"undefined"/"nan").
