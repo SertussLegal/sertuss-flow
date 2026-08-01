@@ -272,6 +272,15 @@ function isInk(img: ImageData, p: number): boolean {
   return img.data[p * 4] < 128;
 }
 
+/** Rectángulo sólido de tinta (glifo grande) sobre una imagen de ancho `w`. */
+function rectPixels(w: number, x0: number, y0: number, rw: number, rh: number): number[] {
+  const out: number[] = [];
+  for (let y = y0; y < y0 + rh; y++) {
+    for (let x = x0; x < x0 + rw; x++) out.push(y * w + x);
+  }
+  return out;
+}
+
 describe("despeckleImageData", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -290,21 +299,19 @@ describe("despeckleImageData", () => {
 
   it("elimina manchitas aisladas de 1-3px y deja el glifo", async () => {
     const { despeckleImageData } = await import("./pdfToImages");
-    const glifo = [
-      11, 12, 13, 14, 15,
-      21, 22, 23, 24, 25,
-      31, 32, 33, 34, 35,
-      41, 42, 43, 44, 45,
-    ];
+    // Glifo denso de 400 px para que el ruido quede por debajo del 2%.
+    const glifo = rectPixels(60, 0, 0, 20, 20);
     // Manchitas: 1px, 2px (horizontal) y 3px (vertical), todas aisladas.
-    const manchitas = [180, 190, 191, 260, 280, 300];
-    const img = makeImageData(20, 20, [...glifo, ...manchitas]);
+    const manchitas = [2400, 2410, 2411, 2420, 2480, 2540];
+    const img = makeImageData(60, 60, [...glifo, ...manchitas]);
     const res = despeckleImageData(img);
     expect(res.applied).toBe(true);
-    expect(res.componentesEliminados).toBe(5); // 1 + 1(de 2px) + 3 aislados
+    expect(res.componentesEliminados).toBe(3); // 1px + 2px + 3px
+    expect(res.porcentaje).toBeLessThan(2);
     for (const p of manchitas) expect(isInk(img, p)).toBe(false);
     for (const p of glifo) expect(isInk(img, p)).toBe(true);
   });
+
 
   it("guardarraíl >2%: no modifica la imagen y avisa por console.warn", async () => {
     const { despeckleImageData } = await import("./pdfToImages");
