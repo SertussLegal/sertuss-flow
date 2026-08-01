@@ -2922,7 +2922,9 @@ if (import.meta.main) serve(async (req) => {
         updated_at: new Date().toISOString(),
       };
       // Espejo en columna plana — solo si efectivamente aplicamos el nuevo valor.
-      if (aplicado && !aplicadoIndet) {
+      if (confRC.conflicto && finalVacioOSustituible) {
+        updatePayload.valor_hipoteca_original = null;
+      } else if (aplicado && !aplicadoIndet) {
         updatePayload.valor_hipoteca_original = dedicadaMonto;
       } else if (aplicadoIndet) {
         // Limpiamos el espejo plano cuando confirmamos indeterminada; jamás dejar basura.
