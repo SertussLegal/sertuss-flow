@@ -26,6 +26,12 @@ import {
 } from "../_shared/isomorphic/poderBancoExtractor/index.ts";
 import { sanitizeString, stripNullyStrings, CANCELACION_NULLY_PATHS } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { mergeRegenPayload } from "../_shared/isomorphic/mergeRegenPayload.ts";
+import {
+  detectarConflictoCuantia,
+  CUANTIA_CONFLICTO_WARNING,
+  CUANTIA_CONFLICTO_ORIGEN,
+} from "../_shared/isomorphic/cuantiaConflicto.ts";
+export { detectarConflictoCuantia, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
 // Constante local; se usa al instanciar el wrapper de caché v5.
@@ -122,7 +128,7 @@ interface CancelacionData {
     hipoteca_garantia_abierta?: boolean;       // NUEVO — techo de garantía abierta/sin límite, INDEPENDIENTE del monto
     /** Metadata para UI: "escritura" cuando el monto vino del OCR dedicado
      *  a la escritura antecedente porque el certificado estaba indeterminado. */
-    cuantia_origen?: "escritura" | "certificado" | "manual";
+    cuantia_origen?: "escritura" | "certificado" | "manual" | "conflicto_candidatos_no_resuelto";
     // ── Campos ATÓMICOS (preferidos) — evitan regex inversos sobre prosa ──
     numero_escritura?: string;          // "3866"
     fecha_escritura?: { dia?: string; mes?: string; ano?: string }; // dia/mes 2 dígitos, ano 4
@@ -1487,7 +1493,13 @@ export function detectRequiereRevisionManual(
   const warningsInm = Array.isArray(im._coherencia_warnings)
     ? (im._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
     : [];
-  let motivos = [...warnings, ...warningsInm].filter(isHardBlockCoherenciaWarning);
+  // Cuantía (desempate determinista): los warnings viven en
+  // `hipoteca_anterior._coherencia_warnings`.
+  const ha = (extracted.hipoteca_anterior || {}) as Record<string, unknown>;
+  const warningsHa = Array.isArray(ha._coherencia_warnings)
+    ? (ha._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+    : [];
+  let motivos = [...warnings, ...warningsInm, ...warningsHa].filter(isHardBlockCoherenciaWarning);
 
   // Recálculo escalar (independiente de manualReviewConfirmed): los códigos
   // gating (`SCALAR_COHERENCE_GATING_CODES`) se re-evalúan contra los datos
@@ -2186,6 +2198,9 @@ export function buildCuantiaExtra(run: CuantiaDedicadaRun | null, trigger: strin
     confianza: run?.result?.confianza ?? null,
     candidatos_vistos: candidatos,
     candidatos_cuantia_credito_count: candidatos.filter((c) => c.clasificacion === "cuantia_credito").length,
+    conflicto_montos: detectarConflictoCuantia(candidatos).montosDistintos.length >= 2
+      ? detectarConflictoCuantia(candidatos).montosDistintos
+      : undefined,
   };
 }
 
@@ -3267,10 +3282,31 @@ if (import.meta.main) serve(async (req) => {
         const tCuantiaStart = Date.now();
         let cuantiaRun: CuantiaDedicadaRun | null = null;
         let cuantiaAplicada = false;
+        let cuantiaConflictoMontos: number[] = [];
         if (debeReintentar) {
           cuantiaRun = await extractCuantiaDedicada(escUrls, LOVABLE_API_KEY);
-          const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaRun.result);
-          cuantiaAplicada = mergeResult.applied;
+          // Desempate determinista ANTES del merge: si el modelo enumeró 2+
+          // montos distintos como cuantia_credito, su elección no es confiable
+          // (ver `_shared/isomorphic/cuantiaConflicto.ts`). Forzamos
+          // indeterminada + hard-block de revisión manual.
+          const conf = detectarConflictoCuantia(cuantiaRun.result?.candidatos_vistos);
+          if (conf.conflicto && cuantiaRun.result) {
+            cuantiaConflictoMontos = conf.montosDistintos;
+            cuantiaRun.result.valor_hipoteca_original = null;
+            cuantiaRun.result.valor_hipoteca_es_indeterminada = true;
+            cuantiaRun.result.hipoteca_garantia_abierta = false;
+            const haConf = extracted.hipoteca_anterior as unknown as Record<string, unknown>;
+            haConf.valor_hipoteca_original = "";
+            haConf.valor_hipoteca_es_indeterminada = true;
+            haConf.cuantia_origen = CUANTIA_CONFLICTO_ORIGEN;
+            const prevHaW = Array.isArray(haConf._coherencia_warnings)
+              ? (haConf._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+              : [];
+            haConf._coherencia_warnings = Array.from(new Set([...prevHaW, CUANTIA_CONFLICTO_WARNING]));
+          } else {
+            const mergeResult = mergeCuantiaIntoExtracted(extracted, cuantiaRun.result);
+            cuantiaAplicada = mergeResult.applied;
+          }
         }
         const cuantiaMontoOk = !!(cuantiaRun?.result?.valor_hipoteca_original);
         void logCuantiaEvent(supabaseService, {
@@ -3281,7 +3317,12 @@ if (import.meta.main) serve(async (req) => {
           monto_encontrado: cuantiaMontoOk,
           aplicado: cuantiaAplicada,
           tiempo_ms: debeReintentar ? Date.now() - tCuantiaStart : 0,
-          extra: buildCuantiaExtra(cuantiaRun, "auto"),
+          extra: {
+            ...buildCuantiaExtra(cuantiaRun, "auto"),
+            ...(cuantiaConflictoMontos.length >= 2
+              ? { conflicto_montos: cuantiaConflictoMontos, conflicto_forzado_indeterminada: true }
+              : {}),
+          },
         });
 
 
