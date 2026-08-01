@@ -428,6 +428,45 @@ const AdminPruebaCalidad = () => {
         </CardContent>
       </Card>
 
+      {thumbs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Miniaturas ({thumbs.length}) — clic para abrir a tamaño completo
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10">
+              {thumbs.map((t) => (
+                <button
+                  key={t.nombre}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setPagina(t.nombre);
+                    void loadImages(t.nombre);
+                  }}
+                  className="group space-y-1 rounded-md border border-border p-1 text-left transition-colors hover:border-primary disabled:opacity-50"
+                >
+                  {t.src ? (
+                    <img src={t.src} alt={`Página ${t.nombre}`} className="w-full rounded-sm" />
+                  ) : (
+                    <div className="flex h-24 items-center justify-center text-xs text-destructive">
+                      error
+                    </div>
+                  )}
+                  <span className="block text-center text-xs text-muted-foreground group-hover:text-foreground">
+                    {t.nombre}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+
+
       {error && (
         <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
           {error}
