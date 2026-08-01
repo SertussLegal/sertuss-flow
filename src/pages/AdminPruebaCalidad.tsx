@@ -409,6 +409,11 @@ const AdminPruebaCalidad = () => {
               {running && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Ejecutar Ronda 1 (3 corridas)
             </Button>
+            <Button onClick={loadThumbs} disabled={busy} variant="outline">
+              {loadingThumbs && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Vista rápida (miniaturas)
+            </Button>
+
 
             {(metrics || runs.length > 0) && (
               <Button variant="outline" onClick={copyAll}>
