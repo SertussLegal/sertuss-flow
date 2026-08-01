@@ -2436,6 +2436,29 @@ if (import.meta.main) serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // ── Sub-modo C: listado de páginas (sin bytes) ──
+      if (pagina === "ALL") {
+        const prefix = `${tramite_id}/cancelaciones/soportes/escritura`;
+        const { data: lista, error: listErr } = await supabaseService.storage
+          .from(BUCKET_OUTPUT).list(prefix, { limit: 200 });
+        if (listErr || !lista) {
+          return new Response(JSON.stringify({
+            ok: false, stage: "list", path: prefix, storage_error: listErr ?? "sin datos",
+          }, null, 2), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const listado = lista
+          .filter((o) => /^p\d+\.png$/i.test(o.name))
+          .map((o) => ({
+            nombre: o.name.replace(/\.png$/i, ""),
+            bytes: (o as { metadata?: { size?: number } }).metadata?.size ?? 0,
+          }))
+          .sort((a, b) => parseInt(a.nombre.slice(1), 10) - parseInt(b.nombre.slice(1), 10))
+          .slice(0, 50);
+        return new Response(JSON.stringify({ ok: true, listado }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const qcPath = `${tramite_id}/cancelaciones/soportes/escritura/${pagina}.png`;
       const { data: qcBlob, error: qcDlErr } = await supabaseService.storage
         .from(BUCKET_OUTPUT).download(qcPath);
