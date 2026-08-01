@@ -373,7 +373,7 @@ const AdminPruebaCalidad = () => {
     );
   }
 
-  const busy = loadingImages || running;
+  const busy = loadingImages || running || loadingThumbs;
 
   return (
     <div className="space-y-6 p-6">
