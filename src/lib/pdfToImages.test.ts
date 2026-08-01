@@ -253,4 +253,149 @@ describe("pdfToImages", () => {
   });
 });
 
+// ── Despeckle ──────────────────────────────────────────────────────────
+// ImageData sintética (no fixtures reales). Convención: 0 = tinta (negro),
+// 255 = fondo (blanco), como deja `binarizeImageData`.
+function makeImageData(w: number, h: number, inkPixels: number[]): ImageData {
+  const data = new Uint8ClampedArray(w * h * 4).fill(255);
+  for (const p of inkPixels) {
+    const o = p * 4;
+    data[o] = 0;
+    data[o + 1] = 0;
+    data[o + 2] = 0;
+    data[o + 3] = 255;
+  }
+  return { width: w, height: h, data } as unknown as ImageData;
+}
+
+function isInk(img: ImageData, p: number): boolean {
+  return img.data[p * 4] < 128;
+}
+
+describe("despeckleImageData", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("conserva intacto un glifo de >3px conectados", async () => {
+    const { despeckleImageData } = await import("./pdfToImages");
+    // Bloque 2x2 + 2 píxeles conectados = 6 px (conectividad-4) en un 10x10.
+    const glifo = [11, 12, 21, 22, 31, 41];
+    const img = makeImageData(10, 10, glifo);
+    const res = despeckleImageData(img);
+    expect(res.applied).toBe(true);
+    expect(res.componentesEliminados).toBe(0);
+    for (const p of glifo) expect(isInk(img, p)).toBe(true);
+  });
+
+  it("elimina manchitas aisladas de 1-3px y deja el glifo", async () => {
+    const { despeckleImageData } = await import("./pdfToImages");
+    const glifo = [
+      11, 12, 13, 14, 15,
+      21, 22, 23, 24, 25,
+      31, 32, 33, 34, 35,
+      41, 42, 43, 44, 45,
+    ];
+    // Manchitas: 1px, 2px (horizontal) y 3px (vertical), todas aisladas.
+    const manchitas = [180, 190, 191, 260, 280, 300];
+    const img = makeImageData(20, 20, [...glifo, ...manchitas]);
+    const res = despeckleImageData(img);
+    expect(res.applied).toBe(true);
+    expect(res.componentesEliminados).toBe(5); // 1 + 1(de 2px) + 3 aislados
+    for (const p of manchitas) expect(isInk(img, p)).toBe(false);
+    for (const p of glifo) expect(isInk(img, p)).toBe(true);
+  });
+
+  it("guardarraíl >2%: no modifica la imagen y avisa por console.warn", async () => {
+    const { despeckleImageData } = await import("./pdfToImages");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 1 glifo grande (20 px) + 5 manchitas de 1 px => 5/25 = 20% > 2%.
+    const glifo = [
+      11, 12, 13, 14, 15,
+      21, 22, 23, 24, 25,
+      31, 32, 33, 34, 35,
+      41, 42, 43, 44, 45,
+    ];
+    const manchitas = [180, 200, 220, 260, 300];
+    const img = makeImageData(20, 20, [...glifo, ...manchitas]);
+    const res = despeckleImageData(img);
+    expect(res.applied).toBe(false);
+    expect(res.porcentaje).toBeGreaterThan(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    for (const p of [...glifo, ...manchitas]) expect(isInk(img, p)).toBe(true);
+  });
+
+  it("no lanza excepción con imagen vacía o sin tinta", async () => {
+    const { despeckleImageData } = await import("./pdfToImages");
+    const vacia = makeImageData(0, 0, []);
+    expect(() => despeckleImageData(vacia)).not.toThrow();
+    const blanca = makeImageData(5, 5, []);
+    expect(despeckleImageData(blanca)).toEqual({
+      applied: false,
+      componentesEliminados: 0,
+      porcentaje: 0,
+    });
+  });
+});
+
+// ── Integración del flag PDF_DESPECKLE_ENABLED en el render ────────────
+describe("pdfToImages + PDF_DESPECKLE_ENABLED", () => {
+  // Canvas mock que devuelve SIEMPRE la misma ImageData completa (para el
+  // getImageData(0,0,w,h) del pipeline) y un píxel variable para el muestreo
+  // 1x1 de isCanvasUniform.
+  function installSharedImageDataMock(img: ImageData) {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
+      let k = 0;
+      return {
+        getImageData: (_x: number, _y: number, w?: number, h?: number) => {
+          if (w === 1 && h === 1) {
+            const v = (k++ * 37) % 255;
+            return { data: new Uint8ClampedArray([v, v, v, 255]) };
+          }
+          return img;
+        },
+        putImageData: () => {},
+      } as unknown as CanvasRenderingContext2D;
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (
+      cb: BlobCallback,
+    ) {
+      cb(new Blob([new Uint8Array(500_000)], { type: "image/png" }));
+    });
+  }
+
+  const manchita = 180;
+  const glifo = [11, 12, 13, 14, 15, 21, 22, 23, 24, 25, 31, 32, 33, 34, 35];
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+    (globalThis as any).__mockNumPages = 1;
+    (globalThis as any).__lastRenderedPage = 0;
+    (globalThis as any).__basePt = { w: 800, h: 1000 };
+    (globalThis as any).__canvasDims = [];
+  });
+
+  it("con el flag ON aplica el despeckle durante el render", async () => {
+    vi.doMock("./featureFlags", () => ({ PDF_DESPECKLE_ENABLED: true }));
+    const img = makeImageData(20, 20, [...glifo, manchita]);
+    installSharedImageDataMock(img);
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    expect(isInk(img, manchita)).toBe(false);
+    for (const p of glifo) expect(isInk(img, p)).toBe(true);
+  });
+
+  it("con el flag OFF no invoca el despeckle (imagen intacta)", async () => {
+    vi.doMock("./featureFlags", () => ({ PDF_DESPECKLE_ENABLED: false }));
+    const img = makeImageData(20, 20, [...glifo, manchita]);
+    installSharedImageDataMock(img);
+    const { pdfToImages } = await import("./pdfToImages");
+    await pdfToImages(makeFile(), { maxPages: 1 });
+    expect(isInk(img, manchita)).toBe(true);
+    for (const p of glifo) expect(isInk(img, p)).toBe(true);
+  });
+});
+
+
 
