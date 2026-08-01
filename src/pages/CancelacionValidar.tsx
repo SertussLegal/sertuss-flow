@@ -1023,7 +1023,12 @@ export const CancelacionValidar = () => {
       {row?.status === "requiere_revision_manual" && (() => {
         const inmWarns = ((data?.inmueble as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
         const pbWarns = ((data?.poder_banco as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
-        const motivos = [...inmWarns, ...pbWarns].filter((w): w is string => typeof w === "string");
+        // La hipoteca también emite hard-blocks (conflicto de cuantía): sin
+        // esto el usuario no veía el tercer motivo y quedaba atascado.
+        const haWarns = data?.hipoteca_anterior?._coherencia_warnings ?? [];
+        const motivos = Array.from(
+          new Set([...inmWarns, ...pbWarns, ...haWarns].filter((w): w is string => typeof w === "string")),
+        );
         return (
           <div
             role="alert"
