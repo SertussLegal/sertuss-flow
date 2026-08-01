@@ -98,7 +98,8 @@ const AdminPruebaCalidad = () => {
   };
 
   /** Paso 1 — descarga cruda + decode + despeckle en el navegador. */
-  const loadImages = async () => {
+  const loadImages = async (paginaArg?: string) => {
+    const pg = paginaArg ?? pagina;
     setLoadingImages(true);
     setError(null);
     setRuns([]);
@@ -112,8 +113,9 @@ const AdminPruebaCalidad = () => {
         action: "test_calidad_grayscale",
         fetch_raw: true,
         tramite_id: tramiteId,
-        pagina,
+        pagina: pg,
       });
+
 
       if (payload?.stage === "download") {
         setRaw(payload);
