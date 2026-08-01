@@ -42,13 +42,16 @@ const AdminPruebaCalidad = () => {
   const [tramiteId, setTramiteId] = useState("e2433d7b-6c4a-4225-b485-0bbb6fa38c99");
   const [pagina, setPagina] = useState("p15");
 
+  const [debugOnly, setDebugOnly] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [metrics, setMetrics] = useState<DespeckleMetrics | null>(null);
   const [aborted, setAborted] = useState(false);
   const [runs, setRuns] = useState<Corrida[]>([]);
+  const [images, setImages] = useState<{ original: string; despeckle: string } | null>(null);
   const [raw, setRaw] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
+
 
   useEffect(() => {
     let cancelled = false;
