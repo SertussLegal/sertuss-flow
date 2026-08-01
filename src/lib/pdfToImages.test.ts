@@ -385,7 +385,7 @@ describe("pdfToImages + PDF_DESPECKLE_ENABLED", () => {
 
   it("con el flag ON aplica el despeckle durante el render", async () => {
     vi.doMock("./featureFlags", () => ({ PDF_DESPECKLE_ENABLED: true }));
-    const img = makeImageData(20, 20, [...glifo, manchita]);
+    const img = makeImageData(60, 60, [...glifo, manchita]);
     installSharedImageDataMock(img);
     const { pdfToImages } = await import("./pdfToImages");
     await pdfToImages(makeFile(), { maxPages: 1 });
@@ -395,7 +395,7 @@ describe("pdfToImages + PDF_DESPECKLE_ENABLED", () => {
 
   it("con el flag OFF no invoca el despeckle (imagen intacta)", async () => {
     vi.doMock("./featureFlags", () => ({ PDF_DESPECKLE_ENABLED: false }));
-    const img = makeImageData(20, 20, [...glifo, manchita]);
+    const img = makeImageData(60, 60, [...glifo, manchita]);
     installSharedImageDataMock(img);
     const { pdfToImages } = await import("./pdfToImages");
     await pdfToImages(makeFile(), { maxPages: 1 });
