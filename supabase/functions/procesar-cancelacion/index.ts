@@ -2896,8 +2896,25 @@ if (import.meta.main) serve(async (req) => {
         (newDataIaHA as Record<string, unknown>).valor_hipoteca_es_indeterminada = true;
         (newDataIaHA as Record<string, unknown>).cuantia_origen = "escritura";
       }
+      // Conflicto irresoluble: estampamos origen, evidencia y hard-block en
+      // ambas capas, sólo si el humano no tiene ya un monto real escrito.
+      if (confRC.conflicto) {
+        for (const ha of [finalVacioOSustituible ? finalHA : null, newDataIaHA]) {
+          if (!ha) continue;
+          const h = ha as Record<string, unknown>;
+          h.valor_hipoteca_original = "";
+          h.valor_hipoteca_es_indeterminada = true;
+          h.cuantia_origen = CUANTIA_CONFLICTO_ORIGEN;
+          h.cuantia_candidatos = candidatosUiRC;
+          const prevW = Array.isArray(h._coherencia_warnings)
+            ? (h._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
+            : [];
+          h._coherencia_warnings = Array.from(new Set([...prevW, CUANTIA_CONFLICTO_WARNING]));
+        }
+      }
       const newDataIa = { ...cleanedIa, hipoteca_anterior: newDataIaHA };
       const newDataFinal = { ...prevDataFinal, hipoteca_anterior: finalHA };
+
 
       const updatePayload: Record<string, unknown> = {
         data_ia: newDataIa,
