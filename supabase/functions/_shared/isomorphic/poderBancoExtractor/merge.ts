@@ -211,6 +211,19 @@ export function mergePoderBancoV6(
       }
     : null;
 
+  // ─────────────────────────────────────────────────────────────
+  // Regla 9 — divergencia entre las DOS lecturas independientes del mismo
+  // PDF, capturada AQUÍ, ANTES de que el `??` de `combinedDedicado` colapse
+  // los valores y antes del override NO_LEGIBLE de más abajo. Después de
+  // ese punto solo sobrevive un valor y la comparación ya no es posible.
+  // ─────────────────────────────────────────────────────────────
+  const divergencia: DivergenciaLecturas = detectarDivergenciaLecturas(
+    dedicadoFlat,
+    deepV6 ? unwrapConf(deepV6.apoderado_cedula) : null,
+    deepV6 ? unwrapConf(deepV6.escritura_poder_num) : null,
+    deepV6 ? unwrapConf(deepV6.fecha_poder) : null,
+  );
+
   const combinedDedicado: DedicadoFlatResult | null = v6Flat || dedicadoFlat
     ? {
         apoderado_nombre: v6Flat?.apoderado_nombre ?? dedicadoFlat?.apoderado_nombre ?? null,
