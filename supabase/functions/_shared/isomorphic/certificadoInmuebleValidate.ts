@@ -84,20 +84,37 @@ export function validateInmuebleCoherencia(
   const suspicious = new Set<string>();
   if (!inmueble || typeof inmueble !== "object") return { warnings, suspicious };
 
-  // Regla 1 — Dirección catastral: ≥2 menciones distintas tras normalizar.
+  // Regla 1 — Dirección: ≥2 menciones distintas tras normalizar DENTRO DE UN
+  // MISMO GRUPO (misma sección/índice). Nunca se comparan grupos distintos.
+  //
+  // 2026-08-01 — FIX de falsos positivos. Antes se metían TODAS las menciones
+  // en un solo Set: eso comparaba la dirección urbanística (`..._1`) contra la
+  // catastral (`..._2`), que son categorías legítimamente distintas del
+  // certificado de tradición (SNR), no repeticiones del mismo dato. Resultado
+  // histórico medido: 5/5 falsos positivos (982af289, 50d5488a, 3ba6902a,
+  // eff6f046, a8af7200) y CERO verdaderos positivos. Con el agrupamiento la
+  // protección real (ruido OCR sobre la MISMA sección leída dos veces) sigue
+  // viva, y el hard-block conserva la misma severidad.
   const mDir = (inmueble.menciones_direccion ?? []) as Array<Record<string, unknown>>;
   if (Array.isArray(mDir) && mDir.length >= 2) {
-    const vals = mDir
-      .map((m) => String(m?.valor ?? "").trim())
-      .filter((v) => v && !NULLY_MENCION.has(v.toUpperCase()))
-      .map(normalizeDireccionForCompare)
-      .filter((v) => v);
-    if (new Set(vals).size >= 2) {
+    const grupos = new Map<string, Set<string>>();
+    for (const m of mDir) {
+      const raw = String(m?.valor ?? "").trim();
+      if (!raw || NULLY_MENCION.has(raw.toUpperCase())) continue;
+      const norm = normalizeDireccionForCompare(raw);
+      if (!norm) continue;
+      const key = grupoMencion(m?.seccion);
+      if (!grupos.has(key)) grupos.set(key, new Set<string>());
+      grupos.get(key)!.add(norm);
+    }
+    const hayConflicto = [...grupos.values()].some((s) => s.size >= 2);
+    if (hayConflicto) {
       warnings.push("inmueble_direccion_menciones_incoherentes");
       suspicious.add("inmueble.menciones_direccion");
       suspicious.add("inmueble.nomenclatura_predio");
     }
   }
+
 
   // Regla 2 — Matrícula inmobiliaria: ≥2 menciones distintas tras normalizar.
   const mMat = (inmueble.menciones_matricula ?? []) as Array<Record<string, unknown>>;
