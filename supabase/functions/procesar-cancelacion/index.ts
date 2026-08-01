@@ -3056,17 +3056,63 @@ if (import.meta.main) serve(async (req) => {
           poderInputPaths.map((p) => createSignedStorageUrl(supabaseService, p)),
         );
 
+        // ── Red de seguridad de payload (último recurso) ──────────────
+        // El gateway rechaza (413) payloads > ~30 MB. Estimamos el peso con
+        // un promedio conservador por página; si supera el margen seguro,
+        // recortamos SOLO la escritura (cabeza+cola). Nunca el poder ni el
+        // certificado. Si no supera, el comportamiento queda intacto.
+        const AVG_PAGE_BYTES = 600 * 1024;
+        const SAFE_PAYLOAD_BYTES = 28 * 1024 * 1024;
+        const totalPaginas = certUrls.length + escUrls.length + poderUrls.length;
+        const pesoEstimadoBytes = totalPaginas * AVG_PAGE_BYTES;
+
+        let escUrlsPayload = escUrls;
+        let escrituraTruncada = false;
+        if (pesoEstimadoBytes > SAFE_PAYLOAD_BYTES) {
+          const { sliced, truncado } = sliceHeadTail(escUrls, 20, 16, 4);
+          escUrlsPayload = sliced;
+          escrituraTruncada = truncado;
+        }
+
+        if (escrituraTruncada) {
+          void supabaseService.from("system_events").insert({
+            organization_id: orgId,
+            tramite_id: cancelacionId,
+            user_id: userId,
+            evento: "procesar-cancelacion.escritura_truncada_llamada_principal",
+            resultado: "truncado",
+            categoria: "PAYLOAD_LIMITE_GATEWAY",
+            detalle: {
+              paginas_en_storage: escUrls.length,
+              paginas_usadas: escUrlsPayload.length,
+              head: 16,
+              tail: 4,
+              paginas_certificado: certUrls.length,
+              paginas_poder: poderUrls.length,
+              peso_estimado_bytes: pesoEstimadoBytes,
+              umbral_bytes: SAFE_PAYLOAD_BYTES,
+              avg_page_bytes: AVG_PAGE_BYTES,
+            },
+          }).then(() => {}, () => {});
+        }
+
         const poderLine = poderUrls.length > 0
           ? ` Los siguientes ${poderUrls.length} adjuntos son páginas del Poder General del Banco (en orden) — revisa TODAS las páginas, especialmente las finales, para extraer el bloque 'poder_banco'.`
           : ` NO se adjuntó Poder General; OMITE el objeto 'poder_banco' por completo.`;
 
+        // Honestidad con el modelo: si recortamos, le decimos exactamente
+        // cuántas páginas está viendo y que son un fragmento no contiguo.
+        const escrituraLine = escrituraTruncada
+          ? ` los siguientes ${escUrlsPayload.length} adjuntos son un FRAGMENTO NO CONTIGUO de la Escritura Pública de Constitución de Hipoteca: las primeras 16 páginas y las últimas 4 de un documento de ${escUrls.length} páginas (se omitieron páginas intermedias por límite de tamaño). No asumas continuidad entre la página 16 y la 17 de lo que recibes.`
+          : ` los siguientes ${escUrlsPayload.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden).`;
+
         const userContent: Array<Record<string, unknown>> = [
           {
             type: "text",
-            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden); los siguientes ${escUrls.length} adjuntos son páginas de la Escritura Pública de Constitución de Hipoteca (en orden).${poderLine} Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
+            text: `Analiza los siguientes documentos y extrae los datos para una cancelación de hipoteca de Davivienda. Los primeros ${certUrls.length} adjuntos son páginas del Certificado de Tradición y Libertad (en orden);${escrituraLine}${poderLine} Llama a extract_cancelacion_hipoteca con TODOS los campos requeridos.`,
           },
           ...certUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
-          ...escUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+          ...escUrlsPayload.map((url) => ({ type: "image_url" as const, image_url: { url } })),
           ...poderUrls.map((url) => ({ type: "image_url" as const, image_url: { url } })),
         ];
 
