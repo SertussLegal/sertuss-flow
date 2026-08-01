@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateInmuebleCoherencia,
+  tieneMencionCatastral,
   normalizeDireccionForCompare,
   normalizeMatriculaForCompare,
 } from "../../supabase/functions/_shared/isomorphic/certificadoInmuebleValidate";
