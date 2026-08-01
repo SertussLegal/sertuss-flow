@@ -1668,7 +1668,7 @@ function mergePoderBanco(
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning, isCedulaValida } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
-import { validateInmuebleCoherencia } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
+import { validateInmuebleCoherencia, tieneMencionCatastral } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
 import { selectDireccionPorIndice } from "../_shared/isomorphic/direccionCandidatasSelect.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
