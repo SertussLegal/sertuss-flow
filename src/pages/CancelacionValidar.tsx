@@ -27,6 +27,7 @@ import { PoderBannersV5, ApoderadoCandidatosBanner, type CandidatoNatural } from
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SegmentedChoice } from "@/components/shared/SegmentedChoice";
 import { inferGeneroFromNombre } from "@/lib/genero";
+import { formatMonedaLegal } from "@/lib/legalFormatters";
 import { useSaveStatus } from "@/contexts/SaveStatusContext";
 import { POWER_V5_ENABLED } from "@/lib/featureFlags";
 import { buildProsaContext } from "@/lib/buildProsaContext";
