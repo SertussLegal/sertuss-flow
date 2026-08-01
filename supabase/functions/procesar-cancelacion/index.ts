@@ -2418,83 +2418,6 @@ if (import.meta.main) serve(async (req) => {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const { tramite_id, pagina } = bodyAny ?? {};
-    if (typeof tramite_id !== "string" || typeof pagina !== "string" || !tramite_id || !pagina) {
-      return new Response(JSON.stringify({ error: "tramite_id y pagina (string) requeridos" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const LOVABLE_API_KEY_QC = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY_QC) {
-      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Descarga con service role (ya pasamos el check de is_platform_admin).
-    const qcPath = `${tramite_id}/cancelaciones/soportes/escritura/${pagina}.png`;
-    const { data: qcBlob, error: qcDlErr } = await supabaseService.storage
-      .from(BUCKET_OUTPUT).download(qcPath);
-    if (qcDlErr || !qcBlob) {
-      return new Response(JSON.stringify({
-        ok: false, stage: "download", path: qcPath, storage_error: qcDlErr ?? "sin datos",
-      }, null, 2), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    const qcBytes = new Uint8Array(await qcBlob.arrayBuffer());
-    // deno-lint-ignore no-explicit-any
-    const UPNG: any = (await import("https://esm.sh/upng-js@2.1.0")).default;
-    const decoded = UPNG.decode(qcBytes.buffer.slice(qcBytes.byteOffset, qcBytes.byteOffset + qcBytes.byteLength));
-    const w: number = decoded.width;
-    const h: number = decoded.height;
-    const rgba = new Uint8Array(UPNG.toRGBA8(decoded)[0]);
-
-    // Despeckle: componentes conectados (conectividad-4) de píxeles de tinta (<128 lum),
-    // área <= 3 px → blanco. El fondo (label 0) nunca se cuenta como componente.
-    const n = w * h;
-    const ink = new Uint8Array(n);
-    let tintaTotalPx = 0;
-    for (let i = 0; i < n; i++) {
-      const o = i * 4;
-      const lum = (rgba[o] * 299 + rgba[o + 1] * 587 + rgba[o + 2] * 114) / 1000;
-      if (lum < 128) { ink[i] = 1; tintaTotalPx++; }
-    }
-    const labels = new Int32Array(n);
-    const stack = new Int32Array(n);
-    const toClear: number[] = [];
-    let componentesEliminados = 0;
-    let tintaEliminadaPx = 0;
-    let label = 0;
-    for (let start = 0; start < n; start++) {
-      if (!ink[start] || labels[start] !== 0) continue;
-      label++;
-      let sp = 0;
-      stack[sp++] = start;
-      labels[start] = label;
-      const members: number[] = [];
-      while (sp > 0) {
-        const cur = stack[--sp];
-        members.push(cur);
-        const x = cur % w;
-        const y = (cur - x) / w;
-        if (x > 0) { const k = cur - 1; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-        if (x < w - 1) { const k = cur + 1; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-        if (y > 0) { const k = cur - w; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-        if (y < h - 1) { const k = cur + w; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-      }
-      if (members.length <= 3) {
-        componentesEliminados++;
-        tintaEliminadaPx += members.length;
-        for (const m of members) toClear.push(m);
-      }
-    }
-    const porcentaje = tintaTotalPx > 0 ? (tintaEliminadaPx / tintaTotalPx) * 100 : 0;
-
-    const despeckled = new Uint8Array(rgba);
-    for (const m of toClear) {
-      const o = m * 4;
-      despeckled[o] = 255; despeckled[o + 1] = 255; despeckled[o + 2] = 255; despeckled[o + 3] = 255;
-    }
 
     const toB64 = (u8: Uint8Array) => {
       let s = "";
@@ -2504,52 +2427,45 @@ if (import.meta.main) serve(async (req) => {
       }
       return btoa(s);
     };
-    const encPngB64 = (buf: Uint8Array) => {
-      const png = new Uint8Array(
-        UPNG.encode([buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)], w, h, 0),
-      );
-      return { b64: toB64(png), bytes: png.length };
-    };
 
-    const originalEnc = encPngB64(rgba);
-
-    const metricasQc = {
-      path: qcPath,
-      width: w,
-      height: h,
-      bytes_original: originalEnc.bytes,
-      bytes_despeckle: 0,
-      componentes_eliminados: componentesEliminados,
-      tinta_total_px: tintaTotalPx,
-      tinta_eliminada_px: tintaEliminadaPx,
-      porcentaje_tinta_eliminada: porcentaje,
-    };
-
-    if (porcentaje > 2) {
+    // ── Sub-modo A: descarga cruda con service role (sin decode, sin IA) ──
+    if (bodyAny?.fetch_raw === true) {
+      const { tramite_id, pagina } = bodyAny ?? {};
+      if (typeof tramite_id !== "string" || typeof pagina !== "string" || !tramite_id || !pagina) {
+        return new Response(JSON.stringify({ error: "tramite_id y pagina (string) requeridos" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const qcPath = `${tramite_id}/cancelaciones/soportes/escritura/${pagina}.png`;
+      const { data: qcBlob, error: qcDlErr } = await supabaseService.storage
+        .from(BUCKET_OUTPUT).download(qcPath);
+      if (qcDlErr || !qcBlob) {
+        return new Response(JSON.stringify({
+          ok: false, stage: "download", path: qcPath, storage_error: qcDlErr ?? "sin datos",
+        }, null, 2), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const qcBytes = new Uint8Array(await qcBlob.arrayBuffer());
       return new Response(JSON.stringify({
-        ok: false,
-        abortado_por_guardarrail: true,
-        message: `El despeckle elimina ${porcentaje.toFixed(4)}% de la tinta (> 2%). No se invocó la IA.`,
-        metricas: metricasQc,
-      }, null, 2), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    const despeckleEnc = encPngB64(despeckled);
-    metricasQc.bytes_despeckle = despeckleEnc.bytes;
-
-    // Modo depuración: devuelve ambas imágenes sin invocar la IA (0 créditos).
-    if (bodyAny?.debug_return_image === true) {
-      return new Response(JSON.stringify({
-        ok: true,
-        debug: true,
-        metricas: metricasQc,
-        original_png_b64: originalEnc.b64,
-        despeckle_png_b64: despeckleEnc.b64,
+        ok: true, path: qcPath, bytes: qcBytes.length, raw_png_b64: toB64(qcBytes),
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const PROMPT_QC = `Esta es una página de una escritura pública notarial colombiana. Transcribe EXACTAMENTE, carácter por carácter, el párrafo que contiene una cifra en pesos colombianos (formato "TEXTO EN LETRAS ($NUMERO,00) MONEDA CORRIENTE"). Si hay varios párrafos con cifras, transcribe TODOS. Responde SOLO con el/los párrafo(s) transcritos, sin comentarios adicionales.`;
+    // ── Sub-modo B: recibe ambas imágenes ya procesadas y corre Gemini 3 veces ──
+    const LOVABLE_API_KEY_QC = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY_QC) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY no configurada" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const imgRgba = bodyAny?.image_rgba_b64;
+    const imgGray = bodyAny?.image_gray_b64;
+    if (typeof imgRgba !== "string" || typeof imgGray !== "string" || !imgRgba || !imgGray) {
+      return new Response(JSON.stringify({ error: "image_rgba_b64 e image_gray_b64 (base64) requeridos" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
+    const PROMPT_QC = `Esta es una página de una escritura pública notarial colombiana. Transcribe EXACTAMENTE, carácter por carácter, el párrafo que contiene una cifra en pesos colombianos (formato "TEXTO EN LETRAS ($NUMERO,00) MONEDA CORRIENTE"). Si hay varios párrafos con cifras, transcribe TODOS. Responde SOLO con el/los párrafo(s) transcritos, sin comentarios adicionales.`;
 
     const runOnce = async (label: string, b64: string) => {
       const aiResp = await fetchAiGateway({
@@ -2576,19 +2492,20 @@ if (import.meta.main) serve(async (req) => {
     try {
       const corridas: Array<{ rgba: string; gray: string }> = [];
       for (let i = 0; i < 3; i++) {
-        const rgbaResult = await runOnce("rgba", originalEnc.b64);
-        const grayResult = await runOnce("gray", despeckleEnc.b64);
+        const rgbaResult = await runOnce("rgba", imgRgba);
+        const grayResult = await runOnce("gray", imgGray);
         corridas.push({ rgba: rgbaResult, gray: grayResult });
       }
-      return new Response(JSON.stringify({ ok: true, metricas: metricasQc, corridas }, null, 2), {
+      return new Response(JSON.stringify({ ok: true, metricas: null, corridas }, null, 2), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (e) {
-      return new Response(JSON.stringify({ ok: false, metricas: metricasQc, error: (e as Error).message }, null, 2), {
+      return new Response(JSON.stringify({ ok: false, metricas: null, error: (e as Error).message }, null, 2), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
   }
+
 
   if (bodyAny?.action === "regression_cuantia") {
     const { data: isAdminData, error: isAdminErr } = await supabaseUser.rpc("is_platform_admin");
