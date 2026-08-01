@@ -261,6 +261,33 @@ const AdminPruebaCalidad = () => {
         </Card>
       )}
 
+      {images && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Imágenes (modo depuración, sin IA)</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <figure className="space-y-2">
+              <figcaption className="text-xs font-semibold text-muted-foreground">Original</figcaption>
+              <img
+                src={`data:image/png;base64,${images.original}`}
+                alt="Página original sin despeckle"
+                className="w-full rounded-md border border-border"
+              />
+            </figure>
+            <figure className="space-y-2">
+              <figcaption className="text-xs font-semibold text-muted-foreground">Despeckle</figcaption>
+              <img
+                src={`data:image/png;base64,${images.despeckle}`}
+                alt="Página con despeckle aplicado"
+                className="w-full rounded-md border border-border"
+              />
+            </figure>
+          </CardContent>
+        </Card>
+      )}
+
+
       {runs.map((r, i) => (
         <Card key={i}>
           <CardHeader>
