@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Admin from "./pages/Admin";
 import AdminOrgEdit from "./pages/AdminOrgEdit";
+import AdminPruebaCalidad from "./pages/AdminPruebaCalidad";
 import Validacion from "./pages/Validacion";
 import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
