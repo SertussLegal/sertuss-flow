@@ -48,13 +48,30 @@ export function normalizeMatriculaForCompare(s: string): string {
  *  tradición (SNR) son categorías DISTINTAS por diseño: `direccion_inmueble_1`
  *  suele ser la nomenclatura urbanística/comercial y `direccion_inmueble_2`
  *  la catastral. NO son repeticiones del mismo hecho.
- *  Si la sección trae índice numérico al final (`direccion_inmueble_2`) se usa
- *  ese índice; si no, la sección completa normalizada. */
+ *
+ *  SOLO el patrón exacto `direccion_inmueble_N` produce un grupo indexado.
+ *  Cualquier otra sección (`anotacion_0205`, `encabezado`, `escritura_pag_7`…)
+ *  cae en el grupo fijo "LIBRE": se comparan entre sí (2+ menciones libres
+ *  con valores distintos SÍ disparan), pero nunca contra los índices.
+ *  Antes se extraía cualquier dígito final de cualquier nombre, con lo que
+ *  `anotacion_0205` colisionaba con el índice 205 — bug corregido 2026-08-01.
+ *
+ *  LIMITACIÓN CONOCIDA (2026-08-01): el caso ancla "escritura 7058" (dirección
+ *  urbanística leída distinto en una anotación separada del documento) NO
+ *  queda cubierto por este agrupamiento — comparar una mención libre contra
+ *  la urbanística específica requeriría que el schema etiquete explícitamente
+ *  el TIPO de cada mención (urbanística/catastral/otra), algo que hoy no existe.
+ *  Verificado: los 3 trámites reales del incidente 7058 (c8924aa2, 86543d18,
+ *  60c879dd) son anteriores a la existencia de este campo (menciones_direccion
+ *  = NULL en los tres) — nunca fue una protección real en producción, es una
+ *  aspiración de diseño no probada. Backlog: agregar campo `tipo` explícito
+ *  al schema de menciones_direccion para cerrar este caso correctamente. */
 function grupoMencion(seccion: unknown): string {
   const s = String(seccion ?? "").trim().toUpperCase();
-  const m = s.match(/(\d+)\s*$/);
-  return m ? `IDX:${parseInt(m[1]!, 10)}` : `SEC:${s}`;
+  const m = s.match(/^DIRECCION_INMUEBLE_(\d+)$/);
+  return m ? `IDX:${parseInt(m[1]!, 10)}` : "LIBRE";
 }
+
 
 /** Sub-cadena que marca la mención como dirección catastral. Se usa SOLO para
  *  decidir si mostrar el aviso informativo no bloqueante, nunca para bloquear. */
