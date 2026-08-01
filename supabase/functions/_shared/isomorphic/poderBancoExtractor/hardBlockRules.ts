@@ -154,6 +154,26 @@ export const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
       return typeof v === "string" && !!extractYear(v);
     },
   },
+  // Desempate determinista de cuantía: la escritura trae 2+ cifras distintas
+  // clasificadas como valor del crédito. Se suprime cuando el humano escribió
+  // un monto real en `hipoteca_anterior.valor_hipoteca_original`, o confirmó
+  // explícitamente que la hipoteca es de cuantía indeterminada/abierta.
+  {
+    warning: "cuantia_conflicto_candidatos_no_resuelto",
+    canSuppress: (d) => {
+      const ha = ((d as Record<string, unknown>).hipoteca_anterior || {}) as Record<string, unknown>;
+      const monto = typeof ha.valor_hipoteca_original === "string"
+        ? ha.valor_hipoteca_original.trim()
+        : "";
+      const montoValido = monto !== ""
+        && !/^(null|undefined|nan)$/i.test(monto)
+        && !/^_+$/.test(monto)
+        && /\d/.test(monto);
+      const indetConfirmada = ha.valor_hipoteca_es_indeterminada === true
+        || ha.hipoteca_garantia_abierta === true;
+      return montoValido || indetConfirmada;
+    },
+  },
 ];
 
 export function applyManualOverrideExceptions<D>(
