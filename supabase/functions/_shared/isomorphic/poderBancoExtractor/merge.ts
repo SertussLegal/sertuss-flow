@@ -355,6 +355,7 @@ export function mergePoderBancoV6(
     motivos_incompletitud: deepV6.motivos_incompletitud,
     _classifier_motivos: cls.motivos,
     ...(Object.keys(confianza).length > 0 ? { _confianza: confianza } : {}),
+    ...(Object.keys(divergencia).length > 0 ? { _divergencia_lecturas: divergencia } : {}),
   };
 
   const hasSignal =
