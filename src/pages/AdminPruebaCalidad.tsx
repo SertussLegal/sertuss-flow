@@ -61,6 +61,8 @@ const AdminPruebaCalidad = () => {
   const [images, setImages] = useState<{ original: string; despeckle: string } | null>(null);
   const [raw, setRaw] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
+  const [thumbs, setThumbs] = useState<{ nombre: string; src: string }[]>([]);
+  const [loadingThumbs, setLoadingThumbs] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +100,8 @@ const AdminPruebaCalidad = () => {
   };
 
   /** Paso 1 — descarga cruda + decode + despeckle en el navegador. */
-  const loadImages = async () => {
+  const loadImages = async (paginaArg?: string) => {
+    const pg = paginaArg ?? pagina;
     setLoadingImages(true);
     setError(null);
     setRuns([]);
@@ -112,8 +115,9 @@ const AdminPruebaCalidad = () => {
         action: "test_calidad_grayscale",
         fetch_raw: true,
         tramite_id: tramiteId,
-        pagina,
+        pagina: pg,
       });
+
 
       if (payload?.stage === "download") {
         setRaw(payload);
@@ -191,7 +195,7 @@ const AdminPruebaCalidad = () => {
       const porcentaje = tintaTotalPx > 0 ? (tintaEliminadaPx / tintaTotalPx) * 100 : 0;
 
       const metricasBase: DespeckleMetrics = {
-        path: `${tramiteId}/cancelaciones/soportes/escritura/${pagina}.png`,
+        path: `${tramiteId}/cancelaciones/soportes/escritura/${pg}.png`,
         width: w,
         height: h,
         bytes_original: bytesOriginal,
@@ -229,6 +233,84 @@ const AdminPruebaCalidad = () => {
       setProgress("");
     } finally {
       setLoadingImages(false);
+    }
+  };
+
+  /** Vista rápida — listado + miniaturas generadas en el navegador. */
+  const loadThumbs = async () => {
+    setLoadingThumbs(true);
+    setError(null);
+    setThumbs([]);
+    setProgress("Listando páginas…");
+    try {
+      const listPayload = await invokeFn({
+        action: "test_calidad_grayscale",
+        fetch_raw: true,
+        tramite_id: tramiteId,
+        pagina: "ALL",
+      });
+      if (listPayload?.ok !== true || !Array.isArray(listPayload.listado)) {
+        setRaw(listPayload);
+        throw new Error(String(listPayload?.error ?? "no se pudo listar las páginas"));
+      }
+      const listado = listPayload.listado as { nombre: string }[];
+      const total = listado.length;
+      let done = 0;
+      setProgress(`Cargando 0/${total}…`);
+
+      const results: { nombre: string; src: string }[] = new Array(total);
+      const makeThumb = async (nombre: string) => {
+        const p = await invokeFn({
+          action: "test_calidad_grayscale",
+          fetch_raw: true,
+          tramite_id: tramiteId,
+          pagina: nombre,
+        });
+        if (p?.ok !== true || typeof p.raw_png_b64 !== "string") throw new Error(`falló ${nombre}`);
+        const url = URL.createObjectURL(
+          new Blob([b64ToBytes(p.raw_png_b64 as string)], { type: "image/png" }),
+        );
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error(`no se pudo decodificar ${nombre}`));
+          img.src = url;
+        });
+        const tw = 180;
+        const th = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * tw));
+        const canvas = document.createElement("canvas");
+        canvas.width = tw;
+        canvas.height = th;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no se pudo crear el contexto 2D");
+        ctx.drawImage(img, 0, 0, tw, th);
+        URL.revokeObjectURL(url);
+        return `data:image/png;base64,${canvasToPngB64(canvas)}`;
+      };
+
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < total) {
+          const idx = cursor++;
+          const nombre = listado[idx].nombre;
+          try {
+            results[idx] = { nombre, src: await makeThumb(nombre) };
+          } catch {
+            results[idx] = { nombre, src: "" };
+          }
+          done++;
+          setProgress(`Cargando ${done}/${total}…`);
+          setThumbs(results.filter(Boolean));
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, total) }, worker));
+      setThumbs(results.filter(Boolean));
+      setProgress(`${total} páginas cargadas.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setProgress("");
+    } finally {
+      setLoadingThumbs(false);
     }
   };
 
@@ -291,7 +373,7 @@ const AdminPruebaCalidad = () => {
     );
   }
 
-  const busy = loadingImages || running;
+  const busy = loadingImages || running || loadingThumbs;
 
   return (
     <div className="space-y-6 p-6">
@@ -319,7 +401,7 @@ const AdminPruebaCalidad = () => {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={loadImages} disabled={busy}>
+            <Button onClick={() => loadImages()} disabled={busy}>
               {loadingImages && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Cargar y ver imágenes
             </Button>
@@ -327,6 +409,11 @@ const AdminPruebaCalidad = () => {
               {running && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Ejecutar Ronda 1 (3 corridas)
             </Button>
+            <Button onClick={loadThumbs} disabled={busy} variant="outline">
+              {loadingThumbs && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Vista rápida (miniaturas)
+            </Button>
+
 
             {(metrics || runs.length > 0) && (
               <Button variant="outline" onClick={copyAll}>
@@ -340,6 +427,45 @@ const AdminPruebaCalidad = () => {
           </p>
         </CardContent>
       </Card>
+
+      {thumbs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Miniaturas ({thumbs.length}) — clic para abrir a tamaño completo
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10">
+              {thumbs.map((t) => (
+                <button
+                  key={t.nombre}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setPagina(t.nombre);
+                    void loadImages(t.nombre);
+                  }}
+                  className="group space-y-1 rounded-md border border-border p-1 text-left transition-colors hover:border-primary disabled:opacity-50"
+                >
+                  {t.src ? (
+                    <img src={t.src} alt={`Página ${t.nombre}`} className="w-full rounded-sm" />
+                  ) : (
+                    <div className="flex h-24 items-center justify-center text-xs text-destructive">
+                      error
+                    </div>
+                  )}
+                  <span className="block text-center text-xs text-muted-foreground group-hover:text-foreground">
+                    {t.nombre}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+
 
       {error && (
         <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
