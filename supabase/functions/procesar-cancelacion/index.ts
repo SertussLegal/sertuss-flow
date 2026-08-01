@@ -3337,9 +3337,25 @@ if (import.meta.main) serve(async (req) => {
         ) as unknown as typeof extracted;
 
         const revision = detectRequiereRevisionManual(cleanedExtracted);
+        // Aviso visible para el usuario: la escritura se recortó para el
+        // análisis. Viaja dentro de data_ia/data_final (se conserva en los
+        // guardados posteriores) y lo renderiza CancelacionValidar.
+        const dataConAvisos = escrituraTruncada
+          ? {
+              ...(cleanedExtracted as unknown as Record<string, unknown>),
+              _avisos_procesamiento: {
+                escritura_truncada: {
+                  paginas_en_storage: escUrls.length,
+                  paginas_usadas: escUrlsPayload.length,
+                  motivo: "payload_limite_gateway",
+                },
+              },
+            }
+          : cleanedExtracted;
+
         const commonUpdate = {
-          data_ia: cleanedExtracted,
-          data_final: cleanedExtracted,
+          data_ia: dataConAvisos,
+          data_final: dataConAvisos,
           numero_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.numero_escritura_hipoteca,
           fecha_escritura_hipoteca: cleanedExtracted.hipoteca_anterior.fecha_escritura_hipoteca,
           notaria_hipoteca: cleanedExtracted.hipoteca_anterior.notaria_hipoteca,
