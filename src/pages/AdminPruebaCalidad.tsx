@@ -321,7 +321,7 @@ const AdminPruebaCalidad = () => {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={loadImages} disabled={busy}>
+            <Button onClick={() => loadImages()} disabled={busy}>
               {loadingImages && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Cargar y ver imágenes
             </Button>
