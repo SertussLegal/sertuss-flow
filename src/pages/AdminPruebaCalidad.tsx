@@ -193,7 +193,7 @@ const AdminPruebaCalidad = () => {
       const porcentaje = tintaTotalPx > 0 ? (tintaEliminadaPx / tintaTotalPx) * 100 : 0;
 
       const metricasBase: DespeckleMetrics = {
-        path: `${tramiteId}/cancelaciones/soportes/escritura/${pagina}.png`,
+        path: `${tramiteId}/cancelaciones/soportes/escritura/${pg}.png`,
         width: w,
         height: h,
         bytes_original: bytesOriginal,
