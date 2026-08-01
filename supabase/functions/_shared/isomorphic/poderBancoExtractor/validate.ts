@@ -125,6 +125,7 @@ export const HARD_BLOCK_WARNING_SUFFIXES = [
   "_menciones_incoherentes",
   "_requiere_confirmacion",
   "_divergencia_lecturas",
+  "_no_resuelto",
 ] as const;
 
 export function isHardBlockCoherenciaWarning(w: string | undefined | null): boolean {
