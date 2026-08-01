@@ -368,6 +368,9 @@ export async function pdfToImages(
       // glifos pequeños (cédulas, matrículas, firmas).
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       binarizeImageData(imageData, BINARIZATION_THRESHOLD);
+      if (PDF_DESPECKLE_ENABLED) {
+        despeckleImageData(imageData);
+      }
       ctx.putImageData(imageData, 0, 0);
 
       // `jpegQuality` se ignora deliberadamente: PNG es lossless (ver
