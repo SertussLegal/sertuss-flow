@@ -78,13 +78,23 @@ const AdminPruebaCalidad = () => {
     setRunning(true);
     setError(null);
     setRuns([]);
+    setImages(null);
     setMetrics(null);
     setRaw(null);
     setAborted(false);
-    setProgress("Ejecutando en el servidor (descarga + despeckle + 3 corridas)…");
+    setProgress(
+      debugOnly
+        ? "Ejecutando en el servidor (descarga + despeckle, sin IA)…"
+        : "Ejecutando en el servidor (descarga + despeckle + 3 corridas)…",
+    );
     try {
       const { data, error: fnError } = await supabase.functions.invoke("procesar-cancelacion", {
-        body: { action: "test_calidad_grayscale", tramite_id: tramiteId, pagina },
+        body: {
+          action: "test_calidad_grayscale",
+          tramite_id: tramiteId,
+          pagina,
+          ...(debugOnly ? { debug_return_image: true } : {}),
+        },
       });
       if (fnError) {
         const ctx = (fnError as { context?: { status?: number; text?: () => Promise<string> } }).context;
@@ -99,24 +109,39 @@ const AdminPruebaCalidad = () => {
       }
 
       const payload = data as Record<string, unknown> | null;
-      setRaw(payload);
       setMetrics((payload?.metricas as DespeckleMetrics) ?? null);
 
       if (payload?.stage === "download") {
+        setRaw(payload);
         throw new Error(`no se pudo descargar la imagen: ${JSON.stringify(payload.storage_error)}`);
       }
       if (payload?.abortado_por_guardarrail) {
+        setRaw(payload);
         setAborted(true);
         setProgress("");
         setError(String(payload.message ?? "Guardarraíl activado. No se invocó la IA."));
         return;
       }
       if (payload?.ok !== true) {
+        setRaw(payload);
         throw new Error(String(payload?.error ?? "respuesta inesperada del servidor"));
       }
 
+      if (payload.debug === true) {
+        setImages({
+          original: String(payload.original_png_b64 ?? ""),
+          despeckle: String(payload.despeckle_png_b64 ?? ""),
+        });
+        // No volcamos el JSON crudo: contiene los PNG completos en base64.
+        setRaw({ ok: true, debug: true, metricas: payload.metricas, imagenes: "(omitidas del JSON crudo)" });
+        setProgress("Listo (sin IA).");
+        return;
+      }
+
+      setRaw(payload);
       setRuns((payload.corridas as Corrida[]) ?? []);
       setProgress("Listo.");
+
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setProgress("");
