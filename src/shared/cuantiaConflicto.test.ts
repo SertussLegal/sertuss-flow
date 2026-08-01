@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectarConflictoCuantia,
+  buildCuantiaCandidatosUi,
   CUANTIA_CONFLICTO_WARNING,
   CUANTIA_CONFLICTO_ORIGEN,
   type CuantiaCandidatoLike,
@@ -15,7 +16,42 @@ import { applyManualOverrideExceptions } from "../../supabase/functions/_shared/
 const c = (
   clasificacion: string,
   monto: number | null,
-): CuantiaCandidatoLike => ({ clasificacion, monto, texto_fragmento: "…" });
+  extra: Partial<CuantiaCandidatoLike> = {},
+): CuantiaCandidatoLike => ({ clasificacion, monto, texto_fragmento: "…", ...extra });
+
+describe("buildCuantiaCandidatosUi", () => {
+  it("sólo cuantia_credito, ordenado descendente por monto", () => {
+    expect(
+      buildCuantiaCandidatosUi([
+        c("cuantia_credito", 7968114, { texto_fragmento: "saldo", pagina_aprox: 36 }),
+        c("precio_venta", 65000000),
+        c("cuantia_credito", 31113670, { texto_fragmento: "mutuo", pagina_aprox: 1 }),
+      ]),
+    ).toEqual([
+      { monto: 31113670, texto_fragmento: "mutuo", pagina_aprox: 1 },
+      { monto: 7968114, texto_fragmento: "saldo", pagina_aprox: 36 },
+    ]);
+  });
+
+  it("deduplica por monto conservando el primer fragmento", () => {
+    expect(
+      buildCuantiaCandidatosUi([
+        c("cuantia_credito", 8558475, { texto_fragmento: "primero" }),
+        c("cuantia_credito", 8558475, { texto_fragmento: "segundo" }),
+      ]),
+    ).toEqual([{ monto: 8558475, texto_fragmento: "primero", pagina_aprox: null }]);
+  });
+
+  it("ignora montos null/0 y entradas vacías", () => {
+    expect(
+      buildCuantiaCandidatosUi([c("cuantia_credito", null), c("cuantia_credito", 0)]),
+    ).toEqual([]);
+    expect(buildCuantiaCandidatosUi([])).toEqual([]);
+    expect(buildCuantiaCandidatosUi(undefined)).toEqual([]);
+    expect(buildCuantiaCandidatosUi(null)).toEqual([]);
+  });
+});
+
 
 describe("detectarConflictoCuantia", () => {
   it("1 — un solo candidato cuantia_credito con monto → sin conflicto", () => {
