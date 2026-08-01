@@ -108,7 +108,8 @@ const AdminPruebaCalidad = () => {
 
     setProgress("Decodificando en el navegador…");
     const img = new Image();
-    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+    const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: "image/png" });
+    const objectUrl = URL.createObjectURL(blob);
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = () => reject(new Error("no se pudo decodificar el PNG en el navegador"));
