@@ -15,6 +15,10 @@
 
 import type { PoderBancoDeepPayload } from "./index.ts";
 import { classifyApoderado, type ApoderadoPayload } from "../apoderadoClassifier.ts";
+import {
+  detectarDivergenciaLecturas,
+  type DivergenciaLecturas,
+} from "./divergenciaLecturas.ts";
 
 /** Contrato mínimo del PoderBanco plano legacy (consumido por buildDocxVars). */
 export interface PoderBancoFlat {
