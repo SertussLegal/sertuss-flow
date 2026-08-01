@@ -169,9 +169,11 @@ export const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
         && !/^(null|undefined|nan)$/i.test(monto)
         && !/^_+$/.test(monto)
         && /\d/.test(monto);
-      const indetConfirmada = ha.valor_hipoteca_es_indeterminada === true
-        || ha.hipoteca_garantia_abierta === true;
-      return montoValido || indetConfirmada;
+      // OJO: `valor_hipoteca_es_indeterminada` NO sirve como escape — el
+      // propio conflicto la fuerza a true, y aceptarla anularía el bloqueo.
+      // Escape explícito: el humano marca el origen como "manual".
+      const origenManual = ha.cuantia_origen === "manual";
+      return montoValido || origenManual;
     },
   },
 ];
