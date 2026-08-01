@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, AlertTriangle, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -42,13 +43,16 @@ const AdminPruebaCalidad = () => {
   const [tramiteId, setTramiteId] = useState("e2433d7b-6c4a-4225-b485-0bbb6fa38c99");
   const [pagina, setPagina] = useState("p15");
 
+  const [debugOnly, setDebugOnly] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [metrics, setMetrics] = useState<DespeckleMetrics | null>(null);
   const [aborted, setAborted] = useState(false);
   const [runs, setRuns] = useState<Corrida[]>([]);
+  const [images, setImages] = useState<{ original: string; despeckle: string } | null>(null);
   const [raw, setRaw] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -75,13 +79,23 @@ const AdminPruebaCalidad = () => {
     setRunning(true);
     setError(null);
     setRuns([]);
+    setImages(null);
     setMetrics(null);
     setRaw(null);
     setAborted(false);
-    setProgress("Ejecutando en el servidor (descarga + despeckle + 3 corridas)…");
+    setProgress(
+      debugOnly
+        ? "Ejecutando en el servidor (descarga + despeckle, sin IA)…"
+        : "Ejecutando en el servidor (descarga + despeckle + 3 corridas)…",
+    );
     try {
       const { data, error: fnError } = await supabase.functions.invoke("procesar-cancelacion", {
-        body: { action: "test_calidad_grayscale", tramite_id: tramiteId, pagina },
+        body: {
+          action: "test_calidad_grayscale",
+          tramite_id: tramiteId,
+          pagina,
+          ...(debugOnly ? { debug_return_image: true } : {}),
+        },
       });
       if (fnError) {
         const ctx = (fnError as { context?: { status?: number; text?: () => Promise<string> } }).context;
@@ -96,24 +110,39 @@ const AdminPruebaCalidad = () => {
       }
 
       const payload = data as Record<string, unknown> | null;
-      setRaw(payload);
       setMetrics((payload?.metricas as DespeckleMetrics) ?? null);
 
       if (payload?.stage === "download") {
+        setRaw(payload);
         throw new Error(`no se pudo descargar la imagen: ${JSON.stringify(payload.storage_error)}`);
       }
       if (payload?.abortado_por_guardarrail) {
+        setRaw(payload);
         setAborted(true);
         setProgress("");
         setError(String(payload.message ?? "Guardarraíl activado. No se invocó la IA."));
         return;
       }
       if (payload?.ok !== true) {
+        setRaw(payload);
         throw new Error(String(payload?.error ?? "respuesta inesperada del servidor"));
       }
 
+      if (payload.debug === true) {
+        setImages({
+          original: String(payload.original_png_b64 ?? ""),
+          despeckle: String(payload.despeckle_png_b64 ?? ""),
+        });
+        // No volcamos el JSON crudo: contiene los PNG completos en base64.
+        setRaw({ ok: true, debug: true, metricas: payload.metricas, imagenes: "(omitidas del JSON crudo)" });
+        setProgress("Listo (sin IA).");
+        return;
+      }
+
+      setRaw(payload);
       setRuns((payload.corridas as Corrida[]) ?? []);
       setProgress("Listo.");
+
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setProgress("");
@@ -178,11 +207,22 @@ const AdminPruebaCalidad = () => {
               <Input id="pagina" value={pagina} onChange={(e) => setPagina(e.target.value)} />
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="debug-only"
+              checked={debugOnly}
+              onCheckedChange={(v) => setDebugOnly(v === true)}
+            />
+            <Label htmlFor="debug-only" className="cursor-pointer text-sm font-normal">
+              Solo ver imágenes (sin invocar IA)
+            </Label>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={run} disabled={running}>
               {running && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ejecutar Ronda 1 (3 corridas)
+              {debugOnly ? "Ver imágenes (sin IA)" : "Ejecutar Ronda 1 (3 corridas)"}
             </Button>
+
             {(metrics || runs.length > 0) && (
               <Button variant="outline" onClick={copyAll}>
                 <Copy className="mr-2 h-4 w-4" /> Copiar todo
@@ -220,6 +260,33 @@ const AdminPruebaCalidad = () => {
           </CardContent>
         </Card>
       )}
+
+      {images && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Imágenes (modo depuración, sin IA)</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <figure className="space-y-2">
+              <figcaption className="text-xs font-semibold text-muted-foreground">Original</figcaption>
+              <img
+                src={`data:image/png;base64,${images.original}`}
+                alt="Página original sin despeckle"
+                className="w-full rounded-md border border-border"
+              />
+            </figure>
+            <figure className="space-y-2">
+              <figcaption className="text-xs font-semibold text-muted-foreground">Despeckle</figcaption>
+              <img
+                src={`data:image/png;base64,${images.despeckle}`}
+                alt="Página con despeckle aplicado"
+                className="w-full rounded-md border border-border"
+              />
+            </figure>
+          </CardContent>
+        </Card>
+      )}
+
 
       {runs.map((r, i) => (
         <Card key={i}>

@@ -2537,7 +2537,19 @@ if (import.meta.main) serve(async (req) => {
     const despeckleEnc = encPngB64(despeckled);
     metricasQc.bytes_despeckle = despeckleEnc.bytes;
 
+    // Modo depuración: devuelve ambas imágenes sin invocar la IA (0 créditos).
+    if (bodyAny?.debug_return_image === true) {
+      return new Response(JSON.stringify({
+        ok: true,
+        debug: true,
+        metricas: metricasQc,
+        original_png_b64: originalEnc.b64,
+        despeckle_png_b64: despeckleEnc.b64,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const PROMPT_QC = `Esta es una página de una escritura pública notarial colombiana. Transcribe EXACTAMENTE, carácter por carácter, el párrafo que contiene una cifra en pesos colombianos (formato "TEXTO EN LETRAS ($NUMERO,00) MONEDA CORRIENTE"). Si hay varios párrafos con cifras, transcribe TODOS. Responde SOLO con el/los párrafo(s) transcritos, sin comentarios adicionales.`;
+
 
     const runOnce = async (label: string, b64: string) => {
       const aiResp = await fetchAiGateway({
