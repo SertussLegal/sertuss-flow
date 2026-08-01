@@ -236,6 +236,84 @@ const AdminPruebaCalidad = () => {
     }
   };
 
+  /** Vista rápida — listado + miniaturas generadas en el navegador. */
+  const loadThumbs = async () => {
+    setLoadingThumbs(true);
+    setError(null);
+    setThumbs([]);
+    setProgress("Listando páginas…");
+    try {
+      const listPayload = await invokeFn({
+        action: "test_calidad_grayscale",
+        fetch_raw: true,
+        tramite_id: tramiteId,
+        pagina: "ALL",
+      });
+      if (listPayload?.ok !== true || !Array.isArray(listPayload.listado)) {
+        setRaw(listPayload);
+        throw new Error(String(listPayload?.error ?? "no se pudo listar las páginas"));
+      }
+      const listado = listPayload.listado as { nombre: string }[];
+      const total = listado.length;
+      let done = 0;
+      setProgress(`Cargando 0/${total}…`);
+
+      const results: { nombre: string; src: string }[] = new Array(total);
+      const makeThumb = async (nombre: string) => {
+        const p = await invokeFn({
+          action: "test_calidad_grayscale",
+          fetch_raw: true,
+          tramite_id: tramiteId,
+          pagina: nombre,
+        });
+        if (p?.ok !== true || typeof p.raw_png_b64 !== "string") throw new Error(`falló ${nombre}`);
+        const url = URL.createObjectURL(
+          new Blob([b64ToBytes(p.raw_png_b64 as string)], { type: "image/png" }),
+        );
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error(`no se pudo decodificar ${nombre}`));
+          img.src = url;
+        });
+        const tw = 180;
+        const th = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * tw));
+        const canvas = document.createElement("canvas");
+        canvas.width = tw;
+        canvas.height = th;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no se pudo crear el contexto 2D");
+        ctx.drawImage(img, 0, 0, tw, th);
+        URL.revokeObjectURL(url);
+        return `data:image/png;base64,${canvasToPngB64(canvas)}`;
+      };
+
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < total) {
+          const idx = cursor++;
+          const nombre = listado[idx].nombre;
+          try {
+            results[idx] = { nombre, src: await makeThumb(nombre) };
+          } catch {
+            results[idx] = { nombre, src: "" };
+          }
+          done++;
+          setProgress(`Cargando ${done}/${total}…`);
+          setThumbs(results.filter(Boolean));
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, total) }, worker));
+      setThumbs(results.filter(Boolean));
+      setProgress(`${total} páginas cargadas.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setProgress("");
+    } finally {
+      setLoadingThumbs(false);
+    }
+  };
+
   /** Paso 2 — envía ambas imágenes al servidor para las 3 corridas de IA. */
   const runRonda1 = async () => {
     if (!images) return;
