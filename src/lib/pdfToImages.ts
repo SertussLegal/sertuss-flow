@@ -29,6 +29,7 @@
 import * as pdfjs from "pdfjs-dist";
 // El worker se sirve estáticamente desde node_modules vía Vite
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { PDF_DESPECKLE_ENABLED } from "./featureFlags";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
