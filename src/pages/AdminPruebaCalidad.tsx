@@ -256,104 +256,13 @@ const AdminPruebaCalidad = () => {
       }
 
       const rawB64 = payload.raw_png_b64 as string;
-      const bytesOriginal = b64ToBytes(rawB64).length;
-
-      setProgress("Decodificando en el navegador…");
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(new Blob([b64ToBytes(rawB64)], { type: "image/png" }));
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("no se pudo decodificar el PNG en el navegador"));
-        img.src = objectUrl;
-      });
-
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) throw new Error("no se pudo crear el contexto 2D");
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(objectUrl);
-
-      const originalB64 = canvasToPngB64(canvas);
-
-      setProgress("Aplicando despeckle (≤3px)…");
-      const imageData = ctx.getImageData(0, 0, w, h);
-      const rgba = imageData.data;
-      const n = w * h;
-      const ink = new Uint8Array(n);
-      let tintaTotalPx = 0;
-      for (let i = 0; i < n; i++) {
-        const o = i * 4;
-        const lum = (rgba[o] * 299 + rgba[o + 1] * 587 + rgba[o + 2] * 114) / 1000;
-        if (lum < 128) { ink[i] = 1; tintaTotalPx++; }
-      }
-      const labels = new Int32Array(n);
-      const stack = new Int32Array(n);
-      const toClear: number[] = [];
-      let componentesEliminados = 0;
-      let tintaEliminadaPx = 0;
-      let label = 0;
-      for (let start = 0; start < n; start++) {
-        if (!ink[start] || labels[start] !== 0) continue;
-        label++;
-        let sp = 0;
-        stack[sp++] = start;
-        labels[start] = label;
-        const members: number[] = [];
-        while (sp > 0) {
-          const cur = stack[--sp];
-          members.push(cur);
-          const x = cur % w;
-          const y = (cur - x) / w;
-          if (x > 0) { const k = cur - 1; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-          if (x < w - 1) { const k = cur + 1; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-          if (y > 0) { const k = cur - w; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-          if (y < h - 1) { const k = cur + w; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-        }
-        if (members.length <= 3) {
-          componentesEliminados++;
-          tintaEliminadaPx += members.length;
-          for (const m of members) toClear.push(m);
-        }
-      }
-      const porcentaje = tintaTotalPx > 0 ? (tintaEliminadaPx / tintaTotalPx) * 100 : 0;
-
-      const metricasBase: DespeckleMetrics = {
-        path: `${tramiteId}/cancelaciones/soportes/escritura/${pg}.png`,
-        width: w,
-        height: h,
-        bytes_original: bytesOriginal,
-        bytes_despeckle: 0,
-        componentes_eliminados: componentesEliminados,
-        tinta_total_px: tintaTotalPx,
-        tinta_eliminada_px: tintaEliminadaPx,
-        porcentaje_tinta_eliminada: porcentaje,
-      };
-
-      if (porcentaje > 2) {
-        setMetrics(metricasBase);
-        setAborted(true);
-        setProgress("");
-        setError(
-          `El despeckle elimina ${porcentaje.toFixed(4)}% de la tinta (> 2%). No se generaron imágenes ni se invocó la IA.`,
-        );
-        return;
-      }
-
-      for (const m of toClear) {
-        const o = m * 4;
-        rgba[o] = 255; rgba[o + 1] = 255; rgba[o + 2] = 255; rgba[o + 3] = 255;
-      }
-      ctx.putImageData(imageData, 0, 0);
-      const despeckleB64 = canvasToPngB64(canvas);
-
-      metricasBase.bytes_despeckle = b64ToBytes(despeckleB64).length;
-      setMetrics(metricasBase);
-      setImages({ original: originalB64, despeckle: despeckleB64 });
-      setRaw({ ok: true, paso: "imagenes_listas", metricas: metricasBase });
+      const { metricas, images: imgs } = await processImageBytes(
+        b64ToBytes(rawB64),
+        `${tramiteId}/cancelaciones/soportes/escritura/${pg}.png`,
+      );
+      setMetrics(metricas);
+      setImages(imgs);
+      setRaw({ ok: true, paso: "imagenes_listas", metricas });
       setProgress("Imágenes listas. Ya puedes ejecutar la Ronda 1.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
