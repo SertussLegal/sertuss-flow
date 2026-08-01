@@ -34,6 +34,7 @@ const SOURCES = [
   "supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts",
   "supabase/functions/_shared/isomorphic/poderBancoExtractor/crossCheck.ts",
   "supabase/functions/_shared/isomorphic/certificadoInmuebleValidate.ts",
+  "supabase/functions/_shared/isomorphic/cuantiaConflicto.ts",
 ];
 
 /** Códigos hard-block que hoy NO tienen mecanismo de auto-resolución tras
@@ -171,6 +172,19 @@ describe("Cobertura permanente de warnings hard-block", () => {
       expect(
         OVERRIDE_WARNINGS.has(esperado),
         `Warning "${esperado}" no tiene entrada en MANUAL_OVERRIDE_RULES — deja el trámite bloqueado para siempre tras la corrección humana.`,
+      ).toBe(true);
+    }
+  });
+
+  // ── Aserción 7: cobertura _no_resuelto (desempate determinista de cuantía)
+  it("Aserción 7 — todo `*_no_resuelto` tiene entrada en MANUAL_OVERRIDE_RULES", () => {
+    const noResueltos = [...EMITTED].filter((c) => c.endsWith("_no_resuelto"));
+    expect(noResueltos).toContain("cuantia_conflicto_candidatos_no_resuelto");
+    for (const code of noResueltos) {
+      expect(hardBlockSuffix(code)).toBe("_no_resuelto");
+      expect(
+        OVERRIDE_WARNINGS.has(code),
+        `Warning "${code}" no tiene entrada en MANUAL_OVERRIDE_RULES — deja el trámite bloqueado para siempre tras la corrección humana.`,
       ).toBe(true);
     }
   });

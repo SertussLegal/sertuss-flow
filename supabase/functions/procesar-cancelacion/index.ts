@@ -3295,6 +3295,7 @@ if (import.meta.main) serve(async (req) => {
             cuantiaRun.result.valor_hipoteca_original = null;
             cuantiaRun.result.valor_hipoteca_es_indeterminada = true;
             cuantiaRun.result.hipoteca_garantia_abierta = false;
+            cuantiaRun.result.motivo_null = "ambigua_multiple";
             const haConf = extracted.hipoteca_anterior as unknown as Record<string, unknown>;
             haConf.valor_hipoteca_original = "";
             haConf.valor_hipoteca_es_indeterminada = true;
