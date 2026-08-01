@@ -157,6 +157,24 @@ describe("Cobertura permanente de warnings hard-block", () => {
     }
   });
 
+  // ── Aserción 6: cobertura _divergencia_lecturas (Regla 9) → MANUAL_OVERRIDE_RULES
+  it("Aserción 6 — todo `*_divergencia_lecturas` tiene entrada en MANUAL_OVERRIDE_RULES", () => {
+    const divergencias = [...EMITTED].filter((c) => c.endsWith("_divergencia_lecturas"));
+    expect(divergencias.length).toBe(3);
+    for (const esperado of [
+      "apoderado_cedula_divergencia_lecturas",
+      "escritura_poder_divergencia_lecturas",
+      "fecha_poder_divergencia_lecturas",
+    ]) {
+      expect(EMITTED.has(esperado), `Regla 9: "${esperado}" no fue emitido por ningún validador escaneado.`).toBe(true);
+      expect(hardBlockSuffix(esperado)).toBe("_divergencia_lecturas");
+      expect(
+        OVERRIDE_WARNINGS.has(esperado),
+        `Warning "${esperado}" no tiene entrada en MANUAL_OVERRIDE_RULES — deja el trámite bloqueado para siempre tras la corrección humana.`,
+      ).toBe(true);
+    }
+  });
+
   // ── Sanidad cruzada: los códigos gating NO deben overlap con override rules
   it("no-overlap — SCALAR_COHERENCE_GATING_CODES y MANUAL_OVERRIDE_RULES son disjuntos", () => {
     for (const code of GATING) {
