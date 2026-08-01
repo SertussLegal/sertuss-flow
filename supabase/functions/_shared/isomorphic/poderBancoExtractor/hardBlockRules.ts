@@ -7,7 +7,13 @@
 // `HARD_BLOCK_WARNING_SUFFIXES` desde este módulo para que auditorías de
 // código estático puedan importar ambas listas desde un único punto.
 
-import { isCedulaValida, normalizeCedula, PODER_CEDULAS_PLACEHOLDER } from "./validate.ts";
+import {
+  extractEscrituraDigits,
+  extractYear,
+  isCedulaValida,
+  normalizeCedula,
+  PODER_CEDULAS_PLACEHOLDER,
+} from "./validate.ts";
 export { HARD_BLOCK_WARNING_SUFFIXES } from "./validate.ts";
 
 // ── Predicados locales (idénticos a los de index.ts) ────────────────────
@@ -117,6 +123,35 @@ export const MANUAL_OVERRIDE_RULES: ManualOverrideRule[] = [
       return !!confirmadaNorm && candidatos.some(
         (c) => normalizeCedula(c?.cedula as string | undefined) === confirmadaNorm,
       );
+    },
+  },
+  // Regla 9 (divergencia dedicado-vs-V6): las dos lecturas independientes
+  // del mismo PDF discreparon. Se suprime cuando el humano confirmó revisión
+  // y dejó el escalar final con formato válido — el sidecar
+  // `_divergencia_lecturas` se preserva como evidencia forense.
+  {
+    warning: "apoderado_cedula_divergencia_lecturas",
+    canSuppress: (d) => {
+      const pb = ((d as Record<string, unknown>).poder_banco || {}) as Record<string, unknown>;
+      return isCedulaEditadaValida(pb.apoderado_cedula);
+    },
+  },
+  {
+    warning: "escritura_poder_divergencia_lecturas",
+    canSuppress: (d) => {
+      const pb = ((d as Record<string, unknown>).poder_banco || {}) as Record<string, unknown>;
+      const instr = (pb.instrumento_poder || {}) as Record<string, unknown>;
+      const v = (pb.apoderado_escritura ?? instr.escritura_num ?? pb.escritura_poder_num) as unknown;
+      return typeof v === "string" && !!extractEscrituraDigits(v);
+    },
+  },
+  {
+    warning: "fecha_poder_divergencia_lecturas",
+    canSuppress: (d) => {
+      const pb = ((d as Record<string, unknown>).poder_banco || {}) as Record<string, unknown>;
+      const instr = (pb.instrumento_poder || {}) as Record<string, unknown>;
+      const v = (pb.apoderado_fecha ?? instr.fecha ?? pb.fecha_poder) as unknown;
+      return typeof v === "string" && !!extractYear(v);
     },
   },
 ];
