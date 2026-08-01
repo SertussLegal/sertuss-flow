@@ -16,13 +16,69 @@ const inmuebleWith = (patch: Record<string, unknown>) => ({
   ...patch,
 });
 
+// Los 6 trámites históricos reales (valores exactos de producción,
+// 2026-08-01). Todos tienen 1 mención urbanística (`direccion_inmueble_1`) y
+// 1 catastral (`direccion_inmueble_2`) → grupos distintos → NO deben disparar.
+const HISTORICOS: Array<{ id: string; menciones: Array<{ seccion: string; valor: string }> }> = [
+  {
+    id: "a8af7200",
+    menciones: [
+      { seccion: "direccion_inmueble_1", valor: "CALLE 61 A SUR #100 A 73 CASA INT 53 AGRUP LA ALAMEDA DEL RIO AGRUP 9 AGRUPACION LA ALAMEDA DEL RIO" },
+      { seccion: "direccion_inmueble_2", valor: "CS 61 A SUR # 100A 73 CA 53 (DIRECCION CATASTRAL)" },
+    ],
+  },
+  {
+    id: "eff6f046",
+    menciones: [
+      { seccion: "direccion_inmueble_1", valor: "1) TRANSVERSAL 79 11B-15 APARTAMENTO 401 INTERIOR 7 TIPO 1.4 A DERECHO CONJUNTO RESIDENCIAL PARQUES DE CASTILLA 8 P.H." },
+      { seccion: "direccion_inmueble_2", valor: "2) CL 11B BIS A 78 23 IN 7 AP 401 (DIRECCION CATASTRAL)" },
+    ],
+  },
+  {
+    id: "3ba6902a",
+    menciones: [
+      { seccion: "direccion_inmueble_1", valor: "CARRERA 106 A 156-98/96 APARTAMENTO 102 INTERIOR 6" },
+      { seccion: "direccion_inmueble_2", valor: "KR 106A 156 98 IN 6 AP 102 (DIRECCION CATASTRAL)" },
+    ],
+  },
+  {
+    id: "50d5488a",
+    menciones: [
+      { seccion: "direccion_inmueble_1", valor: "CARRERA 98A 15A-70 APARTAMENTO 203 INT 11 CONJUNTO RESIDENCIAL SABANAGRANDE RESERVADO 3MZ 2B P.H." },
+      { seccion: "direccion_inmueble_2", valor: "KR 98A 15A 70 IN 11 AP 203 (DIRECCION CATASTRAL)" },
+    ],
+  },
+  {
+    id: "982af289",
+    menciones: [
+      { seccion: "direccion_inmueble_1", valor: "CO RESIDENCIAL LA REQUILINA ACCESO PEATONAL TRES QUEBRADAS UG1 LT2 REQUILINA APT 401 TO 38" },
+      { seccion: "direccion_inmueble_2", valor: "KR 3A 122 25 SUR TO 38 AP 401 (DIRECCION CATASTRAL)" },
+    ],
+  },
+  {
+    id: "7366ff63",
+    menciones: [
+      { seccion: "escritura_pag_7", valor: "Transversal y Noventa y Siete A (97 A) número dos - setenta (2-70)" },
+    ],
+  },
+];
+
 describe("validateInmuebleCoherencia", () => {
-  it("1. Caso ancla real 7058: 13C-05 (x2) vs 13C-09 (x1) → dispara direccion_menciones_incoherentes + hard-block", () => {
+  it.each(HISTORICOS)(
+    "1. Histórico real $id: urbanística vs catastral en grupos distintos → NO dispara",
+    ({ menciones }) => {
+      const { warnings, suspicious } = validateInmuebleCoherencia(inmuebleWith({ menciones_direccion: menciones }));
+      expect(warnings).not.toContain("inmueble_direccion_menciones_incoherentes");
+      expect(suspicious.has("inmueble.menciones_direccion")).toBe(false);
+    },
+  );
+
+  it("1b. Sintético: 2 menciones del MISMO índice con valores distintos → SÍ dispara + hard-block", () => {
     const inmueble = inmuebleWith({
       menciones_direccion: [
-        { seccion: "direccion_inmueble_1", valor: "KR 104 13C-05 CA 119", pagina: 1 },
-        { seccion: "direccion_inmueble_2", valor: "KR 104 13C-05 CA 119", pagina: 1 },
-        { seccion: "anotacion_0205",       valor: "KR 104 13C-09 CA 119", pagina: 4 },
+        { seccion: "direccion_inmueble_2", valor: "KR 104 13C-05 CA 119 (DIRECCION CATASTRAL)", pagina: 1 },
+        { seccion: "direccion_inmueble_2", valor: "KR 104 13C-09 CA 119 (DIRECCION CATASTRAL)", pagina: 4 },
+        { seccion: "direccion_inmueble_1", valor: "CARRERA 104 13C-05 CASA 119" },
       ],
     });
     const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
@@ -32,12 +88,12 @@ describe("validateInmuebleCoherencia", () => {
     expect(isHardBlockCoherenciaWarning("inmueble_direccion_menciones_incoherentes")).toBe(true);
   });
 
-  it("2. 3 menciones consistentes → no dispara", () => {
+  it("2. 3 menciones del mismo grupo consistentes → no dispara", () => {
     const inmueble = inmuebleWith({
       menciones_direccion: [
         { seccion: "direccion_inmueble_1", valor: "KR 104 13C-05 CA 119" },
-        { seccion: "direccion_inmueble_2", valor: "KR 104 13C-05 CA 119" },
-        { seccion: "anotacion_0205",       valor: "KR 104 13C-05 CA 119" },
+        { seccion: "direccion_inmueble_1", valor: "KR 104 13C-05 CA 119" },
+        { seccion: "direccion_inmueble_1", valor: "KR 104 13C-05 CA 119" },
       ],
     });
     const { warnings } = validateInmuebleCoherencia(inmueble);
@@ -52,17 +108,18 @@ describe("validateInmuebleCoherencia", () => {
     expect(warnings).not.toContain("inmueble_direccion_menciones_incoherentes");
   });
 
-  it("4. Normalización de formato dirección (espacios/guiones) → no dispara", () => {
+  it("4. Normalización de formato dirección dentro del mismo grupo → no dispara", () => {
     const inmueble = inmuebleWith({
       menciones_direccion: [
         { seccion: "direccion_inmueble_1", valor: "CL 59 SUR 60 84" },
-        { seccion: "direccion_inmueble_2", valor: "CL 59 SUR 60-84" },
-        { seccion: "anotacion_0205",       valor: "CL 59 SUR 60 - 84" },
+        { seccion: "direccion_inmueble_1", valor: "CL 59 SUR 60-84" },
+        { seccion: "direccion_inmueble_1", valor: "CL 59 SUR 60 - 84" },
       ],
     });
     const { warnings } = validateInmuebleCoherencia(inmueble);
     expect(warnings).not.toContain("inmueble_direccion_menciones_incoherentes");
   });
+
 
   it("5. Matrícula: transposición 1572091 vs 1572081 → dispara matricula_menciones_incoherentes", () => {
     const inmueble = inmuebleWith({
