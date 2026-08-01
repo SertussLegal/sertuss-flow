@@ -55,6 +55,13 @@ const KNOWN_UNRESOLVABLE_HARD_BLOCKS: Record<string, string> = {
  *  `_confianza_baja`. Sacrifica algo de precisión (podría incluir paths
  *  que terminen igual, aunque en este código base no ocurre) a cambio de
  *  cobertura total garantizada. */
+/** Literales que comparten sufijo hard-block pero NO son códigos de warning
+ *  (valores de enum/metadata). Se excluyen del escaneo con justificación. */
+const NON_WARNING_LITERALS: Record<string, string> = {
+  conflicto_candidatos_no_resuelto:
+    "Valor de `hipoteca_anterior.cuantia_origen` (metadata de origen del monto), no un código de _coherencia_warnings. El warning real es cuantia_conflicto_candidatos_no_resuelto.",
+};
+
 function extractEmittedCodes(): Set<string> {
   const codes = new Set<string>();
   const literalRe = /"([a-z][a-z_]+)"/g;
@@ -64,6 +71,7 @@ function extractEmittedCodes(): Set<string> {
     let m: RegExpExecArray | null;
     while ((m = literalRe.exec(src)) !== null) {
       const s = m[1];
+      if (s in NON_WARNING_LITERALS) continue;
       if (eligibleSuffixes.some((suf) => s.endsWith(suf))) codes.add(s);
     }
   }
