@@ -61,6 +61,8 @@ const AdminPruebaCalidad = () => {
   const [images, setImages] = useState<{ original: string; despeckle: string } | null>(null);
   const [raw, setRaw] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
+  const [thumbs, setThumbs] = useState<{ nombre: string; src: string }[]>([]);
+  const [loadingThumbs, setLoadingThumbs] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
