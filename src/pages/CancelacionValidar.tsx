@@ -162,9 +162,15 @@ type Data = {
     notaria_hipoteca: string;
     valor_hipoteca_original: string;
     valor_hipoteca_es_indeterminada?: boolean;
+    hipoteca_garantia_abierta?: boolean;
     /** Metadata UI: "escritura" cuando el monto vino del OCR dedicado a la
-     *  escritura antecedente porque el certificado estaba indeterminado. */
-    cuantia_origen?: "escritura" | "certificado" | "manual";
+     *  escritura antecedente porque el certificado estaba indeterminado.
+     *  "conflicto_candidatos_no_resuelto" = la escritura trae 2+ montos
+     *  distintos como valor del crédito y decide el humano. */
+    cuantia_origen?: "escritura" | "certificado" | "manual" | "conflicto_candidatos_no_resuelto";
+    /** Evidencia forense del conflicto — nunca se borra al resolver. */
+    cuantia_candidatos?: Array<{ monto: number; texto_fragmento?: string; pagina_aprox?: number | null }>;
+    _coherencia_warnings?: string[];
   };
   inmueble: {
     matricula_inmobiliaria: string;
