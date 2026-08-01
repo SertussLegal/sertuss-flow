@@ -4,6 +4,9 @@
  * (junto con la acción `test_calidad_grayscale` del edge function procesar-cancelacion).
  *
  * Ruta: /admin/prueba-calidad — accesible sólo por URL directa, sin enlace en el menú.
+ *
+ * La descarga de la imagen y el despeckle ocurren EN EL SERVIDOR (service role),
+ * exclusivamente para esta herramienta temporal.
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,109 +18,20 @@ import { Loader2, AlertTriangle, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface DespeckleMetrics {
-  bytesOriginal: number;
-  bytesDespeckle: number;
-  componentesEliminados: number;
-  tintaTotalPx: number;
-  tintaEliminadaPx: number;
-  porcentaje: number;
+  path?: string;
+  width?: number;
+  height?: number;
+  bytes_original?: number;
+  bytes_despeckle?: number;
+  componentes_eliminados?: number;
+  tinta_total_px?: number;
+  tinta_eliminada_px?: number;
+  porcentaje_tinta_eliminada?: number;
 }
 
-const BUCKET = "expediente-files";
-
-async function loadImageData(blob: Blob): Promise<{ img: HTMLImageElement; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; data: ImageData }> {
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("No se pudo decodificar la imagen"));
-      el.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas 2D no disponible");
-    ctx.drawImage(img, 0, 0);
-    return { img, canvas, ctx, data: ctx.getImageData(0, 0, canvas.width, canvas.height) };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-/** Componentes conectados (conectividad-4) de píxeles de tinta (<128). Área <= 3 px → blanco. */
-function despeckle(data: ImageData) {
-  const { width: w, height: h } = data;
-  const px = data.data;
-  const n = w * h;
-  const ink = new Uint8Array(n);
-  let tintaTotalPx = 0;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    // luminancia simple
-    const lum = (px[o] * 299 + px[o + 1] * 587 + px[o + 2] * 114) / 1000;
-    if (lum < 128) {
-      ink[i] = 1;
-      tintaTotalPx++;
-    }
-  }
-
-  // labels: 0 = fondo/no visitado (el fondo NUNCA se cuenta como componente)
-  const labels = new Int32Array(n);
-  const stack = new Int32Array(n);
-  let componentesEliminados = 0;
-  let tintaEliminadaPx = 0;
-  const toClear: number[] = [];
-  let label = 0;
-
-  for (let start = 0; start < n; start++) {
-    if (!ink[start] || labels[start] !== 0) continue;
-    label++;
-    let sp = 0;
-    stack[sp++] = start;
-    labels[start] = label;
-    const members: number[] = [];
-    while (sp > 0) {
-      const cur = stack[--sp];
-      members.push(cur);
-      const x = cur % w;
-      const y = (cur - x) / w;
-      if (x > 0) { const k = cur - 1; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-      if (x < w - 1) { const k = cur + 1; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-      if (y > 0) { const k = cur - w; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-      if (y < h - 1) { const k = cur + w; if (ink[k] && labels[k] === 0) { labels[k] = label; stack[sp++] = k; } }
-    }
-    if (members.length <= 3) {
-      componentesEliminados++;
-      tintaEliminadaPx += members.length;
-      for (const m of members) toClear.push(m);
-    }
-  }
-
-  const out = new ImageData(new Uint8ClampedArray(px), w, h);
-  for (const m of toClear) {
-    const o = m * 4;
-    out.data[o] = 255;
-    out.data[o + 1] = 255;
-    out.data[o + 2] = 255;
-    out.data[o + 3] = 255;
-  }
-
-  const porcentaje = tintaTotalPx > 0 ? (tintaEliminadaPx / tintaTotalPx) * 100 : 0;
-  return { out, componentesEliminados, tintaTotalPx, tintaEliminadaPx, porcentaje };
-}
-
-function canvasToPngBase64(data: ImageData): { b64: string; bytes: number } {
-  const canvas = document.createElement("canvas");
-  canvas.width = data.width;
-  canvas.height = data.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D no disponible");
-  ctx.putImageData(data, 0, 0);
-  const dataUrl = canvas.toDataURL("image/png");
-  const b64 = dataUrl.split(",")[1] ?? "";
-  return { b64, bytes: Math.floor((b64.length * 3) / 4) };
+interface Corrida {
+  rgba: unknown;
+  gray: unknown;
 }
 
 const AdminPruebaCalidad = () => {
@@ -132,7 +46,8 @@ const AdminPruebaCalidad = () => {
   const [progress, setProgress] = useState("");
   const [metrics, setMetrics] = useState<DespeckleMetrics | null>(null);
   const [aborted, setAborted] = useState(false);
-  const [runs, setRuns] = useState<Array<{ rgba: unknown; gray: unknown; raw: unknown }>>([]);
+  const [runs, setRuns] = useState<Corrida[]>([]);
+  const [raw, setRaw] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,67 +76,43 @@ const AdminPruebaCalidad = () => {
     setError(null);
     setRuns([]);
     setMetrics(null);
+    setRaw(null);
     setAborted(false);
+    setProgress("Ejecutando en el servidor (descarga + despeckle + 3 corridas)…");
     try {
-      const path = `${tramiteId}/cancelaciones/soportes/escritura/${pagina}.png`;
-      setProgress(`Descargando ${path}…`);
-      const { data: blob, error: dlError } = await supabase.storage.from(BUCKET).download(path);
-      if (dlError || !blob) {
-        throw new Error(`no se pudo descargar la imagen (ruta o permisos): ${dlError?.message ?? "sin datos"}`);
+      const { data, error: fnError } = await supabase.functions.invoke("procesar-cancelacion", {
+        body: { action: "test_calidad_grayscale", tramite_id: tramiteId, pagina },
+      });
+      if (fnError) {
+        const ctx = (fnError as { context?: { status?: number; text?: () => Promise<string> } }).context;
+        let detail = fnError.message;
+        if (ctx?.text) {
+          try { detail = await ctx.text(); } catch { /* noop */ }
+        }
+        if (ctx?.status === 403) {
+          throw new Error(`sesión sin permisos de admin (403): ${detail}`);
+        }
+        throw new Error(`error del gateway: ${detail}`);
       }
 
-      setProgress("Procesando despeckle…");
-      const { data: original } = await loadImageData(blob);
-      const originalEncoded = canvasToPngBase64(original);
-      const res = despeckle(original);
-      const despeckleEncoded = canvasToPngBase64(res.out);
+      const payload = data as Record<string, unknown> | null;
+      setRaw(payload);
+      setMetrics((payload?.metricas as DespeckleMetrics) ?? null);
 
-      const m: DespeckleMetrics = {
-        bytesOriginal: originalEncoded.bytes,
-        bytesDespeckle: despeckleEncoded.bytes,
-        componentesEliminados: res.componentesEliminados,
-        tintaTotalPx: res.tintaTotalPx,
-        tintaEliminadaPx: res.tintaEliminadaPx,
-        porcentaje: res.porcentaje,
-      };
-      setMetrics(m);
-
-      if (res.porcentaje > 2) {
+      if (payload?.stage === "download") {
+        throw new Error(`no se pudo descargar la imagen: ${JSON.stringify(payload.storage_error)}`);
+      }
+      if (payload?.abortado_por_guardarrail) {
         setAborted(true);
         setProgress("");
-        setError(`GUARDARRAÍL: el despeckle elimina ${res.porcentaje.toFixed(3)}% de la tinta (> 2%). Abortado sin invocar la IA.`);
+        setError(String(payload.message ?? "Guardarraíl activado. No se invocó la IA."));
         return;
       }
-
-      const collected: Array<{ rgba: unknown; gray: unknown; raw: unknown }> = [];
-      for (let i = 1; i <= 3; i++) {
-        setProgress(`Invocando corrida ${i} de 3…`);
-        const { data, error: fnError } = await supabase.functions.invoke("procesar-cancelacion", {
-          body: {
-            action: "test_calidad_grayscale",
-            image_rgba_b64: originalEncoded.b64,
-            image_gray_b64: despeckleEncoded.b64,
-          },
-        });
-        if (fnError) {
-          const ctx = (fnError as { context?: { status?: number; text?: () => Promise<string> } }).context;
-          let detail = fnError.message;
-          if (ctx?.text) {
-            try { detail = await ctx.text(); } catch { /* noop */ }
-          }
-          if (ctx?.status === 403) {
-            throw new Error(`sesión sin permisos de admin (403): ${detail}`);
-          }
-          throw new Error(`error del gateway: ${detail}`);
-        }
-        const payload = data as Record<string, unknown> | null;
-        collected.push({
-          rgba: payload?.rgba ?? payload?.transcripcion_rgba ?? null,
-          gray: payload?.gray ?? payload?.transcripcion_gray ?? null,
-          raw: payload,
-        });
-        setRuns([...collected]);
+      if (payload?.ok !== true) {
+        throw new Error(String(payload?.error ?? "respuesta inesperada del servidor"));
       }
+
+      setRuns((payload.corridas as Corrida[]) ?? []);
       setProgress("Listo.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -235,18 +126,13 @@ const AdminPruebaCalidad = () => {
     const lines: string[] = [];
     if (metrics) {
       lines.push("=== MÉTRICAS DESPECKLE ===");
-      lines.push(`bytes original (png b64): ${metrics.bytesOriginal}`);
-      lines.push(`bytes despeckle (png b64): ${metrics.bytesDespeckle}`);
-      lines.push(`componentes eliminados: ${metrics.componentesEliminados}`);
-      lines.push(`tinta total (px): ${metrics.tintaTotalPx}`);
-      lines.push(`tinta eliminada (px): ${metrics.tintaEliminadaPx}`);
-      lines.push(`% tinta eliminada: ${metrics.porcentaje.toFixed(4)}%`);
+      lines.push(JSON.stringify(metrics, null, 2));
     }
     runs.forEach((r, i) => {
       lines.push("", `=== CORRIDA ${i + 1} — rgba (original) ===`, JSON.stringify(r.rgba, null, 2));
       lines.push("", `=== CORRIDA ${i + 1} — gray (despeckle) ===`, JSON.stringify(r.gray, null, 2));
-      lines.push("", `=== CORRIDA ${i + 1} — JSON crudo ===`, JSON.stringify(r.raw, null, 2));
     });
+    lines.push("", "=== JSON CRUDO ===", JSON.stringify(raw, null, 2));
     await navigator.clipboard.writeText(lines.join("\n"));
     toast({ title: "Copiado", description: "Métricas y respuestas copiadas al portapapeles." });
   };
@@ -323,12 +209,13 @@ const AdminPruebaCalidad = () => {
           </CardHeader>
           <CardContent>
             <ul className={`space-y-1 text-sm ${aborted ? "text-destructive" : "text-foreground"}`}>
-              <li>Bytes original (PNG b64): {metrics.bytesOriginal.toLocaleString()}</li>
-              <li>Bytes despeckle (PNG b64): {metrics.bytesDespeckle.toLocaleString()}</li>
-              <li>Componentes eliminados: {metrics.componentesEliminados.toLocaleString()}</li>
-              <li>Tinta total (px): {metrics.tintaTotalPx.toLocaleString()}</li>
-              <li>Tinta eliminada (px): {metrics.tintaEliminadaPx.toLocaleString()}</li>
-              <li>% de tinta eliminada: {metrics.porcentaje.toFixed(4)}%</li>
+              <li>Dimensiones: {metrics.width} × {metrics.height}</li>
+              <li>Bytes original (PNG): {(metrics.bytes_original ?? 0).toLocaleString()}</li>
+              <li>Bytes despeckle (PNG): {(metrics.bytes_despeckle ?? 0).toLocaleString()}</li>
+              <li>Componentes eliminados: {(metrics.componentes_eliminados ?? 0).toLocaleString()}</li>
+              <li>Tinta total (px): {(metrics.tinta_total_px ?? 0).toLocaleString()}</li>
+              <li>Tinta eliminada (px): {(metrics.tinta_eliminada_px ?? 0).toLocaleString()}</li>
+              <li>% de tinta eliminada: {(metrics.porcentaje_tinta_eliminada ?? 0).toFixed(4)}%</li>
             </ul>
           </CardContent>
         </Card>
@@ -352,15 +239,22 @@ const AdminPruebaCalidad = () => {
                 {JSON.stringify(r.gray, null, 2)}
               </pre>
             </div>
-            <div>
-              <p className="mb-1 text-xs font-semibold text-muted-foreground">JSON crudo</p>
-              <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 text-xs">
-                {JSON.stringify(r.raw, null, 2)}
-              </pre>
-            </div>
           </CardContent>
         </Card>
       ))}
+
+      {raw != null && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">JSON crudo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs">
+              {JSON.stringify(raw, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };
