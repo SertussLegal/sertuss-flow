@@ -436,6 +436,23 @@ const AdminPruebaCalidad = () => {
               <Input id="pagina" value={pagina} onChange={(e) => setPagina(e.target.value)} />
             </div>
           </div>
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <Label htmlFor="archivo-manual">Subir imagen manualmente (PNG)</Label>
+            <Input
+              id="archivo-manual"
+              type="file"
+              accept="image/png"
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void handleManualFile(f);
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Procesa el archivo local (decode + despeckle + métricas) sin tocar el storage.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => loadImages()} disabled={busy}>
               {loadingImages && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
