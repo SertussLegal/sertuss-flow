@@ -192,6 +192,8 @@ export const WARNING_LABELS: Record<string, string> = {
     "Las dos lecturas independientes del Poder leyeron fechas distintas para el poder — verifícala manualmente contra el PDF original antes de firmar.",
   apoderado_natural_candidatos_requiere_confirmacion:
     "El Poder nombra a varias personas como posibles apoderados — confirma con el banco cuál actuó en este trámite y selecciónala antes de continuar.",
+  cuantia_conflicto_candidatos_no_resuelto:
+    "La escritura contiene varias cifras distintas presentadas como valor del crédito — la lectura automática no puede decidir cuál es. Verifica el monto contra la escritura y escríbelo manualmente.",
 };
 
 /** Labels humanos por path de campo sospechoso. Consumidos por la UI para
