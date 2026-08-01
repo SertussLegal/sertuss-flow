@@ -18,3 +18,12 @@ export const POWER_DEEP_UI_ENABLED = raw !== "false";
 
 /** Alias legacy — mantener 30 días. */
 export const POWER_V5_ENABLED = POWER_DEEP_UI_ENABLED;
+
+// ----------------------------------------------------------------------------
+// Despeckle de PDF rasterizado (higiene de imagen previa al OCR).
+// Rollout: por defecto ENCENDIDO; apagable con `"false"`.
+// ----------------------------------------------------------------------------
+const rawDespeckle = (import.meta.env.VITE_PDF_DESPECKLE_ENABLED ?? "true") as string;
+
+/** Elimina ruido de textura (componentes de tinta ≤3px) tras binarizar. */
+export const PDF_DESPECKLE_ENABLED = rawDespeckle !== "false";

@@ -29,6 +29,7 @@
 import * as pdfjs from "pdfjs-dist";
 // El worker se sirve estáticamente desde node_modules vía Vite
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { PDF_DESPECKLE_ENABLED } from "./featureFlags";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -216,6 +217,112 @@ function binarizeImageData(imageData: ImageData, threshold: number): void {
   }
 }
 
+/**
+ * Elimina componentes conectados de tinta (conectividad-4) de área ≤3px sobre una
+ * imagen ya binarizada — ruido típico de textura de papel de seguridad/fotocopiadora.
+ * NUNCA bloquea el pipeline: si tinta_eliminada/tinta_total > guardrailPct,
+ * la página se deja tal cual (sin despeckle) y se registra en consola (console.warn),
+ * nunca lanza excepción.
+ * Umbrales (3px, 2%) calibrados con evidencia real 2026-08-01: cuantía $75.695.000
+ * transcrita idéntica en 6/6 corridas de Gemini comparando binarizado-actual vs.
+ * binarizado+despeckle sobre documento con textura de papel de seguridad
+ * (fideicomiso Parque Central Tintal 3). Ver Project Knowledge sección 8.
+ */
+export function despeckleImageData(
+  imageData: ImageData,
+  maxComponentPx = 3,
+  guardrailPct = 2,
+): { applied: boolean; componentesEliminados: number; porcentaje: number } {
+  const { width: w, height: h, data } = imageData;
+  const n = w * h;
+  if (n <= 0 || data.length < n * 4) {
+    return { applied: false, componentesEliminados: 0, porcentaje: 0 };
+  }
+
+  // Máscara de tinta: luminancia Rec. 601 < 128 (sobre imagen ya binarizada
+  // esto equivale a "píxel negro").
+  const ink = new Uint8Array(n);
+  let tintaTotal = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const lum = 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2];
+    if (lum < 128) {
+      ink[i] = 1;
+      tintaTotal++;
+    }
+  }
+  if (tintaTotal === 0) return { applied: false, componentesEliminados: 0, porcentaje: 0 };
+
+  // Etiquetado de componentes conectados (conectividad-4) por flood fill
+  // iterativo. label 0 = fondo, excluido del conteo.
+  const labels = new Int32Array(n); // 0 = sin etiqueta / fondo
+  const stack = new Int32Array(n);
+  const smallPixels: number[] = [];
+  let componentesEliminados = 0;
+  let tintaEliminada = 0;
+  let nextLabel = 0;
+
+  for (let seed = 0; seed < n; seed++) {
+    if (ink[seed] !== 1 || labels[seed] !== 0) continue;
+    nextLabel++;
+    let sp = 0;
+    let count = 0;
+    const members: number[] = [];
+    stack[sp++] = seed;
+    labels[seed] = nextLabel;
+    while (sp > 0) {
+      const p = stack[--sp];
+      members.push(p);
+      count++;
+      const x = p % w;
+      const y = (p - x) / w;
+      // Conectividad-4
+      if (x > 0) {
+        const q = p - 1;
+        if (ink[q] === 1 && labels[q] === 0) { labels[q] = nextLabel; stack[sp++] = q; }
+      }
+      if (x < w - 1) {
+        const q = p + 1;
+        if (ink[q] === 1 && labels[q] === 0) { labels[q] = nextLabel; stack[sp++] = q; }
+      }
+      if (y > 0) {
+        const q = p - w;
+        if (ink[q] === 1 && labels[q] === 0) { labels[q] = nextLabel; stack[sp++] = q; }
+      }
+      if (y < h - 1) {
+        const q = p + w;
+        if (ink[q] === 1 && labels[q] === 0) { labels[q] = nextLabel; stack[sp++] = q; }
+      }
+    }
+    if (count <= maxComponentPx) {
+      componentesEliminados++;
+      tintaEliminada += count;
+      for (const p of members) smallPixels.push(p);
+    }
+  }
+
+  const porcentaje = (tintaEliminada / tintaTotal) * 100;
+
+  if (porcentaje > guardrailPct) {
+    console.warn(
+      `[pdfToImages] Despeckle omitido por guardarraíl: ${porcentaje.toFixed(2)}% de la ` +
+        `tinta caería en componentes ≤${maxComponentPx}px (${componentesEliminados} componentes, ` +
+        `${tintaEliminada}/${tintaTotal} px). Se conserva la imagen binarizada sin cambios.`,
+    );
+    return { applied: false, componentesEliminados, porcentaje };
+  }
+
+  for (const p of smallPixels) {
+    const o = p * 4;
+    data[o] = 255;
+    data[o + 1] = 255;
+    data[o + 2] = 255;
+    data[o + 3] = 255;
+  }
+
+  return { applied: true, componentesEliminados, porcentaje };
+}
+
 export async function pdfToImages(
   file: File,
   opts: PdfToImagesOptions = {},
@@ -262,6 +369,9 @@ export async function pdfToImages(
       // glifos pequeños (cédulas, matrículas, firmas).
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       binarizeImageData(imageData, BINARIZATION_THRESHOLD);
+      if (PDF_DESPECKLE_ENABLED) {
+        despeckleImageData(imageData);
+      }
       ctx.putImageData(imageData, 0, 0);
 
       // `jpegQuality` se ignora deliberadamente: PNG es lossless (ver
