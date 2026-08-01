@@ -2197,9 +2197,14 @@ const MAX_CUANTIA_PAGES = 25;
 const CUANTIA_HEAD = 20;
 const CUANTIA_TAIL = 5;
 
-function sliceHeadTail(urls: string[]): { sliced: string[]; truncado: boolean } {
-  if (urls.length <= MAX_CUANTIA_PAGES) return { sliced: urls, truncado: false };
-  return { sliced: [...urls.slice(0, CUANTIA_HEAD), ...urls.slice(-CUANTIA_TAIL)], truncado: true };
+function sliceHeadTail(
+  urls: string[],
+  maxPages = MAX_CUANTIA_PAGES,
+  head = CUANTIA_HEAD,
+  tail = CUANTIA_TAIL,
+): { sliced: string[]; truncado: boolean } {
+  if (urls.length <= maxPages) return { sliced: urls, truncado: false };
+  return { sliced: [...urls.slice(0, head), ...urls.slice(-tail)], truncado: true };
 }
 
 export async function extractCuantiaDedicada(
