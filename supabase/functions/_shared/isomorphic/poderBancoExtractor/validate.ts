@@ -124,6 +124,7 @@ export const HARD_BLOCK_WARNING_SUFFIXES = [
   "_duplicidad_cruzada",
   "_menciones_incoherentes",
   "_requiere_confirmacion",
+  "_divergencia_lecturas",
 ] as const;
 
 export function isHardBlockCoherenciaWarning(w: string | undefined | null): boolean {
@@ -182,6 +183,12 @@ export const WARNING_LABELS: Record<string, string> = {
     "La cédula del apoderado que corregiste no coincidía con la que se iba a usar en la redacción de la comparecencia/antefirma — se usó tu corrección en todo el documento.",
   apoderado_multiple_firmantes_ambiguo:
     "El poder tiene más de un firmante marcado — se usó el primero. Verifica que corresponda al que efectivamente firma.",
+  apoderado_cedula_divergencia_lecturas:
+    "Las dos lecturas independientes del Poder leyeron cédulas distintas para el apoderado — verifícala manualmente contra el PDF original antes de firmar.",
+  escritura_poder_divergencia_lecturas:
+    "Las dos lecturas independientes del Poder leyeron números de escritura distintos — verifícalo manualmente contra el PDF original antes de firmar.",
+  fecha_poder_divergencia_lecturas:
+    "Las dos lecturas independientes del Poder leyeron fechas distintas para el poder — verifícala manualmente contra el PDF original antes de firmar.",
   apoderado_natural_candidatos_requiere_confirmacion:
     "El Poder nombra a varias personas como posibles apoderados — confirma con el banco cuál actuó en este trámite y selecciónala antes de continuar.",
 };
@@ -530,6 +537,66 @@ export function validatePoderBancoCoherencia(
       suspicious.add("apoderado_nombre");
       suspicious.add("apoderado_cedula");
     }
+  }
+
+  // Regla 9 — Divergencia entre las DOS lecturas independientes del mismo PDF
+  //           (extractor dedicado vs extractor V6 profundo). Cierra el hueco
+  //           C6: cuando el dato aparece UNA sola vez en el documento, las
+  //           Reglas 5/6 no tienen menciones que comparar y la Regla 7 no
+  //           dispara porque el modelo reporta confianza "alta" aun
+  //           equivocándose. El sidecar `_divergencia_lecturas` lo emite
+  //           `mergePoderBancoV6` ANTES de la precedencia `??`; ya viene
+  //           normalizado y filtrado (formatos no entendidos y NO_LEGIBLE se
+  //           omiten allí, nunca llegan aquí).
+  //
+  // Excepción Manual>OCR idéntica a Reglas 6/8: si el humano confirmó revisión
+  // y el escalar final tiene formato válido, se suprime el warning — el
+  // sidecar se preserva íntegro como evidencia forense.
+  const divergenciaMap = (merged._divergencia_lecturas ?? {}) as Record<string, unknown>;
+  const escrituraPlanoLegacy9 = merged.escritura_poder_num as string | undefined;
+  const fechaPlanoLegacy9 = merged.fecha_poder as string | undefined;
+
+  const divChecks: Array<{
+    key: string;
+    warning: string;
+    paths: string[];
+    valorFinal: unknown;
+    validFormat: (v: string) => boolean;
+  }> = [
+    {
+      key: "apoderado_cedula",
+      warning: "apoderado_cedula_divergencia_lecturas",
+      paths: ["apoderado_cedula", "apoderado.cedula"],
+      valorFinal: apoderadoCedulaPlano ?? apoderadoCedulaDeep,
+      validFormat: (v) => isCedulaValida(v) && normalizeCedula(v).length > 0,
+    },
+    {
+      key: "escritura_poder_num",
+      warning: "escritura_poder_divergencia_lecturas",
+      paths: ["apoderado_escritura", "instrumento_poder.escritura_num"],
+      valorFinal: apoderadoEscritura ?? instrEscritura ?? escrituraPlanoLegacy9,
+      validFormat: (v) => !!extractEscrituraDigits(v),
+    },
+    {
+      key: "fecha_poder",
+      warning: "fecha_poder_divergencia_lecturas",
+      paths: ["apoderado_fecha", "instrumento_poder.fecha"],
+      valorFinal: apoderadoFecha ?? instrFecha ?? fechaPlanoLegacy9,
+      validFormat: (v) => !!extractYear(v),
+    },
+  ];
+  for (const chk of divChecks) {
+    const entry = divergenciaMap[chk.key];
+    if (!entry || typeof entry !== "object") continue;
+    const valor = typeof chk.valorFinal === "string" ? chk.valorFinal.trim() : "";
+    const humanArbitrated9 =
+      opts?.manualReviewConfirmed === true &&
+      !!valor &&
+      !isNoLegible(valor) &&
+      chk.validFormat(valor);
+    if (humanArbitrated9) continue;
+    warnings.push(chk.warning);
+    for (const p of chk.paths) suspicious.add(p);
   }
 
   return { warnings, suspicious };
