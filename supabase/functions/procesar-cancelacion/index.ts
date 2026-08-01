@@ -3302,6 +3302,10 @@ if (import.meta.main) serve(async (req) => {
             haConf.valor_hipoteca_original = "";
             haConf.valor_hipoteca_es_indeterminada = true;
             haConf.cuantia_origen = CUANTIA_CONFLICTO_ORIGEN;
+            // Evidencia forense para la UI: el humano necesita ver los montos
+            // en conflicto con su fragmento textual para poder decidir.
+            haConf.cuantia_candidatos = buildCuantiaCandidatosUi(cuantiaRun.result?.candidatos_vistos);
+
             const prevHaW = Array.isArray(haConf._coherencia_warnings)
               ? (haConf._coherencia_warnings as unknown[]).filter((w): w is string => typeof w === "string")
               : [];
