@@ -34,6 +34,7 @@ const SOURCES = [
   "supabase/functions/_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts",
   "supabase/functions/_shared/isomorphic/poderBancoExtractor/crossCheck.ts",
   "supabase/functions/_shared/isomorphic/certificadoInmuebleValidate.ts",
+  "supabase/functions/_shared/isomorphic/cuantiaConflicto.ts",
 ];
 
 /** Códigos hard-block que hoy NO tienen mecanismo de auto-resolución tras
@@ -54,6 +55,13 @@ const KNOWN_UNRESOLVABLE_HARD_BLOCKS: Record<string, string> = {
  *  `_confianza_baja`. Sacrifica algo de precisión (podría incluir paths
  *  que terminen igual, aunque en este código base no ocurre) a cambio de
  *  cobertura total garantizada. */
+/** Literales que comparten sufijo hard-block pero NO son códigos de warning
+ *  (valores de enum/metadata). Se excluyen del escaneo con justificación. */
+const NON_WARNING_LITERALS: Record<string, string> = {
+  conflicto_candidatos_no_resuelto:
+    "Valor de `hipoteca_anterior.cuantia_origen` (metadata de origen del monto), no un código de _coherencia_warnings. El warning real es cuantia_conflicto_candidatos_no_resuelto.",
+};
+
 function extractEmittedCodes(): Set<string> {
   const codes = new Set<string>();
   const literalRe = /"([a-z][a-z_]+)"/g;
@@ -63,6 +71,7 @@ function extractEmittedCodes(): Set<string> {
     let m: RegExpExecArray | null;
     while ((m = literalRe.exec(src)) !== null) {
       const s = m[1];
+      if (s in NON_WARNING_LITERALS) continue;
       if (eligibleSuffixes.some((suf) => s.endsWith(suf))) codes.add(s);
     }
   }
@@ -171,6 +180,19 @@ describe("Cobertura permanente de warnings hard-block", () => {
       expect(
         OVERRIDE_WARNINGS.has(esperado),
         `Warning "${esperado}" no tiene entrada en MANUAL_OVERRIDE_RULES — deja el trámite bloqueado para siempre tras la corrección humana.`,
+      ).toBe(true);
+    }
+  });
+
+  // ── Aserción 7: cobertura _no_resuelto (desempate determinista de cuantía)
+  it("Aserción 7 — todo `*_no_resuelto` tiene entrada en MANUAL_OVERRIDE_RULES", () => {
+    const noResueltos = [...EMITTED].filter((c) => c.endsWith("_no_resuelto"));
+    expect(noResueltos).toContain("cuantia_conflicto_candidatos_no_resuelto");
+    for (const code of noResueltos) {
+      expect(hardBlockSuffix(code)).toBe("_no_resuelto");
+      expect(
+        OVERRIDE_WARNINGS.has(code),
+        `Warning "${code}" no tiene entrada en MANUAL_OVERRIDE_RULES — deja el trámite bloqueado para siempre tras la corrección humana.`,
       ).toBe(true);
     }
   });
