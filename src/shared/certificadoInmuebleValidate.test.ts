@@ -121,6 +121,42 @@ describe("validateInmuebleCoherencia", () => {
     expect(warnings).not.toContain("inmueble_direccion_menciones_incoherentes");
   });
 
+  it("4b. Anotación libre vs direccion_inmueble_1 con valores distintos → NO dispara (grupos distintos)", () => {
+    const inmueble = inmuebleWith({
+      menciones_direccion: [
+        { seccion: "direccion_inmueble_1", valor: "CARRERA 104 13C-05 CASA 119" },
+        { seccion: "anotacion_0205", valor: "CARRERA 104 13C-09 CASA 119" },
+      ],
+    });
+    const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
+    expect(warnings).not.toContain("inmueble_direccion_menciones_incoherentes");
+    expect(suspicious.has("inmueble.menciones_direccion")).toBe(false);
+  });
+
+  it("4c. Dos menciones libres distintas con valores distintos → SÍ dispara (mismo grupo LIBRE)", () => {
+    const inmueble = inmuebleWith({
+      menciones_direccion: [
+        { seccion: "anotacion_0205", valor: "CARRERA 104 13C-05 CASA 119" },
+        { seccion: "anotacion_0310", valor: "CARRERA 104 13C-09 CASA 119" },
+      ],
+    });
+    const { warnings, suspicious } = validateInmuebleCoherencia(inmueble);
+    expect(warnings).toContain("inmueble_direccion_menciones_incoherentes");
+    expect(suspicious.has("inmueble.menciones_direccion")).toBe(true);
+  });
+
+  it("4d. Bug corregido: 'anotacion_0205' NO colisiona con índice 205", () => {
+    const inmueble = inmuebleWith({
+      menciones_direccion: [
+        { seccion: "direccion_inmueble_205", valor: "CARRERA 104 13C-05 CASA 119" },
+        { seccion: "anotacion_0205", valor: "CARRERA 104 13C-09 CASA 119" },
+      ],
+    });
+    const { warnings } = validateInmuebleCoherencia(inmueble);
+    expect(warnings).not.toContain("inmueble_direccion_menciones_incoherentes");
+  });
+
+
 
   it("5. Matrícula: transposición 1572091 vs 1572081 → dispara matricula_menciones_incoherentes", () => {
     const inmueble = inmuebleWith({
