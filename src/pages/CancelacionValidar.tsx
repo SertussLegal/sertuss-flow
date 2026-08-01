@@ -983,6 +983,33 @@ export const CancelacionValidar = () => {
         );
       })()}
 
+      {/* Aviso suave NO bloqueante: la dirección catastral viene de OCR de un
+          documento escaneado y no tiene verificación automática. */}
+      {(() => {
+        const aviso = (data as unknown as {
+          _avisos_procesamiento?: { direccion_catastral_ocr?: { motivo?: string } };
+        } | null)?._avisos_procesamiento?.direccion_catastral_ocr;
+        if (!aviso) return null;
+        return (
+          <div role="status" className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  Verifica la dirección catastral
+                </p>
+                <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
+                  La dirección catastral fue leída automáticamente de un documento escaneado — verifica el número
+                  contra el certificado de tradición original antes de continuar, especialmente dígitos que puedan
+                  confundirse (0/2/8, etc.).
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+
       {/* Banner de revisión manual pendiente — CTA sticky visible arriba del
           formulario. Sin esto el usuario tenía que hacer scroll hasta el
           bloque "Apoderado del Banco" para encontrar el botón de desbloqueo,

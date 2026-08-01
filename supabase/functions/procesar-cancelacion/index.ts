@@ -1668,7 +1668,7 @@ function mergePoderBanco(
 // bloquean el test-runner de Deno).
 import { mergePoderBancoV6 as mergeV6Iso } from "../_shared/isomorphic/poderBancoExtractor/merge.ts";
 import { validatePoderBancoCoherencia, isHardBlockCoherenciaWarning, isCedulaValida } from "../_shared/isomorphic/poderBancoExtractor/validate.ts";
-import { validateInmuebleCoherencia } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
+import { validateInmuebleCoherencia, tieneMencionCatastral } from "../_shared/isomorphic/certificadoInmuebleValidate.ts";
 import { selectDireccionPorIndice } from "../_shared/isomorphic/direccionCandidatasSelect.ts";
 import { detectDuplicidadCruzada, type ExistingPoderRow } from "../_shared/isomorphic/poderBancoExtractor/crossCheck.ts";
 import { validatePoderVsCancelacion } from "../_shared/isomorphic/poderBancoExtractor/validateIntraTramite.ts";
@@ -3379,21 +3379,32 @@ if (import.meta.main) serve(async (req) => {
         ) as unknown as typeof extracted;
 
         const revision = detectRequiereRevisionManual(cleanedExtracted);
-        // Aviso visible para el usuario: la escritura se recortó para el
-        // análisis. Viaja dentro de data_ia/data_final (se conserva en los
-        // guardados posteriores) y lo renderiza CancelacionValidar.
-        const dataConAvisos = escrituraTruncada
+        // Avisos visibles para el usuario, no bloqueantes. Viajan dentro de
+        // data_ia/data_final (se conservan en los guardados posteriores) y los
+        // renderiza CancelacionValidar.
+        //  1) escritura_truncada — la escritura se recortó para el análisis.
+        //  2) direccion_catastral_ocr — recordatorio de verificación manual de
+        //     la dirección catastral: la alucinación de dígitos en ese campo no
+        //     tiene hoy detección automática (Regla 1 sólo compara menciones
+        //     del mismo índice de sección, y el certificado emite una sola).
+        const avisos: Record<string, unknown> = {};
+        if (escrituraTruncada) {
+          avisos.escritura_truncada = {
+            paginas_en_storage: escUrls.length,
+            paginas_usadas: escUrlsPayload.length,
+            motivo: "payload_limite_gateway",
+          };
+        }
+        if (tieneMencionCatastral(cleanedExtracted.inmueble as unknown as Record<string, unknown>)) {
+          avisos.direccion_catastral_ocr = { motivo: "lectura_ocr_no_verificable" };
+        }
+        const dataConAvisos = Object.keys(avisos).length > 0
           ? {
               ...(cleanedExtracted as unknown as Record<string, unknown>),
-              _avisos_procesamiento: {
-                escritura_truncada: {
-                  paginas_en_storage: escUrls.length,
-                  paginas_usadas: escUrlsPayload.length,
-                  motivo: "payload_limite_gateway",
-                },
-              },
+              _avisos_procesamiento: avisos,
             }
           : cleanedExtracted;
+
 
         const commonUpdate = {
           data_ia: dataConAvisos,
