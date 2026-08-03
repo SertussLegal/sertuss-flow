@@ -2951,41 +2951,31 @@ if (import.meta.main) serve(async (req) => {
         });
       }
       const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
-      try {
-        const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-          supabaseService, cancelacionId, data, prosaOv,
-        );
-        await supabaseService.from("cancelaciones").update({
-          data_final: data,
-          url_minuta_generada: minutaPath,
-          url_certificado_generado: certPath,
-          updated_at: new Date().toISOString(),
-        }).eq("id", cancelacionId);
+      // Rediseño 2026-08-03: `regen` YA NO puede devolver 409. Siempre genera
+      // (con blancos honestos donde haya decisiones pendientes) y devuelve las
+      // alertas vigentes para que la UI decida si habilita la descarga.
+      const { minutaPath, certPath, blanksAplicados } = await generateAndUploadCancelacionDocs(
+        supabaseService, cancelacionId, data, prosaOv,
+      );
+      const alertas = computeAlertas(data as unknown as Record<string, unknown>);
+      await supabaseService.from("cancelaciones").update({
+        data_final: data,
+        url_minuta_generada: minutaPath,
+        url_certificado_generado: certPath,
+        revision_manual_requerida: contarPrioritarias(alertas) > 0,
+        updated_at: new Date().toISOString(),
+      }).eq("id", cancelacionId);
 
-        return new Response(JSON.stringify({ ok: true, regenerated: true }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      } catch (genErr) {
-        if (genErr instanceof ManualReviewRequiredError) {
-          // Persistir SOLO data_final (el usuario sigue editando) y NO tocar
-          // url_minuta_generada/url_certificado_generado — el docx previo (si
-          // existe) queda intacto en vez de sobrescribirlo con uno contaminado.
-          await supabaseService.from("cancelaciones").update({
-            data_final: data,
-            updated_at: new Date().toISOString(),
-          }).eq("id", cancelacionId);
-          return new Response(JSON.stringify({
-            ok: false,
-            error: "manual_review_required",
-            paths: genErr.paths,
-            motivos: genErr.motivos,
-          }), {
-            status: 409,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        throw genErr;
-      }
+      return new Response(JSON.stringify({
+        ok: true,
+        regenerated: true,
+        alertas,
+        prioritarias: contarPrioritarias(alertas),
+        blanks_aplicados: blanksAplicados,
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     }
 
     // ─────────────────────────────────────────────────────────────
