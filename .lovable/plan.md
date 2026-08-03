@@ -17,7 +17,7 @@ Aplica de hoy en adelante. Cero migraciones SQL. Los 7 trámites históricos en 
 7. **`hipoteca_garantia_abierta` es un flag distinto de `valor_hipoteca_es_indeterminada`** y sí puede ser legítimamente `true` con conflicto de cuantía. El blanking debe tocar **solo** `valor_hipoteca_original` + `valor_hipoteca_es_indeterminada`, dejando `hipoteca_garantia_abierta` intacto (es un hecho textual leído de la escritura, no una inferencia).
 8. **`DESCARGADO_CON_ALERTAS` no se puede registrar con fidelidad total.** La descarga real es un `<a download>` en `PdfViewerPane:120-134`; el log se dispara en el click, no en la finalización del download. Es aceptable pero hay que decirlo: el log significa "el usuario pidió la descarga", no "el archivo llegó".
 9. **`applyManualOverrideExceptions` / `MANUAL_OVERRIDE_RULES` quedan sin llamador de producción.** Verificado con grep: hoy el único llamador real es `detectRequiereRevisionManual` (`index.ts:1529`, tras `manualReviewConfirmed`); todo lo demás son **tests** (`scalarGatingRecompute.test.ts:39`, `poderBancoValidateCandidatosNatural.test.ts:108`, `cuantiaConflicto.test.ts:129-153`) y el re-export de `index.ts:1450-1453`. **Recomendación: no eliminar en Fase 1.** Motivo: `hardBlockRules.ts` exporta también `HARD_BLOCK_WARNING_SUFFIXES` (re-exportado desde `validate.ts`), que sigue siendo la definición de "qué es un warning duro" y que `computeAlertas` necesita. Borrar la función y sus reglas en el mismo commit que desmonta el gate mezcla dos cambios de riesgo distinto. Plan: dejar `MANUAL_OVERRIDE_RULES` y `applyManualOverrideExceptions` **sin llamadores, marcados `@deprecated` con nota "sin uso desde el rediseño de alertas — eliminar en Fase 2"**, eliminar el re-export de `index.ts`, y eliminar `index_manualOverride_test.ts`. Los 3 tests de frontend que los invocan se ajustan (ver 1.6). Si el dueño prefiere borrado total en Fase 1, es un cambio mecánico adicional de ~200 líneas; queda a su decisión.
-10. **`previewStale` NO es una detección de "documento desactualizado".** Verificado en `CancelacionValidar.tsx:395` y `:576-612`: es un **flag de fallo** — se pone en `true` únicamente cuando el `regen` disparado por el autosave falla o colisiona con otro en vuelo. No compara datos contra documento. Al eliminar el regen del autosave (cambio mayor aprobado), `previewStale` **deja de tener significado** y no sirve para alimentar el estado del botón. Hay que derivar `docActualizado` de verdad (ver 1.4). Ver también la limitación de recarga de página documentada allí.
+10. **`previewStale` NO es una detección de "documento desactualizado".** Verificado en `CancelacionValidar.tsx:395` y `:576-612`: es un **flag de fallo** — se pone en `true` únicamente cuando el `regen` disparado por el autosave falla o colisiona con otro en vuelo. No compara datos contra documento. Al eliminar el regen del autosave (cambio mayor aprobado), `previewStale` **deja de tener significado** y no sirve para alimentar el estado del botón. Hay que derivar `docActualizado` de verdad (ver 1.4): arranca en `false` al montar, se gana tras un regen exitoso en la sesión y se pierde al editar o recargar.
 
 
 ---
@@ -194,16 +194,34 @@ export function deriveEstadoBotonMinuta(input: {
 }): { estado: EstadoBotonMinuta; disabled: boolean; contador?: number };
 ```
 
-Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` → `acciones_pendientes` (habilitado; despliega el listado). Luego `!docExiste || !docActualizado || isDirty` → `generar` (`disabled` mientras `saving`, para que el guardado persista antes de generar). Si no, `descargar`.
+Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` → `acciones_pendientes` (habilitado; despliega el listado). Luego `!docActualizado || isDirty` → `generar` (`disabled` mientras `saving`, para que el guardado persista antes de generar). Si no, `descargar`.
 
 `isDirty` fuerza `generar`, no `descargar`: nunca se descarga un doc que no refleja lo que hay en pantalla. Esto reemplaza el toast actual de "cambios sin guardar" de `PdfViewerPane` para este botón.
 
-#### `docActualizado` — hay que construirlo (ver discrepancia 10)
+#### Regla de oro del botón — "Descargar se gana en la sesión, nunca se asume"
+
+1. Al montar la página de un trámite, el estado inicial es siempre **"generar"** (o **"acciones_pendientes"** si hay prioritarias). Nunca "descargar", aunque `url_minuta_generada` exista.
+2. "Descargar" solo se alcanza tras una generación exitosa **dentro de la sesión actual** (`regen` → éxito → fijar snapshot).
+3. Editar cualquier campo tras generar → `docActualizado=false` → vuelve a "generar".
+4. Cerrar o recargar la página → `docActualizado` se resetea a `false` → vuelve al punto 1.
+
+#### `docActualizado` — simplificado a sesión
 
 `previewStale` no sirve. Propuesta mínima, sin SQL:
 - `lastGeneratedSnapshotRef` — se fija con el mismo `JSON.stringify(data)` que ya usa `lastSavedSnapshotRef` (`CancelacionValidar.tsx:400`), justo tras un regen exitoso.
+- `docActualizado` arranca en `false` al montar el componente. No importa si `url_minuta_generada` existe: al abrir siempre hay que regenerar para garantizar frescura.
 - `docActualizado = lastGeneratedSnapshotRef.current === snapshotActual`.
-- **Limitación honesta:** al recargar la página el ref se pierde y no hay columna que diga cuándo se generó el docx (`updated_at` se mueve tanto al guardar como al generar, y no se añaden columnas: cero SQL). Comportamiento al recargar: si `url_minuta_generada` existe se asume **al día** → botón "Descargar". El usuario que recargue justo tras editar sin generar mantiene el botón "Descargar" hasta que vuelva a tocar un campo. Alternativa si el dueño lo considera inaceptable: una columna `docs_generados_snapshot` — pero eso rompe "cero migraciones SQL". **Marcado para aprobación.**
+- No hay limitación de recarga: por diseño, recargar siempre reinicia el estado del botón.
+
+#### `docExiste` en `deriveEstadoBotonMinuta`
+
+Con la regla de oro, `docExiste` deja de importar para el estado inicial (nunca se asume "descargar" al montar). Se conserva como guarda defensiva: si el ref marca `docActualizado=true` pero `docExiste=false`, el estado debe caer a "generar" por seguridad. Si el dueño prefiere la firma mínima, se puede eliminar el parámetro; queda a su decisión.
+
+#### Previsualización
+
+La previsualización **no cambia**: el visor sigue mostrando el documento existente al abrir (el de la primera generación automática o el último generado). Lo que se gana con el botón es la garantía de frescura de la **descarga**, no de la vista.
+
+
 
 #### Un botón para minuta + certificado — MARCADO PARA APROBACIÓN
 
@@ -226,6 +244,8 @@ Ambos destinos ya son bloques renderizados en la misma página; el salto no requ
 - Resolver la última prioritaria (vía autoguardado del dato) → el botón pasa solo de "Acciones pendientes" a "Generar documentos", sin recarga: `computeAlertas` corre en `useMemo` sobre el `data` en memoria.
 - Editar cualquier campo tras generar → `docActualizado=false` → vuelve a "Generar documentos".
 - Clic en "Generar documentos" → `cargando` → invoca `{regen:true, manualOverrides:data}` → al éxito fija `lastGeneratedSnapshotRef`, `setViewerKey(k=>k+1)`, invalida la query → "Descargar".
+- Recargar o cerrar la página → `docActualizado` se resetea a `false` → el botón vuelve a "Generar documentos" (o "Acciones pendientes" si hay prioritarias).
+
 
 #### Bitácora (`activity_logs`, insert no bloqueante)
 
@@ -252,7 +272,7 @@ En la sección Poder del formulario, banner reutilizando el patrón de `PoderBan
 | `src/shared/poderBancoValidateCandidatosNatural.test.ts` (7 casos Regla 8) | Reescribir aserciones: la *detección* no cambia (prohibido tocar `validate.ts`); cambia el efecto. "Sin candidato confirmado" → alerta prioritaria activa + `applyPendingDecisionBlanks` vacía nombre/cédula + prosa vacía. "Con candidato confirmado" → passthrough, alerta ausente. |
 | `src/shared/alertasCancelacion.test.ts` (nuevo) | `computeAlertas`: cada categoría; las 3 fuentes de `_coherencia_warnings` + avisos; dedupe; recálculo escalar determinista apaga; **caso inverso obligatorio: editar el escalar a un valor con formato válido NO apaga una alerta importante** (`*_menciones_incoherentes` permanece); código desconocido → `importante`. Sin caso "override manual apaga" — ese mecanismo desaparece. |
 | `src/shared/pendingDecisionBlanks.test.ts` (nuevo) | NO_LEGIBLE anidado → `undefined`; conflicto de cuantía → **snapshot del texto de `buildClausulaPagoHipoteca`** afirmando que es el neutral y que NUNCA contiene "CUANTÍA INDETERMINADA"; candidatos → prosa vacía; datos completos → objeto idéntico (identidad estructural, sin mutación de la entrada). |
-| `src/lib/botonMinutaEstado.test.ts` (nuevo) | Máquina de estados: los 4 estados y su precedencia; `generando` gana sobre todo; `prioritarias>0` gana sobre `docExiste`; `isDirty` fuerza `generar`, nunca `descargar`; `disabled` correcto en `cargando` y en `generar` mientras `saving`; contador `N` igual al número de prioritarias. |
+| `src/lib/botonMinutaEstado.test.ts` (nuevo) | Máquina de estados: los 4 estados y su precedencia; `generando` gana sobre todo; `prioritarias>0` gana sobre `docActualizado`; `isDirty` fuerza `generar`, nunca `descargar`; montaje inicial con `docExiste=true` y `url_minuta_generada` poblado → estado `generar`, nunca `descargar`; `disabled` correcto en `cargando` y en `generar` mientras `saving`; contador `N` igual al número de prioritarias. |
 | `supabase/functions/procesar-cancelacion/index_manualOverride_test.ts` | **Eliminar** — su sujeto (`applyManualOverrideExceptions` vía `manualReviewConfirmed`) desaparece del flujo. |
 | `supabase/functions/procesar-cancelacion/index_manualReview_test.ts` | Adaptar: los casos que afirman `ManualReviewRequiredError` o `requiere:true → no genera` pasan a afirmar "genera + alerta". `detectRequiereRevisionManual` sobrevive como detector puro; sus tests de detección se conservan. |
 | `src/shared/scalarGatingRecompute.test.ts`, `poderBancoValidateCandidatosNatural.test.ts`, `cuantiaConflicto.test.ts` | Invocan `applyManualOverrideExceptions` directamente (líneas 39, 108, 129-153). Al quedar la función `@deprecated` sin llamadores, esas aserciones se **reemplazan** por la aserción equivalente en el modelo nuevo: la condición explícita de resolución de la alerta prioritaria (candidato confirmado / `cuantia_origen="manual"`). Los casos de detección pura no se tocan. |
@@ -270,8 +290,10 @@ Trámite nuevo con **conflicto de cuantía Y poder multi-candidato**:
 3. La UI muestra 2 alertas prioritarias + las importantes que haya.
 4. El botón principal dice **"Acciones pendientes (2)"**. Al pulsarlo despliega el listado con las 2 decisiones, cada una con su instrucción y su salto al lugar donde se resuelve. `activity_logs` recibe `ACCIONES_PENDIENTES_MOSTRADAS`. No genera ni descarga.
 5. Se elige el candidato y se escribe el monto → autoguardado (solo persiste) → el botón pasa solo a **"Generar documentos"** → clic → **"Cargando…"** → regen sin cobro → **"Descargar"** → descarga exitosa, con `DESCARGADO_CON_ALERTAS` si quedan importantes.
+6. **Recargar la página** → el botón vuelve a **"Generar documentos"** aunque el documento exista; pulsar generar → "Cargando…" → "Descargar". Esto verifica la regla de oro: "Descargar se gana en la sesión, nunca se asume".
 
 Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a `completed` tras el primer regen.
+
 
 ---
 
@@ -284,8 +306,8 @@ Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a
 | Blanking que sí muta `data_final` y borra datos del usuario. | Copia por rama; test de identidad estructural; `applyPendingDecisionBlanks` se llama solo dentro de `generateAndUploadCancelacionDocs`, nunca en el camino de persistencia. |
 | `classifyApoderado` con nombre/cédula vacíos imprime `undefined` o prosa rota. | Test de prosa vacía sobre `renderComparecencia`/`renderAntefirma`; snapshot. |
 | Alertas importantes que nunca se apagan → fatiga de alerta y ruido acumulado. | Aceptado explícitamente por producto: son notas de verificación, no bloqueos. "Marcar como verificada" queda para Fase 2. |
-| `docActualizado` se pierde al recargar la página → botón "Descargar" sobre un doc potencialmente desfasado. | Limitación documentada en 1.4, marcada para aprobación. Mitigación parcial: cualquier edición posterior devuelve el botón a "Generar". Solución completa exigiría columna nueva (rompe cero-SQL). |
-| Quitar el regen del autosave: el usuario edita, no pulsa generar y descarga un doc viejo. | Imposible por diseño: `isDirty` o `docActualizado=false` fuerzan el estado "Generar"; "Descargar" solo aparece con doc al día. |
+| Quitar el regen del autosave: el usuario edita, no pulsa generar y descarga un doc viejo. | Imposible por diseño: recargar siempre reinicia el botón a "Generar"; `isDirty` o `docActualizado=false` fuerzan el estado "Generar" durante la sesión; "Descargar" solo aparece tras generar en la sesión actual. |
+
 | Botones huérfanos de `confirm_manual_review` en el frontend. | Los 3 call sites (717, 1067, 1607) se eliminan en el mismo commit que el bloque del backend. |
 | Regen empieza a cobrar créditos por algún camino nuevo. | Verificado hoy: `consume_credit_v2` solo se invoca en el modo normal. Se añade una aserción de grep en la checklist de revisión, no un test. |
 
