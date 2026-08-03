@@ -3428,49 +3428,44 @@ if (import.meta.main) serve(async (req) => {
           updated_at: new Date().toISOString(),
         };
 
-        if (revision.requiere) {
-          // NO generamos docs. Marcamos status y logueamos.
-          const { error: updErr } = await supabaseService.from("cancelaciones").update({
-            ...commonUpdate,
-            status: "requiere_revision_manual",
-            revision_manual_requerida: true,
-            revision_manual_confirmada_at: null,
-            revision_manual_confirmada_por: null,
-          }).eq("id", cancelacionId);
-          if (updErr) throw new Error(`Persist(requiere_revision_manual): ${updErr.message}`);
+        // Genera SIEMPRE. Las decisiones pendientes salen en blanco en el
+        // .docx (ver `applyPendingDecisionBlanks`) y quedan reportadas como
+        // alertas prioritarias que la UI usa para condicionar la descarga.
+        const alertas = computeAlertas(dataConAvisos as unknown as Record<string, unknown>);
+        const nPrioritarias = contarPrioritarias(alertas);
 
+        const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
+        const { minutaPath, certPath, blanksAplicados } = await generateAndUploadCancelacionDocs(
+          supabaseService, cancelacionId, cleanedExtracted, prosaOv,
+        );
+        const { error: updErr } = await supabaseService.from("cancelaciones").update({
+          ...commonUpdate,
+          status: "completed",
+          // La marca persistente ya no bloquea la generación: solo señala que
+          // hay decisiones pendientes que condicionan la DESCARGA.
+          revision_manual_requerida: nPrioritarias > 0,
+          revision_manual_confirmada_at: null,
+          revision_manual_confirmada_por: null,
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+        }).eq("id", cancelacionId);
+        if (updErr) throw new Error(`Persist: ${updErr.message}`);
+
+        if (nPrioritarias > 0) {
           void supabaseService.from("system_events").insert({
             organization_id: orgId,
             tramite_id: cancelacionId,
             user_id: userId,
-            evento: "procesar-cancelacion.revision_manual",
-            resultado: "bloqueado",
-            categoria: revision.paths.length > 0 ? "PODER_NO_LEGIBLE" : "PODER_COHERENCIA_HARD_BLOCK",
-            detalle: { paths: revision.paths, motivos: revision.motivos },
+            evento: "procesar-cancelacion.alertas_prioritarias",
+            resultado: "generado_con_pendientes",
+            categoria: "DECISIONES_PENDIENTES",
+            detalle: {
+              prioritarias: alertas.filter((a) => a.bloqueaDescarga).map((a) => a.codigo),
+              blanks_aplicados: blanksAplicados,
+            },
           }).then(() => {}, () => {});
-
-          void supabaseService.from("activity_logs").insert({
-            organization_id: orgId,
-            user_id: userId,
-            action: "MANUAL_REVIEW_REQUIRED",
-            entity_type: "cancelacion",
-            entity_id: cancelacionId,
-            metadata: { paths: revision.paths, motivos: revision.motivos },
-          }).then(() => {}, () => {});
-        } else {
-          // Path normal — genera minuta+certificado y marca completed.
-          const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
-          const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-            supabaseService, cancelacionId, cleanedExtracted, prosaOv,
-          );
-          const { error: updErr } = await supabaseService.from("cancelaciones").update({
-            ...commonUpdate,
-            status: "completed",
-            url_minuta_generada: minutaPath,
-            url_certificado_generado: certPath,
-          }).eq("id", cancelacionId);
-          if (updErr) throw new Error(`Persist: ${updErr.message}`);
         }
+
 
       } catch (bgErr) {
         const rawMsg = bgErr instanceof Error ? bgErr.message : String(bgErr);
