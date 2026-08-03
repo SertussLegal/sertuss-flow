@@ -74,11 +74,18 @@ Fuentes leídas (las tres actuales + avisos):
 - `analisis_legal.aplica_ley_546`.
 
 Antes de clasificar aplica, en este orden:
-1. `filterMotivosByScalarRecompute(...)` — importado de `scalarGatingRecompute.ts`, tal cual hoy.
-2. `applyManualOverrideExceptions(motivos, data)` — **ahora incondicional** (ver discrepancia 4).
-3. Dedupe por `codigo`.
+1. `filterMotivosByScalarRecompute(...)` — importado de `scalarGatingRecompute.ts`, tal cual hoy. Recálculo determinista con datos frescos: seguro.
+2. Dedupe por `codigo`.
+
+**`applyManualOverrideExceptions` NO se llama.** Sus predicados apagan el warning en cuanto el escalar tiene *formato* válido, y el dato del OCR casi siempre tiene formato válido aunque sea el equivocado — las alertas `*_menciones_incoherentes` se auto-apagarían al instante y nunca serían visibles (caso real: matrícula `50S-40096988` vs `50S-40096988B` del trámite e07c5d5a jamás habría mostrado alerta).
+
+**Cómo se apaga cada categoría:**
+- **Prioritarias** — solo por su condición explícita de resolución, ya escrita en la tabla: candidato confirmado presente en la lista vigente / `cuantia_origen === "manual"` o monto real escrito / campo `NO_LEGIBLE` completado a mano.
+- **Importantes** — **no se apagan en Fase 1.** Son notas de verificación: la discrepancia existió en el documento fuente y el abogado debe saberlo hasta el final, aunque haya editado el campo. Un futuro "marcar como verificada" queda fuera de alcance (Fase 2 o posterior).
+- **Informativas** — igual: permanecen.
 
 Labels: `WARNING_LABELS` de `validate.ts` es la fuente. Los códigos que no existan ahí (los de `_avisos_procesamiento`) se añaden a **un mapa nuevo local** `AVISO_LABELS` en `alertasCancelacion.ts` — no se contamina `WARNING_LABELS`, que es catálogo de warnings de validación.
+
 
 #### Tabla de clasificación — REQUIERE APROBACIÓN HUMANA
 
