@@ -283,7 +283,9 @@ Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a
 | Un `.docx` incompleto se descarga en la ventana entre despliegue de backend y frontend. | Fase 1 sale atómica (backend + gate de descarga en el mismo deploy). Regla de secuencia explícita en el orden de implementación. |
 | Blanking que sí muta `data_final` y borra datos del usuario. | Copia por rama; test de identidad estructural; `applyPendingDecisionBlanks` se llama solo dentro de `generateAndUploadCancelacionDocs`, nunca en el camino de persistencia. |
 | `classifyApoderado` con nombre/cédula vacíos imprime `undefined` o prosa rota. | Test de prosa vacía sobre `renderComparecencia`/`renderAntefirma`; snapshot. |
-| `applyManualOverrideExceptions` incondicional apaga alertas antes de tiempo. | Sus predicados exigen escalar con formato válido (incluido el anti-placeholder). Test dedicado por regla. |
+| Alertas importantes que nunca se apagan → fatiga de alerta y ruido acumulado. | Aceptado explícitamente por producto: son notas de verificación, no bloqueos. "Marcar como verificada" queda para Fase 2. |
+| `docActualizado` se pierde al recargar la página → botón "Descargar" sobre un doc potencialmente desfasado. | Limitación documentada en 1.4, marcada para aprobación. Mitigación parcial: cualquier edición posterior devuelve el botón a "Generar". Solución completa exigiría columna nueva (rompe cero-SQL). |
+| Quitar el regen del autosave: el usuario edita, no pulsa generar y descarga un doc viejo. | Imposible por diseño: `isDirty` o `docActualizado=false` fuerzan el estado "Generar"; "Descargar" solo aparece con doc al día. |
 | Botones huérfanos de `confirm_manual_review` en el frontend. | Los 3 call sites (717, 1067, 1607) se eliminan en el mismo commit que el bloque del backend. |
 | Regen empieza a cobrar créditos por algún camino nuevo. | Verificado hoy: `consume_credit_v2` solo se invoca en el modo normal. Se añade una aserción de grep en la checklist de revisión, no un test. |
 
