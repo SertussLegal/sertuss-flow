@@ -160,47 +160,81 @@ Reglas:
 | Acción `confirm_manual_review` (~2412-2625) | Eliminar el bloque completo y su valor del union `action?:`. |
 | Columnas `revision_manual_*` | No se escriben más. No se borran de BD. Cero SQL. |
 
-**Compatibilidad de status legacy** (frontend, `CancelacionValidar.tsx`): tratar `row.status === "requiere_revision_manual"` como `completed` en todos los branches de render (líneas 948, 966, 1031, 1605). Si el row no tiene `url_minuta_generada`, el visor muestra su estado vacío actual y el usuario dispara un regen normal, que lo deja en `completed`. Se retira el guard de autosave añadido en la sesión anterior (`CancelacionValidar.tsx:559-568`), que deja de tener sentido: ya no hay 409.
+**Compatibilidad de status legacy** (frontend, `CancelacionValidar.tsx`): tratar `row.status === "requiere_revision_manual"` como `completed` en todos los branches de render (líneas 948, 966, 1031, 1605). Si el row no tiene `url_minuta_generada`, el botón principal arranca en "Generar Minuta" y el primer clic lo deja en `completed`.
+
+**El autosave deja de regenerar** (cambio mayor aprobado): en `persistData` (`CancelacionValidar.tsx:~540-615`) se elimina la llamada a `procesar-cancelacion {regen:true}` y toda su lógica de freno — el guard de `revision_manual_requerida` (líneas 559-568), `isRegenInFlightRef`, `parseManualReviewError` y las ramas de `previewStale`. El autosave **solo persiste datos**. La generación pasa a ser siempre un acto explícito del usuario.
+
+Se mantiene: la **primera** previsualización se genera automáticamente al terminar el procesamiento inicial (`heavyWork`), con blancos honestos si hay decisiones pendientes. El usuario siempre aterriza viendo el documento.
 
 `src/pages/Cancelaciones.tsx` (líneas 63, 119, 133-151, 246): el badge "Bloqueada" y el orden por `revision_manual_requerida` se mantienen **solo** como etiqueta histórica de lectura; ningún trámite nuevo entrará ahí. `Cancelaciones.test.tsx` sigue verde sin cambios.
 
 ---
 
-### 1.4 Compuerta de DESCARGA (mismo despliegue)
+### 1.4 Botón principal con máquina de estados (mismo despliegue)
 
-`src/pages/CancelacionValidar.tsx`:
+Sustituye al diálogo modal de descarga. Un solo botón narra el ciclo completo. El botón "Regenerar" actual (`CancelacionValidar.tsx:949-958`) se absorbe en él.
+
+#### Función pura — `src/lib/botonMinutaEstado.ts` (nuevo)
+
+Diseñada como función pura testeable, nada de lógica inline en el componente.
 
 ```ts
-const alertas = useMemo(() => computeAlertas(dataFinal), [dataFinal]);
-const prioritarias = alertas.filter(a => a.bloqueaDescarga);
+export type EstadoBotonMinuta =
+  | "acciones_pendientes"   // ≥1 alerta prioritaria
+  | "generar"               // sin prioritarias, doc ausente o desactualizado
+  | "cargando"              // regen en vuelo
+  | "descargar";            // doc presente, al día, sin prioritarias
+
+export function deriveEstadoBotonMinuta(input: {
+  prioritarias: number;
+  docExiste: boolean;
+  docActualizado: boolean;
+  isDirty: boolean;
+  generando: boolean;
+}): { estado: EstadoBotonMinuta; disabled: boolean; contador?: number };
 ```
 
-Importado como `import { computeAlertas } from "@shared/alertasCancelacion"` (alias existente; añadir el archivo al `include` de `tsconfig.app.json`).
+Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` → `acciones_pendientes` (habilitado; despliega el listado). Luego `!docExiste || !docActualizado || isDirty` → `generar` (`disabled` mientras `saving`, para que el guardado persista antes de generar). Si no, `descargar`.
 
-`PdfViewerPane` — se reutiliza tal cual, componiendo las dos razones con precedencia:
+`isDirty` fuerza `generar`, no `descargar`: nunca se descarga un doc que no refleja lo que hay en pantalla. Esto reemplaza el toast actual de "cambios sin guardar" de `PdfViewerPane` para este botón.
 
-```
-blockDownload = isDirty || prioritarias.length > 0
-onBlockedDownload:
-  1º  isDirty              → toast actual "cambios sin guardar" (sin cambios)
-  2º  prioritarias.length  → abre <DecisionesPendientesDialog>
-```
+#### `docActualizado` — hay que construirlo (ver discrepancia 10)
 
-`isDirty` primero: pedir decisiones sobre datos no guardados sería confuso.
+`previewStale` no sirve. Propuesta mínima, sin SQL:
+- `lastGeneratedSnapshotRef` — se fija con el mismo `JSON.stringify(data)` que ya usa `lastSavedSnapshotRef` (`CancelacionValidar.tsx:400`), justo tras un regen exitoso.
+- `docActualizado = lastGeneratedSnapshotRef.current === snapshotActual`.
+- **Limitación honesta:** al recargar la página el ref se pierde y no hay columna que diga cuándo se generó el docx (`updated_at` se mueve tanto al guardar como al generar, y no se añaden columnas: cero SQL). Comportamiento al recargar: si `url_minuta_generada` existe se asume **al día** → botón "Descargar". El usuario que recargue justo tras editar sin generar mantiene el botón "Descargar" hasta que vuelva a tocar un campo. Alternativa si el dueño lo considera inaceptable: una columna `docs_generados_snapshot` — pero eso rompe "cero migraciones SQL". **Marcado para aprobación.**
 
-`src/components/cancelaciones/DecisionesPendientesDialog.tsx` (nuevo, mínimo en Fase 1): lista las prioritarias con label + instrucción concreta por código:
-- candidatos → "Selecciona el apoderado en la sección Poder" + botón que hace `scrollIntoView` al banner `ApoderadoCandidatosBanner` existente.
-- conflicto de cuantía → "Escribe el monto o confírmalo como indeterminado" + scroll al recuadro ámbar de `cuantia_candidatos` ya implementado.
-- NO_LEGIBLE → "Completa a mano el/los campo(s): …" + scroll a la sección Poder.
+#### Un botón para minuta + certificado — MARCADO PARA APROBACIÓN
 
-El scroll usa `ref` + `scrollIntoView`; no requiere re-arquitectura porque ambos destinos ya son bloques renderizados en la misma página.
+**Propuesta: un solo botón, gobernado por la pestaña activa.** Justificación en el código: `generateAndUploadCancelacionDocs` genera **siempre los dos** documentos en la misma llamada (`index.ts:1401-1420`) y `regen` persiste ambos `url_*` juntos. Un botón por pestaña duplicaría UI para una acción que ya es atómica en el backend. Por tanto:
+- Estados "Acciones pendientes" / "Generar" / "Cargando" son **globales** (idénticos en ambas pestañas — reflejan un solo regen).
+- El estado "Descargar" es **contextual**: descarga el documento de la pestaña activa (`activeDoc`), reutilizando `PdfViewerPane.handleDownload`.
+- Etiqueta: "Generar documentos" en vez de "Generar Minuta", ya que produce ambos. (Si el dueño prefiere el literal "Generar Minuta", es solo texto.)
 
-**Bitácora** (`activity_logs`, insert directo con el cliente de usuario, no bloqueante):
-- `DESCARGA_BLOQUEADA_DECISIONES` — al abrir el diálogo. `metadata: { codigos, doc: activeDoc }`.
-- `DESCARGADO_CON_ALERTAS` — en `handleDownload` exitoso cuando hay importantes activas. `metadata: { codigos, doc }`. Sin modal de confirmación.
+#### Listado de acciones pendientes
+
+Popover anclado al botón (`components/ui/popover`, ya en el proyecto), **no modal bloqueante**. Componente nuevo `src/components/cancelaciones/AccionesPendientesList.tsx`. Una entrada por alerta prioritaria con: label, instrucción concreta, y botón de salto (`ref` + `scrollIntoView`):
+- candidatos → `ApoderadoCandidatosBanner` existente.
+- conflicto de cuantía → recuadro ámbar de `cuantia_candidatos` ya implementado.
+- `NO_LEGIBLE` → sección Poder, nombrando los campos ilegibles.
+
+Ambos destinos ya son bloques renderizados en la misma página; el salto no requiere re-arquitectura.
+
+#### Transiciones
+
+- Resolver la última prioritaria (vía autoguardado del dato) → el botón pasa solo de "Acciones pendientes" a "Generar documentos", sin recarga: `computeAlertas` corre en `useMemo` sobre el `data` en memoria.
+- Editar cualquier campo tras generar → `docActualizado=false` → vuelve a "Generar documentos".
+- Clic en "Generar documentos" → `cargando` → invoca `{regen:true, manualOverrides:data}` → al éxito fija `lastGeneratedSnapshotRef`, `setViewerKey(k=>k+1)`, invalida la query → "Descargar".
+
+#### Bitácora (`activity_logs`, insert no bloqueante)
+
+- `ACCIONES_PENDIENTES_MOSTRADAS` — al desplegar el listado. `metadata: { codigos, doc: activeDoc }`.
+- `DESCARGADO_CON_ALERTAS` — en el clic de Descargar cuando hay importantes activas. `metadata: { codigos, doc }`. Sin modal de confirmación.
 - `GENERADO_CON_ALERTAS` — lo escribe el backend (1.3).
 
 Semántica honesta de `DESCARGADO_CON_ALERTAS`: registra la *intención* de descarga (click), no la finalización (discrepancia 8).
+
 
 ---
 
