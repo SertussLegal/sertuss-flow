@@ -217,6 +217,11 @@ Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` →
 
 Con la regla de oro, `docExiste` deja de importar para el estado inicial (nunca se asume "descargar" al montar). Se conserva como guarda defensiva: si el ref marca `docActualizado=true` pero `docExiste=false`, el estado debe caer a "generar" por seguridad. Si el dueño prefiere la firma mínima, se puede eliminar el parámetro; queda a su decisión.
 
+#### Previsualización
+
+La previsualización **no cambia**: el visor sigue mostrando el documento existente al abrir (el de la primera generación automática o el último generado). Lo que se gana con el botón es la garantía de frescura de la **descarga**, no de la vista.
+
+
 
 #### Un botón para minuta + certificado — MARCADO PARA APROBACIÓN
 
