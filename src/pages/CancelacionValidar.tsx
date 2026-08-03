@@ -898,16 +898,49 @@ export const CancelacionValidar = () => {
                 <AlertTriangle className="h-3 w-3" /> Vista desactualizada
               </span>
             )}
-            {row?.status !== "requiere_revision_manual" && (
+            {/* Botón principal con máquina de estados. Nunca arranca en
+                "Descargar": esa acción se gana generando en la sesión. */}
+            {botonMinuta.estado === "pendientes" ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-600/90 text-white"
+                    aria-label={`${botonMinuta.label}. Abre el listado de decisiones pendientes.`}
+                  >
+                    <ListChecks className="h-3.5 w-3.5" /> {botonMinuta.label}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-96 max-h-[70vh] overflow-y-auto z-[100]">
+                  <AccionesPendientesList alertas={alertas} />
+                </PopoverContent>
+              </Popover>
+            ) : (
               <Button
                 size="sm"
-                variant={previewStale ? "default" : "outline"}
-                onClick={handleManualRegen}
-                disabled={previewRefreshing || saving}
+                variant="default"
+                onClick={botonMinuta.estado === "descargar" ? handleDescargarMinuta : handleGenerar}
+                disabled={botonMinuta.disabled || saving}
                 className="gap-1.5 text-xs"
               >
-                <RefreshCw className="h-3.5 w-3.5" /> Regenerar
+                {botonMinuta.estado === "generando" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {botonMinuta.estado === "generar" && <RefreshCw className="h-3.5 w-3.5" />}
+                {botonMinuta.estado === "descargar" && <Download className="h-3.5 w-3.5" />}
+                {botonMinuta.label}
               </Button>
+            )}
+
+            {alertas.length > 0 && botonMinuta.estado !== "pendientes" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                    <ListChecks className="h-3.5 w-3.5" /> Alertas ({alertas.length})
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-96 max-h-[70vh] overflow-y-auto z-[100]">
+                  <AccionesPendientesList alertas={alertas} />
+                </PopoverContent>
+              </Popover>
             )}
 
             <SaveStatusChip
@@ -916,7 +949,6 @@ export const CancelacionValidar = () => {
               previewRefreshing={previewRefreshing}
               lastError={saveError}
               onRetry={handleManualSave}
-              blocked={row?.status === "requiere_revision_manual"}
               previewStale={previewStale}
             />
 
