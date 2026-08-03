@@ -33,6 +33,18 @@ import {
   CUANTIA_CONFLICTO_ORIGEN,
 } from "../_shared/isomorphic/cuantiaConflicto.ts";
 export { detectarConflictoCuantia, buildCuantiaCandidatosUi, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
+import {
+  computeAlertas,
+  contarPrioritarias,
+  applyPendingDecisionBlanks,
+} from "../_shared/isomorphic/alertasCancelacion.ts";
+export {
+  computeAlertas,
+  contarPrioritarias,
+  applyPendingDecisionBlanks,
+  NO_LEGIBLE_PODER_PATHS,
+} from "../_shared/isomorphic/alertasCancelacion.ts";
+
 
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
