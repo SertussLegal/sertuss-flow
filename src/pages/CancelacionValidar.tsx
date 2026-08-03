@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
 import { PoderViewerTab } from "@/components/cancelaciones/PoderViewerTab";
 import { PoderBannersV5, ApoderadoCandidatosBanner, type CandidatoNatural } from "@/components/cancelaciones/PoderBannersV5";
