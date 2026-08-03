@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PdfViewerPane from "@/components/tramites/PdfViewerPane";
 import { PoderViewerTab } from "@/components/cancelaciones/PoderViewerTab";
 import { PoderBannersV5, ApoderadoCandidatosBanner, type CandidatoNatural } from "@/components/cancelaciones/PoderBannersV5";
@@ -39,7 +39,14 @@ import { ensamblarNombreNotarial } from "@shared/ensamblarNombreNotarial";
 import { computeAlertas, contarPrioritarias } from "@shared/alertasCancelacion";
 import { botonMinutaEstado } from "@/lib/botonMinutaEstado";
 import { AccionesPendientesList } from "@/components/cancelaciones/AccionesPendientesList";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { CATEGORIA_META, ORDEN_CATEGORIAS } from "@/components/cancelaciones/AccionesPendientesList";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
 // cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
@@ -415,6 +422,7 @@ export const CancelacionValidar = () => {
   // `generadoEnSesion` arranca SIEMPRE en false al montar la página, aunque
   // exista un .docx previo en el bucket (regla de oro del dueño de producto).
   const [generadoEnSesion, setGeneradoEnSesion] = useState(false);
+  const [alertasPanelOpen, setAlertasPanelOpen] = useState(false);
   const [generando, setGenerando] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
@@ -901,20 +909,14 @@ export const CancelacionValidar = () => {
             {/* Botón principal con máquina de estados. Nunca arranca en
                 "Descargar": esa acción se gana generando en la sesión. */}
             {botonMinuta.estado === "pendientes" ? (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-600/90 text-white"
-                    aria-label={`${botonMinuta.label}. Abre el listado de decisiones pendientes.`}
-                  >
-                    <ListChecks className="h-3.5 w-3.5" /> {botonMinuta.label}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-96 max-h-[70vh] overflow-y-auto z-[100]">
-                  <AccionesPendientesList alertas={alertas} />
-                </PopoverContent>
-              </Popover>
+              <Button
+                size="sm"
+                className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-600/90 text-white"
+                aria-label={`${botonMinuta.label}. Abre el panel de decisiones pendientes.`}
+                onClick={() => setAlertasPanelOpen(true)}
+              >
+                <ListChecks className="h-3.5 w-3.5" /> {botonMinuta.label}
+              </Button>
             ) : (
               <Button
                 size="sm"
@@ -931,16 +933,14 @@ export const CancelacionValidar = () => {
             )}
 
             {alertas.length > 0 && botonMinuta.estado !== "pendientes" && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-                    <ListChecks className="h-3.5 w-3.5" /> Alertas ({alertas.length})
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-96 max-h-[70vh] overflow-y-auto z-[100]">
-                  <AccionesPendientesList alertas={alertas} />
-                </PopoverContent>
-              </Popover>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs"
+                onClick={() => setAlertasPanelOpen(true)}
+              >
+                <ListChecks className="h-3.5 w-3.5" /> Alertas ({alertas.length})
+              </Button>
             )}
 
             <SaveStatusChip
@@ -956,58 +956,6 @@ export const CancelacionValidar = () => {
           </div>
         </div>
       </div>
-
-      {/* Aviso: la escritura se recortó para el análisis por límite de payload
-          del gateway. Lo emite procesar-cancelacion dentro de data_ia/data_final. */}
-      {(() => {
-        const aviso = (data as unknown as {
-          _avisos_procesamiento?: { escritura_truncada?: { paginas_en_storage?: number; paginas_usadas?: number } };
-        } | null)?._avisos_procesamiento?.escritura_truncada;
-        if (!aviso) return null;
-        return (
-          <div role="alert" className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  La escritura se analizó parcialmente
-                </p>
-                <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
-                  Por límite de tamaño del análisis se usaron {aviso.paginas_usadas} de {aviso.paginas_en_storage} páginas
-                  (primeras y últimas). Verifica manualmente los datos tomados de la escritura antes de firmar.
-                </p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Aviso suave NO bloqueante: la dirección catastral viene de OCR de un
-          documento escaneado y no tiene verificación automática. */}
-      {(() => {
-        const aviso = (data as unknown as {
-          _avisos_procesamiento?: { direccion_catastral_ocr?: { motivo?: string } };
-        } | null)?._avisos_procesamiento?.direccion_catastral_ocr;
-        if (!aviso) return null;
-        return (
-          <div role="status" className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  Verifica la dirección catastral
-                </p>
-                <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
-                  La dirección catastral fue leída automáticamente de un documento escaneado — verifica el número
-                  contra el certificado de tradición original antes de continuar, especialmente dígitos que puedan
-                  confundirse (0/2/8, etc.).
-                </p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
 
       {/* Banner sticky de decisiones pendientes. Ya NO bloquea la generación:
           el documento se genera siempre con esos campos en blanco. */}
@@ -1856,6 +1804,43 @@ export const CancelacionValidar = () => {
           )}
         </div>
       </div>
+
+      {/* Panel lateral único de alertas: mismo contenido para el botón
+          "Acciones pendientes" y el botón "Alertas". */}
+      <Sheet open={alertasPanelOpen} onOpenChange={setAlertasPanelOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col">
+          <SheetHeader>
+            <SheetTitle>Alertas del trámite</SheetTitle>
+            <SheetDescription>
+              Revisa las decisiones pendientes y las verificaciones sugeridas antes de firmar.
+            </SheetDescription>
+          </SheetHeader>
+          {alertas.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">No hay alertas en este trámite.</p>
+          ) : (
+            <Tabs
+              defaultValue={
+                ORDEN_CATEGORIAS.find((c) => alertas.some((a) => a.categoria === c)) ??
+                "prioritaria"
+              }
+              className="mt-4 flex-1 min-h-0 flex flex-col"
+            >
+              <TabsList className="w-full">
+                {ORDEN_CATEGORIAS.filter((c) => alertas.some((a) => a.categoria === c)).map((c) => (
+                  <TabsTrigger key={c} value={c} className="flex-1 text-xs">
+                    {CATEGORIA_META[c].titulo} ({alertas.filter((a) => a.categoria === c).length})
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {ORDEN_CATEGORIAS.map((c) => (
+                <TabsContent key={c} value={c} className="flex-1 min-h-0 overflow-y-auto">
+                  <AccionesPendientesList alertas={alertas} categorias={[c]} />
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Estilos notariales para preservar sangría en cláusulas dentro del visor */}
       <style>{`

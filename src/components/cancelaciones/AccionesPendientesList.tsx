@@ -16,10 +16,12 @@ export interface AccionesPendientesListProps {
   alertas: Alerta[];
   /** Navegación opcional a la sección del formulario que resuelve la alerta. */
   onIrASeccion?: (seccion: SeccionAlerta) => void;
+  /** Si se pasa, sólo se renderizan estas categorías (usado por las pestañas). */
+  categorias?: CategoriaAlerta[];
   className?: string;
 }
 
-const META: Record<
+export const CATEGORIA_META: Record<
   CategoriaAlerta,
   { titulo: string; icono: typeof AlertTriangle; clase: string }
 > = {
@@ -40,6 +42,10 @@ const META: Record<
   },
 };
 
+const META = CATEGORIA_META;
+
+export const ORDEN_CATEGORIAS: CategoriaAlerta[] = ["prioritaria", "importante", "informativa"];
+
 const ORDEN: CategoriaAlerta[] = ["prioritaria", "importante", "informativa"];
 
 const SECCION_LABEL: Record<SeccionAlerta, string> = {
@@ -53,19 +59,23 @@ const SECCION_LABEL: Record<SeccionAlerta, string> = {
 export function AccionesPendientesList({
   alertas,
   onIrASeccion,
+  categorias,
   className,
 }: AccionesPendientesListProps) {
-  if (alertas.length === 0) {
+  const orden = categorias ? ORDEN.filter((c) => categorias.includes(c)) : ORDEN;
+  const visibles = alertas.filter((a) => orden.includes(a.categoria));
+
+  if (visibles.length === 0) {
     return (
       <p className={cn("px-1 py-3 text-sm text-muted-foreground", className)}>
-        No hay alertas en este trámite.
+        {categorias ? "Sin alertas en esta categoría." : "No hay alertas en este trámite."}
       </p>
     );
   }
 
   return (
     <div className={cn("space-y-4", className)}>
-      {ORDEN.map((categoria) => {
+      {orden.map((categoria) => {
         const grupo = alertas.filter((a) => a.categoria === categoria);
         if (grupo.length === 0) return null;
         const { titulo, icono: Icono, clase } = META[categoria];
