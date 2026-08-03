@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Clock, Copy, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Clock, Copy, CheckCircle2, AlertCircle, Download, ListChecks } from "lucide-react";
 import { SaveStatusChip } from "@/components/cancelaciones/SaveStatusChip";
 import { toast } from "sonner";
 // Catálogo de campos obligatorios para cancelación Davivienda.
@@ -36,6 +36,10 @@ import { getProsaBanco } from "@shared/prosaBancos";
 import { WARNING_LABELS } from "@shared/poderBancoExtractor/validate";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 import { ensamblarNombreNotarial } from "@shared/ensamblarNombreNotarial";
+import { computeAlertas, contarPrioritarias } from "@shared/alertasCancelacion";
+import { botonMinutaEstado } from "@/lib/botonMinutaEstado";
+import { AccionesPendientesList } from "@/components/cancelaciones/AccionesPendientesList";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
 // cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
@@ -407,9 +411,11 @@ export const CancelacionValidar = () => {
   // Re-proceso de cuantía (escritura antecedente) — mutex independiente.
   const isReprocessingCuantiaRef = useRef(false);
   const [reprocessingCuantia, setReprocessingCuantia] = useState(false);
-  // Fase E — confirmación de revisión manual (desbloqueo NO_LEGIBLE).
-  const isConfirmingReviewRef = useRef(false);
-  const [confirmingReview, setConfirmingReview] = useState(false);
+  // Botón de estados de la minuta — "Descargar se gana en la sesión".
+  // `generadoEnSesion` arranca SIEMPRE en false al montar la página, aunque
+  // exista un .docx previo en el bucket (regla de oro del dueño de producto).
+  const [generadoEnSesion, setGeneradoEnSesion] = useState(false);
+  const [generando, setGenerando] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
 
@@ -514,6 +520,9 @@ export const CancelacionValidar = () => {
     const snap = JSON.stringify(data);
     if (snap !== lastSavedSnapshotRef.current) {
       setIsDirty(true);
+      // Cualquier edición invalida la generación de esta sesión: el botón
+      // vuelve a "Generar minuta" aunque el guardado la deje limpia de nuevo.
+      setGeneradoEnSesion(false);
     }
   }, [data]);
 
