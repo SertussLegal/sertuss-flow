@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Clock, Copy, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, AlertTriangle, Clock, Copy, CheckCircle2, AlertCircle, Download, ListChecks } from "lucide-react";
 import { SaveStatusChip } from "@/components/cancelaciones/SaveStatusChip";
 import { toast } from "sonner";
 // Catálogo de campos obligatorios para cancelación Davivienda.
@@ -36,6 +36,10 @@ import { getProsaBanco } from "@shared/prosaBancos";
 import { WARNING_LABELS } from "@shared/poderBancoExtractor/validate";
 import type { ProsaApoderadoOverride } from "@shared/prosaBancos/types";
 import { ensamblarNombreNotarial } from "@shared/ensamblarNombreNotarial";
+import { computeAlertas, contarPrioritarias } from "@shared/alertasCancelacion";
+import { botonMinutaEstado } from "@/lib/botonMinutaEstado";
+import { AccionesPendientesList } from "@/components/cancelaciones/AccionesPendientesList";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // Helper: parsea el 409 `manual_review_required` que emite `procesar-cancelacion`
 // cuando persiste NO_LEGIBLE / hard-block de coherencia tras un `regen`.
@@ -407,9 +411,11 @@ export const CancelacionValidar = () => {
   // Re-proceso de cuantía (escritura antecedente) — mutex independiente.
   const isReprocessingCuantiaRef = useRef(false);
   const [reprocessingCuantia, setReprocessingCuantia] = useState(false);
-  // Fase E — confirmación de revisión manual (desbloqueo NO_LEGIBLE).
-  const isConfirmingReviewRef = useRef(false);
-  const [confirmingReview, setConfirmingReview] = useState(false);
+  // Botón de estados de la minuta — "Descargar se gana en la sesión".
+  // `generadoEnSesion` arranca SIEMPRE en false al montar la página, aunque
+  // exista un .docx previo en el bucket (regla de oro del dueño de producto).
+  const [generadoEnSesion, setGeneradoEnSesion] = useState(false);
+  const [generando, setGenerando] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
 
@@ -514,6 +520,9 @@ export const CancelacionValidar = () => {
     const snap = JSON.stringify(data);
     if (snap !== lastSavedSnapshotRef.current) {
       setIsDirty(true);
+      // Cualquier edición invalida la generación de esta sesión: el botón
+      // vuelve a "Generar minuta" aunque el guardado la deje limpia de nuevo.
+      setGeneradoEnSesion(false);
     }
   }, [data]);
 
@@ -554,76 +563,21 @@ export const CancelacionValidar = () => {
         setSaveError(null);
         lastSavedSnapshotRef.current = snapshot;
         setIsDirty(false);
-        // Fix "atascada": mientras el trámite esté en revisión manual, NO
-        // disparamos `regen` — el backend re-emitiría los mismos motivos
-        // hard-block (sólo `confirm_manual_review` aplica MANUAL_OVERRIDE_RULES)
-        // y el autosave entraría en loop de 409 con chip "Guardando…" y
-        // "Vista desactualizada" permanente. El usuario debe pulsar el CTA
-        // "Confirmar revisión manual" para desbloquear.
-        // ⚠️ La marca persistente es `revision_manual_requerida`; `status`
-        // puede quedar en "completed" con el bloqueo activo (caso real
-        // 3275d162), así que NO basta con mirar el status.
-        if (
-          row?.status === "requiere_revision_manual" ||
-          (row as { revision_manual_requerida?: boolean } | null)?.revision_manual_requerida === true
-        ) {
-          setPreviewStale(false);
-          return true;
-        }
-
-        // Regen silencioso con SSOT del frontend (manualOverrides).
-        if (isRegenInFlightRef.current) {
-          // Otro regen en curso: marcamos stale y dejamos que el siguiente
-          // ciclo (manual o nuevo autosave) lo refresque.
-          setPreviewStale(true);
-          return true;
-        }
-        isRegenInFlightRef.current = true;
-        setPreviewRefreshing(true);
-        const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
-          cancelacionId: id, regen: true, manualOverrides: data,
-        });
-        setPreviewRefreshing(false);
-        isRegenInFlightRef.current = false;
-        if (!regenErr) {
-          setPreviewStale(false);
-          setViewerKey((k) => k + 1);
-          queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-          if (!opts.silent) {
-            toast.success("Cambios guardados");
-          }
-        } else {
-          // Hallazgo NO_LEGIBLE: si el 409 llega por `manual_review_required`,
-          // el autosave silencioso NO debe generar toast — el usuario está
-          // en pleno flujo de edición corrigiendo los campos.
-          const parsed = await parseManualReviewError(regenErr);
-          if (parsed) {
-            console.warn(
-              "[persistData] regen bloqueado por manual_review_required:",
-              { paths: parsed.paths, motivos: parsed.motivos },
-            );
-            setPreviewStale(true);
-            return true;
-          }
-          // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
-          // actualizó. Mostrar chip persistente "vista desactualizada".
-          setPreviewStale(true);
-          if (!opts.silent) {
-            toast.warning("Cambios guardados, pero la vista previa no se actualizó");
-          }
-        }
+        // Rediseño 2026-08: el autoguardado SOLO persiste. La generación del
+        // documento pasó a ser una acción explícita del usuario (botón de
+        // estados), lo que elimina el loop de 409 y las regeneraciones
+        // fantasma mientras se edita.
+        if (!opts.silent) toast.success("Cambios guardados");
         return true;
       } catch (e) {
         setSaving(false);
-        setPreviewRefreshing(false);
-        isRegenInFlightRef.current = false;
         const msg = e instanceof Error ? e.message : "Error inesperado al guardar";
         setSaveError(msg);
         if (!opts.silent) toast.error("No se pudo guardar", { description: msg });
         return false;
       }
     },
-    [id, data, row, queryClient],
+    [id, data],
   );
 
   // Debounce unificado: 1500ms para todo el formulario. El chip vivo
@@ -643,39 +597,38 @@ export const CancelacionValidar = () => {
     void persistData({ silent: false });
   };
 
-  const handleManualRegen = async () => {
+  // Generación explícita de la minuta. Guarda primero (SSOT del frontend) y
+  // luego regenera. El backend ya no bloquea: genera siempre, con los campos
+  // de decisiones pendientes en blanco.
+  const handleGenerar = async () => {
     if (!id || !data) return;
-    // Hallazgo 7: mutex compartido con autosave silencioso.
     if (isRegenInFlightRef.current) return;
-    // Si hay cambios pendientes, guárdalos primero (que también regenera).
     if (isDirty) {
-      await persistData({ silent: true });
-      return;
+      const ok = await persistData({ silent: true });
+      if (!ok) return;
     }
     isRegenInFlightRef.current = true;
+    setGenerando(true);
     setPreviewRefreshing(true);
-    const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
-    setPreviewRefreshing(false);
-    isRegenInFlightRef.current = false;
-    if (error) {
-      setPreviewStale(true);
-      const parsed = await parseManualReviewError(error);
-      if (parsed) {
-        const pendientes = [...parsed.paths, ...parsed.motivos].join(", ");
-        toast.info("Revisión manual pendiente", {
-          description: pendientes
-            ? `Aún hay campos por corregir: ${pendientes}`
-            : "Hay campos del poder marcados como no legibles. Corrígelos antes de regenerar.",
-        });
+    try {
+      const { error } = await monitored.invoke("procesar-cancelacion", {
+        cancelacionId: id, regen: true, manualOverrides: data,
+      });
+      if (error) {
+        setPreviewStale(true);
+        toast.error("No se pudo generar la minuta", { description: error.message });
         return;
       }
-      toast.error("No se pudo regenerar", { description: error.message });
-      return;
+      setPreviewStale(false);
+      setGeneradoEnSesion(true);
+      setViewerKey((k) => k + 1);
+      queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+      toast.success("Minuta generada");
+    } finally {
+      setPreviewRefreshing(false);
+      setGenerando(false);
+      isRegenInFlightRef.current = false;
     }
-    setPreviewStale(false);
-    toast.success("Documento actualizado");
-    setViewerKey((k) => k + 1);
-    queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
 
   // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
@@ -710,40 +663,9 @@ export const CancelacionValidar = () => {
     }
   };
 
-  // Fase E — Confirmar revisión manual: desbloquea la generación de la minuta
-  // cuando el pipeline marcó `NO_LEGIBLE` en algún campo crítico del poder.
-  // Persiste antes cualquier edición pendiente para que `data_final` refleje
-  // lo que el usuario acaba de corregir contra el PDF original.
-  const handleConfirmManualReview = async () => {
-    if (!id) return;
-    if (isConfirmingReviewRef.current) return;
-    if (isDirty) {
-      await persistData({ silent: true });
-    }
-    isConfirmingReviewRef.current = true;
-    setConfirmingReview(true);
-    try {
-      const { data: resp, error } = await monitored.invoke<{
-        ok?: boolean; code?: string; message?: string; unlocked?: boolean;
-      }>("procesar-cancelacion", { cancelacionId: id, action: "confirm_manual_review" });
-      if (error) {
-        toast.error("No se pudo confirmar la revisión", { description: error.message });
-        return;
-      }
-      if (resp && resp.ok === false) {
-        toast.error("No se pudo generar el documento", { description: resp.message ?? "Intenta de nuevo." });
-        return;
-      }
-      toast.success("Documento generado", {
-        description: "La cancelación quedó completada tras tu confirmación.",
-      });
-      setViewerKey((k) => k + 1);
-      await queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-    } finally {
-      isConfirmingReviewRef.current = false;
-      setConfirmingReview(false);
-    }
-  };
+  // (Fase E retirada) `confirm_manual_review` quedó obsoleta: el backend ya
+  // no bloquea la generación. Las decisiones pendientes se resuelven en el
+  // formulario y se reflejan en el botón de estados de la minuta.
 
 
 
@@ -805,6 +727,37 @@ export const CancelacionValidar = () => {
     if (activeDoc === "certificado") return row.url_certificado_generado;
     return null; // "poder" se renderiza con PoderViewerTab, no necesita path docx.
   }, [row, activeDoc]);
+
+  // Alertas vivas del trámite (fuente única, isomórfica con el backend).
+  const alertas = useMemo(
+    () => computeAlertas(data as unknown as Record<string, unknown> | null),
+    [data],
+  );
+  const prioritarias = contarPrioritarias(alertas);
+  const botonMinuta = botonMinutaEstado({
+    prioritarias,
+    generando,
+    generadoEnSesion,
+    isDirty,
+  });
+
+  // Descarga del .docx de la minuta ya generado en esta sesión.
+  const handleDescargarMinuta = useCallback(async () => {
+    const path = row?.url_minuta_generada;
+    if (!path) {
+      toast.error("Aún no hay minuta generada");
+      return;
+    }
+    const { data: signed, error } = await supabase.storage
+      .from("expediente-files")
+      .createSignedUrl(path, 60, { download: true });
+    if (error || !signed?.signedUrl) {
+      toast.error("No se pudo preparar la descarga", { description: error?.message });
+      return;
+    }
+    window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
+  }, [row?.url_minuta_generada]);
+
 
   if (isLoading || !row) {
     return (
@@ -945,16 +898,49 @@ export const CancelacionValidar = () => {
                 <AlertTriangle className="h-3 w-3" /> Vista desactualizada
               </span>
             )}
-            {row?.status !== "requiere_revision_manual" && (
+            {/* Botón principal con máquina de estados. Nunca arranca en
+                "Descargar": esa acción se gana generando en la sesión. */}
+            {botonMinuta.estado === "pendientes" ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-600/90 text-white"
+                    aria-label={`${botonMinuta.label}. Abre el listado de decisiones pendientes.`}
+                  >
+                    <ListChecks className="h-3.5 w-3.5" /> {botonMinuta.label}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-96 max-h-[70vh] overflow-y-auto z-[100]">
+                  <AccionesPendientesList alertas={alertas} />
+                </PopoverContent>
+              </Popover>
+            ) : (
               <Button
                 size="sm"
-                variant={previewStale ? "default" : "outline"}
-                onClick={handleManualRegen}
-                disabled={previewRefreshing || saving}
+                variant="default"
+                onClick={botonMinuta.estado === "descargar" ? handleDescargarMinuta : handleGenerar}
+                disabled={botonMinuta.disabled || saving}
                 className="gap-1.5 text-xs"
               >
-                <RefreshCw className="h-3.5 w-3.5" /> Regenerar
+                {botonMinuta.estado === "generando" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {botonMinuta.estado === "generar" && <RefreshCw className="h-3.5 w-3.5" />}
+                {botonMinuta.estado === "descargar" && <Download className="h-3.5 w-3.5" />}
+                {botonMinuta.label}
               </Button>
+            )}
+
+            {alertas.length > 0 && botonMinuta.estado !== "pendientes" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                    <ListChecks className="h-3.5 w-3.5" /> Alertas ({alertas.length})
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-96 max-h-[70vh] overflow-y-auto z-[100]">
+                  <AccionesPendientesList alertas={alertas} />
+                </PopoverContent>
+              </Popover>
             )}
 
             <SaveStatusChip
@@ -963,7 +949,6 @@ export const CancelacionValidar = () => {
               previewRefreshing={previewRefreshing}
               lastError={saveError}
               onRetry={handleManualSave}
-              blocked={row?.status === "requiere_revision_manual"}
               previewStale={previewStale}
             />
 
@@ -1024,64 +1009,36 @@ export const CancelacionValidar = () => {
       })()}
 
 
-      {/* Banner de revisión manual pendiente — CTA sticky visible arriba del
-          formulario. Sin esto el usuario tenía que hacer scroll hasta el
-          bloque "Apoderado del Banco" para encontrar el botón de desbloqueo,
-          mientras el autosave loopeaba en 409. */}
-      {row?.status === "requiere_revision_manual" && (() => {
-        const inmWarns = ((data?.inmueble as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
-        const pbWarns = ((data?.poder_banco as unknown as { _coherencia_warnings?: string[] })?._coherencia_warnings) ?? [];
-        // La hipoteca también emite hard-blocks (conflicto de cuantía): sin
-        // esto el usuario no veía el tercer motivo y quedaba atascado.
-        const haWarns = data?.hipoteca_anterior?._coherencia_warnings ?? [];
-        const motivos = Array.from(
-          new Set([...inmWarns, ...pbWarns, ...haWarns].filter((w): w is string => typeof w === "string")),
-        );
-        return (
-          <div
-            role="alert"
-            className="sticky top-[57px] z-40 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5"
-          >
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  Revisión manual pendiente — el documento aún no se genera
-                </p>
-                <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
-                  Corrige los campos marcados en el formulario y luego pulsa
-                  <span className="font-medium"> Confirmar revisión manual y generar</span> para desbloquear la minuta y el certificado. El autoguardado no puede regenerar mientras haya alertas activas.
-                </p>
-                {motivos.length > 0 && (
-                  <ul className="mt-1.5 space-y-0.5 text-[11px] text-amber-800/80 dark:text-amber-200/80 list-disc pl-4">
-                    {motivos.map((m) => (
-                      <li key={m}>{WARNING_LABELS[m] ?? m}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="default"
-                onClick={handleConfirmManualReview}
-                disabled={confirmingReview || saving || previewRefreshing}
-                className="gap-1.5 shrink-0 bg-amber-600 hover:bg-amber-600/90 text-white"
-              >
-                {confirmingReview ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando…
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar revisión manual y generar
-                  </>
-                )}
-              </Button>
+      {/* Banner sticky de decisiones pendientes. Ya NO bloquea la generación:
+          el documento se genera siempre con esos campos en blanco. */}
+      {prioritarias > 0 && (
+        <div
+          role="alert"
+          className="sticky top-[57px] z-40 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2.5"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                {prioritarias === 1
+                  ? "Hay 1 decisión pendiente"
+                  : `Hay ${prioritarias} decisiones pendientes`}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
+                Mientras no las resuelvas, esos campos saldrán en blanco (___________) en la minuta y
+                la descarga permanece bloqueada.
+              </p>
+              <ul className="mt-1.5 space-y-0.5 text-[11px] text-amber-800/80 dark:text-amber-200/80 list-disc pl-4">
+                {alertas
+                  .filter((a) => a.bloqueaDescarga)
+                  .map((a) => (
+                    <li key={a.codigo}>{a.label}</li>
+                  ))}
+              </ul>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* Visor (izq) + Form (der) con scrolls independientes */}
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_450px]">
@@ -1096,14 +1053,19 @@ export const CancelacionValidar = () => {
               key={`${activeDoc}-${viewerKey}`}
               filePath={activePath}
               refreshKey={`${activeDoc}-${viewerKey}`}
-              blockDownload={isDirty}
+              // Compuerta de descarga: misma regla que el botón principal.
+              blockDownload={botonMinuta.estado !== "descargar"}
               onBlockedDownload={() => {
-                toast.warning("Tienes cambios sin guardar", {
-                  description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
-                  action: {
-                    label: "Guardar y descargar ahora",
-                    onClick: () => handleManualSave(),
-                  },
+                if (prioritarias > 0) {
+                  toast.warning("Hay decisiones pendientes", {
+                    description: "Resuélvelas en el formulario antes de descargar el documento.",
+                    duration: 6000,
+                  });
+                  return;
+                }
+                toast.warning("Genera la minuta antes de descargar", {
+                  description: "La descarga se habilita tras generar el documento en esta sesión.",
+                  action: { label: "Generar ahora", onClick: () => void handleGenerar() },
                   duration: 6000,
                 });
               }}
@@ -1602,9 +1564,6 @@ export const CancelacionValidar = () => {
                       }}
                       coherenciaWarnings={(pb as unknown as { _coherencia_warnings?: string[] })._coherencia_warnings}
                       coherenciaSuspicious={(pb as unknown as { _coherencia_suspicious?: string[] })._coherencia_suspicious}
-                      manualReviewPending={row?.status === "requiere_revision_manual"}
-                      manualReviewConfirming={confirmingReview}
-                      onConfirmManualReview={handleConfirmManualReview}
                     />
 
 

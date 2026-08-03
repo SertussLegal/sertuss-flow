@@ -33,6 +33,18 @@ import {
   CUANTIA_CONFLICTO_ORIGEN,
 } from "../_shared/isomorphic/cuantiaConflicto.ts";
 export { detectarConflictoCuantia, buildCuantiaCandidatosUi, CUANTIA_CONFLICTO_WARNING, CUANTIA_CONFLICTO_ORIGEN } from "../_shared/isomorphic/cuantiaConflicto.ts";
+import {
+  computeAlertas,
+  contarPrioritarias,
+  applyPendingDecisionBlanks,
+} from "../_shared/isomorphic/alertasCancelacion.ts";
+export {
+  computeAlertas,
+  contarPrioritarias,
+  applyPendingDecisionBlanks,
+  NO_LEGIBLE_PODER_PATHS,
+} from "../_shared/isomorphic/alertasCancelacion.ts";
+
 
 
 // Bucket donde viven los JPEG del Poder (mismo que el resto del expediente).
@@ -1340,37 +1352,33 @@ async function fillTemplate(
  * NO actualiza el row de `cancelaciones`. Solo genera+sube y devuelve paths.
  * El caller decide qué campos escribir (status, url_*, timestamps, etc.).
  */
-export class ManualReviewRequiredError extends Error {
-  readonly code = "MANUAL_REVIEW_REQUIRED";
-  constructor(
-    public readonly paths: string[],
-    public readonly motivos: string[],
-  ) {
-    super(
-      `Generación bloqueada: ${paths.length} campo(s) NO_LEGIBLE, ` +
-      `${motivos.length} hard-block de coherencia.`,
-    );
-    this.name = "ManualReviewRequiredError";
-  }
-}
-
 export async function generateAndUploadCancelacionDocs(
   // deno-lint-ignore no-explicit-any
   supabaseService: any,
   cancelacionId: string,
   data: CancelacionData,
   prosaApoderadoOverride: ProsaApoderadoOverride | null,
-  opts?: { manualReviewConfirmed?: boolean },
-): Promise<{ minutaPath: string; certPath: string }> {
-  // Fail-safe por construcción: bloquear si persiste NO_LEGIBLE o hard-block.
-  // Cubre los 3 call sites (flujo normal, confirm_manual_review, regen)
-  // y cualquier call site futuro.
-  const revision = detectRequiereRevisionManual(data, {
-    manualReviewConfirmed: opts?.manualReviewConfirmed === true,
-  });
-  if (revision.requiere) {
-    throw new ManualReviewRequiredError(revision.paths, revision.motivos);
+  _opts?: { manualReviewConfirmed?: boolean },
+): Promise<{ minutaPath: string; certPath: string; blanksAplicados: string[] }> {
+  // ═══════════════════════════════════════════════════════════════════════
+  // Rediseño 2026-08-03: la generación YA NO SE BLOQUEA. En vez de frenar,
+  // blanqueamos las decisiones pendientes sobre una COPIA de render, para
+  // que el .docx salga con blancos honestos (`___________`) en vez de una
+  // elección silenciosa del modelo. Invariantes garantizados aquí:
+  //   · La palabra "NO_LEGIBLE" jamás llega a un .docx.
+  //   · Apoderado multi-candidato sin confirmar → en blanco.
+  //   · Conflicto de cuantía sin resolver → cláusula de pago NEUTRAL.
+  // La copia NUNCA se persiste: `data_final` conserva el dato crudo como
+  // evidencia forense. Ver `_shared/isomorphic/alertasCancelacion.ts`.
+  // ═══════════════════════════════════════════════════════════════════════
+  const blanked = applyPendingDecisionBlanks(
+    data as unknown as Record<string, unknown>,
+  );
+  if (blanked.aplicados.length > 0) {
+    console.log("[pendingDecisionBlanks] aplicados=", blanked.aplicados);
   }
+  data = blanked.data as unknown as CancelacionData;
+
 
   // ═══════════════════════════════════════════════════════════════════════
   // Coherencia holística del apoderado — plano (UI-editable) gana sobre
@@ -1415,7 +1423,7 @@ export async function generateAndUploadCancelacionDocs(
     upsert: true,
   });
   if (upCertErr) throw new Error(`Upload certificado: ${upCertErr.message}`);
-  return { minutaPath, certPath };
+  return { minutaPath, certPath, blanksAplicados: blanked.aplicados };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -2536,19 +2544,14 @@ if (import.meta.main) serve(async (req) => {
 
   try {
     // ─────────────────────────────────────────────────────────────
-    // ACCIÓN CONFIRM_MANUAL_REVIEW (Fase E — desbloqueo tras NO_LEGIBLE)
-    // Exige que el row esté en 'requiere_revision_manual'. Marca el
-    // timestamp/usuario de confirmación y dispara la generación de docs
-    // usando data_final (que el usuario pudo editar). NO cobra créditos:
-    // ya se cobró GENERACION_DOCX en el intento inicial que se bloqueó.
+    // ACCIÓN CONFIRM_MANUAL_REVIEW — LEGACY (rediseño 2026-08-03).
+    // La compuerta de generación ya no existe: el documento siempre se
+    // genera y las decisiones pendientes se resuelven en la UI. Esta acción
+    // se conserva SOLO para clientes viejos y para desmarcar trámites
+    // históricos que quedaron con `revision_manual_requerida = true`.
+    // Regenera desde `data_final` y limpia la marca. No cobra créditos.
     // ─────────────────────────────────────────────────────────────
     if (action === "confirm_manual_review") {
-      if (cancRow.status !== "requiere_revision_manual") {
-        return biz(
-          "not_pending_review",
-          `La cancelación no está pendiente de revisión manual (status actual: ${cancRow.status}).`,
-        );
-      }
       const data = (cancRow.data_final ?? cancRow.data_ia) as CancelacionData | null;
       if (!data) {
         return biz("no_data", "No hay datos persistidos para generar el documento.");
@@ -2556,11 +2559,12 @@ if (import.meta.main) serve(async (req) => {
       try {
         const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
         const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-          supabaseService, cancelacionId, data, prosaOv, { manualReviewConfirmed: true },
+          supabaseService, cancelacionId, data, prosaOv,
         );
         const nowIso = new Date().toISOString();
         const { error: updErr } = await supabaseService.from("cancelaciones").update({
           status: "completed",
+          revision_manual_requerida: false,
           url_minuta_generada: minutaPath,
           url_certificado_generado: certPath,
           revision_manual_confirmada_at: nowIso,
@@ -2575,16 +2579,7 @@ if (import.meta.main) serve(async (req) => {
           action: "MANUAL_REVIEW_CONFIRMED",
           entity_type: "cancelacion",
           entity_id: cancelacionId,
-          metadata: { confirmed_at: nowIso },
-        }).then(() => {}, () => {});
-        void supabaseService.from("system_events").insert({
-          organization_id: orgId,
-          tramite_id: cancelacionId,
-          user_id: userId,
-          evento: "procesar-cancelacion.revision_manual",
-          resultado: "desbloqueado",
-          categoria: "PODER_NO_LEGIBLE",
-          detalle: { confirmed_by: userId },
+          metadata: { confirmed_at: nowIso, legacy: true },
         }).then(() => {}, () => {});
 
         return new Response(JSON.stringify({
@@ -2596,30 +2591,11 @@ if (import.meta.main) serve(async (req) => {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (genErr) {
-        if (genErr instanceof ManualReviewRequiredError) {
-          // El usuario intentó confirmar sin resolver los campos NO_LEGIBLE /
-          // hard-blocks de coherencia. NO cambiamos status (sigue en
-          // 'requiere_revision_manual') y logueamos el intento.
-          void supabaseService.from("system_events").insert({
-            organization_id: orgId,
-            tramite_id: cancelacionId,
-            user_id: userId,
-            evento: "procesar-cancelacion.confirm_manual_review",
-            resultado: "rechazado",
-            categoria: "PODER_NO_LEGIBLE_PERSISTE",
-            detalle: { paths: genErr.paths, motivos: genErr.motivos },
-          }).then(() => {}, () => {});
-          const pendientes = [...genErr.paths, ...genErr.motivos].join(", ");
-          return biz(
-            "manual_review_not_resolved",
-            `Aún hay campos sin resolver: ${pendientes}. Corrígelos antes de confirmar.`,
-            { paths: genErr.paths, motivos: genErr.motivos },
-          );
-        }
         const msg = genErr instanceof Error ? genErr.message : String(genErr);
         console.error("[procesar-cancelacion.confirm_manual_review] error:", msg);
         return biz("generation_error", `No se pudo generar el documento: ${msg.slice(0, 300)}`);
       }
+
     }
 
 
@@ -2975,41 +2951,31 @@ if (import.meta.main) serve(async (req) => {
         });
       }
       const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
-      try {
-        const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-          supabaseService, cancelacionId, data, prosaOv,
-        );
-        await supabaseService.from("cancelaciones").update({
-          data_final: data,
-          url_minuta_generada: minutaPath,
-          url_certificado_generado: certPath,
-          updated_at: new Date().toISOString(),
-        }).eq("id", cancelacionId);
+      // Rediseño 2026-08-03: `regen` YA NO puede devolver 409. Siempre genera
+      // (con blancos honestos donde haya decisiones pendientes) y devuelve las
+      // alertas vigentes para que la UI decida si habilita la descarga.
+      const { minutaPath, certPath, blanksAplicados } = await generateAndUploadCancelacionDocs(
+        supabaseService, cancelacionId, data, prosaOv,
+      );
+      const alertas = computeAlertas(data as unknown as Record<string, unknown>);
+      await supabaseService.from("cancelaciones").update({
+        data_final: data,
+        url_minuta_generada: minutaPath,
+        url_certificado_generado: certPath,
+        revision_manual_requerida: contarPrioritarias(alertas) > 0,
+        updated_at: new Date().toISOString(),
+      }).eq("id", cancelacionId);
 
-        return new Response(JSON.stringify({ ok: true, regenerated: true }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      } catch (genErr) {
-        if (genErr instanceof ManualReviewRequiredError) {
-          // Persistir SOLO data_final (el usuario sigue editando) y NO tocar
-          // url_minuta_generada/url_certificado_generado — el docx previo (si
-          // existe) queda intacto en vez de sobrescribirlo con uno contaminado.
-          await supabaseService.from("cancelaciones").update({
-            data_final: data,
-            updated_at: new Date().toISOString(),
-          }).eq("id", cancelacionId);
-          return new Response(JSON.stringify({
-            ok: false,
-            error: "manual_review_required",
-            paths: genErr.paths,
-            motivos: genErr.motivos,
-          }), {
-            status: 409,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        throw genErr;
-      }
+      return new Response(JSON.stringify({
+        ok: true,
+        regenerated: true,
+        alertas,
+        prioritarias: contarPrioritarias(alertas),
+        blanks_aplicados: blanksAplicados,
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -3399,12 +3365,11 @@ if (import.meta.main) serve(async (req) => {
           console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
         }
 
-        // ── Fase E — Bloqueo duro con override manual ──
-        // Si el prompt v7 emitió "NO_LEGIBLE" en algún campo crítico del poder,
-        // NO generamos minuta/certificado. Persistimos data_ia/data_final para
-        // que el usuario pueda revisar/editar en la pantalla de validación y
-        // dejamos status='requiere_revision_manual'. El desbloqueo ocurre por
-        // la acción `confirm_manual_review` (misma edge function).
+        // ── Rediseño 2026-08-03 — genera siempre + alertas ──
+        // Ya NO hay compuerta de generación. La minuta y el certificado se
+        // generan siempre (con blancos honestos donde haya una decisión
+        // pendiente) y las alertas informan al usuario. Solo la DESCARGA se
+        // condiciona, y eso lo resuelve la UI leyendo `computeAlertas`.
         // ── Sanea strings tóxicas de la IA monolítica fuera de poder_banco.
         // Gemini a veces devuelve `"null"` literal en cuantía no legible en
         // vez de omitir. Sólo afecta `hipoteca_anterior.valor_hipoteca_original`
@@ -3415,7 +3380,7 @@ if (import.meta.main) serve(async (req) => {
           CANCELACION_NULLY_PATHS,
         ) as unknown as typeof extracted;
 
-        const revision = detectRequiereRevisionManual(cleanedExtracted);
+
         // Avisos visibles para el usuario, no bloqueantes. Viajan dentro de
         // data_ia/data_final (se conservan en los guardados posteriores) y los
         // renderiza CancelacionValidar.
@@ -3463,49 +3428,44 @@ if (import.meta.main) serve(async (req) => {
           updated_at: new Date().toISOString(),
         };
 
-        if (revision.requiere) {
-          // NO generamos docs. Marcamos status y logueamos.
-          const { error: updErr } = await supabaseService.from("cancelaciones").update({
-            ...commonUpdate,
-            status: "requiere_revision_manual",
-            revision_manual_requerida: true,
-            revision_manual_confirmada_at: null,
-            revision_manual_confirmada_por: null,
-          }).eq("id", cancelacionId);
-          if (updErr) throw new Error(`Persist(requiere_revision_manual): ${updErr.message}`);
+        // Genera SIEMPRE. Las decisiones pendientes salen en blanco en el
+        // .docx (ver `applyPendingDecisionBlanks`) y quedan reportadas como
+        // alertas prioritarias que la UI usa para condicionar la descarga.
+        const alertas = computeAlertas(dataConAvisos as unknown as Record<string, unknown>);
+        const nPrioritarias = contarPrioritarias(alertas);
 
+        const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
+        const { minutaPath, certPath, blanksAplicados } = await generateAndUploadCancelacionDocs(
+          supabaseService, cancelacionId, cleanedExtracted, prosaOv,
+        );
+        const { error: updErr } = await supabaseService.from("cancelaciones").update({
+          ...commonUpdate,
+          status: "completed",
+          // La marca persistente ya no bloquea la generación: solo señala que
+          // hay decisiones pendientes que condicionan la DESCARGA.
+          revision_manual_requerida: nPrioritarias > 0,
+          revision_manual_confirmada_at: null,
+          revision_manual_confirmada_por: null,
+          url_minuta_generada: minutaPath,
+          url_certificado_generado: certPath,
+        }).eq("id", cancelacionId);
+        if (updErr) throw new Error(`Persist: ${updErr.message}`);
+
+        if (nPrioritarias > 0) {
           void supabaseService.from("system_events").insert({
             organization_id: orgId,
             tramite_id: cancelacionId,
             user_id: userId,
-            evento: "procesar-cancelacion.revision_manual",
-            resultado: "bloqueado",
-            categoria: revision.paths.length > 0 ? "PODER_NO_LEGIBLE" : "PODER_COHERENCIA_HARD_BLOCK",
-            detalle: { paths: revision.paths, motivos: revision.motivos },
+            evento: "procesar-cancelacion.alertas_prioritarias",
+            resultado: "generado_con_pendientes",
+            categoria: "DECISIONES_PENDIENTES",
+            detalle: {
+              prioritarias: alertas.filter((a) => a.bloqueaDescarga).map((a) => a.codigo),
+              blanks_aplicados: blanksAplicados,
+            },
           }).then(() => {}, () => {});
-
-          void supabaseService.from("activity_logs").insert({
-            organization_id: orgId,
-            user_id: userId,
-            action: "MANUAL_REVIEW_REQUIRED",
-            entity_type: "cancelacion",
-            entity_id: cancelacionId,
-            metadata: { paths: revision.paths, motivos: revision.motivos },
-          }).then(() => {}, () => {});
-        } else {
-          // Path normal — genera minuta+certificado y marca completed.
-          const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
-          const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-            supabaseService, cancelacionId, cleanedExtracted, prosaOv,
-          );
-          const { error: updErr } = await supabaseService.from("cancelaciones").update({
-            ...commonUpdate,
-            status: "completed",
-            url_minuta_generada: minutaPath,
-            url_certificado_generado: certPath,
-          }).eq("id", cancelacionId);
-          if (updErr) throw new Error(`Persist: ${updErr.message}`);
         }
+
 
       } catch (bgErr) {
         const rawMsg = bgErr instanceof Error ? bgErr.message : String(bgErr);
