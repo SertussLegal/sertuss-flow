@@ -3365,12 +3365,11 @@ if (import.meta.main) serve(async (req) => {
           console.warn("[procesar-cancelacion] normalizeDeudores warn:", e);
         }
 
-        // ── Fase E — Bloqueo duro con override manual ──
-        // Si el prompt v7 emitió "NO_LEGIBLE" en algún campo crítico del poder,
-        // NO generamos minuta/certificado. Persistimos data_ia/data_final para
-        // que el usuario pueda revisar/editar en la pantalla de validación y
-        // dejamos status='requiere_revision_manual'. El desbloqueo ocurre por
-        // la acción `confirm_manual_review` (misma edge function).
+        // ── Rediseño 2026-08-03 — genera siempre + alertas ──
+        // Ya NO hay compuerta de generación. La minuta y el certificado se
+        // generan siempre (con blancos honestos donde haya una decisión
+        // pendiente) y las alertas informan al usuario. Solo la DESCARGA se
+        // condiciona, y eso lo resuelve la UI leyendo `computeAlertas`.
         // ── Sanea strings tóxicas de la IA monolítica fuera de poder_banco.
         // Gemini a veces devuelve `"null"` literal en cuantía no legible en
         // vez de omitir. Sólo afecta `hipoteca_anterior.valor_hipoteca_original`
@@ -3381,7 +3380,7 @@ if (import.meta.main) serve(async (req) => {
           CANCELACION_NULLY_PATHS,
         ) as unknown as typeof extracted;
 
-        const revision = detectRequiereRevisionManual(cleanedExtracted);
+
         // Avisos visibles para el usuario, no bloqueantes. Viajan dentro de
         // data_ia/data_final (se conservan en los guardados posteriores) y los
         // renderiza CancelacionValidar.
