@@ -1340,37 +1340,33 @@ async function fillTemplate(
  * NO actualiza el row de `cancelaciones`. Solo genera+sube y devuelve paths.
  * El caller decide qué campos escribir (status, url_*, timestamps, etc.).
  */
-export class ManualReviewRequiredError extends Error {
-  readonly code = "MANUAL_REVIEW_REQUIRED";
-  constructor(
-    public readonly paths: string[],
-    public readonly motivos: string[],
-  ) {
-    super(
-      `Generación bloqueada: ${paths.length} campo(s) NO_LEGIBLE, ` +
-      `${motivos.length} hard-block de coherencia.`,
-    );
-    this.name = "ManualReviewRequiredError";
-  }
-}
-
 export async function generateAndUploadCancelacionDocs(
   // deno-lint-ignore no-explicit-any
   supabaseService: any,
   cancelacionId: string,
   data: CancelacionData,
   prosaApoderadoOverride: ProsaApoderadoOverride | null,
-  opts?: { manualReviewConfirmed?: boolean },
-): Promise<{ minutaPath: string; certPath: string }> {
-  // Fail-safe por construcción: bloquear si persiste NO_LEGIBLE o hard-block.
-  // Cubre los 3 call sites (flujo normal, confirm_manual_review, regen)
-  // y cualquier call site futuro.
-  const revision = detectRequiereRevisionManual(data, {
-    manualReviewConfirmed: opts?.manualReviewConfirmed === true,
-  });
-  if (revision.requiere) {
-    throw new ManualReviewRequiredError(revision.paths, revision.motivos);
+  _opts?: { manualReviewConfirmed?: boolean },
+): Promise<{ minutaPath: string; certPath: string; blanksAplicados: string[] }> {
+  // ═══════════════════════════════════════════════════════════════════════
+  // Rediseño 2026-08-03: la generación YA NO SE BLOQUEA. En vez de frenar,
+  // blanqueamos las decisiones pendientes sobre una COPIA de render, para
+  // que el .docx salga con blancos honestos (`___________`) en vez de una
+  // elección silenciosa del modelo. Invariantes garantizados aquí:
+  //   · La palabra "NO_LEGIBLE" jamás llega a un .docx.
+  //   · Apoderado multi-candidato sin confirmar → en blanco.
+  //   · Conflicto de cuantía sin resolver → cláusula de pago NEUTRAL.
+  // La copia NUNCA se persiste: `data_final` conserva el dato crudo como
+  // evidencia forense. Ver `_shared/isomorphic/alertasCancelacion.ts`.
+  // ═══════════════════════════════════════════════════════════════════════
+  const blanked = applyPendingDecisionBlanks(
+    data as unknown as Record<string, unknown>,
+  );
+  if (blanked.aplicados.length > 0) {
+    console.log("[pendingDecisionBlanks] aplicados=", blanked.aplicados);
   }
+  data = blanked.data as unknown as CancelacionData;
+
 
   // ═══════════════════════════════════════════════════════════════════════
   // Coherencia holística del apoderado — plano (UI-editable) gana sobre
