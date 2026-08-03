@@ -1411,7 +1411,7 @@ export async function generateAndUploadCancelacionDocs(
     upsert: true,
   });
   if (upCertErr) throw new Error(`Upload certificado: ${upCertErr.message}`);
-  return { minutaPath, certPath };
+  return { minutaPath, certPath, blanksAplicados: blanked.aplicados };
 }
 
 // ─────────────────────────────────────────────────────────────────────
