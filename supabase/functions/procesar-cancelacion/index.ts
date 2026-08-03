@@ -2544,19 +2544,14 @@ if (import.meta.main) serve(async (req) => {
 
   try {
     // ─────────────────────────────────────────────────────────────
-    // ACCIÓN CONFIRM_MANUAL_REVIEW (Fase E — desbloqueo tras NO_LEGIBLE)
-    // Exige que el row esté en 'requiere_revision_manual'. Marca el
-    // timestamp/usuario de confirmación y dispara la generación de docs
-    // usando data_final (que el usuario pudo editar). NO cobra créditos:
-    // ya se cobró GENERACION_DOCX en el intento inicial que se bloqueó.
+    // ACCIÓN CONFIRM_MANUAL_REVIEW — LEGACY (rediseño 2026-08-03).
+    // La compuerta de generación ya no existe: el documento siempre se
+    // genera y las decisiones pendientes se resuelven en la UI. Esta acción
+    // se conserva SOLO para clientes viejos y para desmarcar trámites
+    // históricos que quedaron con `revision_manual_requerida = true`.
+    // Regenera desde `data_final` y limpia la marca. No cobra créditos.
     // ─────────────────────────────────────────────────────────────
     if (action === "confirm_manual_review") {
-      if (cancRow.status !== "requiere_revision_manual") {
-        return biz(
-          "not_pending_review",
-          `La cancelación no está pendiente de revisión manual (status actual: ${cancRow.status}).`,
-        );
-      }
       const data = (cancRow.data_final ?? cancRow.data_ia) as CancelacionData | null;
       if (!data) {
         return biz("no_data", "No hay datos persistidos para generar el documento.");
@@ -2564,11 +2559,12 @@ if (import.meta.main) serve(async (req) => {
       try {
         const prosaOv = (cancRow as { prosa_apoderado_override?: ProsaApoderadoOverride | null }).prosa_apoderado_override ?? null;
         const { minutaPath, certPath } = await generateAndUploadCancelacionDocs(
-          supabaseService, cancelacionId, data, prosaOv, { manualReviewConfirmed: true },
+          supabaseService, cancelacionId, data, prosaOv,
         );
         const nowIso = new Date().toISOString();
         const { error: updErr } = await supabaseService.from("cancelaciones").update({
           status: "completed",
+          revision_manual_requerida: false,
           url_minuta_generada: minutaPath,
           url_certificado_generado: certPath,
           revision_manual_confirmada_at: nowIso,
@@ -2583,16 +2579,7 @@ if (import.meta.main) serve(async (req) => {
           action: "MANUAL_REVIEW_CONFIRMED",
           entity_type: "cancelacion",
           entity_id: cancelacionId,
-          metadata: { confirmed_at: nowIso },
-        }).then(() => {}, () => {});
-        void supabaseService.from("system_events").insert({
-          organization_id: orgId,
-          tramite_id: cancelacionId,
-          user_id: userId,
-          evento: "procesar-cancelacion.revision_manual",
-          resultado: "desbloqueado",
-          categoria: "PODER_NO_LEGIBLE",
-          detalle: { confirmed_by: userId },
+          metadata: { confirmed_at: nowIso, legacy: true },
         }).then(() => {}, () => {});
 
         return new Response(JSON.stringify({
@@ -2604,30 +2591,11 @@ if (import.meta.main) serve(async (req) => {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (genErr) {
-        if (genErr instanceof ManualReviewRequiredError) {
-          // El usuario intentó confirmar sin resolver los campos NO_LEGIBLE /
-          // hard-blocks de coherencia. NO cambiamos status (sigue en
-          // 'requiere_revision_manual') y logueamos el intento.
-          void supabaseService.from("system_events").insert({
-            organization_id: orgId,
-            tramite_id: cancelacionId,
-            user_id: userId,
-            evento: "procesar-cancelacion.confirm_manual_review",
-            resultado: "rechazado",
-            categoria: "PODER_NO_LEGIBLE_PERSISTE",
-            detalle: { paths: genErr.paths, motivos: genErr.motivos },
-          }).then(() => {}, () => {});
-          const pendientes = [...genErr.paths, ...genErr.motivos].join(", ");
-          return biz(
-            "manual_review_not_resolved",
-            `Aún hay campos sin resolver: ${pendientes}. Corrígelos antes de confirmar.`,
-            { paths: genErr.paths, motivos: genErr.motivos },
-          );
-        }
         const msg = genErr instanceof Error ? genErr.message : String(genErr);
         console.error("[procesar-cancelacion.confirm_manual_review] error:", msg);
         return biz("generation_error", `No se pudo generar el documento: ${msg.slice(0, 300)}`);
       }
+
     }
 
 
