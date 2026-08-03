@@ -194,16 +194,29 @@ export function deriveEstadoBotonMinuta(input: {
 }): { estado: EstadoBotonMinuta; disabled: boolean; contador?: number };
 ```
 
-Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` → `acciones_pendientes` (habilitado; despliega el listado). Luego `!docExiste || !docActualizado || isDirty` → `generar` (`disabled` mientras `saving`, para que el guardado persista antes de generar). Si no, `descargar`.
+Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` → `acciones_pendientes` (habilitado; despliega el listado). Luego `!docActualizado || isDirty` → `generar` (`disabled` mientras `saving`, para que el guardado persista antes de generar). Si no, `descargar`.
 
 `isDirty` fuerza `generar`, no `descargar`: nunca se descarga un doc que no refleja lo que hay en pantalla. Esto reemplaza el toast actual de "cambios sin guardar" de `PdfViewerPane` para este botón.
 
-#### `docActualizado` — hay que construirlo (ver discrepancia 10)
+#### Regla de oro del botón — "Descargar se gana en la sesión, nunca se asume"
+
+1. Al montar la página de un trámite, el estado inicial es siempre **"generar"** (o **"acciones_pendientes"** si hay prioritarias). Nunca "descargar", aunque `url_minuta_generada` exista.
+2. "Descargar" solo se alcanza tras una generación exitosa **dentro de la sesión actual** (`regen` → éxito → fijar snapshot).
+3. Editar cualquier campo tras generar → `docActualizado=false` → vuelve a "generar".
+4. Cerrar o recargar la página → `docActualizado` se resetea a `false` → vuelve al punto 1.
+
+#### `docActualizado` — simplificado a sesión
 
 `previewStale` no sirve. Propuesta mínima, sin SQL:
 - `lastGeneratedSnapshotRef` — se fija con el mismo `JSON.stringify(data)` que ya usa `lastSavedSnapshotRef` (`CancelacionValidar.tsx:400`), justo tras un regen exitoso.
+- `docActualizado` arranca en `false` al montar el componente. No importa si `url_minuta_generada` existe: al abrir siempre hay que regenerar para garantizar frescura.
 - `docActualizado = lastGeneratedSnapshotRef.current === snapshotActual`.
-- **Limitación honesta:** al recargar la página el ref se pierde y no hay columna que diga cuándo se generó el docx (`updated_at` se mueve tanto al guardar como al generar, y no se añaden columnas: cero SQL). Comportamiento al recargar: si `url_minuta_generada` existe se asume **al día** → botón "Descargar". El usuario que recargue justo tras editar sin generar mantiene el botón "Descargar" hasta que vuelva a tocar un campo. Alternativa si el dueño lo considera inaceptable: una columna `docs_generados_snapshot` — pero eso rompe "cero migraciones SQL". **Marcado para aprobación.**
+- No hay limitación de recarga: por diseño, recargar siempre reinicia el estado del botón.
+
+#### `docExiste` en `deriveEstadoBotonMinuta`
+
+Con la regla de oro, `docExiste` deja de importar para el estado inicial (nunca se asume "descargar" al montar). Se conserva como guarda defensiva: si el ref marca `docActualizado=true` pero `docExiste=false`, el estado debe caer a "generar" por seguridad. Si el dueño prefiere la firma mínima, se puede eliminar el parámetro; queda a su decisión.
+
 
 #### Un botón para minuta + certificado — MARCADO PARA APROBACIÓN
 
