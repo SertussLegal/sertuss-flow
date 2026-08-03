@@ -728,6 +728,37 @@ export const CancelacionValidar = () => {
     return null; // "poder" se renderiza con PoderViewerTab, no necesita path docx.
   }, [row, activeDoc]);
 
+  // Alertas vivas del trámite (fuente única, isomórfica con el backend).
+  const alertas = useMemo(
+    () => computeAlertas(data as unknown as Record<string, unknown> | null),
+    [data],
+  );
+  const prioritarias = contarPrioritarias(alertas);
+  const botonMinuta = botonMinutaEstado({
+    prioritarias,
+    generando,
+    generadoEnSesion,
+    isDirty,
+  });
+
+  // Descarga del .docx de la minuta ya generado en esta sesión.
+  const handleDescargarMinuta = useCallback(async () => {
+    const path = row?.url_minuta_generada;
+    if (!path) {
+      toast.error("Aún no hay minuta generada");
+      return;
+    }
+    const { data: signed, error } = await supabase.storage
+      .from("expediente-files")
+      .createSignedUrl(path, 60, { download: true });
+    if (error || !signed?.signedUrl) {
+      toast.error("No se pudo preparar la descarga", { description: error?.message });
+      return;
+    }
+    window.open(signed.signedUrl, "_blank", "noopener,noreferrer");
+  }, [row?.url_minuta_generada]);
+
+
   if (isLoading || !row) {
     return (
       <div className="h-screen bg-muted/30 p-8 overflow-hidden">
