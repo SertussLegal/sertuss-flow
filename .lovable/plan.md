@@ -268,8 +268,8 @@ Trámite nuevo con **conflicto de cuantía Y poder multi-candidato**:
 1. `heavyWork` termina en `status:"completed"` con `url_minuta_generada` poblado. Sin `requiere_revision_manual`.
 2. El `.docx` abre en el visor con: apoderado en blanco (`___________`), cláusula de pago **neutral**, sin la frase "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA", sin la palabra "NO_LEGIBLE" en ningún lado.
 3. La UI muestra 2 alertas prioritarias + las importantes que haya.
-4. "Descargar .docx" no descarga: abre el diálogo con las 2 decisiones y sus enlaces. `activity_logs` recibe `DESCARGA_BLOQUEADA_DECISIONES`.
-5. Se elige candidato + se escribe el monto → guardar → regen (sin cobro) → doc completo, descarga habilitada, `DESCARGADO_CON_ALERTAS` si quedan importantes.
+4. El botón principal dice **"Acciones pendientes (2)"**. Al pulsarlo despliega el listado con las 2 decisiones, cada una con su instrucción y su salto al lugar donde se resuelve. `activity_logs` recibe `ACCIONES_PENDIENTES_MOSTRADAS`. No genera ni descarga.
+5. Se elige el candidato y se escribe el monto → autoguardado (solo persiste) → el botón pasa solo a **"Generar documentos"** → clic → **"Cargando…"** → regen sin cobro → **"Descargar"** → descarga exitosa, con `DESCARGADO_CON_ALERTAS` si quedan importantes.
 
 Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a `completed` tras el primer regen.
 
