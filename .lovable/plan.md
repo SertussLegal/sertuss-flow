@@ -239,6 +239,8 @@ Ambos destinos ya son bloques renderizados en la misma página; el salto no requ
 - Resolver la última prioritaria (vía autoguardado del dato) → el botón pasa solo de "Acciones pendientes" a "Generar documentos", sin recarga: `computeAlertas` corre en `useMemo` sobre el `data` en memoria.
 - Editar cualquier campo tras generar → `docActualizado=false` → vuelve a "Generar documentos".
 - Clic en "Generar documentos" → `cargando` → invoca `{regen:true, manualOverrides:data}` → al éxito fija `lastGeneratedSnapshotRef`, `setViewerKey(k=>k+1)`, invalida la query → "Descargar".
+- Recargar o cerrar la página → `docActualizado` se resetea a `false` → el botón vuelve a "Generar documentos" (o "Acciones pendientes" si hay prioritarias).
+
 
 #### Bitácora (`activity_logs`, insert no bloqueante)
 
