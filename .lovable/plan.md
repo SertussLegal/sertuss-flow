@@ -285,8 +285,10 @@ Trámite nuevo con **conflicto de cuantía Y poder multi-candidato**:
 3. La UI muestra 2 alertas prioritarias + las importantes que haya.
 4. El botón principal dice **"Acciones pendientes (2)"**. Al pulsarlo despliega el listado con las 2 decisiones, cada una con su instrucción y su salto al lugar donde se resuelve. `activity_logs` recibe `ACCIONES_PENDIENTES_MOSTRADAS`. No genera ni descarga.
 5. Se elige el candidato y se escribe el monto → autoguardado (solo persiste) → el botón pasa solo a **"Generar documentos"** → clic → **"Cargando…"** → regen sin cobro → **"Descargar"** → descarga exitosa, con `DESCARGADO_CON_ALERTAS` si quedan importantes.
+6. **Recargar la página** → el botón vuelve a **"Generar documentos"** aunque el documento exista; pulsar generar → "Cargando…" → "Descargar". Esto verifica la regla de oro: "Descargar se gana en la sesión, nunca se asume".
 
 Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a `completed` tras el primer regen.
+
 
 ---
 
