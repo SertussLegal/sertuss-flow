@@ -293,6 +293,33 @@ Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a
 
 No se tocan: pipeline de extracción, las 7 capas anti-alucinación, `detectarConflictoCuantia`, `validate.ts`, sistema de créditos, RLS, plantillas `.docx`. Código compartido nuevo en `_shared/isomorphic/`, consumido con el alias `@shared/*`. Cero migraciones SQL.
 
+---
+
+## Alineación con el diseño de referencia (Figma Lantus.AI)
+
+### 1. Componentes de Fase 1 nacen reutilizables para Fase 2
+
+`AccionesPendientesList` y el aviso de sección del Poder se diseñan como componentes autocontenidos que consumen `Alerta[]` de `computeAlertas`, sin acoplarse al popover ni a la página. En Fase 2 se montarán dentro del panel lateral "Alertas Pendientes" del diseño de referencia (Figma node 807-641: panel derecho con encabezado, divisor, pestañas por categoría y tarjetas de alerta con título + descripción). La estructura de datos de cada tarjeta (label corto + descripción + categoría + sección + acción de salto) debe calzar con ese layout desde ya; el componente no debe asumir que vive en un popover.
+
+### 2. Estilos en Fase 1
+
+Se usan los tokens semánticos del design system Sertuss actual: `accent` para atención/verificación, `destructive` para errores, `primary` para acciones principales. No se inventa paleta nueva. El Figma es referencia de **distribución y jerarquía**, no de estilos finales; los estilos se pulen en Fase 2.
+
+### 3. Botón de estados — pauta visual del dueño
+
+Fase 1 (simple):
+- "Generar documentos" → primario claro (`default` de `Button`).
+- "Cargando…" → gris deshabilitado con spinner.
+- "Descargar" → primario claro.
+- "Acciones pendientes (N)" → variante de atención (`variant="accent"` o clase equivalente) diferenciada.
+
+Es el mismo componente físico, en la misma posición, que solo cambia texto, estilo y comportamiento según `deriveEstadoBotonMinuta`.
+
+### 4. Fase 2 importará el diseño real desde Figma
+
+Cuando llegue el ciclo de Fase 2, las especificaciones exactas (espaciados, tipografía del panel, layout de dos paneles previsualización + formulario) se extraerán del archivo Figma vía su contexto de diseño. No se improvisarán. Esta nota queda como requisito de entrada de Fase 2.
+
+
 ## FASE 2 — Interfaz (ciclo Plan→Build aparte)
 
 Alcance, sin diseñar aquí: panel lateral único de alertas con 3 pestañas y contador persistente; badge de estado unificado (sin resucitar el bug C8 de mensajes contradictorios entre "Revisión manual pendiente" y el chip "Guardado"); redistribución con textos secundarios movidos a tooltips (referencia Figma Lantus.AI sobre los estilos del design system Sertuss actual); pulido visual del botón de estados y de su listado de acciones pendientes, y del aviso de sección del poder; posible "marcar alerta importante como verificada". Las alertas localizadas en campos se mantienen como están.
