@@ -31,7 +31,7 @@ Aplica de hoy en adelante. Cero migraciones SQL. Los 7 trámites históricos en 
 2. tests de computeAlertas + applyPendingDecisionBlanks   ← rojo→verde antes de tocar index.ts
 3. index.ts: blanking dentro de generateAndUploadCancelacionDocs + quitar throw
 4. index.ts: heavyWork / regen / confirm_manual_review
-5. Frontend: compuerta de descarga + aviso de sección poder + limpiar confirm_manual_review
+5. Frontend: función pura del botón + máquina de estados en la UI + autosave sin regen + aviso de sección poder + limpiar confirm_manual_review
 6. alertasCoverage.test.ts + reescritura de tests Regla 8
 7. bunx vitest run + tsgo + deploy
 ```
