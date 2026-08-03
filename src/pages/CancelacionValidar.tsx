@@ -563,76 +563,21 @@ export const CancelacionValidar = () => {
         setSaveError(null);
         lastSavedSnapshotRef.current = snapshot;
         setIsDirty(false);
-        // Fix "atascada": mientras el trámite esté en revisión manual, NO
-        // disparamos `regen` — el backend re-emitiría los mismos motivos
-        // hard-block (sólo `confirm_manual_review` aplica MANUAL_OVERRIDE_RULES)
-        // y el autosave entraría en loop de 409 con chip "Guardando…" y
-        // "Vista desactualizada" permanente. El usuario debe pulsar el CTA
-        // "Confirmar revisión manual" para desbloquear.
-        // ⚠️ La marca persistente es `revision_manual_requerida`; `status`
-        // puede quedar en "completed" con el bloqueo activo (caso real
-        // 3275d162), así que NO basta con mirar el status.
-        if (
-          row?.status === "requiere_revision_manual" ||
-          (row as { revision_manual_requerida?: boolean } | null)?.revision_manual_requerida === true
-        ) {
-          setPreviewStale(false);
-          return true;
-        }
-
-        // Regen silencioso con SSOT del frontend (manualOverrides).
-        if (isRegenInFlightRef.current) {
-          // Otro regen en curso: marcamos stale y dejamos que el siguiente
-          // ciclo (manual o nuevo autosave) lo refresque.
-          setPreviewStale(true);
-          return true;
-        }
-        isRegenInFlightRef.current = true;
-        setPreviewRefreshing(true);
-        const { error: regenErr } = await monitored.invoke("procesar-cancelacion", {
-          cancelacionId: id, regen: true, manualOverrides: data,
-        });
-        setPreviewRefreshing(false);
-        isRegenInFlightRef.current = false;
-        if (!regenErr) {
-          setPreviewStale(false);
-          setViewerKey((k) => k + 1);
-          queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
-          if (!opts.silent) {
-            toast.success("Cambios guardados");
-          }
-        } else {
-          // Hallazgo NO_LEGIBLE: si el 409 llega por `manual_review_required`,
-          // el autosave silencioso NO debe generar toast — el usuario está
-          // en pleno flujo de edición corrigiendo los campos.
-          const parsed = await parseManualReviewError(regenErr);
-          if (parsed) {
-            console.warn(
-              "[persistData] regen bloqueado por manual_review_required:",
-              { paths: parsed.paths, motivos: parsed.motivos },
-            );
-            setPreviewStale(true);
-            return true;
-          }
-          // Hallazgo 2: NO mentir con "Guardado ✓" cuando la vista no se
-          // actualizó. Mostrar chip persistente "vista desactualizada".
-          setPreviewStale(true);
-          if (!opts.silent) {
-            toast.warning("Cambios guardados, pero la vista previa no se actualizó");
-          }
-        }
+        // Rediseño 2026-08: el autoguardado SOLO persiste. La generación del
+        // documento pasó a ser una acción explícita del usuario (botón de
+        // estados), lo que elimina el loop de 409 y las regeneraciones
+        // fantasma mientras se edita.
+        if (!opts.silent) toast.success("Cambios guardados");
         return true;
       } catch (e) {
         setSaving(false);
-        setPreviewRefreshing(false);
-        isRegenInFlightRef.current = false;
         const msg = e instanceof Error ? e.message : "Error inesperado al guardar";
         setSaveError(msg);
         if (!opts.silent) toast.error("No se pudo guardar", { description: msg });
         return false;
       }
     },
-    [id, data, row, queryClient],
+    [id, data],
   );
 
   // Debounce unificado: 1500ms para todo el formulario. El chip vivo
@@ -652,39 +597,38 @@ export const CancelacionValidar = () => {
     void persistData({ silent: false });
   };
 
-  const handleManualRegen = async () => {
+  // Generación explícita de la minuta. Guarda primero (SSOT del frontend) y
+  // luego regenera. El backend ya no bloquea: genera siempre, con los campos
+  // de decisiones pendientes en blanco.
+  const handleGenerar = async () => {
     if (!id || !data) return;
-    // Hallazgo 7: mutex compartido con autosave silencioso.
     if (isRegenInFlightRef.current) return;
-    // Si hay cambios pendientes, guárdalos primero (que también regenera).
     if (isDirty) {
-      await persistData({ silent: true });
-      return;
+      const ok = await persistData({ silent: true });
+      if (!ok) return;
     }
     isRegenInFlightRef.current = true;
+    setGenerando(true);
     setPreviewRefreshing(true);
-    const { error } = await monitored.invoke("procesar-cancelacion", { cancelacionId: id, regen: true, manualOverrides: data });
-    setPreviewRefreshing(false);
-    isRegenInFlightRef.current = false;
-    if (error) {
-      setPreviewStale(true);
-      const parsed = await parseManualReviewError(error);
-      if (parsed) {
-        const pendientes = [...parsed.paths, ...parsed.motivos].join(", ");
-        toast.info("Revisión manual pendiente", {
-          description: pendientes
-            ? `Aún hay campos por corregir: ${pendientes}`
-            : "Hay campos del poder marcados como no legibles. Corrígelos antes de regenerar.",
-        });
+    try {
+      const { error } = await monitored.invoke("procesar-cancelacion", {
+        cancelacionId: id, regen: true, manualOverrides: data,
+      });
+      if (error) {
+        setPreviewStale(true);
+        toast.error("No se pudo generar la minuta", { description: error.message });
         return;
       }
-      toast.error("No se pudo regenerar", { description: error.message });
-      return;
+      setPreviewStale(false);
+      setGeneradoEnSesion(true);
+      setViewerKey((k) => k + 1);
+      queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
+      toast.success("Minuta generada");
+    } finally {
+      setPreviewRefreshing(false);
+      setGenerando(false);
+      isRegenInFlightRef.current = false;
     }
-    setPreviewStale(false);
-    toast.success("Documento actualizado");
-    setViewerKey((k) => k + 1);
-    queryClient.invalidateQueries({ queryKey: ["cancelacion", id] });
   };
 
   // Re-procesar SOLO el Poder General con OCR dedicado. Idempotente
