@@ -55,19 +55,23 @@ const SECCION_LABEL: Record<SeccionAlerta, string> = {
 export function AccionesPendientesList({
   alertas,
   onIrASeccion,
+  categorias,
   className,
 }: AccionesPendientesListProps) {
-  if (alertas.length === 0) {
+  const orden = categorias ? ORDEN.filter((c) => categorias.includes(c)) : ORDEN;
+  const visibles = alertas.filter((a) => orden.includes(a.categoria));
+
+  if (visibles.length === 0) {
     return (
       <p className={cn("px-1 py-3 text-sm text-muted-foreground", className)}>
-        No hay alertas en este trámite.
+        {categorias ? "Sin alertas en esta categoría." : "No hay alertas en este trámite."}
       </p>
     );
   }
 
   return (
     <div className={cn("space-y-4", className)}>
-      {ORDEN.map((categoria) => {
+      {orden.map((categoria) => {
         const grupo = alertas.filter((a) => a.categoria === categoria);
         if (grupo.length === 0) return null;
         const { titulo, icono: Icono, clase } = META[categoria];
