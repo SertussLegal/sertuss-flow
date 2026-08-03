@@ -1053,14 +1053,19 @@ export const CancelacionValidar = () => {
               key={`${activeDoc}-${viewerKey}`}
               filePath={activePath}
               refreshKey={`${activeDoc}-${viewerKey}`}
-              blockDownload={isDirty}
+              // Compuerta de descarga: misma regla que el botón principal.
+              blockDownload={botonMinuta.estado !== "descargar"}
               onBlockedDownload={() => {
-                toast.warning("Tienes cambios sin guardar", {
-                  description: "Guarda los cambios antes de descargar para que el documento incluya tus últimas ediciones.",
-                  action: {
-                    label: "Guardar y descargar ahora",
-                    onClick: () => handleManualSave(),
-                  },
+                if (prioritarias > 0) {
+                  toast.warning("Hay decisiones pendientes", {
+                    description: "Resuélvelas en el formulario antes de descargar el documento.",
+                    duration: 6000,
+                  });
+                  return;
+                }
+                toast.warning("Genera la minuta antes de descargar", {
+                  description: "La descarga se habilita tras generar el documento en esta sesión.",
+                  action: { label: "Generar ahora", onClick: () => void handleGenerar() },
                   duration: 6000,
                 });
               }}
