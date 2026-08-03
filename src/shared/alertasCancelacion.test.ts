@@ -89,7 +89,7 @@ describe("computeAlertas — clasificación", () => {
     });
     const cats = computeAlertas(data).map((a) => a.categoria);
     expect(cats[0]).toBe("prioritaria");
-    expect(cats).toEqual([...cats].sort());
+    expect(cats).toEqual(["prioritaria", "importante", "informativa"]);
   });
 
   it("no emite alertas cuando no hay warnings ni centinelas", () => {
