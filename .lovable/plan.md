@@ -11,11 +11,14 @@ Aplica de hoy en adelante. Cero migraciones SQL. Los 7 trámites históricos en 
 1. **No existe un patrón de "re-export en `src/shared/`".** `src/shared/` contiene **solo tests**. El código isomórfico se consume desde el frontend con el alias `@shared/*` → `supabase/functions/_shared/isomorphic/*` (ya usado en `CancelacionValidar.tsx:35-38`, `src/lib/reconcileData.ts:6`). El plan usa ese alias, no crea re-exports vacíos. Además `tsconfig.app.json` tiene una lista `include` **explícita** de archivos isomórficos: **hay que añadir `alertasCancelacion.ts` ahí o el typecheck del frontend no lo cubre.**
 2. **La compuerta de descarga ya existe parcialmente.** `PdfViewerPane` ya acepta `blockDownload` + `onBlockedDownload` (usado hoy para "cambios sin guardar", `CancelacionValidar.tsx:1099-1107`). No hay que crear el mecanismo, hay que **componer una segunda razón de bloqueo** con precedencia definida.
 3. **El gate no está solo en `heavyWork`: está en 4 lugares.** `generateAndUploadCancelacionDocs` (fail-safe interno, línea ~1368), rama `revision.requiere` de `heavyWork` (~3466), `catch` de `regen` (~2993, devuelve 409), y la acción `confirm_manual_review` completa (~2545-2625, más su propio `catch` de `ManualReviewRequiredError`). Los 4 se tocan.
-4. **`detectRequiereRevisionManual` no se borra.** Sigue siendo la fuente de detección (NO_LEGIBLE + hard-block + recálculo escalar); solo deja de ser gate. `computeAlertas` la reemplaza como *lector de warnings crudos*, pero la lógica de recálculo escalar (`filterMotivosByScalarRecompute`) y de override (`applyManualOverrideExceptions`) hay que **reutilizarla dentro de `computeAlertas`**, no duplicarla. Ojo: `applyManualOverrideExceptions` hoy solo corre con `manualReviewConfirmed:true`; en el modelo nuevo no hay "confirmación manual" → debe correr **siempre** (una corrección humana válida apaga la alerta).
+4. **`detectRequiereRevisionManual` no se borra.** Sigue siendo la fuente de detección (NO_LEGIBLE + hard-block + recálculo escalar); solo deja de ser gate. `computeAlertas` la reemplaza como *lector de warnings crudos*, reutilizando `filterMotivosByScalarRecompute` (determinista, seguro). **No** reutiliza `applyManualOverrideExceptions` (ver corrección aprobada, punto 9).
 5. **`confirm_manual_review` no es código muerto todavía en el frontend.** `CancelacionValidar.tsx` lo invoca en `handleConfirmManualReview` (línea 717) y lo pasa a dos hijos (líneas 1067, 1607). Borrar el bloque del backend sin tocar esos 3 call sites deja botones que fallan.
 6. **La cláusula neutral ya existe** — `buildClausulaPagoHipoteca` (índex ~788) devuelve exactamente el texto neutral cuando `esCuantiaIndeterminada=false` y `valorRaw=""`. El requisito 1.2 se cumple **sin escribir prosa nueva**: basta con vaciar `valor_hipoteca_original` y forzar `valor_hipoteca_es_indeterminada=false` en la copia de render. Hay una trampa: `esIndeterminadaLegacy` (regex sobre `valorRaw`) — al vaciar el valor también se apaga, correcto.
 7. **`hipoteca_garantia_abierta` es un flag distinto de `valor_hipoteca_es_indeterminada`** y sí puede ser legítimamente `true` con conflicto de cuantía. El blanking debe tocar **solo** `valor_hipoteca_original` + `valor_hipoteca_es_indeterminada`, dejando `hipoteca_garantia_abierta` intacto (es un hecho textual leído de la escritura, no una inferencia).
 8. **`DESCARGADO_CON_ALERTAS` no se puede registrar con fidelidad total.** La descarga real es un `<a download>` en `PdfViewerPane:120-134`; el log se dispara en el click, no en la finalización del download. Es aceptable pero hay que decirlo: el log significa "el usuario pidió la descarga", no "el archivo llegó".
+9. **`applyManualOverrideExceptions` / `MANUAL_OVERRIDE_RULES` quedan sin llamador de producción.** Verificado con grep: hoy el único llamador real es `detectRequiereRevisionManual` (`index.ts:1529`, tras `manualReviewConfirmed`); todo lo demás son **tests** (`scalarGatingRecompute.test.ts:39`, `poderBancoValidateCandidatosNatural.test.ts:108`, `cuantiaConflicto.test.ts:129-153`) y el re-export de `index.ts:1450-1453`. **Recomendación: no eliminar en Fase 1.** Motivo: `hardBlockRules.ts` exporta también `HARD_BLOCK_WARNING_SUFFIXES` (re-exportado desde `validate.ts`), que sigue siendo la definición de "qué es un warning duro" y que `computeAlertas` necesita. Borrar la función y sus reglas en el mismo commit que desmonta el gate mezcla dos cambios de riesgo distinto. Plan: dejar `MANUAL_OVERRIDE_RULES` y `applyManualOverrideExceptions` **sin llamadores, marcados `@deprecated` con nota "sin uso desde el rediseño de alertas — eliminar en Fase 2"**, eliminar el re-export de `index.ts`, y eliminar `index_manualOverride_test.ts`. Los 3 tests de frontend que los invocan se ajustan (ver 1.6). Si el dueño prefiere borrado total en Fase 1, es un cambio mecánico adicional de ~200 líneas; queda a su decisión.
+10. **`previewStale` NO es una detección de "documento desactualizado".** Verificado en `CancelacionValidar.tsx:395` y `:576-612`: es un **flag de fallo** — se pone en `true` únicamente cuando el `regen` disparado por el autosave falla o colisiona con otro en vuelo. No compara datos contra documento. Al eliminar el regen del autosave (cambio mayor aprobado), `previewStale` **deja de tener significado** y no sirve para alimentar el estado del botón. Hay que derivar `docActualizado` de verdad (ver 1.4). Ver también la limitación de recarga de página documentada allí.
+
 
 ---
 
@@ -28,7 +31,7 @@ Aplica de hoy en adelante. Cero migraciones SQL. Los 7 trámites históricos en 
 2. tests de computeAlertas + applyPendingDecisionBlanks   ← rojo→verde antes de tocar index.ts
 3. index.ts: blanking dentro de generateAndUploadCancelacionDocs + quitar throw
 4. index.ts: heavyWork / regen / confirm_manual_review
-5. Frontend: compuerta de descarga + aviso de sección poder + limpiar confirm_manual_review
+5. Frontend: función pura del botón + máquina de estados en la UI + autosave sin regen + aviso de sección poder + limpiar confirm_manual_review
 6. alertasCoverage.test.ts + reescritura de tests Regla 8
 7. bunx vitest run + tsgo + deploy
 ```
@@ -71,11 +74,18 @@ Fuentes leídas (las tres actuales + avisos):
 - `analisis_legal.aplica_ley_546`.
 
 Antes de clasificar aplica, en este orden:
-1. `filterMotivosByScalarRecompute(...)` — importado de `scalarGatingRecompute.ts`, tal cual hoy.
-2. `applyManualOverrideExceptions(motivos, data)` — **ahora incondicional** (ver discrepancia 4).
-3. Dedupe por `codigo`.
+1. `filterMotivosByScalarRecompute(...)` — importado de `scalarGatingRecompute.ts`, tal cual hoy. Recálculo determinista con datos frescos: seguro.
+2. Dedupe por `codigo`.
+
+**`applyManualOverrideExceptions` NO se llama.** Sus predicados apagan el warning en cuanto el escalar tiene *formato* válido, y el dato del OCR casi siempre tiene formato válido aunque sea el equivocado — las alertas `*_menciones_incoherentes` se auto-apagarían al instante y nunca serían visibles (caso real: matrícula `50S-40096988` vs `50S-40096988B` del trámite e07c5d5a jamás habría mostrado alerta).
+
+**Cómo se apaga cada categoría:**
+- **Prioritarias** — solo por su condición explícita de resolución, ya escrita en la tabla: candidato confirmado presente en la lista vigente / `cuantia_origen === "manual"` o monto real escrito / campo `NO_LEGIBLE` completado a mano.
+- **Importantes** — **no se apagan en Fase 1.** Son notas de verificación: la discrepancia existió en el documento fuente y el abogado debe saberlo hasta el final, aunque haya editado el campo. Un futuro "marcar como verificada" queda fuera de alcance (Fase 2 o posterior).
+- **Informativas** — igual: permanecen.
 
 Labels: `WARNING_LABELS` de `validate.ts` es la fuente. Los códigos que no existan ahí (los de `_avisos_procesamiento`) se añaden a **un mapa nuevo local** `AVISO_LABELS` en `alertasCancelacion.ts` — no se contamina `WARNING_LABELS`, que es catálogo de warnings de validación.
+
 
 #### Tabla de clasificación — REQUIERE APROBACIÓN HUMANA
 
@@ -103,7 +113,7 @@ Labels: `WARNING_LABELS` de `validate.ts` es la fuente. Los códigos que no exis
 | `_avisos_procesamiento.direccion_catastral_ocr` | importante | inmueble | Sin detección automática |
 | `_avisos_procesamiento.escritura_truncada` | importante | documento | Se analizó parcialmente |
 | `*_confianza_baja` (4 códigos) | informativa | poder | Autorreporte de Gemini, nunca ha disparado bien |
-| `cedula_formato_invalido` | informativa | partes | Higiene de formato |
+| `cedula_formato_invalido` | **importante** | partes | Una cédula con formato inválido en un documento legal no es higiene menor |
 | `direccion_indice_corregido_por_codigo` | informativa | inmueble | El sistema ya eligió |
 | `apoderado_nombre_divergencia_plano_anidado` / `apoderado_cedula_divergencia_plano_anidado` | informativa | poder | Ya resuelto a favor del humano |
 | `aplica_ley_546 === true` | informativa | hipoteca | Contexto legal |
@@ -150,47 +160,81 @@ Reglas:
 | Acción `confirm_manual_review` (~2412-2625) | Eliminar el bloque completo y su valor del union `action?:`. |
 | Columnas `revision_manual_*` | No se escriben más. No se borran de BD. Cero SQL. |
 
-**Compatibilidad de status legacy** (frontend, `CancelacionValidar.tsx`): tratar `row.status === "requiere_revision_manual"` como `completed` en todos los branches de render (líneas 948, 966, 1031, 1605). Si el row no tiene `url_minuta_generada`, el visor muestra su estado vacío actual y el usuario dispara un regen normal, que lo deja en `completed`. Se retira el guard de autosave añadido en la sesión anterior (`CancelacionValidar.tsx:559-568`), que deja de tener sentido: ya no hay 409.
+**Compatibilidad de status legacy** (frontend, `CancelacionValidar.tsx`): tratar `row.status === "requiere_revision_manual"` como `completed` en todos los branches de render (líneas 948, 966, 1031, 1605). Si el row no tiene `url_minuta_generada`, el botón principal arranca en "Generar Minuta" y el primer clic lo deja en `completed`.
+
+**El autosave deja de regenerar** (cambio mayor aprobado): en `persistData` (`CancelacionValidar.tsx:~540-615`) se elimina la llamada a `procesar-cancelacion {regen:true}` y toda su lógica de freno — el guard de `revision_manual_requerida` (líneas 559-568), `isRegenInFlightRef`, `parseManualReviewError` y las ramas de `previewStale`. El autosave **solo persiste datos**. La generación pasa a ser siempre un acto explícito del usuario.
+
+Se mantiene: la **primera** previsualización se genera automáticamente al terminar el procesamiento inicial (`heavyWork`), con blancos honestos si hay decisiones pendientes. El usuario siempre aterriza viendo el documento.
 
 `src/pages/Cancelaciones.tsx` (líneas 63, 119, 133-151, 246): el badge "Bloqueada" y el orden por `revision_manual_requerida` se mantienen **solo** como etiqueta histórica de lectura; ningún trámite nuevo entrará ahí. `Cancelaciones.test.tsx` sigue verde sin cambios.
 
 ---
 
-### 1.4 Compuerta de DESCARGA (mismo despliegue)
+### 1.4 Botón principal con máquina de estados (mismo despliegue)
 
-`src/pages/CancelacionValidar.tsx`:
+Sustituye al diálogo modal de descarga. Un solo botón narra el ciclo completo. El botón "Regenerar" actual (`CancelacionValidar.tsx:949-958`) se absorbe en él.
+
+#### Función pura — `src/lib/botonMinutaEstado.ts` (nuevo)
+
+Diseñada como función pura testeable, nada de lógica inline en el componente.
 
 ```ts
-const alertas = useMemo(() => computeAlertas(dataFinal), [dataFinal]);
-const prioritarias = alertas.filter(a => a.bloqueaDescarga);
+export type EstadoBotonMinuta =
+  | "acciones_pendientes"   // ≥1 alerta prioritaria
+  | "generar"               // sin prioritarias, doc ausente o desactualizado
+  | "cargando"              // regen en vuelo
+  | "descargar";            // doc presente, al día, sin prioritarias
+
+export function deriveEstadoBotonMinuta(input: {
+  prioritarias: number;
+  docExiste: boolean;
+  docActualizado: boolean;
+  isDirty: boolean;
+  generando: boolean;
+}): { estado: EstadoBotonMinuta; disabled: boolean; contador?: number };
 ```
 
-Importado como `import { computeAlertas } from "@shared/alertasCancelacion"` (alias existente; añadir el archivo al `include` de `tsconfig.app.json`).
+Precedencia: `generando` → `cargando` (disabled). Luego `prioritarias > 0` → `acciones_pendientes` (habilitado; despliega el listado). Luego `!docExiste || !docActualizado || isDirty` → `generar` (`disabled` mientras `saving`, para que el guardado persista antes de generar). Si no, `descargar`.
 
-`PdfViewerPane` — se reutiliza tal cual, componiendo las dos razones con precedencia:
+`isDirty` fuerza `generar`, no `descargar`: nunca se descarga un doc que no refleja lo que hay en pantalla. Esto reemplaza el toast actual de "cambios sin guardar" de `PdfViewerPane` para este botón.
 
-```
-blockDownload = isDirty || prioritarias.length > 0
-onBlockedDownload:
-  1º  isDirty              → toast actual "cambios sin guardar" (sin cambios)
-  2º  prioritarias.length  → abre <DecisionesPendientesDialog>
-```
+#### `docActualizado` — hay que construirlo (ver discrepancia 10)
 
-`isDirty` primero: pedir decisiones sobre datos no guardados sería confuso.
+`previewStale` no sirve. Propuesta mínima, sin SQL:
+- `lastGeneratedSnapshotRef` — se fija con el mismo `JSON.stringify(data)` que ya usa `lastSavedSnapshotRef` (`CancelacionValidar.tsx:400`), justo tras un regen exitoso.
+- `docActualizado = lastGeneratedSnapshotRef.current === snapshotActual`.
+- **Limitación honesta:** al recargar la página el ref se pierde y no hay columna que diga cuándo se generó el docx (`updated_at` se mueve tanto al guardar como al generar, y no se añaden columnas: cero SQL). Comportamiento al recargar: si `url_minuta_generada` existe se asume **al día** → botón "Descargar". El usuario que recargue justo tras editar sin generar mantiene el botón "Descargar" hasta que vuelva a tocar un campo. Alternativa si el dueño lo considera inaceptable: una columna `docs_generados_snapshot` — pero eso rompe "cero migraciones SQL". **Marcado para aprobación.**
 
-`src/components/cancelaciones/DecisionesPendientesDialog.tsx` (nuevo, mínimo en Fase 1): lista las prioritarias con label + instrucción concreta por código:
-- candidatos → "Selecciona el apoderado en la sección Poder" + botón que hace `scrollIntoView` al banner `ApoderadoCandidatosBanner` existente.
-- conflicto de cuantía → "Escribe el monto o confírmalo como indeterminado" + scroll al recuadro ámbar de `cuantia_candidatos` ya implementado.
-- NO_LEGIBLE → "Completa a mano el/los campo(s): …" + scroll a la sección Poder.
+#### Un botón para minuta + certificado — MARCADO PARA APROBACIÓN
 
-El scroll usa `ref` + `scrollIntoView`; no requiere re-arquitectura porque ambos destinos ya son bloques renderizados en la misma página.
+**Propuesta: un solo botón, gobernado por la pestaña activa.** Justificación en el código: `generateAndUploadCancelacionDocs` genera **siempre los dos** documentos en la misma llamada (`index.ts:1401-1420`) y `regen` persiste ambos `url_*` juntos. Un botón por pestaña duplicaría UI para una acción que ya es atómica en el backend. Por tanto:
+- Estados "Acciones pendientes" / "Generar" / "Cargando" son **globales** (idénticos en ambas pestañas — reflejan un solo regen).
+- El estado "Descargar" es **contextual**: descarga el documento de la pestaña activa (`activeDoc`), reutilizando `PdfViewerPane.handleDownload`.
+- Etiqueta: "Generar documentos" en vez de "Generar Minuta", ya que produce ambos. (Si el dueño prefiere el literal "Generar Minuta", es solo texto.)
 
-**Bitácora** (`activity_logs`, insert directo con el cliente de usuario, no bloqueante):
-- `DESCARGA_BLOQUEADA_DECISIONES` — al abrir el diálogo. `metadata: { codigos, doc: activeDoc }`.
-- `DESCARGADO_CON_ALERTAS` — en `handleDownload` exitoso cuando hay importantes activas. `metadata: { codigos, doc }`. Sin modal de confirmación.
+#### Listado de acciones pendientes
+
+Popover anclado al botón (`components/ui/popover`, ya en el proyecto), **no modal bloqueante**. Componente nuevo `src/components/cancelaciones/AccionesPendientesList.tsx`. Una entrada por alerta prioritaria con: label, instrucción concreta, y botón de salto (`ref` + `scrollIntoView`):
+- candidatos → `ApoderadoCandidatosBanner` existente.
+- conflicto de cuantía → recuadro ámbar de `cuantia_candidatos` ya implementado.
+- `NO_LEGIBLE` → sección Poder, nombrando los campos ilegibles.
+
+Ambos destinos ya son bloques renderizados en la misma página; el salto no requiere re-arquitectura.
+
+#### Transiciones
+
+- Resolver la última prioritaria (vía autoguardado del dato) → el botón pasa solo de "Acciones pendientes" a "Generar documentos", sin recarga: `computeAlertas` corre en `useMemo` sobre el `data` en memoria.
+- Editar cualquier campo tras generar → `docActualizado=false` → vuelve a "Generar documentos".
+- Clic en "Generar documentos" → `cargando` → invoca `{regen:true, manualOverrides:data}` → al éxito fija `lastGeneratedSnapshotRef`, `setViewerKey(k=>k+1)`, invalida la query → "Descargar".
+
+#### Bitácora (`activity_logs`, insert no bloqueante)
+
+- `ACCIONES_PENDIENTES_MOSTRADAS` — al desplegar el listado. `metadata: { codigos, doc: activeDoc }`.
+- `DESCARGADO_CON_ALERTAS` — en el clic de Descargar cuando hay importantes activas. `metadata: { codigos, doc }`. Sin modal de confirmación.
 - `GENERADO_CON_ALERTAS` — lo escribe el backend (1.3).
 
 Semántica honesta de `DESCARGADO_CON_ALERTAS`: registra la *intención* de descarga (click), no la finalización (discrepancia 8).
+
 
 ---
 
@@ -206,10 +250,13 @@ En la sección Poder del formulario, banner reutilizando el patrón de `PoderBan
 |---|---|
 | `src/shared/hardBlockCoverage.test.ts` | **Renombrar** a `src/shared/alertasCoverage.test.ts` y reescribir. Nuevo invariante: para cada código con `categoria === "prioritaria"` deben existir (a) regla en `applyPendingDecisionBlanks`, (b) label resoluble, (c) `seccion` asignada. Se conserva el escaneo estático de literales sobre `SOURCES` (mismo mecanismo, misma lista de archivos + `alertasCancelacion.ts`) y la aserción H4 anti-template-literal. Todo código emitido debe estar clasificado por `computeAlertas` (no caer en el default silenciosamente → el default debe ser detectable en el test). |
 | `src/shared/poderBancoValidateCandidatosNatural.test.ts` (7 casos Regla 8) | Reescribir aserciones: la *detección* no cambia (prohibido tocar `validate.ts`); cambia el efecto. "Sin candidato confirmado" → alerta prioritaria activa + `applyPendingDecisionBlanks` vacía nombre/cédula + prosa vacía. "Con candidato confirmado" → passthrough, alerta ausente. |
-| `src/shared/alertasCancelacion.test.ts` (nuevo) | `computeAlertas`: cada categoría; las 3 fuentes de `_coherencia_warnings` + avisos; dedupe; recálculo escalar apaga; override manual apaga; código desconocido → `importante`. |
+| `src/shared/alertasCancelacion.test.ts` (nuevo) | `computeAlertas`: cada categoría; las 3 fuentes de `_coherencia_warnings` + avisos; dedupe; recálculo escalar determinista apaga; **caso inverso obligatorio: editar el escalar a un valor con formato válido NO apaga una alerta importante** (`*_menciones_incoherentes` permanece); código desconocido → `importante`. Sin caso "override manual apaga" — ese mecanismo desaparece. |
 | `src/shared/pendingDecisionBlanks.test.ts` (nuevo) | NO_LEGIBLE anidado → `undefined`; conflicto de cuantía → **snapshot del texto de `buildClausulaPagoHipoteca`** afirmando que es el neutral y que NUNCA contiene "CUANTÍA INDETERMINADA"; candidatos → prosa vacía; datos completos → objeto idéntico (identidad estructural, sin mutación de la entrada). |
-| `supabase/functions/procesar-cancelacion/index_manualOverride_test.ts` / `index_manualReview_test.ts` | Adaptar: los casos que afirman `ManualReviewRequiredError` o `requiere:true → no genera` pasan a afirmar "genera + alerta". `detectRequiereRevisionManual` sobrevive como detector puro; sus tests de detección se conservan. |
-| `src/shared/cuantiaConflicto.test.ts`, `certificadoInmuebleValidate.test.ts`, `scalarGatingRecompute.test.ts` | Sin cambios esperados (detección intacta). Si alguno rompe, es señal de que se tocó lógica prohibida. |
+| `src/lib/botonMinutaEstado.test.ts` (nuevo) | Máquina de estados: los 4 estados y su precedencia; `generando` gana sobre todo; `prioritarias>0` gana sobre `docExiste`; `isDirty` fuerza `generar`, nunca `descargar`; `disabled` correcto en `cargando` y en `generar` mientras `saving`; contador `N` igual al número de prioritarias. |
+| `supabase/functions/procesar-cancelacion/index_manualOverride_test.ts` | **Eliminar** — su sujeto (`applyManualOverrideExceptions` vía `manualReviewConfirmed`) desaparece del flujo. |
+| `supabase/functions/procesar-cancelacion/index_manualReview_test.ts` | Adaptar: los casos que afirman `ManualReviewRequiredError` o `requiere:true → no genera` pasan a afirmar "genera + alerta". `detectRequiereRevisionManual` sobrevive como detector puro; sus tests de detección se conservan. |
+| `src/shared/scalarGatingRecompute.test.ts`, `poderBancoValidateCandidatosNatural.test.ts`, `cuantiaConflicto.test.ts` | Invocan `applyManualOverrideExceptions` directamente (líneas 39, 108, 129-153). Al quedar la función `@deprecated` sin llamadores, esas aserciones se **reemplazan** por la aserción equivalente en el modelo nuevo: la condición explícita de resolución de la alerta prioritaria (candidato confirmado / `cuantia_origen="manual"`). Los casos de detección pura no se tocan. |
+| `certificadoInmuebleValidate.test.ts` | Sin cambios esperados (detección intacta). Si rompe, es señal de que se tocó lógica prohibida. |
 
 Verificación: `bunx vitest run` completo (435 verdes hoy — la meta es ≥435 con las reescrituras) + `tsgo`.
 
@@ -221,8 +268,8 @@ Trámite nuevo con **conflicto de cuantía Y poder multi-candidato**:
 1. `heavyWork` termina en `status:"completed"` con `url_minuta_generada` poblado. Sin `requiere_revision_manual`.
 2. El `.docx` abre en el visor con: apoderado en blanco (`___________`), cláusula de pago **neutral**, sin la frase "HIPOTECA ABIERTA DE CUANTÍA INDETERMINADA", sin la palabra "NO_LEGIBLE" en ningún lado.
 3. La UI muestra 2 alertas prioritarias + las importantes que haya.
-4. "Descargar .docx" no descarga: abre el diálogo con las 2 decisiones y sus enlaces. `activity_logs` recibe `DESCARGA_BLOQUEADA_DECISIONES`.
-5. Se elige candidato + se escribe el monto → guardar → regen (sin cobro) → doc completo, descarga habilitada, `DESCARGADO_CON_ALERTAS` si quedan importantes.
+4. El botón principal dice **"Acciones pendientes (2)"**. Al pulsarlo despliega el listado con las 2 decisiones, cada una con su instrucción y su salto al lugar donde se resuelve. `activity_logs` recibe `ACCIONES_PENDIENTES_MOSTRADAS`. No genera ni descarga.
+5. Se elige el candidato y se escribe el monto → autoguardado (solo persiste) → el botón pasa solo a **"Generar documentos"** → clic → **"Cargando…"** → regen sin cobro → **"Descargar"** → descarga exitosa, con `DESCARGADO_CON_ALERTAS` si quedan importantes.
 
 Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a `completed` tras el primer regen.
 
@@ -236,7 +283,9 @@ Un trámite legacy en `requiere_revision_manual` debe abrir sin romper y pasar a
 | Un `.docx` incompleto se descarga en la ventana entre despliegue de backend y frontend. | Fase 1 sale atómica (backend + gate de descarga en el mismo deploy). Regla de secuencia explícita en el orden de implementación. |
 | Blanking que sí muta `data_final` y borra datos del usuario. | Copia por rama; test de identidad estructural; `applyPendingDecisionBlanks` se llama solo dentro de `generateAndUploadCancelacionDocs`, nunca en el camino de persistencia. |
 | `classifyApoderado` con nombre/cédula vacíos imprime `undefined` o prosa rota. | Test de prosa vacía sobre `renderComparecencia`/`renderAntefirma`; snapshot. |
-| `applyManualOverrideExceptions` incondicional apaga alertas antes de tiempo. | Sus predicados exigen escalar con formato válido (incluido el anti-placeholder). Test dedicado por regla. |
+| Alertas importantes que nunca se apagan → fatiga de alerta y ruido acumulado. | Aceptado explícitamente por producto: son notas de verificación, no bloqueos. "Marcar como verificada" queda para Fase 2. |
+| `docActualizado` se pierde al recargar la página → botón "Descargar" sobre un doc potencialmente desfasado. | Limitación documentada en 1.4, marcada para aprobación. Mitigación parcial: cualquier edición posterior devuelve el botón a "Generar". Solución completa exigiría columna nueva (rompe cero-SQL). |
+| Quitar el regen del autosave: el usuario edita, no pulsa generar y descarga un doc viejo. | Imposible por diseño: `isDirty` o `docActualizado=false` fuerzan el estado "Generar"; "Descargar" solo aparece con doc al día. |
 | Botones huérfanos de `confirm_manual_review` en el frontend. | Los 3 call sites (717, 1067, 1607) se eliminan en el mismo commit que el bloque del backend. |
 | Regen empieza a cobrar créditos por algún camino nuevo. | Verificado hoy: `consume_credit_v2` solo se invoca en el modo normal. Se añade una aserción de grep en la checklist de revisión, no un test. |
 
@@ -246,4 +295,4 @@ No se tocan: pipeline de extracción, las 7 capas anti-alucinación, `detectarCo
 
 ## FASE 2 — Interfaz (ciclo Plan→Build aparte)
 
-Alcance, sin diseñar aquí: panel lateral único de alertas con 3 pestañas y contador persistente; badge de estado unificado (sin resucitar el bug C8 de mensajes contradictorios entre "Revisión manual pendiente" y el chip "Guardado"); redistribución con textos secundarios movidos a tooltips (referencia Figma Lantus.AI sobre los estilos del design system Sertuss actual); pulido del diálogo de descarga y del aviso de sección del poder. Las alertas localizadas en campos se mantienen como están.
+Alcance, sin diseñar aquí: panel lateral único de alertas con 3 pestañas y contador persistente; badge de estado unificado (sin resucitar el bug C8 de mensajes contradictorios entre "Revisión manual pendiente" y el chip "Guardado"); redistribución con textos secundarios movidos a tooltips (referencia Figma Lantus.AI sobre los estilos del design system Sertuss actual); pulido visual del botón de estados y de su listado de acciones pendientes, y del aviso de sección del poder; posible "marcar alerta importante como verificada". Las alertas localizadas en campos se mantienen como están.
