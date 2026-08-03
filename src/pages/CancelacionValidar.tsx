@@ -422,6 +422,7 @@ export const CancelacionValidar = () => {
   // `generadoEnSesion` arranca SIEMPRE en false al montar la página, aunque
   // exista un .docx previo en el bucket (regla de oro del dueño de producto).
   const [generadoEnSesion, setGeneradoEnSesion] = useState(false);
+  const [alertasPanelOpen, setAlertasPanelOpen] = useState(false);
   const [generando, setGenerando] = useState(false);
   const { setStatus: setSaveStatus, flashSaved } = useSaveStatus();
 
@@ -1803,6 +1804,43 @@ export const CancelacionValidar = () => {
           )}
         </div>
       </div>
+
+      {/* Panel lateral único de alertas: mismo contenido para el botón
+          "Acciones pendientes" y el botón "Alertas". */}
+      <Sheet open={alertasPanelOpen} onOpenChange={setAlertasPanelOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md flex flex-col">
+          <SheetHeader>
+            <SheetTitle>Alertas del trámite</SheetTitle>
+            <SheetDescription>
+              Revisa las decisiones pendientes y las verificaciones sugeridas antes de firmar.
+            </SheetDescription>
+          </SheetHeader>
+          {alertas.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">No hay alertas en este trámite.</p>
+          ) : (
+            <Tabs
+              defaultValue={
+                ORDEN_CATEGORIAS.find((c) => alertas.some((a) => a.categoria === c)) ??
+                "prioritaria"
+              }
+              className="mt-4 flex-1 min-h-0 flex flex-col"
+            >
+              <TabsList className="w-full">
+                {ORDEN_CATEGORIAS.filter((c) => alertas.some((a) => a.categoria === c)).map((c) => (
+                  <TabsTrigger key={c} value={c} className="flex-1 text-xs">
+                    {CATEGORIA_META[c].titulo} ({alertas.filter((a) => a.categoria === c).length})
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {ORDEN_CATEGORIAS.map((c) => (
+                <TabsContent key={c} value={c} className="flex-1 min-h-0 overflow-y-auto">
+                  <AccionesPendientesList alertas={alertas} categorias={[c]} />
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Estilos notariales para preservar sangría en cláusulas dentro del visor */}
       <style>{`
