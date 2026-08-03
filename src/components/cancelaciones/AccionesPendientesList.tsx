@@ -21,7 +21,7 @@ export interface AccionesPendientesListProps {
   className?: string;
 }
 
-const META: Record<
+export const CATEGORIA_META: Record<
   CategoriaAlerta,
   { titulo: string; icono: typeof AlertTriangle; clase: string }
 > = {
@@ -41,6 +41,10 @@ const META: Record<
     clase: "border-border bg-muted/50 text-muted-foreground",
   },
 };
+
+const META = CATEGORIA_META;
+
+export const ORDEN_CATEGORIAS: CategoriaAlerta[] = ["prioritaria", "importante", "informativa"];
 
 const ORDEN: CategoriaAlerta[] = ["prioritaria", "importante", "informativa"];
 
