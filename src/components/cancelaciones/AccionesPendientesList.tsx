@@ -16,6 +16,8 @@ export interface AccionesPendientesListProps {
   alertas: Alerta[];
   /** Navegación opcional a la sección del formulario que resuelve la alerta. */
   onIrASeccion?: (seccion: SeccionAlerta) => void;
+  /** Si se pasa, sólo se renderizan estas categorías (usado por las pestañas). */
+  categorias?: CategoriaAlerta[];
   className?: string;
 }
 
