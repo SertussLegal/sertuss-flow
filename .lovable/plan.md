@@ -113,7 +113,7 @@ Labels: `WARNING_LABELS` de `validate.ts` es la fuente. Los códigos que no exis
 | `_avisos_procesamiento.direccion_catastral_ocr` | importante | inmueble | Sin detección automática |
 | `_avisos_procesamiento.escritura_truncada` | importante | documento | Se analizó parcialmente |
 | `*_confianza_baja` (4 códigos) | informativa | poder | Autorreporte de Gemini, nunca ha disparado bien |
-| `cedula_formato_invalido` | informativa | partes | Higiene de formato |
+| `cedula_formato_invalido` | **importante** | partes | Una cédula con formato inválido en un documento legal no es higiene menor |
 | `direccion_indice_corregido_por_codigo` | informativa | inmueble | El sistema ya eligió |
 | `apoderado_nombre_divergencia_plano_anidado` / `apoderado_cedula_divergencia_plano_anidado` | informativa | poder | Ya resuelto a favor del humano |
 | `aplica_ley_546 === true` | informativa | hipoteca | Contexto legal |
